@@ -51,6 +51,18 @@ function assembleSbus(gen, load, SBASE, nbus)
   return Sbus
 end
 
+function sbus_to_real(Sbus, nbus)
+
+  Sbus_real = zeros(Float64, 2*nbus)
+
+  for i in 1:nbus
+    Sbus_real[2*i - 1] = real(Sbus[i])
+    Sbus_real[2*i] = imag(Sbus[i])
+  end
+  
+  return Sbus_real
+end
+
 """
   bustypeindex(data)
 
@@ -173,6 +185,12 @@ function newtonpf(V, Ybus, data)
   # retrieve power injections
   SBASE = data["CASE IDENTIFICATION"][1]
   Sbus = assembleSbus(gen, load, SBASE, nbus)
+  Sbus_real = sbus_to_real(Sbus, nbus)
+  println(Sbus)
+  println(Sbus_real)
+  println("Sbus")
+  
+
 
   # voltage
   Vm = abs.(V)
@@ -226,6 +244,7 @@ function newtonpf(V, Ybus, data)
 
     # evaluate residual and check for convergence
     F = residualFunction(V, Ybus, Sbus, pv, pq)
+    println(F)
     normF = norm(F, Inf)
     @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
 
