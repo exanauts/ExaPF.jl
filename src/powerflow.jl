@@ -12,6 +12,7 @@ module PowerFlow
 using LinearAlgebra
 using SparseArrays
 using Printf
+using Base
 
 include("parse.jl")
 include("parse_raw.jl")
@@ -51,17 +52,6 @@ function assembleSbus(gen, load, SBASE, nbus)
   return Sbus
 end
 
-function sbus_to_real(Sbus, nbus)
-
-  Sbus_real = zeros(Float64, 2*nbus)
-
-  for i in 1:nbus
-    Sbus_real[2*i - 1] = real(Sbus[i])
-    Sbus_real[2*i] = imag(Sbus[i])
-  end
-  
-  return Sbus_real
-end
 
 """
   bustypeindex(data)
@@ -133,6 +123,48 @@ function residualFunction(V, Ybus, Sbus, pv, pq)
 end
 
 
+function residualFunction_real(v_re, v_im,
+      ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
+
+  npv = size(pv, 1)
+  npq = size(pq, 1)
+
+  F = zeros(npv + 2*npq)
+
+  # REAL PV
+  for i in 1:npv
+    fr = pv[i]
+    F[i] -= pinj[fr]
+    for j in 1:nbus
+      F[i] += (v_re[fr]*(v_re[j]*ybus_re[fr, j] - v_im[j]*ybus_im[fr, j]) +
+               v_im[fr]*(v_im[j]*ybus_re[fr, j] + v_re[j]*ybus_im[fr, j]))
+    end
+  end
+
+  # REAL PQ
+  for i in 1:npq
+    fr = pq[i]
+    F[npv + i] -= pinj[fr]
+    for j in 1:nbus
+      F[npv + i] += (v_re[fr]*(v_re[j]*ybus_re[fr, j] - v_im[j]*ybus_im[fr, j]) +
+               v_im[fr]*(v_im[j]*ybus_re[fr, j] + v_re[j]*ybus_im[fr, j]))
+    end
+  end
+  
+  # IMAG PQ
+  for i in 1:npq
+    fr = pq[i]
+    F[npv + npq + i] -= qinj[fr]
+    for j in 1:nbus
+      F[npv + npq + i] += (v_im[fr]*(v_re[j]*ybus_re[fr, j] - v_im[j]*ybus_im[fr, j]) -
+                     v_re[fr]*(v_im[j]*ybus_re[fr, j] + v_re[j]*ybus_im[fr, j]))
+    end
+  end
+
+  return F
+end
+
+
 function residualJacobian(V, Ybus, pv, pq)
   n = size(V, 1)
   Ibus = Ybus*V
@@ -162,6 +194,10 @@ function newtonpf(V, Ybus, data)
   iter = 0
   converged = false
 
+  # (TODO): Temporal hack
+  ybus_re = Matrix(real(Ybus))
+  ybus_im = Matrix(imag(Ybus))
+
   # data index
   BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
   BUS_EVLO, BUS_TYPE = idx_bus()
@@ -185,11 +221,8 @@ function newtonpf(V, Ybus, data)
   # retrieve power injections
   SBASE = data["CASE IDENTIFICATION"][1]
   Sbus = assembleSbus(gen, load, SBASE, nbus)
-  Sbus_real = sbus_to_real(Sbus, nbus)
-  println(Sbus)
-  println(Sbus_real)
-  println("Sbus")
-  
+  pbus = real(Sbus)
+  qbus = imag(Sbus)
 
 
   # voltage
@@ -208,7 +241,6 @@ function newtonpf(V, Ybus, data)
 
   # form residual function
   F = residualFunction(V, Ybus, Sbus, pv, pq)
-
 
   # check for convergence
   normF = norm(F, Inf)
@@ -243,8 +275,14 @@ function newtonpf(V, Ybus, data)
     Va = angle.(V)
 
     # evaluate residual and check for convergence
-    F = residualFunction(V, Ybus, Sbus, pv, pq)
-    println(F)
+    # F = residualFunction(V, Ybus, Sbus, pv, pq)
+    
+    v_re = real(V)
+    v_im = imag(V)
+
+    F = residualFunction_real(v_re, v_im,
+            ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
+    
     normF = norm(F, Inf)
     @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
 
