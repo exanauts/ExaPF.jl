@@ -1,4 +1,8 @@
+module Network
+
 using SparseArrays
+include("parse.jl")
+include("parse_raw.jl")
 
 # Create an admittance matrix. The implementation is a modification of
 # MATPOWER's makeYbus. We attach the original MATPOWER's license in makeYbus.m:
@@ -89,4 +93,6 @@ function makeYbus(raw_data)
            sparse(1:nb, 1:nb, Ysh, nb, nb)    # shunt admittances
 
     return Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr
+end
+
 end

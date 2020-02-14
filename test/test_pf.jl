@@ -6,15 +6,16 @@ raw_data = "test/case14.raw"
 
 data_parser ="../src/parse.jl"
 raw_parser ="../src/parse_raw.jl"
-mYbus ="../src/makeYbus.jl"
+network ="../src/network.jl"
 pflow ="../src/powerflow.jl"
 
 # imports
 include(data_parser)
 include(raw_parser)
-include(mYbus)
+include(network)
 include(pflow)
 using .PowerFlow
+using .Network
 
 # read data
 data = parse_raw(raw_data)
@@ -33,7 +34,7 @@ for i in 1:nbus
 end
 
 # form Y matrix
-Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = makeYbus(data)
+Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = Network.makeYbus(data);
 
 vsol, conv, norm = PowerFlow.newtonpf(V, Ybus, data);
 
