@@ -17,6 +17,18 @@ using Base
 include("parse.jl")
 include("parse_raw.jl")
 
+mutable struct spmat{T}
+  colptr::Vector{Int64}
+  rowval::Vector{Int64}
+  nzval::Vector{T}
+
+  # function spmat{T}(colptr::Vector{Int64}, rowval::Vector{Int64}, nzval::Vector{T}) where T
+  function spmat{T}(mat::SparseMatrixCSC{Complex{Float64}, Int}) where T
+    matreal = new(Vector{Int64}(mat.colptr), Vector{Int64}(mat.rowval), Vector{T}(real.(mat.nzval)))
+    matimag = new(Vector{Int64}(mat.colptr), Vector{Int64}(mat.rowval), Vector{T}(imag.(mat.nzval)))
+    return matreal, matimag
+  end
+end
 """
   assembleSbus(data)
 
@@ -135,9 +147,10 @@ function residualFunction_real(v_re, v_im,
   for i in 1:npv
     fr = pv[i]
     F[i] -= pinj[fr]
-    for j in 1:nbus
-      F[i] += (v_re[fr]*(v_re[j]*ybus_re[fr, j] - v_im[j]*ybus_im[fr, j]) +
-               v_im[fr]*(v_im[j]*ybus_re[fr, j] + v_re[j]*ybus_im[fr, j]))
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+      to = ybus_re.rowval[c]
+      F[i] += (v_re[fr]*(v_re[to]*ybus_re.nzval[c] - v_im[to]*ybus_im.nzval[c]) +
+               v_im[fr]*(v_im[to]*ybus_re.nzval[c] + v_re[to]*ybus_im.nzval[c]))
     end
   end
 
@@ -145,9 +158,10 @@ function residualFunction_real(v_re, v_im,
   for i in 1:npq
     fr = pq[i]
     F[npv + i] -= pinj[fr]
-    for j in 1:nbus
-      F[npv + i] += (v_re[fr]*(v_re[j]*ybus_re[fr, j] - v_im[j]*ybus_im[fr, j]) +
-               v_im[fr]*(v_im[j]*ybus_re[fr, j] + v_re[j]*ybus_im[fr, j]))
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+      to = ybus_re.rowval[c]
+      F[npv + i] += (v_re[fr]*(v_re[to]*ybus_re.nzval[c] - v_im[to]*ybus_im.nzval[c]) +
+                     v_im[fr]*(v_im[to]*ybus_re.nzval[c] + v_re[to]*ybus_im.nzval[c]))
     end
   end
   
@@ -155,9 +169,10 @@ function residualFunction_real(v_re, v_im,
   for i in 1:npq
     fr = pq[i]
     F[npv + npq + i] -= qinj[fr]
-    for j in 1:nbus
-      F[npv + npq + i] += (v_im[fr]*(v_re[j]*ybus_re[fr, j] - v_im[j]*ybus_im[fr, j]) -
-                     v_re[fr]*(v_im[j]*ybus_re[fr, j] + v_re[j]*ybus_im[fr, j]))
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+      to = ybus_re.rowval[c]
+      F[npv + npq + i] += (v_im[fr]*(v_re[to]*ybus_re.nzval[c] - v_im[to]*ybus_im.nzval[c]) -
+                           v_re[fr]*(v_im[to]*ybus_re.nzval[c] + v_re[to]*ybus_im.nzval[c]))
     end
   end
 
@@ -194,9 +209,7 @@ function newtonpf(V, Ybus, data)
   iter = 0
   converged = false
 
-  # (TODO): Temporal hack
-  ybus_re = Matrix(real(Ybus))
-  ybus_im = Matrix(imag(Ybus))
+  ybus_re, ybus_im = spmat{Float64}(Ybus)
 
   # data index
   BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
