@@ -13,6 +13,8 @@ using LinearAlgebra
 using SparseArrays
 using Printf
 using Base
+using ForwardDiff
+using SparseDiffTools
 
 include("parse.jl")
 include("parse_raw.jl")
@@ -135,13 +137,11 @@ function residualFunction(V, Ybus, Sbus, pv, pq)
 end
 
 
-function residualFunction_real(v_re, v_im,
+function residualFunction_real!(F, v_re, v_im,
       ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
 
   npv = size(pv, 1)
   npq = size(pq, 1)
-
-  F = zeros(npv + 2*npq)
 
   # REAL PV
   for i in 1:npv
@@ -203,7 +203,7 @@ function newtonpf(V, Ybus, data)
 
   # parameters NR
   tol = 1e-6
-  maxiter = 10
+  maxiter = 5
 
   # iteration variables
   iter = 0
@@ -252,8 +252,14 @@ function newtonpf(V, Ybus, data)
   j5 = j4 + 1
   j6 = j4 + npq
 
+  v_re = real(V)
+  v_im = imag(V)
+
   # form residual function
-  F = residualFunction(V, Ybus, Sbus, pv, pq)
+  F = zeros(Float64, npv + 2*npq)
+
+  residualFunction_real!(F, v_re, v_im,
+          ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
 
   # check for convergence
   normF = norm(F, Inf)
@@ -290,10 +296,10 @@ function newtonpf(V, Ybus, data)
     # evaluate residual and check for convergence
     # F = residualFunction(V, Ybus, Sbus, pv, pq)
     
-    v_re = real(V)
-    v_im = imag(V)
-
-    F = residualFunction_real(v_re, v_im,
+    v_re[:] = real(V)
+    v_im[:] = imag(V)
+    F .= 0.0
+    residualFunction_real!(F, v_re, v_im,
             ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
     
     normF = norm(F, Inf)
