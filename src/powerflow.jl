@@ -9,12 +9,14 @@
 
 module PowerFlow
 
+include("ad.jl")
 using LinearAlgebra
 using SparseArrays
 using Printf
 using Base
 using ForwardDiff
 using SparseDiffTools
+using .ad
 
 include("parse.jl")
 include("parse_raw.jl")
@@ -179,6 +181,69 @@ function residualFunction_real!(F, v_re, v_im,
   return F
 end
 
+function residualJacobianAD(V, Ybus, # To call non-AD Jacobian
+                            F, v_re, v_im,
+                            ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
+
+    nv_re = size(v_re, 1)
+    nv_im = size(v_im, 1)
+    npv = size(pv, 1)
+    npq = size(pq, 1)
+    n = npv + 2*npq
+    nx = nv_re + nv_im
+
+    # Create map
+    @show npv, npq
+    pq1 = [i + 3  for i in pq]
+    pq2 = [i + 13 for i in pq]
+    @show pv, pq, pq
+    map = vcat(pv,pq1,pq2)
+    @show pv, pq1, pq2
+    @show map
+
+    J = residualJacobian(V, Ybus, pv, pq)
+    coloring = matrix_colors(J)
+    ncolors = size(unique(coloring),1)
+    println("Number of colors: ", ncolors)
+    t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
+    x = Vector{Float64}(undef, nv_re + nv_im)
+    x[1:nv_re] .= v_re
+    x[nv_re+1:nv_re+nv_im] .= v_im
+    t1sx = Vector{t1s{n}}(x)
+    t1sF = Vector{t1s{n}}(undef, n)
+    t1sF .= 0.0
+    varx = view(x,map)
+    t1sseedvec = zeros(Float64, n)
+    t1sseeds = Array{ForwardDiff.Partials{n,Float64},1}(undef, n)
+    for i in 1:n
+      t1sseedvec[i] = 1.0
+      t1sseeds[i] = ForwardDiff.Partials{n, Float64}(NTuple{n, Float64}(t1sseedvec))
+      t1sseedvec[i] = 0.0
+    end
+    # @show size(view(t1sx, map))
+    # @show size(t1sseeds)
+    t1svarx = ad.myseed!(view(t1sx, map), varx, t1sseeds)
+    # @show size(t1svarx)
+    # @show size(t1sF)
+    # @show t1svarx[1]
+    # @show t1sx[2]
+    # @show t1svarx[2]
+    # @show t1sx[3]
+    @show v_re
+    @show v_im
+    @show ForwardDiff.value.(t1sx)
+    residualFunction_real!(t1sF, t1sx[1:nv_re], t1sx[nv_re+1:nv_re+nv_im],
+        ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
+    J = zeros(Float64, n, n)
+    for i in 1:size(t1sF, 1)
+      col = ForwardDiff.partials.(t1sF[i]).values
+      for j in 1:size(t1sF, 1)
+        J[i,j] = col[j]
+      end
+    end
+    return sparse(J)
+end
+
 
 function residualJacobian(V, Ybus, pv, pq)
   n = size(V, 1)
@@ -275,6 +340,12 @@ function newtonpf(V, Ybus, data)
 
     # assemble jacobian and update
     J = residualJacobian(V, Ybus, pv, pq)
+    global J1 = residualJacobianAD(V, Ybus, F, v_re, v_im,
+                       ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
+    # @show J1                       
+    # @show J
+      @show J[20,:]
+      @show J1[20,:]
     dx = -(J \ F)
 
     # update voltage
