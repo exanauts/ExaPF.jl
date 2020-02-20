@@ -1,7 +1,8 @@
 using Test
 
 # file locations
-#raw_data = "GO-data/datasets/T1S3_Real-Time/Network_01R-3/scenario_1/case.raw"
+# raw_data = "GO-Data/datasets/Trial_3_Real-Time/Network_30R-025/scenario_1/case.raw"
+# raw_data = "GO-Data/datasets/Trial_3_Real-Time/Network_13R-015/scenario_11/case.raw"
 raw_data = "test/case14.raw"
 
 data_parser ="../src/parse.jl"

@@ -15,6 +15,9 @@ using Printf
 using CuArrays
 using CuArrays.CUSPARSE
 using CuArrays.CUSOLVER
+using TimerOutputs
+using CUDAnative
+timeroutput = TimerOutput()
 
 include("parse.jl")
 include("parse_raw.jl")
@@ -203,20 +206,31 @@ function newtonpf(V, Ybus, data)
     converged = true
   end
 
+  @timeit timeroutput "Newton" begin
   while ((!converged) && (iter < maxiter))
 
     iter += 1
 
     # assemble jacobian and update
+    @timeit timeroutput "assemble Jacobian" begin
     J = residualJacobian(V, Ybus, pv, pq)
+    end
     # Move arrays onto GPU
+    @timeit timeroutput "move to GPU" begin
     cuJ   = CuSparseMatrixCSR(J)
     cudx = CuArray(similar(F))
     cuF = CuArray(F)
+    end
+    
+    lintol = 1e-4
+    @timeit timeroutput "solve" begin
     # Call sparse QR
-    cudx  = -CUSOLVER.csrlsvqr!(cuJ,cuF,cudx,tol,one(Cint),'O')
+    cudx = -CUSOLVER.csrlsvqr!(cuJ,cuF,cudx,lintol,one(Cint),'O')
     # Move off GPU
+    end
+    @timeit timeroutput "move from" begin
     dx = Array(cudx)
+    end
 
     # update voltage
     if (npv != 0)
@@ -243,6 +257,7 @@ function newtonpf(V, Ybus, data)
       converged = true
     end
   end
+  end
 
   if converged
     @printf("N-R converged in %d iterations.\n", iter)
@@ -250,6 +265,7 @@ function newtonpf(V, Ybus, data)
     @printf("N-R did not converge.\n")
   end
 
+  show(timeroutput)
   return V, converged, normF
 
 end
