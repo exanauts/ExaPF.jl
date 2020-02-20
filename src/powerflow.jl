@@ -28,14 +28,14 @@ include("parse.jl")
 include("parse_raw.jl")
 
 mutable struct spmat{T}
-  colptr::Vector{Int64}
-  rowval::Vector{Int64}
-  nzval::Vector{T}
+  colptr
+  rowval
+  nzval
 
   # function spmat{T}(colptr::Vector{Int64}, rowval::Vector{Int64}, nzval::Vector{T}) where T
   function spmat{T}(mat::SparseMatrixCSC{Complex{Float64}, Int}) where T
-    matreal = new(Vector{Int64}(mat.colptr), Vector{Int64}(mat.rowval), Vector{T}(real.(mat.nzval)))
-    matimag = new(Vector{Int64}(mat.colptr), Vector{Int64}(mat.rowval), Vector{T}(imag.(mat.nzval)))
+    matreal = new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(real.(mat.nzval)))
+    matimag = new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(imag.(mat.nzval)))
     return matreal, matimag
   end
 end
@@ -193,6 +193,13 @@ function residualJacobianAD!(J, F, v_m, v_a,
   nv_m = size(v_m, 1)
   nv_a = size(v_a, 1)
   n = nv_m + nv_a
+  if F isa Array
+    T = Vector
+  elseif F isa CuArray
+      T = CuVector
+  else
+    error("Wrong array type ", typeof(F))
+  end
 
   mappv = [i + nv_m for i in pv]
   mappq = [i + nv_m for i in pq]
@@ -200,11 +207,12 @@ function residualJacobianAD!(J, F, v_m, v_a,
   nmap = size(map,1)
 
   t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
-  x = Vector{Float64}(undef, nv_m + nv_a)
+  x = T{Float64}(undef, nv_m + nv_a)
+
   x[1:nv_m] .= v_m
   x[nv_m+1:nv_m+nv_a] .= v_a
-  t1sx = Vector{t1s{nmap}}(x)
-  t1sF = Vector{t1s{nmap}}(undef, nmap)
+  t1sx = T{t1s{nmap}}(x)
+  t1sF = T{t1s{nmap}}(undef, nmap)
   t1sF .= 0.0
   varx = view(x,map)
   t1sseedvec = zeros(Float64, nmap)
@@ -288,6 +296,11 @@ end
 
 
 function newtonpf(V, Ybus, data)
+  # Set array type, Vector or CuVector, Matrix or CuMatrix
+  T = CuVector
+  M = CuMatrix
+
+  V = T(V)
 
   # parameters NR
   tol = 1e-6
@@ -297,7 +310,7 @@ function newtonpf(V, Ybus, data)
   iter = 0
   converged = false
 
-  ybus_re, ybus_im = spmat{Float64}(Ybus)
+  ybus_re, ybus_im = spmat{T}(Ybus)
 
   # data index
   BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
@@ -318,17 +331,22 @@ function newtonpf(V, Ybus, data)
 
   # retrieve ref, pv and pq index
   ref, pv, pq = bustypeindex(bus, gen)
+  pv = T(pv)
+  pq = T(pq)
 
   # retrieve power injections
   SBASE = data["CASE IDENTIFICATION"][1]
   Sbus = assembleSbus(gen, load, SBASE, nbus)
-  pbus = real(Sbus)
-  qbus = imag(Sbus)
-
+  pbus = T(real(Sbus))
+  qbus = T(imag(Sbus))
 
   # voltage
   Vm = abs.(V)
-  Va = angle.(V)
+  if T == CuArray
+    Va = CUDAnative.angle.(V)
+  else
+    Va = angle.(V)
+  end
 
   # indices
   npv = size(pv, 1);
@@ -342,11 +360,9 @@ function newtonpf(V, Ybus, data)
 
   # v_re[:] = real(V)
   # v_im[:] = imag(V)
-  Vm = abs.(V)
-  Va = angle.(V)
 
   # form residual function
-  F = zeros(Float64, npv + 2*npq)
+  F = T(zeros(Float64, npv + 2*npq))
 
   residualFunction_polar!(F, Vm, Va,
                           ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
@@ -354,6 +370,7 @@ function newtonpf(V, Ybus, data)
   J = residualJacobian(V, Ybus, pv, pq)
   coloring = matrix_colors(J)
   ncolors = size(unique(coloring),1)
+  J = M(J)
   println("Number of Jacobian colors: ", ncolors)
 
   # check for convergence
@@ -364,32 +381,10 @@ function newtonpf(V, Ybus, data)
     converged = true
   end
 
-  @timeit timeroutput "Newton" begin
   while ((!converged) && (iter < maxiter))
 
     iter += 1
 
-    # # assemble jacobian and update
-    # @timeit timeroutput "assemble Jacobian" begin
-    # J = residualJacobian(V, Ybus, pv, pq)
-    # end
-    # # Move arrays onto GPU
-    # @timeit timeroutput "move to GPU" begin
-    # cuJ   = CuSparseMatrixCSR(J)
-    # cudx = CuArray(similar(F))
-    # cuF = CuArray(F)
-    # end
-    
-    # lintol = 1e-4
-    # @timeit timeroutput "solve" begin
-    # # Call sparse QR
-    # cudx = -CUSOLVER.csrlsvqr!(cuJ,cuF,cudx,lintol,one(Cint),'O')
-    # # Move off GPU
-    # end
-    # @timeit timeroutput "move from" begin
-    # dx = Array(cudx)
-    # end
-    # J = residualJacobian(V, Ybus, pv, pq)
     residualJacobianAD!(J, F, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
     dx = -(J \ F)
@@ -403,12 +398,14 @@ function newtonpf(V, Ybus, data)
       Vm[pq] = Vm[pq] + dx[j5:j6]
     end
 
-    for i in 1:size(V, 1)
-      V[i] = Vm[i]*exp(1im*Va[i])
-    end
+    V .= Vm .* exp.(1im .*Va)
 
     Vm = abs.(V)
-    Va = angle.(V)
+    if T == CuArray
+      Va = CUDAnative.angle.(V)
+    else
+      Va = angle.(V)
+    end
 
     # evaluate residual and check for convergence
     # F = residualFunction(V, Ybus, Sbus, pv, pq)
@@ -429,7 +426,6 @@ function newtonpf(V, Ybus, data)
     if normF < tol
       converged = true
     end
-  end
   end
 
   if converged
