@@ -179,6 +179,48 @@ function residualFunction_real!(F, v_re, v_im,
   return F
 end
 
+function residualFunction_polar!(F, v_m, v_a,
+                                ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
+
+  npv = size(pv, 1)
+  npq = size(pq, 1)
+
+  # REAL PV
+  for i in 1:npv
+    fr = pv[i]
+    F[i] -= pinj[fr]
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+      to = ybus_re.rowval[c]
+      aij = v_a[fr] - v_a[to]
+      F[i] += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+    end
+  end
+
+  # REAL PQ
+  for i in 1:npq
+    fr = pq[i]
+    F[npv + i] -= pinj[fr]
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+      to = ybus_re.rowval[c]
+      aij = v_a[fr] - v_a[to]
+      F[npv + i] += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+    end
+  end
+
+  # IMAG PQ
+  for i in 1:npq
+    fr = pq[i]
+    F[npv + npq + i] -= qinj[fr]
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+      to = ybus_re.rowval[c]
+      aij = v_a[fr] - v_a[to]
+      F[npv + npq + i] += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
+    end
+  end
+
+  return F
+end
+
 
 function residualJacobian(V, Ybus, pv, pq)
   n = size(V, 1)
@@ -298,10 +340,14 @@ function newtonpf(V, Ybus, data)
     
     v_re[:] = real(V)
     v_im[:] = imag(V)
-    F .= 0.0
-    residualFunction_real!(F, v_re, v_im,
-            ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
+    #F .= 0.0
+    #residualFunction_real!(F, v_re, v_im,
+    #        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
     
+    F .= 0.0
+    residualFunction_polar!(F, Vm, Va,
+                           ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
+
     normF = norm(F, Inf)
     @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
 
