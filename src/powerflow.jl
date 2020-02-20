@@ -12,6 +12,9 @@ module PowerFlow
 using LinearAlgebra
 using SparseArrays
 using Printf
+using CuArrays
+using CuArrays.CUSPARSE
+using CuArrays.CUSOLVER
 
 include("parse.jl")
 include("parse_raw.jl")
@@ -206,7 +209,14 @@ function newtonpf(V, Ybus, data)
 
     # assemble jacobian and update
     J = residualJacobian(V, Ybus, pv, pq)
-    dx = -(J \ F)
+    # Move arrays onto GPU
+    cuJ   = CuSparseMatrixCSR(J)
+    cudx = CuArray(similar(F))
+    cuF = CuArray(F)
+    # Call sparse QR
+    cudx  = -CUSOLVER.csrlsvqr!(cuJ,cuF,cudx,tol,one(Cint),'O')
+    # Move off GPU
+    dx = Array(cudx)
 
     # update voltage
     if (npv != 0)
