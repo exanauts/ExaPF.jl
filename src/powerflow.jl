@@ -297,8 +297,8 @@ end
 
 function newtonpf(V, Ybus, data)
   # Set array type, Vector or CuVector, Matrix or CuMatrix
-  T = CuVector
-  M = CuMatrix
+  T = Vector
+  M = Matrix
 
   V = T(V)
 
