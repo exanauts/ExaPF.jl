@@ -13,12 +13,6 @@ include("ad.jl")
 using LinearAlgebra
 using SparseArrays
 using Printf
-using CuArrays
-using CuArrays.CUSPARSE
-using CuArrays.CUSOLVER
-using TimerOutputs
-using CUDAnative
-timeroutput = TimerOutput()
 using Base
 using ForwardDiff
 using SparseDiffTools
@@ -187,11 +181,14 @@ function residualFunction_real!(F, v_re, v_im,
   return F
 end
 
-function residualJacobianAD!(J, F, v_m, v_a,
+function residualJacobianAD(V, Ybus, # To call non-AD Jacobian
+                            F, v_m, v_a,
                             ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
 
   nv_m = size(v_m, 1)
   nv_a = size(v_a, 1)
+  # npv = size(pv, 1)
+  # npq = size(pq, 1)
   n = nv_m + nv_a
 
   mappv = [i + nv_m for i in pv]
@@ -199,6 +196,10 @@ function residualJacobianAD!(J, F, v_m, v_a,
   map = vcat(mappv, mappq, pq)
   nmap = size(map,1)
 
+  J = residualJacobian(V, Ybus, pv, pq)
+  coloring = matrix_colors(J)
+  ncolors = size(unique(coloring),1)
+  println("Number of colors: ", ncolors)
   t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
   x = Vector{Float64}(undef, nv_m + nv_a)
   x[1:nv_m] .= v_m
@@ -217,12 +218,14 @@ function residualJacobianAD!(J, F, v_m, v_a,
   t1svarx = ad.myseed!(view(t1sx, map), varx, t1sseeds)
   residualFunction_polar!(t1sF, t1sx[1:nv_m], t1sx[nv_m+1:nv_m+nv_a],
       ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
+  J = zeros(Float64, nmap, nmap)
   for i in 1:size(t1sF, 1)
     col = ForwardDiff.partials.(t1sF[i]).values
     for j in 1:size(t1sF, 1)
       J[i,j] = col[j]
     end
   end
+  return sparse(J)
 end
 
 function residualFunction_polar!(F, v_m, v_a,
@@ -340,8 +343,6 @@ function newtonpf(V, Ybus, data)
   j5 = j4 + 1
   j6 = j4 + npq
 
-  # v_re[:] = real(V)
-  # v_im[:] = imag(V)
   Vm = abs.(V)
   Va = angle.(V)
 
@@ -351,11 +352,6 @@ function newtonpf(V, Ybus, data)
   residualFunction_polar!(F, Vm, Va,
                           ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
 
-  J = residualJacobian(V, Ybus, pv, pq)
-  coloring = matrix_colors(J)
-  ncolors = size(unique(coloring),1)
-  println("Number of Jacobian colors: ", ncolors)
-
   # check for convergence
   normF = norm(F, Inf)
   @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
@@ -364,34 +360,14 @@ function newtonpf(V, Ybus, data)
     converged = true
   end
 
-  @timeit timeroutput "Newton" begin
   while ((!converged) && (iter < maxiter))
 
     iter += 1
 
-    # # assemble jacobian and update
-    # @timeit timeroutput "assemble Jacobian" begin
+    # assemble jacobian and update
     # J = residualJacobian(V, Ybus, pv, pq)
-    # end
-    # # Move arrays onto GPU
-    # @timeit timeroutput "move to GPU" begin
-    # cuJ   = CuSparseMatrixCSR(J)
-    # cudx = CuArray(similar(F))
-    # cuF = CuArray(F)
-    # end
-    
-    # lintol = 1e-4
-    # @timeit timeroutput "solve" begin
-    # # Call sparse QR
-    # cudx = -CUSOLVER.csrlsvqr!(cuJ,cuF,cudx,lintol,one(Cint),'O')
-    # # Move off GPU
-    # end
-    # @timeit timeroutput "move from" begin
-    # dx = Array(cudx)
-    # end
-    # J = residualJacobian(V, Ybus, pv, pq)
-    residualJacobianAD!(J, F, Vm, Va,
-                        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
+    J = residualJacobianAD(V, Ybus, F, Vm, Va,
+                           ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
     dx = -(J \ F)
 
     # update voltage
@@ -413,8 +389,6 @@ function newtonpf(V, Ybus, data)
     # evaluate residual and check for convergence
     # F = residualFunction(V, Ybus, Sbus, pv, pq)
     
-    # v_re[:] = real(V)
-    # v_im[:] = imag(V)
     #F .= 0.0
     #residualFunction_real!(F, v_re, v_im,
     #        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
@@ -430,7 +404,6 @@ function newtonpf(V, Ybus, data)
       converged = true
     end
   end
-  end
 
   if converged
     @printf("N-R converged in %d iterations.\n", iter)
@@ -438,7 +411,6 @@ function newtonpf(V, Ybus, data)
     @printf("N-R did not converge.\n")
   end
 
-  show(timeroutput)
   return V, converged, normF
 
 end
