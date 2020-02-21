@@ -187,12 +187,13 @@ function residualFunction_real!(F, v_re, v_im,
   return F
 end
 
-function residualJacobianAD!(J, F, v_m, v_a,
+function residualJacobianAD!(J, coloring, F, v_m, v_a,
                             ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
 
   nv_m = size(v_m, 1)
   nv_a = size(v_a, 1)
   n = nv_m + nv_a
+  ncolor = size(unique(coloring),1)
   if F isa Array
     T = Vector
   elseif F isa CuArray
@@ -211,26 +212,44 @@ function residualJacobianAD!(J, F, v_m, v_a,
 
   x[1:nv_m] .= v_m
   x[nv_m+1:nv_m+nv_a] .= v_a
-  t1sx = T{t1s{nmap}}(x)
-  t1sF = T{t1s{nmap}}(undef, nmap)
+  t1sx = T{t1s{ncolor}}(x)
+  t1sF = T{t1s{ncolor}}(undef, nmap)
   t1sF .= 0.0
   varx = view(x,map)
-  t1sseedvec = zeros(Float64, nmap)
-  t1sseeds = Array{ForwardDiff.Partials{nmap,Float64},1}(undef, nmap)
+  t1sseedvec = zeros(Float64, ncolor)
+  t1sseeds = Array{ForwardDiff.Partials{ncolor,Float64},1}(undef, nmap)
   for i in 1:nmap
-    t1sseedvec[i] = 1.0
-    t1sseeds[i] = ForwardDiff.Partials{nmap, Float64}(NTuple{nmap, Float64}(t1sseedvec))
-    t1sseedvec[i] = 0.0
+    for j in 1:ncolor
+      if coloring[i] == j
+        t1sseedvec[j] = 1.0
+      end
+    end
+    t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
+    t1sseedvec .= 0
   end
   t1svarx = ad.myseed!(view(t1sx, map), varx, t1sseeds)
   residualFunction_polar!(t1sF, t1sx[1:nv_m], t1sx[nv_m+1:nv_m+nv_a],
       ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
-  for i in 1:size(t1sF, 1)
-    col = ForwardDiff.partials.(t1sF[i]).values
-    for j in 1:size(t1sF, 1)
-      J[i,j] = col[j]
+  F = Matrix{Float64}(undef, ncolor, nmap)
+  for i in 1:size(t1sF,1) # Go over outputs
+    F[:,i] .= ForwardDiff.partials.(t1sF[i]).values
+  end
+  # Uncompress matirx. Sparse matrix elements have different names with CUDA
+  if typeof(J) == SparseArrays.SparseMatrixCSC{Float64,Int64}
+    for i in 1:nmap
+      for j in J.colptr[i]:J.colptr[i+1]-1
+        J.nzval[j] = F[coloring[i],J.rowval[j]]
+      end
     end
   end
+  if typeof(J) == CuArrays.CUSPARSE.CuSparseMatrixCSR{Float64}
+    for i in 1:nmap
+      for j in J.rowPtr[i]:J.rowPtr[i+1]-1
+        J.nzVal[j] = F[coloring[J.colVal[j]], i]
+      end
+    end
+  end
+  return J
 end
 
 function residualFunction_polar!(F, v_m, v_a,
@@ -296,9 +315,11 @@ end
 
 
 function newtonpf(V, Ybus, data)
-  # Set array type, Vector or CuVector, Matrix or CuMatrix
+  # Set array type
+  # For CPU choose Vector and SparseMatrixCSC
+  # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
   T = Vector
-  M = Matrix
+  M = SparseMatrixCSC
 
   V = T(V)
 
@@ -342,7 +363,7 @@ function newtonpf(V, Ybus, data)
 
   # voltage
   Vm = abs.(V)
-  if T == CuArray
+  if T == CuVector
     Va = CUDAnative.angle.(V)
   else
     Va = angle.(V)
@@ -363,6 +384,7 @@ function newtonpf(V, Ybus, data)
 
   # form residual function
   F = T(zeros(Float64, npv + 2*npq))
+  dx = similar(F)
 
   residualFunction_polar!(F, Vm, Va,
                           ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
@@ -385,9 +407,17 @@ function newtonpf(V, Ybus, data)
 
     iter += 1
 
-    residualJacobianAD!(J, F, Vm, Va,
+    # J = residualJacobian(V, Ybus, pv, pq)
+    J = residualJacobianAD!(J, coloring, F, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
-    dx = -(J \ F)
+    if typeof(J) == SparseArrays.SparseMatrixCSC{Float64,Int64}
+      dx = -(J \ F)
+    end
+    if typeof(J) == CuArrays.CUSPARSE.CuSparseMatrixCSR{Float64}
+      println("Hello")
+      tol = 1e-4
+      dx  = -CUSOLVER.csrlsvqr!(J,F,dx,tol,one(Cint),'O')
+    end
 
     # update voltage
     if (npv != 0)
@@ -401,7 +431,7 @@ function newtonpf(V, Ybus, data)
     V .= Vm .* exp.(1im .*Va)
 
     Vm = abs.(V)
-    if T == CuArray
+    if T == CuVector
       Va = CUDAnative.angle.(V)
     else
       Va = angle.(V)
