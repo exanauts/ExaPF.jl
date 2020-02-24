@@ -344,7 +344,7 @@ function newtonpf(V, Ybus, data)
 
   # parameters NR
   tol = 1e-6
-  maxiter = 5
+  maxiter = 10
 
   # iteration variables
   iter = 0
@@ -434,8 +434,8 @@ function newtonpf(V, Ybus, data)
       @timeit to "Sparse solver" dx = -(J \ F)
     end
     if typeof(J) == CuArrays.CUSPARSE.CuSparseMatrixCSR{Float64}
-      tol = 1e-4
-      @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,tol,one(Cint),'O')
+      lintol = 1e-4
+      @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
 
     # update voltage
