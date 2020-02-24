@@ -431,7 +431,7 @@ function newtonpf(V, Ybus, data)
     @timeit to "Jacobian" J = residualJacobianAD!(J, arrays, coloring, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
     if typeof(J) == SparseArrays.SparseMatrixCSC{Float64,Int64}
-      dx = -(J \ F)
+      @timeit to "Sparse solver" dx = -(J \ F)
     end
     if typeof(J) == CuArrays.CUSPARSE.CuSparseMatrixCSR{Float64}
       tol = 1e-4
