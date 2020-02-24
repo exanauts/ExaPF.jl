@@ -18,7 +18,7 @@ using CuArrays.CUSPARSE
 using CuArrays.CUSOLVER
 using TimerOutputs
 using CUDAnative
-timeroutput = TimerOutput()
+to = TimerOutput()
 using Base
 using ForwardDiff
 using SparseDiffTools
@@ -187,9 +187,18 @@ function residualFunction_real!(F, v_re, v_im,
   return F
 end
 
-function residualJacobianAD!(J, coloring, F, v_m, v_a,
-                            ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
+struct comparrays
+  t1sseeds
+  compressedJ
+  t1sF
+  x
+  t1sx
+  varx
+  map
+end
 
+
+function createArrays(coloring, F, v_m, v_a, pv, pq)
   nv_m = size(v_m, 1)
   nv_a = size(v_a, 1)
   n = nv_m + nv_a
@@ -209,12 +218,8 @@ function residualJacobianAD!(J, coloring, F, v_m, v_a,
 
   t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
   x = T{Float64}(undef, nv_m + nv_a)
-
-  x[1:nv_m] .= v_m
-  x[nv_m+1:nv_m+nv_a] .= v_a
   t1sx = T{t1s{ncolor}}(x)
   t1sF = T{t1s{ncolor}}(undef, nmap)
-  t1sF .= 0.0
   varx = view(x,map)
   t1sseedvec = zeros(Float64, ncolor)
   t1sseeds = Array{ForwardDiff.Partials{ncolor,Float64},1}(undef, nmap)
@@ -227,25 +232,39 @@ function residualJacobianAD!(J, coloring, F, v_m, v_a,
     t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
     t1sseedvec .= 0
   end
-  t1svarx = ad.myseed!(view(t1sx, map), varx, t1sseeds)
-  residualFunction_polar!(t1sF, t1sx[1:nv_m], t1sx[nv_m+1:nv_m+nv_a],
+  compressedJ = Matrix{Float64}(undef, ncolor, nmap)
+  return comparrays(t1sseeds, compressedJ, t1sF, x, t1sx, varx, map)
+end
+
+function residualJacobianAD!(J, arrays, coloring, v_m, v_a,
+                            ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
+  nv_m = size(v_m, 1)
+  nv_a = size(v_a, 1)
+  nmap = size(arrays.map, 1)
+  n = nv_m + nv_a
+  ncolor = size(unique(coloring),1)
+  arrays.x[1:nv_m] .= v_m
+  arrays.t1sx .= arrays.x
+  arrays.x[nv_m+1:nv_m+nv_a] .= v_a
+  arrays.t1sF .= 0.0
+  t1svarx = ad.myseed!(view(arrays.t1sx, arrays.map), arrays.varx, arrays.t1sseeds)
+  residualFunction_polar!(arrays.t1sF, arrays.t1sx[1:nv_m], arrays.t1sx[nv_m+1:nv_m+nv_a],
       ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
-  F = Matrix{Float64}(undef, ncolor, nmap)
-  for i in 1:size(t1sF,1) # Go over outputs
-    F[:,i] .= ForwardDiff.partials.(t1sF[i]).values
+  for i in 1:size(arrays.t1sF,1) # Go over outputs
+    arrays.compressedJ[:,i] .= ForwardDiff.partials.(arrays.t1sF[i]).values
   end
   # Uncompress matirx. Sparse matrix elements have different names with CUDA
   if typeof(J) == SparseArrays.SparseMatrixCSC{Float64,Int64}
     for i in 1:nmap
       for j in J.colptr[i]:J.colptr[i+1]-1
-        J.nzval[j] = F[coloring[i],J.rowval[j]]
+        J.nzval[j] = arrays.compressedJ[coloring[i],J.rowval[j]]
       end
     end
   end
   if typeof(J) == CuArrays.CUSPARSE.CuSparseMatrixCSR{Float64}
     for i in 1:nmap
       for j in J.rowPtr[i]:J.rowPtr[i+1]-1
-        J.nzVal[j] = F[coloring[J.colVal[j]], i]
+        J.nzVal[j] = arrays.compressedJ[coloring[J.colVal[j]], i]
       end
     end
   end
@@ -390,9 +409,10 @@ function newtonpf(V, Ybus, data)
                           ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
 
   J = residualJacobian(V, Ybus, pv, pq)
-  coloring = matrix_colors(J)
+  @timeit to "Coloring" coloring = matrix_colors(J)
   ncolors = size(unique(coloring),1)
   J = M(J)
+  arrays = createArrays(coloring, F, Vm, Va, pv, pq)
   println("Number of Jacobian colors: ", ncolors)
 
   # check for convergence
@@ -403,20 +423,19 @@ function newtonpf(V, Ybus, data)
     converged = true
   end
 
-  while ((!converged) && (iter < maxiter))
+  @timeit to "Newton" while ((!converged) && (iter < maxiter))
 
     iter += 1
 
     # J = residualJacobian(V, Ybus, pv, pq)
-    J = residualJacobianAD!(J, coloring, F, Vm, Va,
+    @timeit to "Jacobian" J = residualJacobianAD!(J, arrays, coloring, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
     if typeof(J) == SparseArrays.SparseMatrixCSC{Float64,Int64}
       dx = -(J \ F)
     end
     if typeof(J) == CuArrays.CUSPARSE.CuSparseMatrixCSR{Float64}
-      println("Hello")
       tol = 1e-4
-      dx  = -CUSOLVER.csrlsvqr!(J,F,dx,tol,one(Cint),'O')
+      @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,tol,one(Cint),'O')
     end
 
     # update voltage
@@ -447,7 +466,7 @@ function newtonpf(V, Ybus, data)
     #        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
     
     F .= 0.0
-    residualFunction_polar!(F, Vm, Va,
+    @timeit to "Residual function" residualFunction_polar!(F, Vm, Va,
                            ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
 
     normF = norm(F, Inf)
@@ -464,7 +483,7 @@ function newtonpf(V, Ybus, data)
     @printf("N-R did not converge.\n")
   end
 
-  show(timeroutput)
+  show(to)
   return V, converged, normF
 
 end
