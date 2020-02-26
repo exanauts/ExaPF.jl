@@ -1,40 +1,87 @@
 module kernels
   using CUDAnative, CuArrays
-  export sync, dispatch, generate, togenerate
+  export sync, dispatch, generate, togenerate, angle
 
-  togenerate = "cuda"
+  togenerate = "cpu"
 
-  macro sync(type, expr)
-    ex = quote 
-      if $type == CuArray || $type == :CuArray || $type == CuArrays.CuArray
+  macro angle(val)
+    ex = nothing
+    if togenerate == "cuda"
+      ex = quote 
+        CUDAnative.angle.($val)
+      end
+    end
+    if togenerate == "cpu"
+      ex = quote 
+        angle.($val)
+      end
+    end
+    return esc(ex)
+  end
+
+  macro cos(val)
+    ex = nothing
+    if togenerate == "cuda"
+      ex = quote 
+        CUDAnative.cos($val)
+      end
+    end
+    if togenerate == "cpu"
+      ex = quote 
+        cos($val)
+      end
+    end
+    return esc(ex)
+  end
+
+  macro sin(val)
+    ex = nothing
+    if togenerate == "cuda"
+      ex = quote 
+        CUDAnative.sin($val)
+      end
+    end
+    if togenerate == "cpu"
+      ex = quote 
+        sin($val)
+      end
+    end
+    return esc(ex)
+  end
+
+  macro sync(expr)
+    ex = nothing
+    if togenerate == "cuda"
+      ex = quote 
         CuArrays.@sync begin
         $expr
         end
       end
-      if $type == Array || $type == :Array 
+    end
+    if togenerate == "cpu"
+      ex = quote 
         $expr
       end
     end
     return esc(ex)
   end
 
-  macro dispatch(type, threads, blocks, expr)
-    cuda = Meta.parse("kernels.$expr")
-    cpu = Meta.parse("kernels.$expr")
+  macro dispatch(threads, blocks, expr)
     ex = nothing
-    ex = quote 
-      if $type == CuArray || $type == :CuArray || $type == CuArrays.CuArray
-          @cuda $threads $blocks $cuda
+    if togenerate == "cuda"
+      ex = quote 
+        @cuda $threads $blocks $expr
       end
-      if $type == Array || $type == :Array
-          $cpu
+    end
+    if togenerate == "cpu"
+      ex = quote 
+        $expr
       end
     end
     return esc(ex)
   end
 
   macro getstrideindex()
-    @show togenerate
     ex = nothing
     if togenerate == "cuda"
       ex = quote 
@@ -49,89 +96,5 @@ module kernels
       end
     end
     return esc(ex)
-  end
-
-  function residualFunction_polar!(F, v_m, v_a,
-                                  ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                                  ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
-                                  pinj, qinj, pv, pq, nbus)
-
-  npv = size(pv, 1)
-  npq = size(pq, 1)
-
-  @getstrideindex()
-
-  # REAL PV
-  for i in index:stride:npv
-      fr = pv[i]
-      F[i] -= pinj[fr]
-      for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
-      to = ybus_re_rowval[c]
-      aij = v_a[fr] - v_a[to]
-      F[i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*CUDAnative.cos(aij) + ybus_im_nzval[c]*CUDAnative.sin(aij))
-      # F[i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*cos(aij) + ybus_im_nzval[c]*sin(aij))
-      end
-  end
-
-  # REAL PQ
-  for i in index:stride:npq
-      fr = pq[i]
-      F[npv + i] -= pinj[fr]
-      for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
-      to = ybus_re_rowval[c]
-      aij = v_a[fr] - v_a[to]
-      F[npv + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*CUDAnative.cos(aij) + ybus_im_nzval[c]*CUDAnative.sin(aij))
-      # F[npv + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*cos(aij) + ybus_im_nzval[c]*sin(aij))
-      end
-  end
-
-  # IMAG PQ
-  for i in index:stride:npq
-      fr = pq[i]
-      F[npv + npq + i] -= qinj[fr]
-      for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
-      to = ybus_re_rowval[c]
-      aij = v_a[fr] - v_a[to]
-      F[npv + npq + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*CUDAnative.sin(aij) - ybus_im_nzval[c]*CUDAnative.cos(aij))
-      # F[npv + npq + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*sin(aij) - ybus_im_nzval[c]*cos(aij))
-      end
-  end
-
-  return nothing
-  end
-
-  using ForwardDiff
-  
-  function myseed!(duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
-                seeds::AbstractArray{ForwardDiff.Partials{N,V}}) where {T,V,N}
-
-    @getstrideindex()
-
-    for i in index:stride:size(duals,1)
-  #   for i in 1:size(duals,1)
-        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
-        # duals[i].value = x[i]
-    end
-    return nothing
-  end
-
-  function getpartials(compressedJ, t1sF)
-
-    @getstrideindex()
-
-    for i in index:stride:size(t1sF,1) # Go over outputs
-      compressedJ[:,i] .= ForwardDiff.partials.(t1sF[i]).values
-    end
-  end
-
-  function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
-
-    @getstrideindex()
-
-    for i in index:stride:nmap
-      for j in J_rowPtr[i]:J_rowPtr[i+1]-1
-        J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
-      end
-    end
   end
 end

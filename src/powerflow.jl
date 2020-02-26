@@ -189,125 +189,51 @@ function residualFunction_real!(F, v_re, v_im,
   return F
 end
 
-struct comparrays
-  t1sseeds
-  compressedJ
-  t1sF
-  x
-  t1sx
-  varx
-  t1svarx
-  map
+function residualFunction_polar!(F, v_m, v_a,
+                                ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
+                                ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
+                                pinj, qinj, pv, pq, nbus)
+
+npv = size(pv, 1)
+npq = size(pq, 1)
+
+kernels.@getstrideindex()
+
+# REAL PV
+for i in index:stride:npv
+  fr = pv[i]
+  F[i] -= pinj[fr]
+  for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
+  to = ybus_re_rowval[c]
+  aij = v_a[fr] - v_a[to]
+  F[i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*kernels.@cos(aij) + ybus_im_nzval[c]*kernels.@sin(aij))
+  end
 end
 
-
-function createArrays(coloring, F, v_m, v_a, pv, pq)
-  nv_m = size(v_m, 1)
-  nv_a = size(v_a, 1)
-  n = nv_m + nv_a
-  ncolor = size(unique(coloring),1)
-  if F isa Array
-    T = Vector
-    M = Matrix
-    A = Array
-  elseif F isa CuArray
-    T = CuVector
-    M = CuMatrix
-    A = CuArray
-  else
-    error("Wrong array type ", typeof(F))
+# REAL PQ
+for i in index:stride:npq
+  fr = pq[i]
+  F[npv + i] -= pinj[fr]
+  for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
+  to = ybus_re_rowval[c]
+  aij = v_a[fr] - v_a[to]
+  F[npv + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*kernels.@cos(aij) + ybus_im_nzval[c]*kernels.@sin(aij))
   end
-
-  mappv = [i + nv_m for i in pv]
-  mappq = [i + nv_m for i in pq]
-  map = T{Int64}(vcat(mappv, mappq, pq))
-  nmap = size(map,1)
-
-  t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
-  x = T{Float64}(undef, nv_m + nv_a)
-  t1sx = T{t1s{ncolor}}(x)
-  t1sF = T{t1s{ncolor}}(undef, nmap)
-  varx = view(x,map)
-  t1sseedvec = zeros(Float64, ncolor)
-  t1sseeds = T{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-  for i in 1:nmap
-    for j in 1:ncolor
-      if coloring[i] == j
-        t1sseedvec[j] = 1.0
-      end
-    end
-    t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
-    t1sseedvec .= 0
-  end
-  compressedJ = M{Float64}(undef, ncolor, nmap)
-  t1svarx = view(t1sx, map)
-  nthreads=256
-  nblocks=ceil(Int64, nmap/nthreads)
-  # CuArrays.@sync begin
-  # ad.myseed!(t1svarx, varx, t1sseeds)
-  # end
-  return comparrays(t1sseeds, compressedJ, t1sF, x, t1sx, varx, t1svarx, map)
 end
 
-function residualJacobianAD!(J, arrays, coloring, v_m, v_a,
-                            ybus_re, ybus_im, pinj, qinj, pv, pq, nbus)
-  @timeit to "Before" begin
-  T = typeof(arrays.x).name.name
-  nv_m = size(v_m, 1)
-  nv_a = size(v_a, 1)
-  nmap = size(arrays.map, 1)
-  nthreads=256
-  nblocks=ceil(Int64, nmap/nthreads)
-  n = nv_m + nv_a
-  ncolor = size(unique(coloring),1)
-  arrays.x[1:nv_m] .= v_m
-  arrays.t1sx .= arrays.x
-  arrays.x[nv_m+1:nv_m+nv_a] .= v_a
-  arrays.t1sF .= 0.0
-  @timeit to "Seeding" begin
-  kernels.@sync T begin
-    kernels.@dispatch T threads=nthreads blocks=nblocks kernels.myseed!(arrays.t1svarx, arrays.varx, arrays.t1sseeds)
+# IMAG PQ
+for i in index:stride:npq
+  fr = pq[i]
+  F[npv + npq + i] -= qinj[fr]
+  for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
+  to = ybus_re_rowval[c]
+  aij = v_a[fr] - v_a[to]
+  F[npv + npq + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*kernels.@sin(aij) - ybus_im_nzval[c]*kernels.@cos(aij))
   end
-  end
-  nthreads=256
-  nblocks=ceil(Int64, nbus/nthreads)
-  end
-
-  @timeit to "Function" begin
-  kernels.@sync T begin
-    kernels.@dispatch T threads=nthreads blocks=nblocks residualFunction_polar!(arrays.t1sF, arrays.t1sx[1:nv_m], arrays.t1sx[nv_m+1:nv_m+nv_a],
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, 
-        ybus_im.nzval, ybus_im.colptr, ybus_im.rowval, 
-        pinj, qinj, pv, pq, nbus)
-  end
-  end
-
-  @timeit to "Get partials" begin
-  kernels.@sync T begin
-    kernels.@dispatch T threads=nthreads blocks=nblocks getpartials(arrays.compressedJ, arrays.t1sF)
-  end
-  end
-  @timeit to "Uncompress" begin
-  # Uncompress matrix. Sparse matrix elements have different names with CUDA
-  if typeof(J) == SparseArrays.SparseMatrixCSC{Float64,Int64}
-    for i in 1:nmap
-      for j in J.colptr[i]:J.colptr[i+1]-1
-        J.nzval[j] = arrays.compressedJ[coloring[i],J.rowval[j]]
-      end
-    end
-  end
-  if typeof(J) == CuArrays.CUSPARSE.CuSparseMatrixCSR{Float64}
-    kernels.@sync T begin
-      kernels.@dispatch T threads=nthreads blocks=nblocks uncompress(
-            J.nzVal, J.rowPtr, J.colVal, arrays.compressedJ, coloring, nmap)
-    end
-  end
-  # @show J.nzVal
-  return J
-end
 end
 
-
+return nothing
+end
 
 function residualJacobian(V, Ybus, pv, pq)
   n = size(V, 1)
@@ -332,10 +258,9 @@ function newtonpf(V, Ybus, data)
   # Set array type
   # For CPU choose Vector and SparseMatrixCSC
   # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
-  T = CuVector
-  M = CuSparseMatrixCSR
-  A = CuArray
-  # kernels.@generate("cuda")
+  T = Vector
+  M = SparseMatrixCSC
+  A = Array
 
   V = T(V)
 
@@ -379,11 +304,7 @@ function newtonpf(V, Ybus, data)
 
   # voltage
   Vm = abs.(V)
-  if A == CuArray
-    Va = CUDAnative.angle.(V)
-  else
-    Va = angle.(V)
-  end
+  Va = kernels.@angle(V)
 
   # Number of GPU threads
   nthreads=256
@@ -405,8 +326,8 @@ function newtonpf(V, Ybus, data)
   # form residual function
   F = T(zeros(Float64, npv + 2*npq))
   dx = similar(F)
-  kernels.@sync A begin
-  kernels.@dispatch A threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
+  kernels.@sync begin
+  kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
                           ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, 
                           ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                           pbus, qbus, pv, pq, nbus)
@@ -416,7 +337,7 @@ function newtonpf(V, Ybus, data)
   @timeit to "Coloring" coloring = T{Int64}(matrix_colors(J))
   ncolors = size(unique(coloring),1)
   J = M(J)
-  arrays = createArrays(coloring, F, Vm, Va, pv, pq)
+  arrays = ad.createArrays(coloring, F, Vm, Va, pv, pq)
   println("Number of Jacobian colors: ", ncolors)
 
   # check for convergence
@@ -432,12 +353,12 @@ function newtonpf(V, Ybus, data)
     iter += 1
 
     # J = residualJacobian(V, Ybus, pv, pq)
-    @timeit to "Jacobian" J = residualJacobianAD!(J, arrays, coloring, Vm, Va,
-                        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
-    if typeof(J) == SparseArrays.SparseMatrixCSC{Float64,Int64}
+    @timeit to "Jacobian" J = ad.residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, Vm, Va,
+                        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
+    if J isa SparseArrays.SparseMatrixCSC
       @timeit to "Sparse solver" dx = -(J \ F)
     end
-    if typeof(J) == CuArrays.CUSPARSE.CuSparseMatrixCSR{Float64}
+    if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
       lintol = 1e-4
       @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
@@ -454,11 +375,7 @@ function newtonpf(V, Ybus, data)
     V .= Vm .* exp.(1im .*Va)
 
     Vm = abs.(V)
-    if A == CuArray
-      Va = CUDAnative.angle.(V)
-    else
-      Va = angle.(V)
-    end
+    Va = kernels.@angle(V)
 
     # evaluate residual and check for convergence
     # F = residualFunction(V, Ybus, Sbus, pv, pq)
@@ -470,8 +387,8 @@ function newtonpf(V, Ybus, data)
     #        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
     
     F .= 0.0
-    kernels.@sync A begin
-    @timeit to "Residual function" kernels.@dispatch A threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
+    kernels.@sync begin
+    @timeit to "Residual function" kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
                           ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, 
                           ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                           pbus, qbus, pv, pq, nbus)
