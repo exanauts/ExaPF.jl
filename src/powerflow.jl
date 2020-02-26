@@ -6,7 +6,6 @@
 # by Ray Zimmerman, PSERC Cornell
 #
 # Covered by the 3-clause BSD License.
-
 module PowerFlow
 
 include("ad.jl")
@@ -258,9 +257,17 @@ function newtonpf(V, Ybus, data)
   # Set array type
   # For CPU choose Vector and SparseMatrixCSC
   # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
-  T = Vector
-  M = SparseMatrixCSC
-  A = Array
+  println("Target set to $(Main.target)")
+  if Main.target == "cpu"
+    T = Vector
+    M = SparseMatrixCSC
+    A = Array
+  end
+  if Main.target == "cuda"
+    T = CuVector
+    M = CuSparseMatrixCSR
+    A = CuArray
+  end
 
   V = T(V)
 

@@ -1,8 +1,9 @@
 module kernels
   using CUDAnative, CuArrays
   export sync, dispatch, generate, togenerate, angle
+  
+  togenerate = Main.target
 
-  togenerate = "cpu"
 
   macro angle(val)
     ex = nothing
