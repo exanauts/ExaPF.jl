@@ -10,6 +10,7 @@ module PowerFlow
 
 include("ad.jl")
 include("kernels.jl")
+include("preconditioner.jl")
 using LinearAlgebra
 using SparseArrays
 using Printf
@@ -22,8 +23,10 @@ to = TimerOutput()
 using Base
 using ForwardDiff
 using SparseDiffTools
+using IterativeSolvers
 using .ad
 using .kernels
+using .preconditioner
 
 include("parse.jl")
 include("parse_raw.jl")
@@ -272,8 +275,8 @@ function newtonpf(V, Ybus, data)
   V = T(V)
 
   # parameters NR
-  tol = 1e-6
-  maxiter = 10
+  tol = 1e-7
+  maxiter = 20
 
   # iteration variables
   iter = 0
@@ -362,8 +365,11 @@ function newtonpf(V, Ybus, data)
     # J = residualJacobian(V, Ybus, pv, pq)
     @timeit to "Jacobian" J = ad.residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
+    println("Preconditioner")
+    P = preconditioner.precondition(J,2)
     if J isa SparseArrays.SparseMatrixCSC
-      @timeit to "Sparse solver" dx = -(J \ F)
+      # @timeit to "Sparse solver" dx = -(J \ F)
+      dx = -gmres(P*J, P*F)
     end
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
       lintol = 1e-4
