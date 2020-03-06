@@ -41,16 +41,13 @@ export preconditioner
     end
     diags = Vector{SparseArrays.SparseMatrixCSC{Float64}}(undef, npart)
     Js = Vector{Matrix{Float64}}(undef, npart)
-    tmpv = Vector{Float64}(undef, length(part))
     for i in 1:npart
-      tmpv .= 0.0
-      for j in 1:length(part)
-        if part[j] == i
-          tmpv[j] = 1.0
-        end
-      end
-      diags[i] = diagm(0 => tmpv)
-      Js[i] = inv(Matrix((diags[i] * J * diags[i]))[partitions[i],partitions[i]])
+      Js[i] = zeros(Float64, length(partitions[i]), length(partitions[i]))
+    end
+
+    for i in 1:npart
+      Js[i] = J[partitions[i],partitions[i]]
+      Js[i] = inv(Js[i])
     end
     P = similar(J)
     P .= 0 
@@ -59,6 +56,4 @@ export preconditioner
     end
     return P
   end
-  
-
 end

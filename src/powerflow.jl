@@ -11,6 +11,7 @@ module PowerFlow
 include("ad.jl")
 include("kernels.jl")
 include("preconditioner.jl")
+using ForwardDiff
 using LinearAlgebra
 using SparseArrays
 using Printf
@@ -20,8 +21,6 @@ using CuArrays.CUSOLVER
 using TimerOutputs
 using CUDAnative
 to = TimerOutput()
-using Base
-using ForwardDiff
 using SparseDiffTools
 using IterativeSolvers
 using .ad
@@ -365,8 +364,9 @@ function newtonpf(V, Ybus, data)
     # J = residualJacobian(V, Ybus, pv, pq)
     @timeit to "Jacobian" J = ad.residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
-    println("Preconditioner")
-    P = preconditioner.precondition(J,2)
+    npartitions = 2
+    println("Preconditioner with $npartitions partitions")
+    @timeit to "Preconditioner" P = preconditioner.precondition(J, npartitions)
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
       dx = -gmres(P*J, P*F)
