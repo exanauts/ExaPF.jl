@@ -39,7 +39,6 @@ export preconditioner
     for (i,v) in enumerate(part)
       push!(partitions[v], i)
     end
-    diags = Vector{SparseArrays.SparseMatrixCSC{Float64}}(undef, npart)
     Js = Vector{Matrix{Float64}}(undef, npart)
     for i in 1:npart
       Js[i] = zeros(Float64, length(partitions[i]), length(partitions[i]))

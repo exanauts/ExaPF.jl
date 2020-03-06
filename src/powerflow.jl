@@ -368,8 +368,12 @@ function newtonpf(V, Ybus, data)
     println("Preconditioner with $npartitions partitions")
     @timeit to "Preconditioner" P = preconditioner.precondition(J, npartitions)
     if J isa SparseArrays.SparseMatrixCSC
+      println("GMRES")
       # @timeit to "Sparse solver" dx = -(J \ F)
-      dx = -gmres(P*J, P*F)
+      @timeit to "GMRES" dx = -gmres(P*J, P*F)
+      # dx, hist = gmres(J, F; log = true)
+      # dx = -dx
+      # @show hist
     end
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
       lintol = 1e-4
