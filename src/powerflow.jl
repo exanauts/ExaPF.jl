@@ -10,7 +10,7 @@ module PowerFlow
 
 include("ad.jl")
 include("kernels.jl")
-include("preconditioner.jl")
+include("precondition.jl")
 using ForwardDiff
 using LinearAlgebra
 using SparseArrays
@@ -25,7 +25,7 @@ using SparseDiffTools
 using IterativeSolvers
 using .ad
 using .kernels
-using .preconditioner
+using .precondition
 
 include("parse.jl")
 include("parse_raw.jl")
@@ -319,6 +319,9 @@ function newtonpf(V, Ybus, data)
   nthreads=256
   nblocks=ceil(Int64, nbus/nthreads)
 
+  # Number of partitions for the additive Schwarz preconditioner
+  npartitions = 2
+
   # indices
   npv = size(pv, 1);
   npq = size(pq, 1);
@@ -347,6 +350,7 @@ function newtonpf(V, Ybus, data)
   ncolors = size(unique(coloring),1)
   J = M(J)
   arrays = ad.createArrays(coloring, F, Vm, Va, pv, pq)
+  partition = precondition.partition(J, npartitions)
   println("Number of Jacobian colors: ", ncolors)
 
   # check for convergence
@@ -364,9 +368,8 @@ function newtonpf(V, Ybus, data)
     # J = residualJacobian(V, Ybus, pv, pq)
     @timeit to "Jacobian" J = ad.residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
-    npartitions = 2
     println("Preconditioner with $npartitions partitions")
-    @timeit to "Preconditioner" P = preconditioner.precondition(J, npartitions)
+    @timeit to "Preconditioner" P = precondition.create_preconditioner(J, partition)
     if J isa SparseArrays.SparseMatrixCSC
       println("GMRES")
       # @timeit to "Sparse solver" dx = -(J \ F)
