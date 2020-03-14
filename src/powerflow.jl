@@ -373,8 +373,9 @@ function newtonpf(V, Ybus, data)
     if J isa SparseArrays.SparseMatrixCSC
       println("GMRES")
       # @timeit to "Sparse solver" dx = -(J \ F)
-      @timeit to "GMRES" dx = -gmres(P*J, P*F)
-      # dx, hist = gmres(J, F; log = true)
+      # @timeit to "GMRES" dx = -bicgstabl(P*J, P*F)
+      @timeit to "BiCGstab" dx = -bicgstabl(P*J, P*F)
+      # dx, hist = minres(P*J, P*F; log = true)
       # dx = -dx
       # @show hist
     end
