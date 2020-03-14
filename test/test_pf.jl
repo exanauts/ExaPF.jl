@@ -5,7 +5,7 @@ using Test
 # raw_data = "GO-Data/datasets/Trial_3_Real-Time/Network_13R-015/scenario_11/case.raw"
 raw_data = "test/case14.raw"
 # Set this to "cpu" or "cuda" 
-target = "cpu"
+target = "cuda"
 
 
 data_parser ="../src/parse.jl"

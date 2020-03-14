@@ -4,7 +4,7 @@ using LightGraphs
 using Metis
 using SparseArrays
 using LinearAlgebra
-
+using CuArrays
 export preconditioner
 
 struct partition
@@ -24,12 +24,12 @@ struct partition
     for (i,v) in enumerate(part)
       push!(partitions[v], i)
     end
-    Js = Vector{Matrix{Float64}}(undef, npart)
+    Js = Vector{CuMatrix{Float64}}(undef, npart)
     for i in 1:npart
       Js[i] = zeros(Float64, length(partitions[i]), length(partitions[i]))
     end
-    P = similar(J)
-    P .= 0 
+    P = copy(J)
+    P.nzVal .= 0 
     return new(npart, partitions, Js, P)
   end
 end
@@ -38,16 +38,16 @@ end
       rows = Int64[]
       cols = Int64[]
       vals = Float64[]
-      rowsA = rowvals(A)
+      colsA = A.colVal
       m, n = size(A)
       for i = 1:n
-          for j in nzrange(A, i)
-              push!(rows, rowsA[j])
+          for j in 1:length(A.nzVal)
+              push!(rows, colsA[j])
               push!(cols, i)
               push!(vals, 1.0)
 
               push!(rows, i)
-              push!(cols, rowsA[j])
+              push!(cols, colsA[j])
               push!(vals, 1.0)
           end
       end
@@ -56,8 +56,8 @@ end
 
   function create_preconditioner(J, p::partition)
     for i in 1:length(p.partitions)
-      p.Js[i][:,:] = J[p.partitions[i],p.partitions[i]]
-      p.Js[i][:,:] = inv(p.Js[i])
+      p.Js[i] = J[p.partitions[i],p.partitions[i]]
+      p.Js[i] = inv(p.Js[i])
     end
     for i in 1:length(p.partitions)
       p.P[p.partitions[i], p.partitions[i]] += p.Js[i]
