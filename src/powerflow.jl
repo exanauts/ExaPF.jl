@@ -11,6 +11,7 @@ module PowerFlow
 include("ad.jl")
 include("kernels.jl")
 include("precondition.jl")
+include("iterative.jl")
 using ForwardDiff
 using LinearAlgebra
 using SparseArrays
@@ -26,6 +27,7 @@ using IterativeSolvers
 using .ad
 using .kernels
 using .precondition
+using .iterative
 
 include("parse.jl")
 include("parse_raw.jl")
@@ -371,10 +373,11 @@ function newtonpf(V, Ybus, data)
     println("Preconditioner with $npartitions partitions")
     @timeit to "Preconditioner" P = precondition.create_preconditioner(J, partition)
     if J isa SparseArrays.SparseMatrixCSC
-      println("GMRES")
+      println("BiCGstab")
       # @timeit to "Sparse solver" dx = -(J \ F)
       # @timeit to "GMRES" dx = -bicgstabl(P*J, P*F)
-      @timeit to "BiCGstab" dx = -bicgstabl(P*J, P*F)
+      # @timeit to "BiCGstab" dx = -bicgstabl(P*J, P*F)
+      @timeit to "BiCGstab" dx = -bicgstab(J, F, partition)
       # dx, hist = minres(P*J, P*F; log = true)
       # dx = -dx
       # @show hist
