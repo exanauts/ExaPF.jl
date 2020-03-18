@@ -9,22 +9,20 @@ export bicgstab
 mulinvP = precondition.mulinvP
 
 """
- residualFunction
+  bicgstab according to 
 
-bicgstab according to 
-
-Van der Vorst, Henk A. 
-"Bi-CGSTAB: A fast and smoothly converging variant of Bi-CG for the solution of nonsymmetric linear systems." 
-SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
+  Van der Vorst, Henk A. 
+  "Bi-CGSTAB: A fast and smoothly converging variant of Bi-CG for the solution of nonsymmetric linear systems." 
+  SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
 """
 
 function bicgstab(A, b, p ; tol = 1e-6, maxiter = size(A,1))
-  n = size(b, 1)
-  x0 = rand(Float64, n)
-  r0 = b - A * x0
-  br0 = r0
+  n    = size(b, 1)
+  x0   = rand(Float64, n)
+  r0   = b - A * x0
+  br0  = r0
   rho0 = alpha = omega0 = 1
-  v0 = p0 = zeros(Float64, n)
+  v0   = p0 = zeros(Float64, n)
 
   ri     = r0
   rhoi   = rho0
@@ -56,12 +54,13 @@ function bicgstab(A, b, p ; tol = 1e-6, maxiter = size(A,1))
       println("Not converged")
     end
     ri     = s - omegai1 * t
+
     rhoi   = rhoi1
     pi     = pi1
     vi     = vi1
     omegai = omegai1
     xi     = xi1
-    iter += 1
+    iter   += 1
   end
   return xi
 end
