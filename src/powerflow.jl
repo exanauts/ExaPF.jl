@@ -381,7 +381,12 @@ function newtonpf(V, Ybus, data)
     end
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
       lintol = 1e-4
-      @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
+      # @show typeof(P)
+      # @show typeof(J)
+      # A = P*J
+      # b = P*F
+      @timeit to "BiCGstab" dx = -bicgstabl(J, F; Pl = P)
+      # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
 
     # update voltage
