@@ -70,4 +70,13 @@ end
     p.P = CuSparseMatrixCSR(cscP)
     return p.P
   end
+
+  function mulinvP(x, p)
+    res = similar(x)
+    res .= 0
+    for i in 1:length(p.partitions)
+      res[p.partitions[i]] = p.Js[i] * x[p.partitions[i]]
+    end
+    res
+  end
 end
