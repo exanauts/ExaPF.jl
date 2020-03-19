@@ -38,12 +38,15 @@ function bicgstab(A, b, p ; tol = 1e-6, maxiter = size(A,1))
     pi1 = ri + beta * (pi - omegai .* vi)
     y = mulinvP(pi1, p)
     vi1 = A * y
+    # vi1 = A * pi1
     alpha = rhoi1 / dot(br0, vi1)
     s = ri - alpha * vi1
     z = mulinvP(s, p)
     t = A * z
+    # t = A * s
     omegai1 = dot(mulinvP(t, p), mulinvP(s, p)) / dot(mulinvP(t, p), mulinvP(t, p))
     xi1 = xi + alpha * y + omegai1 * z
+    # xi1 = xi + alpha * pi1 + omegai1 * s
     if norm((A * xi1) - b) < tol
       go = false
       println("Tolerance reached at iteration $iter")
