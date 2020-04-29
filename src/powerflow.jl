@@ -321,9 +321,6 @@ function newtonpf(V, Ybus, data)
   nthreads=256
   nblocks=ceil(Int64, nbus/nthreads)
 
-  # Number of partitions for the additive Schwarz preconditioner
-  npartitions = 2
-
   # indices
   npv = size(pv, 1);
   npq = size(pq, 1);
@@ -348,12 +345,21 @@ function newtonpf(V, Ybus, data)
   end
 
   J = residualJacobian(V, Ybus, pv, pq)
+  @show size(J)
+  # Number of partitions for the additive Schwarz preconditioner
+  npartitions = Int(ceil(size(J,1)/32))
+  npartitions = 2 
+  @show npartitions
+  println("Partitioning...")
+  partition = precondition.partition(J, npartitions)
+  println("$npartitions partitions created")
+  println("Coloring...")
   @timeit to "Coloring" coloring = T{Int64}(matrix_colors(J))
   ncolors = size(unique(coloring),1)
-  J = M(J)
-  arrays = ad.createArrays(coloring, F, Vm, Va, pv, pq)
-  partition = precondition.partition(J, npartitions)
   println("Number of Jacobian colors: ", ncolors)
+  J = M(J)
+  println("Creating arrays...")
+  arrays = ad.createArrays(coloring, F, Vm, Va, pv, pq)
 
   # check for convergence
   normF = norm(F, Inf)
@@ -372,8 +378,8 @@ function newtonpf(V, Ybus, data)
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
     println("Preconditioner with $npartitions partitions")
     @timeit to "Preconditioner" P = precondition.create_preconditioner(J, partition)
+    println("BiCGstab")
     if J isa SparseArrays.SparseMatrixCSC
-      println("BiCGstab")
       # @timeit to "Sparse solver" dx = -(J \ F)
       # @timeit to "GMRES" dx = -bicgstabl(P*J, P*F)
       # @timeit to "BiCGstab" dx = -bicgstabl(P*J, P*F)
@@ -388,7 +394,7 @@ function newtonpf(V, Ybus, data)
       # @show typeof(J)
       # A = P*J
       # b = P*F
-      @timeit to "BiCGstab" dx = -bicgstabl(J, F; Pl = P)
+      @timeit to "BiCGstab" dx = -bicgstab(J, F, partition, to)
       # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
 
