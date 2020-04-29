@@ -276,7 +276,7 @@ function newtonpf(V, Ybus, data)
   V = T(V)
 
   # parameters NR
-  tol = 1e-7
+  tol = 1e-6
   maxiter = 20
 
   # iteration variables
@@ -383,7 +383,7 @@ function newtonpf(V, Ybus, data)
       # @timeit to "Sparse solver" dx = -(J \ F)
       # @timeit to "GMRES" dx = -bicgstabl(P*J, P*F)
       # @timeit to "BiCGstab" dx = -bicgstabl(P*J, P*F)
-      @timeit to "BiCGstab" dx = -bicgstab(J, F, partition)
+      @timeit to "BiCGstab" dx = -bicgstab(J, F, P)
       # dx, hist = minres(P*J, P*F; log = true)
       # dx = -dx
       # @show hist
@@ -394,7 +394,7 @@ function newtonpf(V, Ybus, data)
       # @show typeof(J)
       # A = P*J
       # b = P*F
-      @timeit to "BiCGstab" dx = -bicgstab(J, F, partition, to)
+      @timeit to "BiCGstab" dx = -bicgstab(J, F, P, to)
       # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
 

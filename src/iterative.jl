@@ -23,10 +23,11 @@ mulinvP! = precondition.mulinvP!
   SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
 """
 
-function bicgstab(A, b, p, to; tol = 1e-6, maxiter = size(A,1))
+function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1))
   n    = size(b, 1)
   x0   = similar(b)
-  mulinvP!(x0, b, p)
+  x0 = P * b
+  # mulinvP!(x0, b, p)
   r0   = b - A * x0
   br0  = copy(r0)
   rho0 = 1.0
@@ -56,16 +57,20 @@ function bicgstab(A, b, p, to; tol = 1e-6, maxiter = size(A,1))
   while go
     rhoi1 = dot(br0, ri) ; beta = (rhoi1/rhoi) * (alpha / omegai)
     pi1 .= ri + beta * (pi - omegai .* vi)
-    @timeit to "mulinvP" mulinvP!(y, pi1, p)
+    y = P * pi1
+    # @timeit to "mulinvP" mulinvP!(y, pi1, p)
     vi1 .= A * y
     # vi1 = A * pi1
     alpha = rhoi1 / dot(br0, vi1)
     s .= ri - alpha * vi1
-    @timeit to "mulinvP" mulinvP!(z, s, p)
+    z = P * s
+    # @timeit to "mulinvP" mulinvP!(z, s, p)
     t .= A * z
     # t = A * s
-    @timeit to "mulinvP" mulinvP!(t1, t, p)
-    @timeit to "mulinvP" mulinvP!(t2, s, p)
+    t1 = P * t
+    t2 = P * s
+    # @timeit to "mulinvP" mulinvP!(t1, t, p)
+    # @timeit to "mulinvP" mulinvP!(t2, s, p)
     omegai1 = dot(t1, t2) / dot(t1, t1)
     xi1 .= xi + alpha * y + omegai1 * z
     # xi1 = xi + alpha * pi1 + omegai1 * s
