@@ -41,7 +41,7 @@ end
 Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = Network.makeYbus(data);
 
 vsol, conv, norm = PowerFlow.newtonpf(V, Ybus, data);
-
+println("")
 # test convergence is OK
 @test conv
 # test norm is minimized

@@ -346,10 +346,16 @@ function newtonpf(V, Ybus, data)
   end
 
   J = residualJacobian(V, Ybus, pv, pq)
+  dim_J = size(J, 1)
   @show size(J)
   # Number of partitions for the additive Schwarz preconditioner
-  npartitions = Int(ceil(size(J,1)/100))
-  #npartitions = 2 
+  
+  if dim_J > 200
+    npartitions = Int(ceil(dim_J/100))
+  else
+    npartitions = 2 
+  end
+
   @show npartitions
   println("Partitioning...")
   partition = precondition.partition(J, npartitions)
