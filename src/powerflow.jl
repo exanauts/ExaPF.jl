@@ -28,6 +28,7 @@ using .ad
 using .kernels
 using .precondition
 using .iterative
+using Krylov
 
 include("parse.jl")
 include("parse_raw.jl")
@@ -345,10 +346,16 @@ function newtonpf(V, Ybus, data)
   end
 
   J = residualJacobian(V, Ybus, pv, pq)
+  dim_J = size(J, 1)
   @show size(J)
   # Number of partitions for the additive Schwarz preconditioner
-  npartitions = Int(ceil(size(J,1)/32))
-  npartitions = 2 
+  
+  if dim_J > 200
+    npartitions = Int(ceil(dim_J/100))
+  else
+    npartitions = 2 
+  end
+
   @show npartitions
   println("Partitioning...")
   partition = precondition.partition(J, npartitions)
@@ -378,7 +385,6 @@ function newtonpf(V, Ybus, data)
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
     println("Preconditioner with $npartitions partitions")
     @timeit to "Preconditioner" P = precondition.create_preconditioner(J, partition)
-    println("BiCGstab")
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
       # @timeit to "GMRES" dx = -bicgstabl(P*J, P*F)
@@ -395,6 +401,9 @@ function newtonpf(V, Ybus, data)
       # A = P*J
       # b = P*F
       @timeit to "BiCGstab" dx = -bicgstab(J, F, P, to)
+      #@timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
+      #show(stats)
+      #dx = -x
       # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
 

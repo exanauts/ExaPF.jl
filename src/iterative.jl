@@ -24,7 +24,10 @@ mulinvP! = precondition.mulinvP!
   SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
 """
 
-function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1))
+function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1),
+                 verbose=false)
+  
+  # parameters
   n    = size(b, 1)
   x0   = similar(b)
   x0 = P * b
@@ -61,6 +64,7 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1))
   go = true
   iter = 1
   while go
+
     rhoi1 = dot(br0, ri) ; beta = (rhoi1/rhoi) * (alpha / omegai)
     pi1 .= ri + beta * (pi - omegai .* vi)
     y = P * pi1
@@ -80,17 +84,26 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1))
     omegai1 = dot(t1, t2) / dot(t1, t1)
     xi1 .= xi + alpha * y + omegai1 * z
     # xi1 = xi + alpha * pi1 + omegai1 * s
-    if norm((A * xi1) - b) < tol
+  
+    anorm = norm(A * xi1 - b)
+
+    if verbose
+      println("\tIteration: ", iter)
+      println("\tAbsolute norm: ", anorm)
+    end
+
+    if anorm < tol
       go = false
       println("Tolerance reached at iteration $iter")
     end
+
     if maxiter == iter
       @show iter
       go = false
       println("Not converged")
     end
+    
     ri     = s - omegai1 * t
-
     rhoi   = rhoi1
     pi     .= pi1
     vi     .= vi1
@@ -98,7 +111,9 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1))
     xi     .= xi1
     iter   += 1
   end
+
   return xi
+
 end
 
 end
