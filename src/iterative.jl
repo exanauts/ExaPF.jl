@@ -6,6 +6,7 @@ using .precondition
 using CuArrays
 using CUDAnative
 using TimerOutputs
+using SparseArrays
 
 cuzeros = CuArrays.zeros
 
@@ -33,7 +34,12 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1))
   rho0 = 1.0
   alpha = 1.0
   omega0 = 1.0
-  v0   = p0 = cuzeros(Float64, n)
+  if A isa SparseArrays.SparseMatrixCSC
+    v0   = p0 = zeros(Float64, n)
+  else
+    v0   = p0 = cuzeros(Float64, n)
+  end
+
 
   ri     = copy(r0)
   rhoi   = copy(rho0)

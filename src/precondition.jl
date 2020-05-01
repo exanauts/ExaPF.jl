@@ -70,7 +70,11 @@ end
   end
 
   function create_preconditioner(J, p::partition)
-    cscJ = collect(switch2csc(J))
+    if J isa CuSparseMatrixCSR
+      cscJ = collect(switch2csc(J))
+    else
+      cscJ = J
+    end
     cscP = copy(cscJ)
     cscP.nzval .= 0 
 
@@ -79,12 +83,14 @@ end
       p.Js[i] = inv(p.Js[i])
     end
     for i in 1:length(p.partitions)
-      p.cuJs[i] = p.Js[i]
-    end
-    for i in 1:length(p.partitions)
       cscP[p.partitions[i], p.partitions[i]] += p.Js[i]
     end
-    p.P = CuSparseMatrixCSR(cscP)
+    @show typeof(J)
+    if J isa CuSparseMatrixCSR
+      p.P = CuSparseMatrixCSR(cscP)
+    else
+      p.P = cscP
+    end
     return p.P
   end
 
