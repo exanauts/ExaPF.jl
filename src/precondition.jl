@@ -85,7 +85,6 @@ end
     for i in 1:length(p.partitions)
       cscP[p.partitions[i], p.partitions[i]] += p.Js[i]
     end
-    @show typeof(J)
     if J isa CuSparseMatrixCSR
       p.P = CuSparseMatrixCSR(cscP)
     else
