@@ -387,23 +387,15 @@ function newtonpf(V, Ybus, data)
     @timeit to "Preconditioner" P = precondition.create_preconditioner(J, partition)
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
-      # @timeit to "GMRES" dx = -bicgstabl(P*J, P*F)
-      # @timeit to "BiCGstab" dx = -bicgstabl(P*J, P*F)
-      @timeit to "BiCGstab" dx = -bicgstab(J, F, P)
-      # dx, hist = minres(P*J, P*F; log = true)
-      # dx = -dx
-      # @show hist
+      # @timeit to "BiCGstab" dx = bicgstab(J, F, P)
+      @timeit to "CPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
+      dx = -x
     end
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
-      lintol = 1e-4
-      # @show typeof(P)
-      # @show typeof(J)
-      # A = P*J
-      # b = P*F
-      @timeit to "BiCGstab" dx = -bicgstab(J, F, P, to)
-      #@timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
+      # @timeit to "BiCGstab" dx = bicgstab(J, F, P, to)
+      @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
       #show(stats)
-      #dx = -x
+      dx = -x
       # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
 
