@@ -22,7 +22,7 @@ function gfun!(F, x, u, p)
 
   F[1] = 4.0*VM2*VM2 + VM2*VM3*(-4*cos(VA23) + 10*sin(VA23)) - P2
   F[2] = (8.0*VM3*VM3 + VM3*VM1*(-4*cos(VA31) + 5*sin(VA31))
-          + VM3*VM2*(4*cos(VA32) + 10*sin(VA32)) + P3)
+          + VM3*VM2*(-4*cos(VA32) + 10*sin(VA32)) + P3)
   F[3] = (15.0*VM3*VM3 + VM3*VM1*(-4*sin(VA31) - 5*cos(VA31))
           + VM3*VM2*(-4*sin(VA32) - 10*cos(VA32)) + Q3)
 end
