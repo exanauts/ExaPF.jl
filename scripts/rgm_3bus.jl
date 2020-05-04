@@ -1,4 +1,6 @@
-function gfun(x, u, p)
+using NLsolve
+
+function gfun!(F, x, u, p)
   
   # retrieve variables
   VM3 = x[1]
@@ -18,15 +20,21 @@ function gfun(x, u, p)
   VA31 = VA3 - VA1
   VA32 = VA3 - VA2
 
-  F = zeros(3)
-
   F[1] = 4.0*VM2*VM2 + VM2*VM3*(-4*cos(VA23) + 10*sin(VA23)) - P2
   F[2] = (8.0*VM3*VM3 + VM3*VM1*(-4*cos(VA31) + 5*sin(VA31))
           + VM3*VM2*(4*cos(VA32) + 10*sin(VA32)) + P3)
   F[3] = (15.0*VM3*VM3 + VM3*VM1*(-4*sin(VA31) - 5*cos(VA31))
           + VM3*VM2*(-4*sin(VA32) - 10*cos(VA32)) + Q3)
+end
 
-  return F
+function solve_pf(x, u, p)
+  
+  fun_pf!(F, x) = gfun!(F, x, u, p)
+  x0 = copy(x)
+  res = nlsolve(fun_pf!, x0)
+
+  show(res)
+  println("")
 end
 
 
@@ -51,4 +59,9 @@ p[2] = 2.0 #P3
 p[3] = 1.0 #Q3
 
 # evaluate function
-println(gfun(x, u, p))
+F = zeros(3)
+gfun!(F, x, u, p)
+println(F)
+
+# solve power flow
+solve_pf(x, u, p)
