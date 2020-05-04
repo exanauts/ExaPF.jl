@@ -31,7 +31,7 @@ function overlap(Graph, subset, level=1)
   if level == 0
     return subset2
   else
-    return overlap(Graph, level)
+    return overlap(Graph, subset2, level=level)
   end
 
 end
