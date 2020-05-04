@@ -11,6 +11,33 @@ using CUDAnative
 
 cuzeros = CuArrays.zeros
 
+
+"""
+      overlap(Graph, subset, level)
+
+Given subset embedded within Graph, compute subset2 such that
+subset2 contains subset and all of its adjacent vertices.
+
+"""
+function overlap(Graph, subset, level=1)
+
+  @assert level > 0
+  
+  subset2 = [neighbors(Graph, v) for v in subset]
+  subset2 = reduce(vcat, subset2)
+  subset2 = sort(unique(vcat(subset, subset2)))
+
+  level -= 1
+  if level == 0
+    return subset2
+  else
+    return overlap(Graph, level)
+  end
+
+end
+
+
+
 mutable struct partition
   npart::Int64
   partitions::Vector{Vector{Int64}}
@@ -18,31 +45,48 @@ mutable struct partition
   Js::Vector{Matrix{Float64}}
   cuJs::Vector{CuMatrix{Float64}}
   P
-  function partition(J, blocks)
+  function partition(J, npart)
+    
+    # data structures
     adj = build_adjmatrix(J)
     g = Graph(adj)
-    npart = blocks
-    part = Metis.partition(g, npart)
+    
     partitions = Vector{Vector{Int64}}()
     cupartitions = Vector{CuVector{Int64}}(undef, npart)
+    
+    # create partition
+    part = Metis.partition(g, npart)
+    
     for i in 1:npart
       push!(partitions, [])
     end
+
     for (i,v) in enumerate(part)
       push!(partitions[v], i)
     end
+    
     for i in 1:npart
       cupartitions[i] = CuVector{Int64}(partitions[i])
     end
+    
+    for i in 1:npart
+      partitions[i] = overlap(g, partitions[i])
+    end
+    
+    # submatrices
     Js = Vector{Matrix{Float64}}(undef, npart)
     for i in 1:npart
       Js[i] = zeros(Float64, length(partitions[i]), length(partitions[i]))
     end
+    
     cuJs = Vector{CuMatrix{Float64}}(undef, npart)
     for i in 1:npart
       cuJs[i] = cuzeros(Float64, length(partitions[i]), length(partitions[i]))
     end
+    
+    # preconditioned
     P = CuSparseMatrixCSR(J)
+    
     return new(npart, partitions, cupartitions, Js, cuJs, P)
   end
 end
