@@ -1,5 +1,9 @@
 using NLsolve
 
+
+
+# ELEMENTAL FUNCTIONS
+
 function gfun!(F, x, u, p)
   
   # retrieve variables
@@ -26,6 +30,34 @@ function gfun!(F, x, u, p)
   F[3] = (15.0*VM3*VM3 + VM3*VM1*(-4*sin(VA31) - 5*cos(VA31))
           + VM3*VM2*(-4*sin(VA32) - 10*cos(VA32)) + Q3)
 end
+
+function cfun(x, u, p)
+
+  VM3 = x[1]
+  VA3 = x[2]
+
+  VM1 = u[1]
+  P2 = u[2]
+
+  VA1 = p[1]
+
+  VA13 = VA1 - VA3
+
+  # we fix generation weights inside the
+  # function to simplify the script and
+  # follow the paper closely.
+  w1 = 1.0
+  w2 = 1.0
+
+  cost = (w1*(5.0*VM1*VM3 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13))) +
+          w2*P2)
+  return cost
+end
+
+
+
+
+# OPF COMPUTATION
 
 function solve_pf(x, u, p)
   
@@ -65,3 +97,6 @@ println(F)
 
 # solve power flow
 solve_pf(x, u, p)
+
+# cost function
+println(cfun(x, u, p))
