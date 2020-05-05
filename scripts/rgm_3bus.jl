@@ -31,15 +31,9 @@ function gfun!(F, x, u, p)
           + VM3*VM2*(-4*sin(VA32) - 10*cos(VA32)) + Q3)
 end
 
-function gfun(x, u, p, mode=0)
-
-  if mode == 0
-    F = zeros(3)
-  elseif mode == 1
-    F = similar(x)
-  else
-    F = similar(u)
-  end
+function gfun(x, u, p, T=typeof(x))
+  # Get Float64 of Vectors{Float64}, that is the first parameter
+  F = zeros(T.parameters[1], 3)
 
   # retrieve variables
   VM3 = x[1]
@@ -140,7 +134,7 @@ xk = solve_pf(x, u, p)
 println(xk)
 
 # jacobian
-gx_closure(x) = gfun(x, u, p, 1)
+gx_closure(x) = gfun(x, u, p, typeof(x))
 gx = x -> ForwardDiff.jacobian(gx_closure, x)
 
 # gradient
@@ -155,7 +149,7 @@ println(lambda)
 # gradient of cost function
 cfun_closure2(u) = cfun(x, u, p)
 fu = u ->ForwardDiff.gradient(cfun_closure2, u)
-gx_closure2(u) = gfun(x, u, p, 2)
+gx_closure2(u) = gfun(x, u, p, typeof(u))
 gu = u -> ForwardDiff.jacobian(gx_closure2, u)
 
 grad_c = fu(u) + gu(u)'*lambda
