@@ -81,7 +81,7 @@ function cfun(x, u, p)
   w1 = 1.0
   w2 = 1.0
 
-  cost = (w1*(4.0*VM1*VM3 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13))) +
+  cost = (w1*(4.0*VM1*VM1 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13))) +
           w2*P2)
   return cost
 end
@@ -98,7 +98,7 @@ function pslack(x, u, p)
 
   VA13 = VA1 - VA3
 
-  return (4.0*VM1*VM3 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13)))
+  return (4.0*VM1*VM1 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13)))
 end
 
 
@@ -150,22 +150,15 @@ global uk = copy(u)
 
 iterations = 0
 
-println(cfun(xk, uk, p))
 
-for i = 1:1
+for i = 1:10
   global xk
   global uk
   println("Iteration ", i)
-  println("PSlack: ", pslack(xk, uk, p))
-  println("Cost: ", cfun(xk, uk, p))
-  @printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
-  @printf("VM1 %3.2f. P2 %2.2f. VM2 %2.2f.\n", uk[1], uk[2], uk[3])
 
   # solve power flow
   println("Solving power flow")
   xk = solve_pf(xk, uk, p, false)
-  @printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
-  println("PSlack: ", pslack(xk, uk, p))
 
   # jacobian
   gx_closure(x) = gfun(x, u, p, typeof(x))
@@ -187,11 +180,15 @@ for i = 1:1
 
   # compute gradient of cost function
   grad_c = fu(uk) + gu(uk)'*lambda
-  println(norm(grad_c))
+  #println(norm(grad_c))
 
   # step
   println("Computing new control vector")
   c_par = 0.1
   uk = uk - c_par*grad_c
+  
+  println("Cost: ", cfun(xk, uk, p))
+  #@printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
+  #@printf("VM1 %3.2f. P2 %2.2f. VM2 %2.2f.\n", uk[1], uk[2], uk[3])
 
 end
