@@ -80,7 +80,7 @@ function cfun(x, u, p)
   w1 = 1.0
   w2 = 1.0
 
-  cost = (w1*(5.0*VM1*VM3 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13))) +
+  cost = (w1*(4.0*VM1*VM3 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13))) +
           w2*P2)
   return cost
 end
