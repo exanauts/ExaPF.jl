@@ -1,6 +1,7 @@
 using NLsolve
 using ForwardDiff
 using LinearAlgebra
+using Printf
 
 # ELEMENTAL FUNCTIONS
 
@@ -85,6 +86,21 @@ function cfun(x, u, p)
   return cost
 end
 
+function pslack(x, u, p)
+
+  VM3 = x[1]
+  VA3 = x[2]
+
+  VM1 = u[1]
+  P2 = u[2]
+
+  VA1 = p[1]
+
+  VA13 = VA1 - VA3
+
+  return (4.0*VM1*VM3 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13)))
+end
+
 
 # OPF COMPUTATION
 
@@ -101,7 +117,6 @@ function solve_pf(x, u, p, verbose=true)
   return res.zero
 
 end
-
 
 # initial parameters
 x = zeros(3)
@@ -135,16 +150,22 @@ global uk = copy(u)
 
 iterations = 0
 
-for i = 1:20
+println(cfun(xk, uk, p))
 
+for i = 1:1
   global xk
   global uk
   println("Iteration ", i)
+  println("PSlack: ", pslack(xk, uk, p))
+  println("Cost: ", cfun(xk, uk, p))
+  @printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
+  @printf("VM1 %3.2f. P2 %2.2f. VM2 %2.2f.\n", uk[1], uk[2], uk[3])
 
   # solve power flow
   println("Solving power flow")
   xk = solve_pf(xk, uk, p, false)
-  println(xk)
+  @printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
+  println("PSlack: ", pslack(xk, uk, p))
 
   # jacobian
   gx_closure(x) = gfun(x, u, p, typeof(x))
@@ -170,7 +191,7 @@ for i = 1:20
 
   # step
   println("Computing new control vector")
-  c_par = 0.12
+  c_par = 0.1
   uk = uk - c_par*grad_c
-  println(uk)
+
 end
