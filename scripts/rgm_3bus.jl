@@ -1,6 +1,6 @@
 using NLsolve
 using ForwardDiff
-
+using LinearAlgebra
 
 # ELEMENTAL FUNCTIONS
 
@@ -90,7 +90,6 @@ end
 
 function solve_pf(x, u, p, verbose=true)
  
-  println("Solving power flow")
   fun_pf!(F, x) = gfun!(F, x, u, p)
   x0 = copy(x)
   res = nlsolve(fun_pf!, x0)
@@ -124,40 +123,54 @@ p[1] = 0.0 #VA1, slack angle
 p[2] = 2.0 #P3
 p[3] = 1.0 #Q3
 
-# evaluate function
-F = zeros(3)
-gfun!(F, x, u, p)
-println(F)
 
-# solve power flow
-xk = solve_pf(x, u, p)
-println(xk)
 
-# jacobian
-gx_closure(x) = gfun(x, u, p, typeof(x))
-gx = x -> ForwardDiff.jacobian(gx_closure, x)
-
-# gradient
-cfun_closure(x) = cfun(x, u, p)
-fx = x ->ForwardDiff.gradient(cfun_closure, x)
-println(fx(xk))
-
-# lamba calculation
-lambda = -inv(gx(xk)')*fx(xk)
-println(lambda)
-
-# gradient of cost function
-cfun_closure2(u) = cfun(x, u, p)
-fu = u ->ForwardDiff.gradient(cfun_closure2, u)
-gx_closure2(u) = gfun(x, u, p, typeof(u))
-gu = u -> ForwardDiff.jacobian(gx_closure2, u)
-
-grad_c = fu(u) + gu(u)'*lambda
-
-println(grad_c)
-
-# step
+# print initial guesses
+println(x)
 println(u)
-c_par = 0.1
-unew = u - c_par*grad_c
-println(unew)
+
+# copy to iteration vectors
+global xk = copy(x)
+global uk = copy(u)
+
+iterations = 0
+
+for i = 1:20
+
+  global xk
+  global uk
+  println("Iteration ", i)
+
+  # solve power flow
+  println("Solving power flow")
+  xk = solve_pf(xk, uk, p, false)
+  println(xk)
+
+  # jacobian
+  gx_closure(x) = gfun(x, u, p, typeof(x))
+  gx = x -> ForwardDiff.jacobian(gx_closure, x)
+
+  # gradient
+  cfun_closure(x) = cfun(x, u, p)
+  fx = x ->ForwardDiff.gradient(cfun_closure, x)
+
+  # lamba calculation
+  println("Computing lagrange multipliers")
+  lambda = -inv(gx(xk)')*fx(xk)
+
+  # compute g_u, g_u
+  cfun_closure2(u) = cfun(x, u, p)
+  fu = u ->ForwardDiff.gradient(cfun_closure2, u)
+  gx_closure2(u) = gfun(x, u, p, typeof(u))
+  gu = u -> ForwardDiff.jacobian(gx_closure2, u)
+
+  # compute gradient of cost function
+  grad_c = fu(uk) + gu(uk)'*lambda
+  println(norm(grad_c))
+
+  # step
+  println("Computing new control vector")
+  c_par = 0.12
+  uk = uk - c_par*grad_c
+  println(uk)
+end
