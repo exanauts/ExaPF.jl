@@ -151,7 +151,7 @@ global uk = copy(u)
 iterations = 0
 
 
-for i = 1:10
+for i = 1:100
   global xk
   global uk
   println("Iteration ", i)
@@ -180,7 +180,7 @@ for i = 1:10
 
   # compute gradient of cost function
   grad_c = fu(uk) + gu(uk)'*lambda
-  #println(norm(grad_c))
+  println("Norm of gradient ", norm(grad_c))
 
   # step
   println("Computing new control vector")
