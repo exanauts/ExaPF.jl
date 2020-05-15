@@ -161,21 +161,21 @@ for i = 1:100
   xk = solve_pf(xk, uk, p, false)
 
   # jacobian
-  gx_closure(x) = gfun(x, u, p, typeof(x))
+  gx_closure(x) = gfun(x, uk, p, typeof(x))
   gx = x -> ForwardDiff.jacobian(gx_closure, x)
 
   # gradient
-  cfun_closure(x) = cfun(x, u, p)
+  cfun_closure(x) = cfun(x, uk, p)
   fx = x ->ForwardDiff.gradient(cfun_closure, x)
 
   # lamba calculation
-  println("Computing lagrange multipliers")
+  println("Computing Lagrange multipliers")
   lambda = -inv(gx(xk)')*fx(xk)
 
   # compute g_u, g_u
-  cfun_closure2(u) = cfun(x, u, p)
+  cfun_closure2(u) = cfun(xk, u, p)
   fu = u ->ForwardDiff.gradient(cfun_closure2, u)
-  gx_closure2(u) = gfun(x, u, p, typeof(u))
+  gx_closure2(u) = gfun(xk, u, p, typeof(u))
   gu = u -> ForwardDiff.jacobian(gx_closure2, u)
 
   # compute gradient of cost function
