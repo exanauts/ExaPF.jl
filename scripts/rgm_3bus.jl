@@ -85,7 +85,6 @@ function cfun(x, u, p)
 
   cost = (w1*(4.0*VM1*VM1 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13))) +
           w2*P2)
-  # cost = VM3
   return cost
 end
 
