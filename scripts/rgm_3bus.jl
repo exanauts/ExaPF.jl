@@ -161,25 +161,27 @@ for i = 1:100
   xk = solve_pf(xk, uk, p, false)
 
   # jacobian
-  gx_closure(x) = gfun(x, uk, p, typeof(x))
-  gx = x -> ForwardDiff.jacobian(gx_closure, x)
+  gx_x(x) = gfun(x, uk, p, typeof(x))
+  gx = x -> ForwardDiff.jacobian(gx_x, x)
 
   # gradient
-  cfun_closure(x) = cfun(x, uk, p)
-  fx = x ->ForwardDiff.gradient(cfun_closure, x)
+  cfun_x(x) = cfun(x, uk, p)
+  fx = x ->ForwardDiff.gradient(cfun_x, x)
 
   # lamba calculation
   println("Computing Lagrange multipliers")
   lambda = -inv(gx(xk)')*fx(xk)
 
   # compute g_u, g_u
-  cfun_closure2(u) = cfun(xk, u, p)
-  fu = u ->ForwardDiff.gradient(cfun_closure2, u)
-  gx_closure2(u) = gfun(xk, u, p, typeof(u))
-  gu = u -> ForwardDiff.jacobian(gx_closure2, u)
+  cfun_u(u) = cfun(xk, u, p)
+  fu = u ->ForwardDiff.gradient(cfun_u, u)
+  gx_u(u) = gfun(xk, u, p, typeof(u))
+  gu = u -> ForwardDiff.jacobian(gx_u, u)
 
   # compute gradient of cost function
   grad_c = fu(uk) + gu(uk)'*lambda
+  println("fu: ", norm(fu(uk)))
+  println("gu(uk)'*lambda: ", norm(gu(uk)'*lambda))
   println("Norm of gradient ", norm(grad_c))
 
   # step
