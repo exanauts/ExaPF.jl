@@ -2,6 +2,8 @@ using NLsolve
 using ForwardDiff
 using LinearAlgebra
 using Printf
+using LineSearches
+using Plots
 
 # ELEMENTAL FUNCTIONS
 
@@ -83,6 +85,7 @@ function cfun(x, u, p)
 
   cost = (w1*(4.0*VM1*VM1 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13))) +
           w2*P2)
+  # cost = VM3
   return cost
 end
 
@@ -145,10 +148,13 @@ println(x)
 println(u)
 
 # copy to iteration vectors
-global xk = copy(x)
-global uk = copy(u)
+xk = copy(x)
+uk = copy(u)
+s = similar(uk)
 
 iterations = 0
+
+ls = BackTracking()
 
 
 for i = 1:100
@@ -172,22 +178,40 @@ for i = 1:100
   println("Computing Lagrange multipliers")
   lambda = -inv(gx(xk)')*fx(xk)
 
-  # compute g_u, g_u
+  # compute f_u, g_u
   cfun_u(u) = cfun(xk, u, p)
   fu = u ->ForwardDiff.gradient(cfun_u, u)
   gx_u(u) = gfun(xk, u, p, typeof(u))
   gu = u -> ForwardDiff.jacobian(gx_u, u)
 
   # compute gradient of cost function
-  grad_c = fu(uk) + gu(uk)'*lambda
+  Lu = u -> cfun_u(u) + gx_u(u)'*lambda
+  grad_Lu = u -> (fu(u) + gu(u)'*lambda)
+  grad_L = grad_Lu(uk)
   println("fu: ", norm(fu(uk)))
   println("gu(uk)'*lambda: ", norm(gu(uk)'*lambda))
-  println("Norm of gradient ", norm(grad_c))
+  println("lambda: ", lambda)
+  println("Norm of gradient ", norm(grad_L))
 
+  # Search/step direction
+  global s .= -grad_L
+  Lalpha(alpha) = Lu(uk .+ alpha.*s)
+  function grad_Lalpha(alpha)
+    return dot(grad_Lu(uk .+ alpha .* s), s)
+  end
+  function Lgrad_Lalpha(alpha)
+    gvec = grad_Lu(uk .+ alpha .* s)
+    phi = Lu(uk .+ alpha .*s)
+    dphi = dot(gvec, s)
+    return (phi, dphi)
+  end
+  dL_0 = dot(s, grad_L)
   # step
   println("Computing new control vector")
-  c_par = 0.1
-  uk = uk - c_par*grad_c
+  alpha = 0.1
+  obj = Lu(uk)
+  # alpha, obj = ls(Lalpha, grad_Lalpha, Lgrad_Lalpha, 1.0, obj, dL_0)
+  uk = uk - alpha*grad_L
   
   println("Cost: ", cfun(xk, uk, p))
   #@printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
