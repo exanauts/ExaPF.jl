@@ -3,7 +3,7 @@ using LinearAlgebra
 
 
 function ls(uk::Vector{Float64}, grad_L::Vector{Float64}, Lu::Function, grad_Lu::Function)
-  global s .= -grad_L
+  s = copy(-grad_L)
   Lalpha(alpha) = Lu(uk .+ alpha.*s)
   function grad_Lalpha(alpha)
     return dot(grad_Lu(uk .+ alpha .* s), s)
