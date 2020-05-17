@@ -2,8 +2,8 @@ using NLsolve
 using ForwardDiff
 using LinearAlgebra
 using Printf
-using LineSearches
 using Plots
+include("../src/linesearches.jl")
 
 # ELEMENTAL FUNCTIONS
 
@@ -153,7 +153,6 @@ s = similar(uk)
 
 iterations = 0
 
-ls = BackTracking()
 
 
 for i = 1:100
@@ -187,33 +186,22 @@ for i = 1:100
   Lu = u -> cfun_u(u) + gx_u(u)'*lambda
   grad_Lu = u -> (fu(u) + gu(u)'*lambda)
   grad_L = grad_Lu(uk)
-  println("fu: ", norm(fu(uk)))
-  println("gu(uk)'*lambda: ", norm(gu(uk)'*lambda))
-  println("lambda: ", lambda)
-  println("Norm of gradient ", norm(grad_L))
 
-  # Search/step direction
-  global s .= -grad_L
-  Lalpha(alpha) = Lu(uk .+ alpha.*s)
-  function grad_Lalpha(alpha)
-    return dot(grad_Lu(uk .+ alpha .* s), s)
-  end
-  function Lgrad_Lalpha(alpha)
-    gvec = grad_Lu(uk .+ alpha .* s)
-    phi = Lu(uk .+ alpha .*s)
-    dphi = dot(gvec, s)
-    return (phi, dphi)
-  end
-  dL_0 = dot(s, grad_L)
   # step
   println("Computing new control vector")
   alpha = 0.1
-  obj = Lu(uk)
-  # alpha, obj = ls(Lalpha, grad_Lalpha, Lgrad_Lalpha, 1.0, obj, dL_0)
+  # Optional linesearch
+  alpha = ls(uk, grad_L, Lu, grad_Lu)
+  println("Violation: ", norm(gx_u(uk)))
+  println("step: ", uk - alpha*grad_L, " = ", uk, " - ", alpha*grad_L)
   uk = uk - alpha*grad_L
   
   println("Cost: ", cfun(xk, uk, p))
+  println("Violation: ", norm(gx_u(uk)))
+  println("L: ", Lu(uk))
+  println("grad_L: ", norm(grad_L))
   #@printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
   #@printf("VM1 %3.2f. P2 %2.2f. VM2 %2.2f.\n", uk[1], uk[2], uk[3])
+  println("------------------------------")
 
 end
