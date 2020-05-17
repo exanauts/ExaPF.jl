@@ -190,6 +190,7 @@ for i = 1:100
   # step
   println("Computing new control vector")
   c_par = 0.1
+  # Optional linesearch
   c_par = ls(uk, grad_L, Lu, grad_Lu)
   uk = uk - c_par*grad_L
   
