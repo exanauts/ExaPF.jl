@@ -149,7 +149,6 @@ println(u)
 # copy to iteration vectors
 xk = copy(x)
 uk = copy(u)
-s = similar(uk)
 
 iterations = 0
 
@@ -176,7 +175,7 @@ for i = 1:100
   println("Computing Lagrange multipliers")
   lambda = -inv(gx(xk)')*fx(xk)
 
-  # compute f_u, g_u
+  # compute g_u, g_u
   cfun_u(u) = cfun(xk, u, p)
   fu = u ->ForwardDiff.gradient(cfun_u, u)
   gx_u(u) = gfun(xk, u, p, typeof(u))
@@ -186,22 +185,16 @@ for i = 1:100
   Lu = u -> cfun_u(u) + gx_u(u)'*lambda
   grad_Lu = u -> (fu(u) + gu(u)'*lambda)
   grad_L = grad_Lu(uk)
+  println("Norm of gradient ", norm(grad_L))
 
   # step
   println("Computing new control vector")
-  alpha = 0.1
-  # Optional linesearch
-  alpha = ls(uk, grad_L, Lu, grad_Lu)
-  println("Violation: ", norm(gx_u(uk)))
-  println("step: ", uk - alpha*grad_L, " = ", uk, " - ", alpha*grad_L)
-  uk = uk - alpha*grad_L
+  c_par = 0.1
+  c_par = ls(uk, grad_L, Lu, grad_Lu)
+  uk = uk - c_par*grad_L
   
   println("Cost: ", cfun(xk, uk, p))
-  println("Violation: ", norm(gx_u(uk)))
-  println("L: ", Lu(uk))
-  println("grad_L: ", norm(grad_L))
   #@printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
   #@printf("VM1 %3.2f. P2 %2.2f. VM2 %2.2f.\n", uk[1], uk[2], uk[3])
-  println("------------------------------")
 
 end
