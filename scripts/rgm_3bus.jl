@@ -151,7 +151,7 @@ global uk = copy(u)
 iterations = 0
 
 
-for i = 1:100
+for i = 1:10
   global xk
   global uk
   println("Iteration ", i)
@@ -180,17 +180,16 @@ for i = 1:100
 
   # compute gradient of cost function
   grad_c = fu(uk) + gu(uk)'*lambda
-  println("fu: ", norm(fu(uk)))
-  println("gu(uk)'*lambda: ", norm(gu(uk)'*lambda))
+  #println("fu: ", norm(fu(uk)))
+  #println("gu(uk)'*lambda: ", norm(gu(uk)'*lambda))
   println("Norm of gradient ", norm(grad_c))
+  println("Cost: ", cfun(xk, uk, p))
 
   # step
   println("Computing new control vector")
   c_par = 0.1
   uk = uk - c_par*grad_c
   
-  println("Cost: ", cfun(xk, uk, p))
   #@printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
   #@printf("VM1 %3.2f. P2 %2.2f. VM2 %2.2f.\n", uk[1], uk[2], uk[3])
-
 end
