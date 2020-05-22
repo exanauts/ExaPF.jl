@@ -2,6 +2,8 @@ using NLsolve
 using ForwardDiff
 using LinearAlgebra
 using Printf
+using Plots
+include("../src/linesearches.jl")
 
 # ELEMENTAL FUNCTIONS
 
@@ -135,13 +137,13 @@ println(x)
 println(u)
 
 # copy to iteration vectors
-global xk = copy(x)
-global uk = copy(u)
+xk = copy(x)
+uk = copy(u)
 
 iterations = 0
 
 
-for i = 1:10
+for i = 1:1000
   global xk
   global uk
   println("Iteration ", i)
@@ -169,16 +171,18 @@ for i = 1:10
   gu = u -> ForwardDiff.jacobian(gx_u, u)
 
   # compute gradient of cost function
-  grad_c = fu(uk) + gu(uk)'*lambda
-  #println("fu: ", norm(fu(uk)))
-  #println("gu(uk)'*lambda: ", norm(gu(uk)'*lambda))
-  println("Norm of gradient ", norm(grad_c))
-  println("Cost: ", cfun(xk, uk, p))
+  Lu = u -> cfun_u(u) + gx_u(u)'*lambda
+  grad_Lu = u -> (fu(u) + gu(u)'*lambda)
+  grad_L = grad_Lu(uk)
+  println("Norm of gradient ", norm(grad_L))
 
   # step
   println("Computing new control vector")
-  c_par = 0.12
-  uk = uk - c_par*grad_c
+  c_par = 1.0
+  # Optional linesearch
+  c_par = ls(uk, grad_L, Lu, grad_Lu)
+  @show c_par
+  uk = uk - c_par*grad_L
   
   #@printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
   #@printf("VM1 %3.2f. P2 %2.2f. VM2 %2.2f.\n", uk[1], uk[2], uk[3])

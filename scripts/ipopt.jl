@@ -65,7 +65,7 @@ end
 
 function eval_g(x)
   T = typeof(x)
-  g = zeros(T.parameters[1], 3)
+  g = zeros(T.parameters[1], m)
   eval_g(x,g)
   return g
 end
@@ -148,7 +148,7 @@ p[3] = 1.0 #Q3
 
 # Number of nonzeros in upper triangular Hessian
 hnnz = Int(n*(n+1)/2)
-prob = createProblem(n, x_L, x_U, m, g_L, g_U, 18, hnnz,
+prob = createProblem(n, x_L, x_U, m, g_L, g_U, m*n, hnnz,
                      eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
 
 prob.x = [1.0, 0.0, 0.0, 1.0, 1.7, 1.0]
