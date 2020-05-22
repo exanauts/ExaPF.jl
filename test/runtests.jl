@@ -13,22 +13,22 @@ target = "cpu"
 end
 
 # Not working yet. Will check whether Ipopt and reduced method match in objective
-# @testset "rgm_3bus" begin
-#    include("../scripts/rgm_3bus.jl")
-#    @show red_cost = cfun(xk, uk, p)
-#    include("../scripts/ipopt.jl")
-#    @show ipopt_cost = cfun(xk, uk, p)
-#    gap = abs(red_cost - ipopt_cost)
-#    println("gap = abs(red_cost - ipopt_cost): $gap = abs($red_cost - $ipopt_cost)")
-#    @test gap ≈ 0.0 
-# end
+@testset "rgm_3bus" begin
+   include("../scripts/rgm_3bus.jl")
+   @show red_cost = cfun(xk, uk, p)
+   include("../scripts/ipopt.jl")
+   @show ipopt_cost = cfun(xk, uk, p)
+   gap = abs(red_cost - ipopt_cost)
+   println("gap = abs(red_cost - ipopt_cost): $gap = abs($red_cost - $ipopt_cost)")
+   @test gap ≈ 0.0 
+end
 
-# @testset "rgm_3bus_ref" begin
-#    include("../scripts/rgm_3bus_ref.jl")
-#    @show red_cost = cfun(xk, uk, p)
-#    include("../scripts/ipopt_ref.jl")
-#    @show ipopt_cost = cfun(xk, uk, p)
-#    gap = abs(red_cost - ipopt_cost)
-#    println("gap = abs(red_cost - ipopt_cost): $gap = abs($red_cost - $ipopt_cost)")
-#    @test gap ≈ 0.0 
-# end
+@testset "rgm_3bus_ref" begin
+   include("../scripts/rgm_3bus_ref.jl")
+   @show red_cost = cfun(xk, uk, p)
+   include("../scripts/ipopt_ref.jl")
+   @show ipopt_cost = cfun(xk, uk, p)
+   gap = abs(red_cost - ipopt_cost)
+   println("gap = abs(red_cost - ipopt_cost): $gap = abs($red_cost - $ipopt_cost)")
+   @test gap ≈ 0.0 
+end
