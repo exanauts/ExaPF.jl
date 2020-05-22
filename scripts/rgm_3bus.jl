@@ -153,12 +153,7 @@ uk = copy(u)
 iterations = 0
 
 
-<<<<<<< HEAD
-
-for i = 1:100
-=======
 for i = 1:10
->>>>>>> master
   global xk
   global uk
   println("Iteration ", i)
