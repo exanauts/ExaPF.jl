@@ -267,7 +267,7 @@ function residualJacobian(V, Ybus, pv, pq)
 end
 
 
-function newtonpf(pf::Pf)
+function solve(pf::Pf, npartitions = 2)
   # Set array type
   # For CPU choose Vector and SparseMatrixCSC
   # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
@@ -360,16 +360,9 @@ function newtonpf(pf::Pf)
 
   J = residualJacobian(V, Ybus, pv, pq)
   dim_J = size(J, 1)
-  @show size(J)
-  # Number of partitions for the additive Schwarz preconditioner
-  
-  if dim_J > 200
-    npartitions = Int(ceil(dim_J/100))
-  else
-    npartitions = 2 
-  end
-
   @show npartitions
+  nblock = size(J,1)/npartitions
+  println("Blocksize: n = ", nblock, " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
   println("Partitioning...")
   partition = Precondition.Partition(J, npartitions)
   println("$npartitions partitions created")
@@ -400,15 +393,15 @@ function newtonpf(pf::Pf)
     @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
-      # @timeit to "BiCGstab" dx = bicgstab(J, F, P)
-      @timeit to "CPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
-      dx = -x
+      @timeit to "CPU-BICGSTAB" dx = -bicgstab(J, F, P)
+      # @timeit to "CPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
+      # dx = -x
     end
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
-      # @timeit to "BiCGstab" dx = bicgstab(J, F, P, to)
-      @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
+      @timeit to "GPU-BICGSTAB" dx = -bicgstab(J, F, P)
+      # @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
       #show(stats)
-      dx = -x
+      # dx = -x
       # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
 

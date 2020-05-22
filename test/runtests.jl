@@ -4,10 +4,22 @@ using Test
 # this variable is used in macros to generate the code at compile time.
 # This implies we cannot both test gpu and cpu code here.
 target = "cpu"
-@testset "Powerflow" begin
+@testset "Powerflow CPU" begin
     datafile = "test/case14.raw"
     include("../examples/pf.jl")
-    sol, conv, res = pf(datafile)
+    sol, conv, res = pf(datafile, 2)
+    # test convergence is OK
+    @test conv
+    # test norm is minimized
+    @test res < 1e-7
+end
+
+# TODO: This throws warnings because the cpu version ran before.
+target = "cuda"
+@testset "Powerflow GPU" begin
+    datafile = "test/case14.raw"
+    include("../examples/pf.jl")
+    sol, conv, res = pf(datafile, 2)
     # test convergence is OK
     @test conv
     # test norm is minimized

@@ -6,7 +6,8 @@ using PowerFlow.Network
 # datafile = "GO-Data/datasets/Trial_3_Real-Time/Network_30R-025/scenario_1/case.raw"
 # datafile = "GO-Data/datasets/Trial_3_Real-Time/Network_13R-015/scenario_11/case.raw"
 # datafile = "test/case14.raw"
-function pf(datafile)
+# npartition: Number of partitions for the additive Schwarz preconditioner
+function pf(datafile, npartition)
 # read data
 data = Parse.parse_raw(datafile)
 
@@ -29,5 +30,5 @@ Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = Network.makeYbus(data);
 # V, Ybus, data
 pf = Pf(V, Ybus, data)
 
-return PowerFlow.newtonpf(pf);
+return PowerFlow.solve(pf, npartition);
 end
