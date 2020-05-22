@@ -1,8 +1,8 @@
 module Network
 
 using SparseArrays
-include("parse.jl")
-include("parse_raw.jl")
+include("parse/parse.jl")
+include("parse/parse_raw.jl")
 
 # Create an admittance matrix. The implementation is a modification of
 # MATPOWER's makeYbus. We attach the original MATPOWER's license in makeYbus.m:

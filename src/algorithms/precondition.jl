@@ -1,4 +1,4 @@
-module precondition
+module Precondition
 
 using LightGraphs
 using Metis
@@ -6,19 +6,18 @@ using SparseArrays
 using LinearAlgebra
 using CuArrays
 using CuArrays.CUSPARSE
-export preconditioner
 using CUDAnative
 
 cuzeros = CuArrays.zeros
 
-mutable struct partition
+mutable struct Partition
   npart::Int64
   partitions::Vector{Vector{Int64}}
   cupartitions::Vector{CuVector{Int64}}
   Js::Vector{Matrix{Float64}}
   cuJs::Vector{CuMatrix{Float64}}
   P
-  function partition(J, blocks)
+  function Partition(J, blocks)
     adj = build_adjmatrix(J)
     g = Graph(adj)
     npart = blocks
@@ -69,7 +68,7 @@ end
       return sparse(rows,cols,vals,size(A,1),size(A,2))
   end
 
-  function create_preconditioner(J, p::partition)
+  function create_preconditioner(J, p::Partition)
     if J isa CuSparseMatrixCSR
       cscJ = collect(switch2csc(J))
     else

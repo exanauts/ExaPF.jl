@@ -1,15 +1,15 @@
-module ad
-include("kernels.jl")
+module AD
+include("target/kernels.jl")
 using ForwardDiff
 using CUDAnative, CuArrays
-using .kernels
+using .Kernels
 using TimerOutputs
 using SparseArrays
   
 function myseed!(duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
               seeds::AbstractArray{ForwardDiff.Partials{N,V}}) where {T,V,N}
 
-  kernels.@getstrideindex()
+  Kernels.@getstrideindex()
 
   for i in index:stride:size(duals,1)
 #   for i in 1:size(duals,1)
@@ -21,7 +21,7 @@ end
 
 function getpartials(compressedJ, t1sF)
 
-  kernels.@getstrideindex()
+  Kernels.@getstrideindex()
 
   for i in index:stride:size(t1sF,1) # Go over outputs
     compressedJ[:,i] .= ForwardDiff.partials.(t1sF[i]).values
@@ -30,7 +30,7 @@ end
 
 function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
 
-  kernels.@getstrideindex()
+  Kernels.@getstrideindex()
 
   for i in index:stride:nmap
     for j in J_rowPtr[i]:J_rowPtr[i+1]-1
@@ -55,8 +55,8 @@ function residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, v_m, 
   arrays.x[nv_m+1:nv_m+nv_a] .= v_a
   arrays.t1sF .= 0.0
   @timeit to "Seeding" begin
-  kernels.@sync begin
-    kernels.@dispatch threads=nthreads blocks=nblocks myseed!(arrays.t1svarx, arrays.varx, arrays.t1sseeds)
+  Kernels.@sync begin
+    Kernels.@dispatch threads=nthreads blocks=nblocks myseed!(arrays.t1svarx, arrays.varx, arrays.t1sseeds)
   end
   end
   nthreads=256
@@ -64,8 +64,8 @@ function residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, v_m, 
   end
 
   @timeit to "Function" begin
-  kernels.@sync begin
-    kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(arrays.t1sF, arrays.t1sx[1:nv_m], arrays.t1sx[nv_m+1:nv_m+nv_a],
+  Kernels.@sync begin
+    Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(arrays.t1sF, arrays.t1sx[1:nv_m], arrays.t1sx[nv_m+1:nv_m+nv_a],
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, 
         ybus_im.nzval, ybus_im.colptr, ybus_im.rowval, 
         pinj, qinj, pv, pq, nbus)
@@ -73,8 +73,8 @@ function residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, v_m, 
   end
 
   @timeit to "Get partials" begin
-  kernels.@sync begin
-    kernels.@dispatch threads=nthreads blocks=nblocks getpartials(arrays.compressedJ, arrays.t1sF)
+  Kernels.@sync begin
+    Kernels.@dispatch threads=nthreads blocks=nblocks getpartials(arrays.compressedJ, arrays.t1sF)
   end
   end
   @timeit to "Uncompress" begin
@@ -87,8 +87,8 @@ function residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, v_m, 
     end
   end
   if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
-    kernels.@sync begin
-      kernels.@dispatch threads=nthreads blocks=nblocks uncompress(
+    Kernels.@sync begin
+      Kernels.@dispatch threads=nthreads blocks=nblocks uncompress(
             J.nzVal, J.rowPtr, J.colVal, arrays.compressedJ, coloring, nmap)
     end
   end

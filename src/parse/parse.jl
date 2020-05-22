@@ -1,3 +1,5 @@
+module Parse
+
 function parse_skipsection(lines::Array{String}, pos::Int)
     while pos <= length(lines)
         line = strip(lines[pos])
@@ -41,3 +43,5 @@ include("parse_raw.jl")
 include("parse_rop.jl")
 include("parse_inl.jl")
 include("parse_con.jl")
+
+end

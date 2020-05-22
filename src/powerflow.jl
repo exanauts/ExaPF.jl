@@ -9,8 +9,8 @@
 module PowerFlow
 
 include("ad.jl")
-include("kernels.jl")
-include("precondition.jl")
+include("target/kernels.jl")
+include("algorithms/precondition.jl")
 include("iterative.jl")
 using ForwardDiff
 using LinearAlgebra
@@ -24,22 +24,26 @@ using CUDAnative
 to = TimerOutput()
 using SparseDiffTools
 using IterativeSolvers
-using .ad
-using .kernels
-using .precondition
-using .iterative
+using .AD
+using .Kernels
+using .Precondition
+using .Iterative
 using Krylov
 
-include("parse.jl")
-include("parse_raw.jl")
+include("parse/parse.jl")
 
-mutable struct spmat{T}
+# struct Pf
+
+
+# end
+
+mutable struct Spmat{T}
   colptr
   rowval
   nzval
 
   # function spmat{T}(colptr::Vector{Int64}, rowval::Vector{Int64}, nzval::Vector{T}) where T
-  function spmat{T}(mat::SparseMatrixCSC{Complex{Float64}, Int}) where T
+  function Spmat{T}(mat::SparseMatrixCSC{Complex{Float64}, Int}) where T
     matreal = new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(real.(mat.nzval)))
     matimag = new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(imag.(mat.nzval)))
     return matreal, matimag
@@ -61,9 +65,9 @@ function assembleSbus(gen, load, SBASE, nbus)
 
   # retrieve indeces
   GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-  GEN_PT, GEN_PB = idx_gen()
+  GEN_PT, GEN_PB = Parse.idx_gen()
 
-  LOAD_BUS, LOAD_ID, LOAD_STAT, LOAD_PL, LOAD_QL = idx_load()
+  LOAD_BUS, LOAD_ID, LOAD_STAT, LOAD_PL, LOAD_QL = Parse.idx_load()
 
   for i in 1:ngen
     if gen[i, GEN_STAT] == 1
@@ -92,10 +96,10 @@ function bustypeindex(bus, gen)
 
   # retrieve indeces
   BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-  BUS_EVLO, BUS_TYPE = idx_bus()
+  BUS_EVLO, BUS_TYPE = Parse.idx_bus()
 
   GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-  GEN_PT, GEN_PB = idx_gen()
+  GEN_PT, GEN_PB = Parse.idx_gen()
   
   # form vector that lists the number of generators per bus.
   # If a PV bus has 0 generators (e.g. due to contingency)
@@ -201,7 +205,7 @@ function residualFunction_polar!(F, v_m, v_a,
 npv = size(pv, 1)
 npq = size(pq, 1)
 
-kernels.@getstrideindex()
+Kernels.@getstrideindex()
 
 # REAL PV
 for i in index:stride:npv
@@ -210,7 +214,7 @@ for i in index:stride:npv
   for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
   to = ybus_re_rowval[c]
   aij = v_a[fr] - v_a[to]
-  F[i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*kernels.@cos(aij) + ybus_im_nzval[c]*kernels.@sin(aij))
+  F[i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*Kernels.@cos(aij) + ybus_im_nzval[c]*Kernels.@sin(aij))
   end
 end
 
@@ -221,7 +225,7 @@ for i in index:stride:npq
   for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
   to = ybus_re_rowval[c]
   aij = v_a[fr] - v_a[to]
-  F[npv + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*kernels.@cos(aij) + ybus_im_nzval[c]*kernels.@sin(aij))
+  F[npv + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*Kernels.@cos(aij) + ybus_im_nzval[c]*Kernels.@sin(aij))
   end
 end
 
@@ -232,7 +236,7 @@ for i in index:stride:npq
   for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
   to = ybus_re_rowval[c]
   aij = v_a[fr] - v_a[to]
-  F[npv + npq + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*kernels.@sin(aij) - ybus_im_nzval[c]*kernels.@cos(aij))
+  F[npv + npq + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*Kernels.@sin(aij) - ybus_im_nzval[c]*Kernels.@cos(aij))
   end
 end
 
@@ -284,16 +288,16 @@ function newtonpf(V, Ybus, data)
   iter = 0
   converged = false
 
-  ybus_re, ybus_im = spmat{T}(Ybus)
+  ybus_re, ybus_im = Spmat{T}(Ybus)
 
   # data index
   BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-  BUS_EVLO, BUS_TYPE = idx_bus()
+  BUS_EVLO, BUS_TYPE = Parse.idx_bus()
 
   GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-  GEN_PT, GEN_PB = idx_gen()
+  GEN_PT, GEN_PB = Parse.idx_gen()
 
-  LOAD_BUS, LOAD_ID, LOAD_STATUS, LOAD_PL, LOAD_QL = idx_load()
+  LOAD_BUS, LOAD_ID, LOAD_STATUS, LOAD_PL, LOAD_QL = Parse.idx_load()
 
   bus = data["BUS"]
   gen = data["GENERATOR"]
@@ -316,7 +320,7 @@ function newtonpf(V, Ybus, data)
 
   # voltage
   Vm = abs.(V)
-  Va = kernels.@angle(V)
+  Va = Kernels.@angle(V)
 
   # Number of GPU threads
   nthreads=256
@@ -338,8 +342,8 @@ function newtonpf(V, Ybus, data)
   # form residual function
   F = T(zeros(Float64, npv + 2*npq))
   dx = similar(F)
-  kernels.@sync begin
-  kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
+  Kernels.@sync begin
+  Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
                           ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, 
                           ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                           pbus, qbus, pv, pq, nbus)
@@ -358,7 +362,7 @@ function newtonpf(V, Ybus, data)
 
   @show npartitions
   println("Partitioning...")
-  partition = precondition.partition(J, npartitions)
+  partition = Precondition.Partition(J, npartitions)
   println("$npartitions partitions created")
   println("Coloring...")
   @timeit to "Coloring" coloring = T{Int64}(matrix_colors(J))
@@ -366,7 +370,7 @@ function newtonpf(V, Ybus, data)
   println("Number of Jacobian colors: ", ncolors)
   J = M(J)
   println("Creating arrays...")
-  arrays = ad.createArrays(coloring, F, Vm, Va, pv, pq)
+  arrays = AD.createArrays(coloring, F, Vm, Va, pv, pq)
 
   # check for convergence
   normF = norm(F, Inf)
@@ -381,10 +385,10 @@ function newtonpf(V, Ybus, data)
     iter += 1
 
     # J = residualJacobian(V, Ybus, pv, pq)
-    @timeit to "Jacobian" J = ad.residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, Vm, Va,
+    @timeit to "Jacobian" J = AD.residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
     println("Preconditioner with $npartitions partitions")
-    @timeit to "Preconditioner" P = precondition.create_preconditioner(J, partition)
+    @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
       # @timeit to "BiCGstab" dx = bicgstab(J, F, P)
@@ -411,7 +415,7 @@ function newtonpf(V, Ybus, data)
     V .= Vm .* exp.(1im .*Va)
 
     Vm = abs.(V)
-    Va = kernels.@angle(V)
+    Va = Kernels.@angle(V)
 
     # evaluate residual and check for convergence
     # F = residualFunction(V, Ybus, Sbus, pv, pq)
@@ -423,8 +427,8 @@ function newtonpf(V, Ybus, data)
     #        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
     
     F .= 0.0
-    kernels.@sync begin
-    @timeit to "Residual function" kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
+    Kernels.@sync begin
+    @timeit to "Residual function" Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
                           ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, 
                           ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                           pbus, qbus, pv, pq, nbus)

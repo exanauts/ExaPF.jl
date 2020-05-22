@@ -3,7 +3,7 @@ using ForwardDiff
 using LinearAlgebra
 using Printf
 using Plots
-include("../src/linesearches.jl")
+include("../src/algorithms/linesearches.jl")
 
 # ELEMENTAL FUNCTIONS
 

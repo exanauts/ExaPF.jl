@@ -1,8 +1,8 @@
-module iterative
+module Iterative
 
-include("precondition.jl")
+include("algorithms/precondition.jl")
 using LinearAlgebra
-using .precondition
+using .Precondition
 using CuArrays
 using CUDAnative
 using TimerOutputs
@@ -13,8 +13,8 @@ cuzeros = CuArrays.zeros
 
 export bicgstab
 
-mulinvP = precondition.mulinvP
-mulinvP! = precondition.mulinvP!
+mulinvP = Precondition.mulinvP
+mulinvP! = Precondition.mulinvP!
 
 """
   bicgstab according to 

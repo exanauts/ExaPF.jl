@@ -1,4 +1,4 @@
-module kernels
+module Kernels
   using CUDAnative, CuArrays
   export sync, dispatch, generate, togenerate, angle
   

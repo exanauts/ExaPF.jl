@@ -5,27 +5,27 @@ using Test
 # raw_data = "GO-Data/datasets/Trial_3_Real-Time/Network_13R-015/scenario_11/case.raw"
 raw_data = "test/case14.raw"
 # Set this to "cpu" or "cuda" 
-target = "cuda"
+global target="cpu"
 
 
-data_parser ="../src/parse.jl"
-raw_parser ="../src/parse_raw.jl"
+data_parser ="../src/parse/parse.jl"
+raw_parser ="../src/parse/parse_raw.jl"
 network ="../src/network.jl"
 pflow ="../src/powerflow.jl"
 
 # imports
 include(data_parser)
-include(raw_parser)
 include(network)
 include(pflow)
 using .PowerFlow
 using .Network
+using .Parse
 
 # read data
-data = parse_raw(raw_data)
+data = Parse.parse_raw(raw_data)
 
 BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-  BUS_EVLO, BUS_TYPE = idx_bus()
+  BUS_EVLO, BUS_TYPE = Parse.idx_bus()
 
 bus = data["BUS"]
 nbus = size(bus, 1)
@@ -40,9 +40,10 @@ end
 # form Y matrix
 Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = Network.makeYbus(data);
 
-vsol, conv, norm = PowerFlow.newtonpf(V, Ybus, data);
-println("")
-# test convergence is OK
-@test conv
-# test norm is minimized
-@test norm < 1e-7
+# pf = Pf(Network.makeYbus(data))
+
+# @show typeof(V), typeof(Ybus)
+# @show typeof(data["BUS"]), typeof(data["GENERATOR"]), typeof(data["LOAD"]) 
+# @show typeof(["CASE IDENTIFICATION"][1])
+
+vsol, conv, res = PowerFlow.newtonpf(V, Ybus, data);
