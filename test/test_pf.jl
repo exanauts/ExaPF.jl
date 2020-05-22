@@ -1,25 +1,11 @@
-using Test
+using PowerFlow
+using PowerFlow.Parse
+using PowerFlow.Network
 
 # file locations
 # raw_data = "GO-Data/datasets/Trial_3_Real-Time/Network_30R-025/scenario_1/case.raw"
 # raw_data = "GO-Data/datasets/Trial_3_Real-Time/Network_13R-015/scenario_11/case.raw"
 raw_data = "test/case14.raw"
-# Set this to "cpu" or "cuda" 
-global target="cpu"
-
-
-data_parser ="../src/parse/parse.jl"
-raw_parser ="../src/parse/parse_raw.jl"
-network ="../src/network.jl"
-pflow ="../src/powerflow.jl"
-
-# imports
-include(data_parser)
-include(network)
-include(pflow)
-using .PowerFlow
-using .Network
-using .Parse
 
 # read data
 data = Parse.parse_raw(raw_data)
@@ -40,10 +26,7 @@ end
 # form Y matrix
 Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = Network.makeYbus(data);
 
-# pf = Pf(Network.makeYbus(data))
+# V, Ybus, data
+pf = Pf(V, Ybus, data)
 
-# @show typeof(V), typeof(Ybus)
-# @show typeof(data["BUS"]), typeof(data["GENERATOR"]), typeof(data["LOAD"]) 
-# @show typeof(["CASE IDENTIFICATION"][1])
-
-vsol, conv, res = PowerFlow.newtonpf(V, Ybus, data);
+vsol, conv, res = PowerFlow.newtonpf(pf);

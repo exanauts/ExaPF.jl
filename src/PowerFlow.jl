@@ -6,12 +6,18 @@
 # by Ray Zimmerman, PSERC Cornell
 #
 # Covered by the 3-clause BSD License.
+__precompile__(false)
 module PowerFlow
 
+export Pf
+
+include("parse/parse.jl")
+include("parse/parse_raw.jl")
 include("ad.jl")
 include("target/kernels.jl")
 include("algorithms/precondition.jl")
 include("iterative.jl")
+include("network.jl")
 using ForwardDiff
 using LinearAlgebra
 using SparseArrays
@@ -30,12 +36,11 @@ using .Precondition
 using .Iterative
 using Krylov
 
-include("parse/parse.jl")
-
-# struct Pf
-
-
-# end
+struct Pf
+  V::Array{Complex{Float64}}
+  Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
+  data::Dict{String,Array}
+end
 
 mutable struct Spmat{T}
   colptr
@@ -262,7 +267,7 @@ function residualJacobian(V, Ybus, pv, pq)
 end
 
 
-function newtonpf(V, Ybus, data)
+function newtonpf(pf::Pf)
   # Set array type
   # For CPU choose Vector and SparseMatrixCSC
   # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
@@ -277,6 +282,10 @@ function newtonpf(V, Ybus, data)
     M = CuSparseMatrixCSR
     A = CuArray
   end
+
+  V = pf.V
+  data = pf.data
+  Ybus = pf.Ybus
 
   V = T(V)
 
