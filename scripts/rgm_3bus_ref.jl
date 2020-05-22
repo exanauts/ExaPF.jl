@@ -2,8 +2,6 @@ using NLsolve
 using ForwardDiff
 using LinearAlgebra
 using Printf
-using Plots
-include("../src/linesearches.jl")
 
 # ELEMENTAL FUNCTIONS
 
@@ -13,6 +11,7 @@ function gfun!(F, x, u, p)
   VM3 = x[1]
   VA3 = x[2]
   VA2 = x[3]
+  P1  = x[4]
 
   VM1 = u[1]
   P2 = u[2]
@@ -26,22 +25,25 @@ function gfun!(F, x, u, p)
   VA23 = VA2 - VA3
   VA31 = VA3 - VA1
   VA32 = VA3 - VA2
+  VA13 = VA1 - VA3
 
   F[1] = 4.0*VM2*VM2 + VM2*VM3*(-4*cos(VA23) + 10*sin(VA23)) - P2
   F[2] = (8.0*VM3*VM3 + VM3*VM1*(-4*cos(VA31) + 5*sin(VA31))
           + VM3*VM2*(-4*cos(VA32) + 10*sin(VA32)) + P3)
   F[3] = (15.0*VM3*VM3 + VM3*VM1*(-4*sin(VA31) - 5*cos(VA31))
           + VM3*VM2*(-4*sin(VA32) - 10*cos(VA32)) + Q3)
+  F[4] = 4.0*VM1*VM1 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13)) - P1
 end
 
 function gfun(x, u, p, T=typeof(x))
   # Get Float64 of Vectors{Float64}, that is the first parameter
-  F = zeros(T.parameters[1], 3)
+  F = zeros(T.parameters[1], 4)
 
   # retrieve variables
   VM3 = x[1]
   VA3 = x[2]
   VA2 = x[3]
+  P1  = x[4]
 
   VM1 = u[1]
   P2 = u[2]
@@ -55,12 +57,14 @@ function gfun(x, u, p, T=typeof(x))
   VA23 = VA2 - VA3
   VA31 = VA3 - VA1
   VA32 = VA3 - VA2
+  VA13 = VA1 - VA3
 
   F[1] = 4.0*VM2*VM2 + VM2*VM3*(-4*cos(VA23) + 10*sin(VA23)) - P2
   F[2] = (8.0*VM3*VM3 + VM3*VM1*(-4*cos(VA31) + 5*sin(VA31))
           + VM3*VM2*(-4*cos(VA32) + 10*sin(VA32)) + P3)
   F[3] = (15.0*VM3*VM3 + VM3*VM1*(-4*sin(VA31) - 5*cos(VA31))
           + VM3*VM2*(-4*sin(VA32) - 10*cos(VA32)) + Q3)
+  F[4] = 4.0*VM1*VM1 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13)) - P1
   return F
 end
 
@@ -69,13 +73,12 @@ function cfun(x, u, p)
 
   VM3 = x[1]
   VA3 = x[2]
+  P1  = x[4]
 
   VM1 = u[1]
   P2 = u[2]
 
   VA1 = p[1]
-
-  VA13 = VA1 - VA3
 
   # we fix generation weights inside the
   # function to simplify the script and
@@ -83,24 +86,9 @@ function cfun(x, u, p)
   w1 = 1.0
   w2 = 1.0
 
-  cost = (w1*(4.0*VM1*VM1 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13))) +
-          w2*P2)
+  cost = P1 + P2
+
   return cost
-end
-
-function pslack(x, u, p)
-
-  VM3 = x[1]
-  VA3 = x[2]
-
-  VM1 = u[1]
-  P2 = u[2]
-
-  VA1 = p[1]
-
-  VA13 = VA1 - VA3
-
-  return (4.0*VM1*VM1 + VM1*VM3*(-4*cos(VA13) + 5*sin(VA13)))
 end
 
 
@@ -121,7 +109,7 @@ function solve_pf(x, u, p, verbose=true)
 end
 
 # initial parameters
-x = zeros(3)
+x = zeros(4)
 u = zeros(3)
 p = zeros(3)
 
@@ -129,6 +117,7 @@ p = zeros(3)
 x[1] = 1.0 #VM3
 x[2] = 0.0 #VA3
 x[3] = 0.0 #VA2
+x[4] = 0.5 #P1
 
 # this is given by the problem data, but might be "controlled" via OPF
 u[1] = 1.0 #VM1
@@ -141,24 +130,18 @@ p[2] = 2.0 #P3
 p[3] = 1.0 #Q3
 
 
-
 # print initial guesses
 println(x)
 println(u)
 
 # copy to iteration vectors
-xk = copy(x)
-uk = copy(u)
+global xk = copy(x)
+global uk = copy(u)
 
 iterations = 0
 
 
-<<<<<<< HEAD
-
-for i = 1:100
-=======
 for i = 1:10
->>>>>>> master
   global xk
   global uk
   println("Iteration ", i)
@@ -186,17 +169,16 @@ for i = 1:10
   gu = u -> ForwardDiff.jacobian(gx_u, u)
 
   # compute gradient of cost function
-  Lu = u -> cfun_u(u) + gx_u(u)'*lambda
-  grad_Lu = u -> (fu(u) + gu(u)'*lambda)
-  grad_L = grad_Lu(uk)
-  println("Norm of gradient ", norm(grad_L))
+  grad_c = fu(uk) + gu(uk)'*lambda
+  #println("fu: ", norm(fu(uk)))
+  #println("gu(uk)'*lambda: ", norm(gu(uk)'*lambda))
+  println("Norm of gradient ", norm(grad_c))
+  println("Cost: ", cfun(xk, uk, p))
 
   # step
   println("Computing new control vector")
-  c_par = 0.1
-  # Optional linesearch
-  c_par = ls(uk, grad_L, Lu, grad_Lu)
-  uk = uk - c_par*grad_L
+  c_par = 0.12
+  uk = uk - c_par*grad_c
   
   #@printf("VM3 %3.2f. VA3 %2.2f. VA2 %2.2f.\n", xk[1], xk[2], xk[3])
   #@printf("VM1 %3.2f. P2 %2.2f. VM2 %2.2f.\n", uk[1], uk[2], uk[3])
