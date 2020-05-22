@@ -3,12 +3,12 @@ using PowerFlow.Parse
 using PowerFlow.Network
 
 # file locations
-# raw_data = "GO-Data/datasets/Trial_3_Real-Time/Network_30R-025/scenario_1/case.raw"
-# raw_data = "GO-Data/datasets/Trial_3_Real-Time/Network_13R-015/scenario_11/case.raw"
-raw_data = "test/case14.raw"
-
+# datafile = "GO-Data/datasets/Trial_3_Real-Time/Network_30R-025/scenario_1/case.raw"
+# datafile = "GO-Data/datasets/Trial_3_Real-Time/Network_13R-015/scenario_11/case.raw"
+# datafile = "test/case14.raw"
+function pf(datafile)
 # read data
-data = Parse.parse_raw(raw_data)
+data = Parse.parse_raw(datafile)
 
 BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
   BUS_EVLO, BUS_TYPE = Parse.idx_bus()
@@ -29,4 +29,5 @@ Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = Network.makeYbus(data);
 # V, Ybus, data
 pf = Pf(V, Ybus, data)
 
-vsol, conv, res = PowerFlow.newtonpf(pf);
+return PowerFlow.newtonpf(pf);
+end

@@ -5,7 +5,9 @@ using Test
 # This implies we cannot both test gpu and cpu code here.
 target = "cpu"
 @testset "Powerflow" begin
-    include("test_pf.jl")
+    datafile = "test/case14.raw"
+    include("../examples/pf.jl")
+    sol, conv, res = pf(datafile)
     # test convergence is OK
     @test conv
     # test norm is minimized
