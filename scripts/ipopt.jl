@@ -146,13 +146,9 @@ p[1] = 0.0 #VA1, slack angle
 p[2] = 2.0 #P3
 p[3] = 1.0 #Q3
 
-idx = 1
-for row = 1:n
-    for col = 1:row
-        global idx += 1
-    end
-end
-prob = createProblem(n, x_L, x_U, m, g_L, g_U, 18, idx-1,
+# Number of nonzeros in upper triangular Hessian
+hnnz = Int(n*(n+1)/2)
+prob = createProblem(n, x_L, x_U, m, g_L, g_U, 18, hnnz,
                      eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
 
 prob.x = [1.0, 0.0, 0.0, 1.0, 1.7, 1.0]
