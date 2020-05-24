@@ -383,7 +383,7 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
   end
 
   avg_iter = 0
-  gmres_iter = 0
+  linsol_iter = 0
   @timeit to "Newton" while ((!converged) && (iter < maxiter))
 
     iter += 1
@@ -396,11 +396,11 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
       if solver == "bicgstab"
-        @timeit to "CPU-BICGSTAB" x, iters = bicgstab(J, F, P, maxiter=500)
-        gmres_iter += iters
+        @timeit to "CPU-BICGSTAB" (x, history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
+        linsol_iter += history.iters
       elseif solver == "gmres"
-        @timeit to "CPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5, itmax=500)
-        gmres_iter += length(stats.residuals)
+        @timeit to "CPU-GMRES" (x, history) = IterativeSolvers.gmres(P*J, P*F, log=true)
+        linsol_iter += history.iters
       else
         error("Unknown solver $solver")
       end
@@ -408,7 +408,6 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
     end
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
       @timeit to "GPU-BICGSTAB" dx = -bicgstab(J, F, P)
-      # @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5, itmax=500)
       dx = -x
       # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
@@ -459,8 +458,8 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
   end
 
   show(to)
-  avg_iter = gmres_iter / iter
-  return V, converged, normF, avg_iter, gmres_iter
+  avg_iter = linsol_iter / iter
+  return V, converged, normF, avg_iter, linsol_iter
 
 end
 
