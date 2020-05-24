@@ -382,6 +382,8 @@ function solve(pf::Pf, npartitions = 2)
     converged = true
   end
 
+  avg_iter = 0
+  gmres_iter = 0
   @timeit to "Newton" while ((!converged) && (iter < maxiter))
 
     iter += 1
@@ -393,15 +395,17 @@ function solve(pf::Pf, npartitions = 2)
     @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
-      @timeit to "CPU-BICGSTAB" dx = -bicgstab(J, F, P)
-      # @timeit to "CPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
-      # dx = -x
+      # @timeit to "CPU-BICGSTAB" dx = -bicgstab(J, F, P)
+      @timeit to "CPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5)
+      gmres_iter += length(stats.residuals)
+      
+      dx = -x
     end
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
-      @timeit to "GPU-BICGSTAB" dx = -bicgstab(J, F, P)
-      # @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, itmax=500)
-      #show(stats)
-      # dx = -x
+      # @timeit to "GPU-BICGSTAB" dx = -bicgstab(J, F, P)
+      @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5)
+      show(stats)
+      dx = -x
       # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end
 
@@ -451,7 +455,8 @@ function solve(pf::Pf, npartitions = 2)
   end
 
   show(to)
-  return V, converged, normF
+  avg_iter = gmres_iter / iter
+  return V, converged, normF, avg_iter, gmres_iter
 
 end
 
