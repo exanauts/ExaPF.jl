@@ -131,9 +131,11 @@ function createArrays(coloring, F, v_m, v_a, pv, pq)
   nmap = size(map,1)
 
   t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
-  x = T{Float64}(undef, nv_m + nv_a)
+  # x = T{Float64}(undef, nv_m + nv_a)
+  x = T(zeros(Float64, nv_m + nv_a))
   t1sx = T{t1s{ncolor}}(x)
-  t1sF = T{t1s{ncolor}}(undef, nmap)
+  # t1sF = T{t1s{ncolor}}(undef, nmap)
+  t1sF = T{t1s{ncolor}}(zeros(Float64, nmap))
   varx = view(x,map)
   t1sseedvec = zeros(Float64, ncolor)
   t1sseeds = T{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
@@ -146,7 +148,7 @@ function createArrays(coloring, F, v_m, v_a, pv, pq)
     t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
     t1sseedvec .= 0
   end
-  compressedJ = M{Float64}(undef, ncolor, nmap)
+  compressedJ = M{Float64}(zeros(Float64, ncolor, nmap))
   t1svarx = view(t1sx, map)
   nthreads=256
   nblocks=ceil(Int64, nmap/nthreads)
