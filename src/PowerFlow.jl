@@ -267,7 +267,7 @@ function residualJacobian(V, Ybus, pv, pq)
 end
 
 
-function solve(pf::Pf, npartitions = 2)
+function solve(pf::Pf, npartitions = 2, solver="gmres")
   # Set array type
   # For CPU choose Vector and SparseMatrixCSC
   # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
@@ -395,16 +395,20 @@ function solve(pf::Pf, npartitions = 2)
     @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
-      # @timeit to "CPU-BICGSTAB" dx = -bicgstab(J, F, P)
-      @timeit to "CPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5)
-      gmres_iter += length(stats.residuals)
-      
+      if solver == "bicgstab"
+        @timeit to "CPU-BICGSTAB" x, iters = bicgstab(J, F, P, maxiter=500)
+        gmres_iter += iters
+      elseif solver == "gmres"
+        @timeit to "CPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5, itmax=500)
+        gmres_iter += length(stats.residuals)
+      else
+        error("Unknown solver $solver")
+      end
       dx = -x
     end
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
-      # @timeit to "GPU-BICGSTAB" dx = -bicgstab(J, F, P)
-      @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5)
-      show(stats)
+      @timeit to "GPU-BICGSTAB" dx = -bicgstab(J, F, P)
+      # @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5, itmax=500)
       dx = -x
       # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
     end

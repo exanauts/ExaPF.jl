@@ -112,7 +112,7 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1),
     iter   += 1
   end
 
-  return xi
+  return xi, iter
 
 end
 
