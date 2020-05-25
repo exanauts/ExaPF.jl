@@ -13,9 +13,9 @@ cuzeros = CuArrays.zeros
 mutable struct Partition
   npart::Int64
   partitions::Vector{Vector{Int64}}
-  cupartitions::Vector{CuVector{Int64}}
+  # cupartitions::Vector{CuVector{Int64}}
   Js::Vector{Matrix{Float64}}
-  cuJs::Vector{CuMatrix{Float64}}
+  # cuJs::Vector{CuMatrix{Float64}}
   P
   function Partition(J, blocks)
     adj = build_adjmatrix(J)
@@ -23,26 +23,27 @@ mutable struct Partition
     npart = blocks
     part = Metis.partition(g, npart)
     partitions = Vector{Vector{Int64}}()
-    cupartitions = Vector{CuVector{Int64}}(undef, npart)
+    # cupartitions = Vector{CuVector{Int64}}(undef, npart)
     for i in 1:npart
       push!(partitions, [])
     end
     for (i,v) in enumerate(part)
       push!(partitions[v], i)
     end
-    for i in 1:npart
-      cupartitions[i] = CuVector{Int64}(partitions[i])
-    end
+    # for i in 1:npart
+    #   cupartitions[i] = CuVector{Int64}(partitions[i])
+    # end
     Js = Vector{Matrix{Float64}}(undef, npart)
     for i in 1:npart
       Js[i] = zeros(Float64, length(partitions[i]), length(partitions[i]))
     end
-    cuJs = Vector{CuMatrix{Float64}}(undef, npart)
-    for i in 1:npart
-      cuJs[i] = cuzeros(Float64, length(partitions[i]), length(partitions[i]))
-    end
-    P = CuSparseMatrixCSR(J)
-    return new(npart, partitions, cupartitions, Js, cuJs, P)
+    # cuJs = Vector{CuMatrix{Float64}}(undef, npart)
+    # for i in 1:npart
+    #   cuJs[i] = cuzeros(Float64, length(partitions[i]), length(partitions[i]))
+    # end
+    # P = CuSparseMatrixCSR(J)
+    # return new(npart, partitions, cupartitions, Js)# cuJs, P)
+    return new(npart, partitions, Js, nothing)# cuJs, P)
   end
 end
 
