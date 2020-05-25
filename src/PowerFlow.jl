@@ -406,8 +406,8 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
       dx = -x
     end
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
-      @timeit to "GPU-BICGSTAB" x, iter = bicgstab(J, F, P, maxiter=500)
-      push!(linsol_iters, iter)
+      @timeit to "GPU-BICGSTAB" x, lin_iter = bicgstab(J, F, P, maxiter=500)
+      push!(linsol_iters, lin_iter)
       # @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5, itmax=500)
       # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
       dx = -x
