@@ -458,7 +458,11 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
     @printf("N-R did not converge.\n")
   end
 
+  # Timer outputs display
   show(to)
+  println("")
+  reset_timer!(to)
+
   return V, converged, normF, linsol_iters[1], sum(linsol_iters)
 
 end
