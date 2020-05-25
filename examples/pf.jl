@@ -7,9 +7,10 @@ using PowerFlow.Network
 # datafile = "GO-Data/datasets/Trial_3_Real-Time/Network_13R-015/scenario_11/case.raw"
 # datafile = "test/case14.raw"
 # npartition: Number of partitions for the additive Schwarz preconditioner
-function pf(datafile, npartition, solver="gmres")
+function pf(datafile, npartition, solver="default")
 # read data
 data = Parse.parse_raw(datafile)
+println(solver)
 
 BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
   BUS_EVLO, BUS_TYPE = Parse.idx_bus()

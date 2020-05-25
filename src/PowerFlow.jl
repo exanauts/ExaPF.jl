@@ -267,7 +267,7 @@ function residualJacobian(V, Ybus, pv, pq)
 end
 
 
-function solve(pf::Pf, npartitions = 2, solver="gmres")
+function solve(pf::Pf, npartitions=2, solver="default")
   # Set array type
   # For CPU choose Vector and SparseMatrixCSC
   # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
@@ -283,10 +283,12 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
     A = CuArray
   end
 
+  # Retrieve parameter and initial voltage guess
   V = pf.V
   data = pf.data
   Ybus = pf.Ybus
 
+  # Convert voltage vector to target
   V = T(V)
 
   # parameters NR
@@ -351,6 +353,8 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
   # form residual function
   F = T(zeros(Float64, npv + 2*npq))
   dx = similar(F)
+
+  # Evaluate residual function
   Kernels.@sync begin
   Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
                           ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, 
@@ -388,28 +392,36 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
     iter += 1
 
     # J = residualJacobian(V, Ybus, pv, pq)
-    @timeit to "Jacobian" J = AD.residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, Vm, Va,
-                        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
-    println("Preconditioner with $npartitions partitions")
-    @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
+    @timeit to "Jacobian" J = AD.residualJacobianAD!(J, residualFunction_polar!, arrays,
+                        coloring, Vm, Va, ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
+    
     if J isa SparseArrays.SparseMatrixCSC
-      # @timeit to "Sparse solver" dx = -(J \ F)
       if solver == "bicgstab"
+        println("Building preconditioner...")
+        @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
+        println("Solving linear system...")
         @timeit to "CPU-BICGSTAB" (x, history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
         push!(linsol_iters, history.iters)
       elseif solver == "gmres"
+        println("Building preconditioner...")
+        @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
+        println("Solving linear system...")
         @timeit to "CPU-GMRES" (x, history) = IterativeSolvers.gmres(P*J, P*F, log=true)
         push!(linsol_iters, history.iters)
       else
-        error("Unknown solver $solver")
+        println("Solving linear system...")
+        @timeit to "CPU-Default sparse solver" x = J\F
+        push!(linsol_iters, 0)
       end
       dx = -x
     end
+    
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
+      println("Building preconditioner...")
+      @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
+      println("Solving linear system...")
       @timeit to "GPU-BICGSTAB" x, lin_iter = bicgstab(J, F, P, maxiter=500)
       push!(linsol_iters, lin_iter)
-      # @timeit to "GPU-GMRES" (x, stats) = Krylov.dqgmres(J, F, M=P, memory=5, itmax=500)
-      # @timeit to "Sparse solver" dx  = -CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
       dx = -x
     end
 
