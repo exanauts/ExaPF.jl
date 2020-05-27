@@ -364,7 +364,7 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
   nblock = size(J,1)/npartitions
   println("Blocksize: n = ", nblock, " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
   println("Partitioning...")
-  partition = Precondition.Partition(J, npartitions)
+  preconditioner = Precondition.Preconditioner(J, npartitions)
   println("$npartitions partitions created")
   println("Coloring...")
   @timeit to "Coloring" coloring = T{Int64}(matrix_colors(J))
@@ -391,7 +391,7 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
     @timeit to "Jacobian" J = AD.residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
     println("Preconditioner with $npartitions partitions")
-    @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
+    @timeit to "Preconditioner" P = Precondition.update(J, preconditioner)
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
       if solver == "bicgstab"

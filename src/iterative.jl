@@ -13,8 +13,8 @@ cuzeros = CuArrays.zeros
 
 export bicgstab
 
-mulinvP = Precondition.mulinvP
-mulinvP! = Precondition.mulinvP!
+# mulinvP = Precondition.mulinvP
+# mulinvP! = Precondition.mulinvP!
 
 """
   bicgstab according to 
@@ -68,22 +68,15 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1),
     rhoi1 = dot(br0, ri) ; beta = (rhoi1/rhoi) * (alpha / omegai)
     pi1 .= ri + beta * (pi - omegai .* vi)
     y = P * pi1
-    # @timeit to "mulinvP" mulinvP!(y, pi1, p)
     vi1 .= A * y
-    # vi1 = A * pi1
     alpha = rhoi1 / dot(br0, vi1)
     s .= ri - alpha * vi1
     z = P * s
-    # @timeit to "mulinvP" mulinvP!(z, s, p)
     t .= A * z
-    # t = A * s
     t1 = P * t
     t2 = P * s
-    # @timeit to "mulinvP" mulinvP!(t1, t, p)
-    # @timeit to "mulinvP" mulinvP!(t2, s, p)
     omegai1 = dot(t1, t2) / dot(t1, t1)
     xi1 .= xi + alpha * y + omegai1 * z
-    # xi1 = xi + alpha * pi1 + omegai1 * s
   
     anorm = norm(A * xi1 - b)
 
