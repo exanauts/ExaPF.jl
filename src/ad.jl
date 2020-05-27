@@ -39,7 +39,7 @@ function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
   end
 end
 
-function residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, v_m, v_a,
+function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
                             ybus_re, ybus_im, pinj, qinj, pv, pq, nbus, to = nothing)
   @timeit to "Before" begin
   T = typeof(arrays.x).name.name
@@ -49,7 +49,7 @@ function residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, v_m, 
   nthreads=256
   nblocks=ceil(Int64, nmap/nthreads)
   n = nv_m + nv_a
-  ncolor = size(unique(coloring),1)
+  ncolor = size(unique(arrays.coloring),1)
   arrays.x[1:nv_m] .= v_m
   arrays.t1sx .= arrays.x
   arrays.x[nv_m+1:nv_m+nv_a] .= v_a
@@ -79,82 +79,84 @@ function residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, v_m, 
   end
   @timeit to "Uncompress" begin
   # Uncompress matrix. Sparse matrix elements have different names with CUDA
-  if J isa SparseArrays.SparseMatrixCSC
+  if arrays.J isa SparseArrays.SparseMatrixCSC
     for i in 1:nmap
-      for j in J.colptr[i]:J.colptr[i+1]-1
-        J.nzval[j] = arrays.compressedJ[coloring[i],J.rowval[j]]
+      for j in arrays.J.colptr[i]:arrays.J.colptr[i+1]-1
+        arrays.J.nzval[j] = arrays.compressedJ[arrays.coloring[i],arrays.J.rowval[j]]
       end
     end
   end
-  if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
+  if arrays.J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
     Kernels.@sync begin
       Kernels.@dispatch threads=nthreads blocks=nblocks uncompress(
-            J.nzVal, J.rowPtr, J.colVal, arrays.compressedJ, coloring, nmap)
+            arrays.J.nzVal, arrays.J.rowPtr, arrays.J.colVal, arrays.compressedJ, arrays.coloring, nmap)
     end
   end
   # @show J.nzVal
-  return J
+  return nothing
 end
 end
 
-struct comparrays
-  t1sseeds
+struct JacobianAD
+  J
   compressedJ
+  coloring
+  t1sseeds
   t1sF
   x
   t1sx
   varx
   t1svarx
   map
-end
-
-function createArrays(coloring, F, v_m, v_a, pv, pq)
-  nv_m = size(v_m, 1)
-  nv_a = size(v_a, 1)
-  n = nv_m + nv_a
-  ncolor = size(unique(coloring),1)
-  if F isa Array
-    T = Vector
-    M = Matrix
-    A = Array
-  elseif F isa CuArray
-    T = CuVector
-    M = CuMatrix
-    A = CuArray
-  else
-    error("Wrong array type ", typeof(F))
-  end
-
-  mappv = [i + nv_m for i in pv]
-  mappq = [i + nv_m for i in pq]
-  map = T{Int64}(vcat(mappv, mappq, pq))
-  nmap = size(map,1)
-
-  t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
-  # x = T{Float64}(undef, nv_m + nv_a)
-  x = T(zeros(Float64, nv_m + nv_a))
-  t1sx = T{t1s{ncolor}}(x)
-  # t1sF = T{t1s{ncolor}}(undef, nmap)
-  t1sF = T{t1s{ncolor}}(zeros(Float64, nmap))
-  varx = view(x,map)
-  t1sseedvec = zeros(Float64, ncolor)
-  t1sseeds = T{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-  for i in 1:nmap
-    for j in 1:ncolor
-      if coloring[i] == j
-        t1sseedvec[j] = 1.0
-      end
+  function JacobianAD(J, coloring, F, v_m, v_a, pv, pq)
+    nv_m = size(v_m, 1)
+    nv_a = size(v_a, 1)
+    n = nv_m + nv_a
+    ncolor = size(unique(coloring),1)
+    if F isa Array
+      T = Vector
+      M = Matrix
+      A = Array
+    elseif F isa CuArray
+      T = CuVector
+      M = CuMatrix
+      A = CuArray
+    else
+      error("Wrong array type ", typeof(F))
     end
-    t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
-    t1sseedvec .= 0
+
+    mappv = [i + nv_m for i in pv]
+    mappq = [i + nv_m for i in pq]
+    map = T{Int64}(vcat(mappv, mappq, pq))
+    nmap = size(map,1)
+
+    t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
+    # x = T{Float64}(undef, nv_m + nv_a)
+    x = T(zeros(Float64, nv_m + nv_a))
+    t1sx = T{t1s{ncolor}}(x)
+    # t1sF = T{t1s{ncolor}}(undef, nmap)
+    t1sF = T{t1s{ncolor}}(zeros(Float64, nmap))
+    varx = view(x,map)
+    t1sseedvec = zeros(Float64, ncolor)
+    t1sseeds = T{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
+    for i in 1:nmap
+      for j in 1:ncolor
+        if coloring[i] == j
+          t1sseedvec[j] = 1.0
+        end
+      end
+      t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
+      t1sseedvec .= 0
+    end
+    compressedJ = M{Float64}(zeros(Float64, ncolor, nmap))
+    t1svarx = view(t1sx, map)
+    nthreads=256
+    nblocks=ceil(Int64, nmap/nthreads)
+    # CuArrays.@sync begin
+    # ad.myseed!(t1svarx, varx, t1sseeds)
+    # end
+    return new(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, varx, t1svarx, map)
   end
-  compressedJ = M{Float64}(zeros(Float64, ncolor, nmap))
-  t1svarx = view(t1sx, map)
-  nthreads=256
-  nblocks=ceil(Int64, nmap/nthreads)
-  # CuArrays.@sync begin
-  # ad.myseed!(t1svarx, varx, t1sseeds)
-  # end
-  return comparrays(t1sseeds, compressedJ, t1sF, x, t1sx, varx, t1svarx, map)
 end
+
 end

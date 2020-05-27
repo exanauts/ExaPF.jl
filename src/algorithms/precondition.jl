@@ -7,6 +7,7 @@ using LinearAlgebra
 using CuArrays
 using CuArrays.CUSPARSE
 using CUDAnative
+# using CUDA
 
 cuzeros = CuArrays.zeros
 
@@ -88,13 +89,13 @@ end
       return sparse(rows,cols,vals,size(A,1),size(A,2))
   end
 
-  function update(J, p::Preconditioner)
-    m = size(J,1)
-    n = size(J,2)
+  function update(jacobianAD, p::Preconditioner)
+    m = size(jacobianAD.J,1)
+    n = size(jacobianAD.J,2)
     nblocks = length(p.partitions)
-    if J isa CuSparseMatrixCSR
+    if jacobianAD.J isa CuSparseMatrixCSR
       for i in 1:nblocks
-        p.cuJs[i][:] = J[p.cupartitions[i],p.cupartitions[i]]
+        p.cuJs[i][:] = jacobianAD.J[p.cupartitions[i],p.cupartitions[i]]
       end
       # p.cuJs[:] .= J[p.partitions,p.partitions]
       pivot, info = CuArrays.CUBLAS.getrf_batched!(p.cuJs, true)
@@ -105,7 +106,7 @@ end
       end
     else
       for i in 1:nblocks
-        p.Js[i] = J[p.partitions[i],p.partitions[i]]
+        p.Js[i] = jacobianAD.J[p.partitions[i],p.partitions[i]]
         p.Js[i] = inv(p.Js[i])
       end
       p.P.nzval .= 0 
@@ -115,4 +116,14 @@ end
     end
     return p.P
   end
+  # function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
+
+  #   Kernels.@getstrideindex()
+
+  #   for i in index:stride:nmap
+  #     for j in J_rowPtr[i]:J_rowPtr[i+1]-1
+  #       J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
+  #     end
+  #   end
+  # end
 end

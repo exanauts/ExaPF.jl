@@ -371,8 +371,8 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
   ncolors = size(unique(coloring),1)
   println("Number of Jacobian colors: ", ncolors)
   J = M(J)
-  println("Creating arrays...")
-  arrays = AD.createArrays(coloring, F, Vm, Va, pv, pq)
+  println("Creating JacobianAD...")
+  jacobianAD = AD.JacobianAD(J, coloring, F, Vm, Va, pv, pq)
 
   # check for convergence
   normF = norm(F, Inf)
@@ -388,10 +388,11 @@ function solve(pf::Pf, npartitions = 2, solver="gmres")
     iter += 1
 
     # J = residualJacobian(V, Ybus, pv, pq)
-    @timeit to "Jacobian" J = AD.residualJacobianAD!(J, residualFunction_polar!, arrays, coloring, Vm, Va,
+    @timeit to "Jacobian" AD.residualJacobianAD!(jacobianAD, residualFunction_polar!, Vm, Va,
                         ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
     println("Preconditioner with $npartitions partitions")
-    @timeit to "Preconditioner" P = Precondition.update(J, preconditioner)
+    @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner)
+    J = jacobianAD.J
     if J isa SparseArrays.SparseMatrixCSC
       # @timeit to "Sparse solver" dx = -(J \ F)
       if solver == "bicgstab"
