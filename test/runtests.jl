@@ -11,7 +11,7 @@ target = "cpu"
     # test convergence is OK
     @test conv
     # test norm is minimized
-    @test res < 1e-7
+    @test res < 1e-6
 end
 
 # TODO: This throws warnings because the cpu version ran before.
@@ -23,7 +23,7 @@ target = "cuda"
     # test convergence is OK
     @test conv
     # test norm is minimized
-    @test res < 1e-7
+    @test res < 1e-6
 end
 
 # Not working yet. Will check whether Ipopt and reduced method match in objective
