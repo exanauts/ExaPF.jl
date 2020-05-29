@@ -11,7 +11,7 @@ using SparseArrays
 cuzeros = CuArrays.zeros
 
 
-export bicgstab
+export bicgstab, kaczmarz
 
 mulinvP = Precondition.mulinvP
 mulinvP! = Precondition.mulinvP!
@@ -114,6 +114,35 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1),
 
   return xi, iter
 
+end
+
+
+function kaczmarz(A, b; itermax=500, atol=1e-6, x0=zeros(size(A, 1)))
+
+    # system parameters
+    ndim = size(A, 1)
+    @assert ndim == size(b, 1)
+
+    # initialize iteration
+    iter = 0
+    xk = x0
+    anorm = norm(A*xk - b)
+
+    while iter < itermax && anorm > atol
+        println("Iteration $iter. Absolute norm $anorm.")
+        i = mod(iter, ndim) + 1
+        xk = xk + ((b[i] - dot(A[i, :], xk))/norm(A[i, :])^2)*A[i, :]
+        iter = iter + 1
+        anorm = norm(A*xk - b)
+    end
+
+    if iter < itermax
+        println("KAC converged in $iter iterations.")
+    else
+        println("KAC did not converge.")
+    end
+
+    return xk, iter
 end
 
 end
