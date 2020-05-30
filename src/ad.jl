@@ -46,6 +46,7 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
   nv_m = size(v_m, 1)
   nv_a = size(v_a, 1)
   nmap = size(arrays.map, 1)
+  arrays.compressedJ .= 0
   nthreads=256
   nblocks=ceil(Int64, nmap/nthreads)
   n = nv_m + nv_a

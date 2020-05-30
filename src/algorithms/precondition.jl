@@ -1,5 +1,6 @@
 module Precondition
 
+include("../target/kernels.jl")
 using LightGraphs
 using Metis
 using SparseArrays
@@ -7,6 +8,7 @@ using LinearAlgebra
 using CuArrays
 using CuArrays.CUSPARSE
 using CUDAnative
+using .Kernels
 # using CUDA
 
 cuzeros = CuArrays.zeros
@@ -17,13 +19,16 @@ mutable struct Preconditioner
   cupartitions
   Js
   cuJs
+  map
+  cumap
+  part
+  cupart
   P
   function Preconditioner(J, npart)
     adj = build_adjmatrix(J)
     g = Graph(adj)
     m = size(J,1)
     n = size(J,2)
-    @show m,n
     part = Metis.partition(g, npart)
     partitions = Vector{Vector{Int64}}()
     for i in 1:npart
@@ -44,7 +49,7 @@ mutable struct Preconditioner
       global cuJs = Vector{CuMatrix{Float64}}(undef, length(partitions))
       for i in 1:length(partitions)
         cuJs[i] = cuzeros(Float64, length(partitions[i]), length(partitions[i]))
-        cuJs[i][:] = J[partitions[i],partitions[i]]
+        # cuJs[i][:] = J[partitions[i],partitions[i]]
       end
 
       rowPtr = CuVector{Cint}(undef, npart+1)
@@ -53,17 +58,21 @@ mutable struct Preconditioner
       for i in 1:npart colVal[i] = Cint(i) end
 
       blockDim::Cint = ceil(m/npart) 
-      nzVal = CuVector{Float64}(undef, 2*blockDim^2)
+      nzVal = CuVector{Float64}(undef, npart*blockDim^2)
       dims::NTuple{2,Int} = (m,n)
       dir = 'R'
-      nnz::Cint = blockDim^2*2
+      nnz::Cint = blockDim^2*npart
       P = CuSparseMatrixBSR{Float64}(rowPtr, colVal, nzVal, dims::NTuple{2,Int},blockDim::Cint, dir, nnz::Cint)
+      global cumap = cu(map)
+      global cupart = cu(part)
     else
       global cuJs = nothing
       global cupartitions = nothing
+      global cumap = nothing
+      global cupart = nothing
       global P = copy(J)
     end
-    return new(npart, partitions, cupartitions, Js, cuJs, P)# cuJs, P)
+    return new(npart, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P)# cuJs, P)
   end
 end
 
@@ -100,14 +109,38 @@ end
       # p.cuJs[:] .= J[p.partitions,p.partitions]
       pivot, info = CuArrays.CUBLAS.getrf_batched!(p.cuJs, true)
       CuArrays.@sync pivot, info, cuJs = CuArrays.CUBLAS.getri_batched(p.cuJs, pivot)
-      sqblockdim = Int(ceil(m/nblocks))^2 
+      sqblockdim = Int(m/nblocks)^2 
       for i in 1:nblocks
         p.P.nzVal[(i-1)*sqblockdim+1:i*sqblockdim] = p.cuJs[i][:]
       end
     else
-      for i in 1:nblocks
-        p.Js[i] = jacobianAD.J[p.partitions[i],p.partitions[i]]
-        p.Js[i] = inv(p.Js[i])
+      partitions = p.partitions
+      coloring = jacobianAD.coloring
+      J = jacobianAD.J 
+      nmap = 0
+      for b in partitions
+        nmap += length(b)
+      end
+      map = Vector{Int64}(undef, nmap)
+      part = Vector{Int64}(undef, nmap)
+      for b in 1:nblocks
+        for (i,el) in enumerate(partitions[b])
+          map[el] = i
+          part[el] = b
+        end
+      end
+      for i in 1:m
+        for j in J.colptr[i]:J.colptr[i+1]-1
+          if part[i] == part[J.rowval[j]]
+            p.Js[part[i]][map[jacobianAD.J.rowval[j]], map[i]] = jacobianAD.J.nzval[j]
+          end
+        end
+      end
+      # for b in 1:nblocks
+      #   p.Js[b] = jacobianAD.J[p.partitions[b],p.partitions[b]]
+      # end
+      for b in 1:nblocks
+        p.Js[b] = inv(p.Js[b])
       end
       p.P.nzval .= 0 
       for i in 1:nblocks
