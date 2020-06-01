@@ -8,13 +8,14 @@ using LinearAlgebra
 using CuArrays
 using CuArrays.CUSPARSE
 using CUDAnative
+using CUDAdrv
 using .Kernels
-# using CUDA
 
 cuzeros = CuArrays.zeros
 
 mutable struct Preconditioner
   npart::Int64
+  nJs::Int64
   partitions::Vector{Vector{Int64}}
   cupartitions
   Js
@@ -38,9 +39,38 @@ mutable struct Preconditioner
       push!(partitions[v], i)
     end
     Js = Vector{Matrix{Float64}}(undef, npart)
+    nJs = maximum(length.(partitions))
+    id = Matrix{Float64}(I, nJs, nJs)
+    println("Block Jacobi block size: $nJs")
     for i in 1:npart
-      Js[i] = zeros(Float64, length(partitions[i]), length(partitions[i]))
+      Js[i] = Matrix{Float64}(I, nJs, nJs)
     end
+    nmap = 0
+    for b in partitions
+      nmap += length(b)
+    end
+    map = Vector{Int64}(undef, nmap)
+    part = Vector{Int64}(undef, nmap)
+    for b in 1:npart
+      for (i,el) in enumerate(partitions[b])
+        map[el] = i
+        part[el] = b
+      end
+    end
+    row = Vector{Float64}()
+    col = Vector{Float64}()
+    nzval = Vector{Float64}()
+
+    for b in 1:npart
+      for x in partitions[b]
+        for y in partitions[b]
+          push!(row, x)
+          push!(col, y)
+          push!(nzval, 1.0)
+        end
+      end
+    end
+    P = sparse(row, col, nzval)
     if Main.target == "cuda"
       global cupartitions = Vector{CuVector{Int64}}(undef, npart)
       for i in 1:npart
@@ -48,31 +78,18 @@ mutable struct Preconditioner
       end
       global cuJs = Vector{CuMatrix{Float64}}(undef, length(partitions))
       for i in 1:length(partitions)
-        cuJs[i] = cuzeros(Float64, length(partitions[i]), length(partitions[i]))
-        # cuJs[i][:] = J[partitions[i],partitions[i]]
+        cuJs[i] = CuMatrix{Float64}(I, nJs, nJs)
       end
-
-      rowPtr = CuVector{Cint}(undef, npart+1)
-      for i in 1:npart+1 rowPtr[i] = Cint(i) end
-      colVal = CuVector{Cint}(undef, npart)
-      for i in 1:npart colVal[i] = Cint(i) end
-
-      blockDim::Cint = ceil(m/npart) 
-      nzVal = CuVector{Float64}(undef, npart*blockDim^2)
-      dims::NTuple{2,Int} = (m,n)
-      dir = 'R'
-      nnz::Cint = blockDim^2*npart
-      P = CuSparseMatrixBSR{Float64}(rowPtr, colVal, nzVal, dims::NTuple{2,Int},blockDim::Cint, dir, nnz::Cint)
       global cumap = cu(map)
       global cupart = cu(part)
+      global P = CuSparseMatrixCSR(P)
     else
       global cuJs = nothing
       global cupartitions = nothing
       global cumap = nothing
       global cupart = nothing
-      global P = copy(J)
     end
-    return new(npart, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P)# cuJs, P)
+    return new(npart, nJs, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P)
   end
 end
 
@@ -98,65 +115,71 @@ end
       return sparse(rows,cols,vals,size(A,1),size(A,2))
   end
 
+  function fillblock_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
+    for i in partition
+      for j in rowPtr[i]:rowPtr[i+1]-1
+        if b == part[colVal[j]]
+          @inbounds cuJs[map[i], map[colVal[j]]] = nzVal[j]
+        end
+      end
+    end
+    return nothing
+  end
+  function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
+    for i in partition
+      for j in rowPtr[i]:rowPtr[i+1]-1
+        if b == part[colVal[j]]
+          @inbounds nzVal[j] += cuJs[map[i], map[colVal[j]]]
+        end
+      end
+    end
+    return nothing
+  end
+
   function update(jacobianAD, p::Preconditioner)
     m = size(jacobianAD.J,1)
     n = size(jacobianAD.J,2)
     nblocks = length(p.partitions)
+    J = jacobianAD.J 
     if jacobianAD.J isa CuSparseMatrixCSR
-      for i in 1:nblocks
-        p.cuJs[i][:] = jacobianAD.J[p.cupartitions[i],p.cupartitions[i]]
-      end
-      # p.cuJs[:] .= J[p.partitions,p.partitions]
-      pivot, info = CuArrays.CUBLAS.getrf_batched!(p.cuJs, true)
-      CuArrays.@sync pivot, info, cuJs = CuArrays.CUBLAS.getri_batched(p.cuJs, pivot)
-      sqblockdim = Int(m/nblocks)^2 
-      for i in 1:nblocks
-        p.P.nzVal[(i-1)*sqblockdim+1:i*sqblockdim] = p.cuJs[i][:]
-      end
-    else
-      partitions = p.partitions
-      coloring = jacobianAD.coloring
-      J = jacobianAD.J 
-      nmap = 0
-      for b in partitions
-        nmap += length(b)
-      end
-      map = Vector{Int64}(undef, nmap)
-      part = Vector{Int64}(undef, nmap)
-      for b in 1:nblocks
-        for (i,el) in enumerate(partitions[b])
-          map[el] = i
-          part[el] = b
+      Kernels.@sync begin
+        for b in 1:nblocks
+          CUDAnative.@cuda threads=1 blocks=1 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, J.rowPtr, J.colVal, J.nzVal, p.cupart, b)
         end
       end
-      for i in 1:m
-        for j in J.colptr[i]:J.colptr[i+1]-1
-          if part[i] == part[J.rowval[j]]
-            p.Js[part[i]][map[jacobianAD.J.rowval[j]], map[i]] = jacobianAD.J.nzval[j]
+      CuArrays.@sync pivot, info = CuArrays.CUBLAS.getrf_batched!(p.cuJs, true)
+      CuArrays.@sync pivot, info, p.cuJs = CuArrays.CUBLAS.getri_batched(p.cuJs, pivot)
+      p.P.nzVal .= 0.0
+      Kernels.@sync begin
+        for b in 1:nblocks
+          CUDAnative.@cuda threads=1 blocks=1 fillP_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, b)
+      end
+        end
+    else
+      J = jacobianAD.J 
+      for b in 1:nblocks
+        for i in p.partitions[b]
+          for j in J.colptr[i]:J.colptr[i+1]-1
+            if b == p.part[J.rowval[j]]
+              p.Js[b][p.map[J.rowval[j]], p.map[i]] = J.nzval[j]
+            end
           end
         end
       end
-      # for b in 1:nblocks
-      #   p.Js[b] = jacobianAD.J[p.partitions[b],p.partitions[b]]
-      # end
       for b in 1:nblocks
         p.Js[b] = inv(p.Js[b])
       end
-      p.P.nzval .= 0 
-      for i in 1:nblocks
-        p.P[p.partitions[i], p.partitions[i]] += p.Js[i]
+      p.P.nzval .= 0.0 
+      for b in 1:nblocks
+        for i in p.partitions[b]
+          for j in p.P.colptr[i]:p.P.colptr[i+1]-1
+            if b == p.part[p.P.rowval[j]]
+              p.P.nzval[j] += p.Js[b][p.map[p.P.rowval[j]], p.map[i]]
+            end
+          end
+        end
       end
     end
     return p.P
   end
-  # function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
-
-  #   Kernels.@getstrideindex()
-
-  #   for i in index:stride:nmap
-  #     for j in J_rowPtr[i]:J_rowPtr[i+1]-1
-  #       J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
-  #     end
-  #   end
-  # end
 end
