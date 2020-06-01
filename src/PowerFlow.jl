@@ -399,13 +399,13 @@ function solve(pf::Pf, npartitions=2, solver="default")
     if J isa SparseArrays.SparseMatrixCSC
       if solver == "bicgstab"
         println("Building preconditioner...")
-        @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner)
+        @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
         println("Solving linear system...")
         @timeit to "CPU-BICGSTAB" (x, history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
         push!(linsol_iters, history.iters)
       elseif solver == "gmres"
         println("Building preconditioner...")
-        @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner)
+        @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
         println("Solving linear system...")
         @timeit to "CPU-GMRES" (x, history) = IterativeSolvers.gmres(P*J, P*F, log=true)
         push!(linsol_iters, history.iters)
@@ -419,9 +419,9 @@ function solve(pf::Pf, npartitions=2, solver="default")
     
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
       println("Building preconditioner...")
-      @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner)
+      @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
       println("Solving linear system...")
-      @timeit to "GPU-BICGSTAB" x, lin_iter = bicgstab(J, F, P, maxiter=500)
+      @timeit to "GPU-BICGSTAB" x, lin_iter = bicgstab(J, F, P, maxiter=10000)
       push!(linsol_iters, lin_iter)
       dx = -x
     end

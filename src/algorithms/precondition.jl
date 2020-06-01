@@ -9,6 +9,7 @@ using CuArrays
 using CuArrays.CUSPARSE
 using CUDAnative
 using CUDAdrv
+using TimerOutputs
 using .Kernels
 
 cuzeros = CuArrays.zeros
@@ -136,45 +137,57 @@ end
     return nothing
   end
 
-  function update(jacobianAD, p::Preconditioner)
+  function update(jacobianAD, p::Preconditioner, to=nothing)
     m = size(jacobianAD.J,1)
     n = size(jacobianAD.J,2)
     nblocks = length(p.partitions)
     J = jacobianAD.J 
     if jacobianAD.J isa CuSparseMatrixCSR
-      Kernels.@sync begin
-        for b in 1:nblocks
-          CUDAnative.@cuda threads=1 blocks=1 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, J.rowPtr, J.colVal, J.nzVal, p.cupart, b)
+      @timeit to "Fill Block Jacobi" begin
+        Kernels.@sync begin
+          for b in 1:nblocks
+            CUDAnative.@cuda threads=1 blocks=1 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, J.rowPtr, J.colVal, J.nzVal, p.cupart, b)
+          end
         end
       end
-      CuArrays.@sync pivot, info = CuArrays.CUBLAS.getrf_batched!(p.cuJs, true)
-      CuArrays.@sync pivot, info, p.cuJs = CuArrays.CUBLAS.getri_batched(p.cuJs, pivot)
+      @timeit to "Invert blocks" begin
+        CuArrays.@sync pivot, info = CuArrays.CUBLAS.getrf_batched!(p.cuJs, true)
+        CuArrays.@sync pivot, info, p.cuJs = CuArrays.CUBLAS.getri_batched(p.cuJs, pivot)
+      end
       p.P.nzVal .= 0.0
-      Kernels.@sync begin
-        for b in 1:nblocks
-          CUDAnative.@cuda threads=1 blocks=1 fillP_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, b)
-      end
+      @timeit to "Move blocks to P" begin
+        Kernels.@sync begin
+          for b in 1:nblocks
+            CUDAnative.@cuda threads=1 blocks=1 fillP_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, b)
+          end
         end
+      end
     else
       J = jacobianAD.J 
-      for b in 1:nblocks
-        for i in p.partitions[b]
-          for j in J.colptr[i]:J.colptr[i+1]-1
-            if b == p.part[J.rowval[j]]
-              p.Js[b][p.map[J.rowval[j]], p.map[i]] = J.nzval[j]
+      @timeit to "Fill Block Jacobi" begin
+        for b in 1:nblocks
+          for i in p.partitions[b]
+            for j in J.colptr[i]:J.colptr[i+1]-1
+              if b == p.part[J.rowval[j]]
+                p.Js[b][p.map[J.rowval[j]], p.map[i]] = J.nzval[j]
+              end
             end
           end
         end
       end
-      for b in 1:nblocks
-        p.Js[b] = inv(p.Js[b])
+      @timeit to "Invert blocks" begin
+        for b in 1:nblocks
+          p.Js[b] = inv(p.Js[b])
+        end
       end
       p.P.nzval .= 0.0 
-      for b in 1:nblocks
-        for i in p.partitions[b]
-          for j in p.P.colptr[i]:p.P.colptr[i+1]-1
-            if b == p.part[p.P.rowval[j]]
-              p.P.nzval[j] += p.Js[b][p.map[p.P.rowval[j]], p.map[i]]
+      @timeit to "Move blocks to P" begin
+        for b in 1:nblocks
+          for i in p.partitions[b]
+            for j in p.P.colptr[i]:p.P.colptr[i+1]-1
+              if b == p.part[p.P.rowval[j]]
+                p.P.nzval[j] += p.Js[b][p.map[p.P.rowval[j]], p.map[i]]
+              end
             end
           end
         end
