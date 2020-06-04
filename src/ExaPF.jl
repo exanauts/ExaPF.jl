@@ -7,7 +7,7 @@
 #
 # Covered by the 3-clause BSD License.
 __precompile__(false)
-module PowerFlow
+module ExaPF
 
 export Pf
 

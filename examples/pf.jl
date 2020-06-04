@@ -1,6 +1,6 @@
-using PowerFlow
-using PowerFlow.Parse
-using PowerFlow.Network
+using ExaPF
+using ExaPF.Parse
+using ExaPF.Network
 
 # file locations
 # datafile = "GO-Data/datasets/Trial_3_Real-Time/Network_30R-025/scenario_1/case.raw"
@@ -31,5 +31,5 @@ Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = Network.makeYbus(data);
 # V, Ybus, data
 pf = Pf(V, Ybus, data)
 
-return PowerFlow.solve(pf, npartition, solver);
+return ExaPF.solve(pf, npartition, solver);
 end

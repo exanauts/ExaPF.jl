@@ -1,7 +1,7 @@
 target = "cpu"
-using PowerFlow
-using PowerFlow.Parse
-using PowerFlow.Network
+using ExaPF
+using ExaPF.Parse
+using ExaPF.Network
 using DelimitedFiles
 
 include("pf.jl")
