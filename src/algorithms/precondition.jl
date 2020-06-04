@@ -117,20 +117,26 @@ end
   end
 
   function fillblock_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
-    for i in partition
-      for j in rowPtr[i]:rowPtr[i+1]-1
+
+    Kernels.@getstrideindex()
+
+    for i in index:stride:length(partition)
+      for j in rowPtr[partition[i]]:rowPtr[partition[i]+1]-1
         if b == part[colVal[j]]
-          @inbounds cuJs[map[i], map[colVal[j]]] = nzVal[j]
+          @inbounds cuJs[map[partition[i]], map[colVal[j]]] = nzVal[j]
         end
       end
     end
     return nothing
   end
   function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
-    for i in partition
-      for j in rowPtr[i]:rowPtr[i+1]-1
+
+    Kernels.@getstrideindex()
+
+    for i in index:stride:length(partition)
+      for j in rowPtr[partition[i]]:rowPtr[partition[i]+1]-1
         if b == part[colVal[j]]
-          @inbounds nzVal[j] += cuJs[map[i], map[colVal[j]]]
+          @inbounds nzVal[j] += cuJs[map[partition[i]], map[colVal[j]]]
         end
       end
     end
@@ -146,7 +152,7 @@ end
       @timeit to "Fill Block Jacobi" begin
         Kernels.@sync begin
           for b in 1:nblocks
-            CUDAnative.@cuda threads=1 blocks=1 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, J.rowPtr, J.colVal, J.nzVal, p.cupart, b)
+            Kernels.@dispatch threads=16 blocks=16 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, J.rowPtr, J.colVal, J.nzVal, p.cupart, b)
           end
         end
       end
@@ -158,7 +164,7 @@ end
       @timeit to "Move blocks to P" begin
         Kernels.@sync begin
           for b in 1:nblocks
-            CUDAnative.@cuda threads=1 blocks=1 fillP_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, b)
+            Kernels.@dispatch threads=16 blocks=16 fillP_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, b)
           end
         end
       end
