@@ -385,6 +385,13 @@ function solve(pf::Pf, npartitions=2, solver="default")
   end
 
   linsol_iters = []
+  dx = T{Float64}(undef, size(J,1))
+  Vapv = view(Va, pv)
+  Vapq = view(Va, pq)
+  Vmpq = view(Vm, pq)
+  dx12 = view(dx, j1:j2)
+  dx34 = view(dx, j3:j4)
+  dx56 = view(dx, j5:j6)
   @timeit to "Newton" while ((!converged) && (iter < maxiter))
 
     iter += 1
@@ -399,44 +406,51 @@ function solve(pf::Pf, npartitions=2, solver="default")
         println("Building preconditioner...")
         @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
         println("Solving linear system...")
-        @timeit to "CPU-BICGSTAB" (x, history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
+        @timeit to "CPU-BICGSTAB" (dx, history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
         push!(linsol_iters, history.iters)
       elseif solver == "gmres"
         println("Building preconditioner...")
         @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
         println("Solving linear system...")
-        @timeit to "CPU-GMRES" (x, history) = IterativeSolvers.gmres(P*J, P*F, log=true)
+        @timeit to "CPU-GMRES" (dx, history) = IterativeSolvers.gmres(P*J, P*F, log=true)
         push!(linsol_iters, history.iters)
       else
         println("Solving linear system...")
-        @timeit to "CPU-Default sparse solver" x = J\F
+        @timeit to "CPU-Default sparse solver" dx = J\F
         push!(linsol_iters, 0)
       end
-      dx = -x
+      dx .= -dx
     end
     
     if J isa CUDA.CUSPARSE.CuSparseMatrixCSR
       println("Building preconditioner...")
       @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
       println("Solving linear system...")
-      @timeit to "GPU-BICGSTAB" x, lin_iter = bicgstab(J, F, P, maxiter=10000)
+      @timeit to "GPU-BICGSTAB" dx, lin_iter = bicgstab(J, F, P, dx, to, maxiter=10000)
       push!(linsol_iters, lin_iter)
-      dx = -x
+      dx .= -dx
     end
 
     # update voltage
-    if (npv != 0)
-      Va[pv] .= Va[pv] .+ dx[j1:j2]
-    end
-    if (npq != 0)
-      Va[pq] .= Va[pq] .+ dx[j3:j4]
-      Vm[pq] .= Vm[pq] .+ dx[j5:j6]
+    @timeit to "Update voltage" begin
+      if (npv != 0)
+        # Va[pv] .= Va[pv] .+ dx[j1:j2]
+        Vapv .= Vapv .+ dx12
+      end
+      if (npq != 0)
+        # Va[pq] .= Va[pq] .+ dx[j3:j4]
+        Vapq .= Vapq .+ dx34
+        # Vm[pq] .= Vm[pq] .+ dx[j5:j6]
+        Vmpq .= Vmpq .+ dx56
+      end
     end
 
-    V .= Vm .* exp.(1im .*Va)
+    @timeit to "Exponential" V .= Vm .* exp.(1im .*Va)
 
-    Vm = abs.(V)
-    Va = Kernels.@angle(V)
+    @timeit to "Angle and magnitude" begin
+      Vm .= abs.(V)
+      Va .= Kernels.@angle(V)
+    end
 
     # evaluate residual and check for convergence
     # F = residualFunction(V, Ybus, Sbus, pv, pq)
@@ -455,7 +469,7 @@ function solve(pf::Pf, npartitions=2, solver="default")
                           pbus, qbus, pv, pq, nbus)
     end
 
-    @timeit to "Norm" normF = norm(F, Inf)
+    @timeit to "Norm" normF = norm(F)
     @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
 
     if normF < tol

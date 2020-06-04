@@ -23,7 +23,7 @@ export bicgstab
   SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
 """
 
-function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1),
+function bicgstab(A, b, P, xi, to = nothing; tol = 1e-6, maxiter = size(A,1),
                  verbose=false)
   
   # parameters
@@ -48,7 +48,8 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1),
   omegai = copy(omega0)
   vi = copy(v0)
   pi = copy(p0)
-  xi = copy(x0)
+  # xi = x
+  xi .= x0
 
   y = similar(pi)
   s = similar(pi)
@@ -62,8 +63,10 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1),
 
   go = true
   iter = 1
+  @timeit to "While loop" begin
   while go
 
+    @timeit to "First stage" begin
     rhoi1 = dot(br0, ri) ; beta = (rhoi1/rhoi) * (alpha / omegai)
     pi1 .= ri .+ beta .* (pi .- omegai .* vi)
     y .= P * pi1
@@ -74,9 +77,14 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1),
     t .= A * z
     t1 .= P * t
     t2 .= P * s
+    end
+    @timeit to "Main stage" begin
     omegai1 = dot(t1, t2) / dot(t1, t1)
     xi1 .= xi .+ alpha .* y .+ omegai1 .* z
+    # xi1 .= xi .+ alpha .* y .+ omegai1 .* z
+    end
   
+    @timeit to "End stage" begin
     anorm = norm((A * xi1) .- b)
 
     if verbose
@@ -102,6 +110,8 @@ function bicgstab(A, b, P, to = nothing; tol = 1e-6, maxiter = size(A,1),
     omegai = omegai1
     xi     .= xi1
     iter   += 1
+    end
+  end
   end
 
   return xi, iter

@@ -42,19 +42,21 @@ end
 function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
                             ybus_re, ybus_im, pinj, qinj, pv, pq, nbus, to = nothing)
   @timeit to "Before" begin
-  T = typeof(arrays.x).name.name
+  @timeit to "Setup" begin
   nv_m = size(v_m, 1)
   nv_a = size(v_a, 1)
   nmap = size(arrays.map, 1)
-  arrays.compressedJ .= 0
   nthreads=256
   nblocks=ceil(Int64, nmap/nthreads)
   n = nv_m + nv_a
-  ncolor = size(unique(arrays.coloring),1)
+  end
+  @timeit to "Arrays" begin
   arrays.x[1:nv_m] .= v_m
   arrays.t1sx .= arrays.x
   arrays.x[nv_m+1:nv_m+nv_a] .= v_a
   arrays.t1sF .= 0.0
+  end
+  end
   @timeit to "Seeding" begin
   Kernels.@sync begin
     Kernels.@dispatch threads=nthreads blocks=nblocks myseed!(arrays.t1svarx, arrays.varx, arrays.t1sseeds)
@@ -62,7 +64,6 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
   end
   nthreads=256
   nblocks=ceil(Int64, nbus/nthreads)
-  end
 
   @timeit to "Function" begin
   Kernels.@sync begin
