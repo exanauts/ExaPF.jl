@@ -1,7 +1,7 @@
 module AD
 include("target/kernels.jl")
 using ForwardDiff
-using CUDAnative, CuArrays
+using CUDA
 using .Kernels
 using TimerOutputs
 using SparseArrays
@@ -87,7 +87,7 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
       end
     end
   end
-  if arrays.J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
+  if arrays.J isa CUDA.CUSPARSE.CuSparseMatrixCSR
     Kernels.@sync begin
       Kernels.@dispatch threads=nthreads blocks=nblocks uncompress(
             arrays.J.nzVal, arrays.J.rowPtr, arrays.J.colVal, arrays.compressedJ, arrays.coloring, nmap)
@@ -153,7 +153,7 @@ struct JacobianAD
     t1svarx = view(t1sx, map)
     nthreads=256
     nblocks=ceil(Int64, nmap/nthreads)
-    # CuArrays.@sync begin
+    # CUDA.@sync begin
     # ad.myseed!(t1svarx, varx, t1sseeds)
     # end
     return new(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, varx, t1svarx, map)

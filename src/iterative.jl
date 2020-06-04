@@ -3,12 +3,11 @@ module Iterative
 include("algorithms/precondition.jl")
 using LinearAlgebra
 using .Precondition
-using CuArrays
-using CUDAnative
+using CUDA
 using TimerOutputs
 using SparseArrays
 
-cuzeros = CuArrays.zeros
+cuzeros = CUDA.zeros
 
 
 export bicgstab

@@ -1,5 +1,5 @@
 module Kernels
-  using CUDAnative, CuArrays
+  using CUDA 
   export sync, dispatch, generate, togenerate, angle
   
   togenerate = Main.target
@@ -9,7 +9,7 @@ module Kernels
     ex = nothing
     if togenerate == "cuda"
       ex = quote 
-        CUDAnative.angle.($val)
+        CUDA.angle.($val)
       end
     end
     if togenerate == "cpu"
@@ -24,7 +24,7 @@ module Kernels
     ex = nothing
     if togenerate == "cuda"
       ex = quote 
-        CUDAnative.cos($val)
+        CUDA.cos($val)
       end
     end
     if togenerate == "cpu"
@@ -39,7 +39,7 @@ module Kernels
     ex = nothing
     if togenerate == "cuda"
       ex = quote 
-        CUDAnative.sin($val)
+        CUDA.sin($val)
       end
     end
     if togenerate == "cpu"
@@ -54,7 +54,7 @@ module Kernels
     ex = nothing
     if togenerate == "cuda"
       ex = quote 
-        CuArrays.@sync begin
+        CUDA.@sync begin
         $expr
         end
       end

@@ -22,11 +22,9 @@ using ForwardDiff
 using LinearAlgebra
 using SparseArrays
 using Printf
-using CuArrays
-using CuArrays.CUSPARSE
-using CuArrays.CUSOLVER
+using CUDA
+using CUDA.CUSPARSE
 using TimerOutputs
-using CUDAnative
 to = TimerOutput()
 using SparseDiffTools
 using IterativeSolvers
@@ -417,7 +415,7 @@ function solve(pf::Pf, npartitions=2, solver="default")
       dx = -x
     end
     
-    if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
+    if J isa CUDA.CUSPARSE.CuSparseMatrixCSR
       println("Building preconditioner...")
       @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
       println("Solving linear system...")

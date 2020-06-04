@@ -5,14 +5,12 @@ using LightGraphs
 using Metis
 using SparseArrays
 using LinearAlgebra
-using CuArrays
-using CuArrays.CUSPARSE
-using CUDAnative
-using CUDAdrv
+using CUDA
+using CUDA.CUSPARSE
 using TimerOutputs
 using .Kernels
 
-cuzeros = CuArrays.zeros
+cuzeros = CUDA.zeros
 
 mutable struct Preconditioner
   npart::Int64
@@ -157,8 +155,8 @@ end
         end
       end
       @timeit to "Invert blocks" begin
-        CuArrays.@sync pivot, info = CuArrays.CUBLAS.getrf_batched!(p.cuJs, true)
-        CuArrays.@sync pivot, info, p.cuJs = CuArrays.CUBLAS.getri_batched(p.cuJs, pivot)
+        CUDA.@sync pivot, info = CUDA.CUBLAS.getrf_batched!(p.cuJs, true)
+        CUDA.@sync pivot, info, p.cuJs = CUDA.CUBLAS.getri_batched(p.cuJs, pivot)
       end
       p.P.nzVal .= 0.0
       @timeit to "Move blocks to P" begin
