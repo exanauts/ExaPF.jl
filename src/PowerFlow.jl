@@ -368,15 +368,15 @@ function solve(pf::Pf, npartitions=2, solver="default")
   nblock = size(J,1)/npartitions
   println("Blocksize: n = ", nblock, " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
   println("Partitioning...")
-  partition = Precondition.Partition(J, npartitions)
+  preconditioner = Precondition.Preconditioner(J, npartitions)
   println("$npartitions partitions created")
   println("Coloring...")
   @timeit to "Coloring" coloring = T{Int64}(matrix_colors(J))
   ncolors = size(unique(coloring),1)
   println("Number of Jacobian colors: ", ncolors)
   J = M(J)
-  println("Creating arrays...")
-  arrays = AD.createArrays(coloring, F, Vm, Va, pv, pq)
+  println("Creating JacobianAD...")
+  jacobianAD = AD.JacobianAD(J, coloring, F, Vm, Va, pv, pq)
 
   # check for convergence
   normF = norm(F, Inf)
@@ -392,19 +392,20 @@ function solve(pf::Pf, npartitions=2, solver="default")
     iter += 1
 
     # J = residualJacobian(V, Ybus, pv, pq)
-    @timeit to "Jacobian" J = AD.residualJacobianAD!(J, residualFunction_polar!, arrays,
-                        coloring, Vm, Va, ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
-    
+    @timeit to "Jacobian" AD.residualJacobianAD!(jacobianAD, residualFunction_polar!, Vm, Va,
+                        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
+    J = jacobianAD.J
+
     if J isa SparseArrays.SparseMatrixCSC
       if solver == "bicgstab"
         println("Building preconditioner...")
-        @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
+        @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
         println("Solving linear system...")
         @timeit to "CPU-BICGSTAB" (x, history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
         push!(linsol_iters, history.iters)
       elseif solver == "gmres"
         println("Building preconditioner...")
-        @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
+        @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
         println("Solving linear system...")
         @timeit to "CPU-GMRES" (x, history) = IterativeSolvers.gmres(P*J, P*F, log=true)
         push!(linsol_iters, history.iters)
@@ -418,9 +419,9 @@ function solve(pf::Pf, npartitions=2, solver="default")
     
     if J isa CuArrays.CUSPARSE.CuSparseMatrixCSR
       println("Building preconditioner...")
-      @timeit to "Preconditioner" P = Precondition.create_preconditioner(J, partition)
+      @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
       println("Solving linear system...")
-      @timeit to "GPU-BICGSTAB" x, lin_iter = bicgstab(J, F, P, maxiter=500)
+      @timeit to "GPU-BICGSTAB" x, lin_iter = bicgstab(J, F, P, maxiter=10000)
       push!(linsol_iters, lin_iter)
       dx = -x
     end

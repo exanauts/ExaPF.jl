@@ -1,5 +1,6 @@
 module Precondition
 
+include("../target/kernels.jl")
 using LightGraphs
 using Metis
 using SparseArrays
@@ -7,43 +8,89 @@ using LinearAlgebra
 using CuArrays
 using CuArrays.CUSPARSE
 using CUDAnative
+using CUDAdrv
+using TimerOutputs
+using .Kernels
 
 cuzeros = CuArrays.zeros
 
-mutable struct Partition
+mutable struct Preconditioner
   npart::Int64
+  nJs::Int64
   partitions::Vector{Vector{Int64}}
-  # cupartitions::Vector{CuVector{Int64}}
-  Js::Vector{Matrix{Float64}}
-  # cuJs::Vector{CuMatrix{Float64}}
+  cupartitions
+  Js
+  cuJs
+  map
+  cumap
+  part
+  cupart
   P
-  function Partition(J, blocks)
+  function Preconditioner(J, npart)
     adj = build_adjmatrix(J)
     g = Graph(adj)
-    npart = blocks
+    m = size(J,1)
+    n = size(J,2)
     part = Metis.partition(g, npart)
     partitions = Vector{Vector{Int64}}()
-    # cupartitions = Vector{CuVector{Int64}}(undef, npart)
     for i in 1:npart
       push!(partitions, [])
     end
     for (i,v) in enumerate(part)
       push!(partitions[v], i)
     end
-    # for i in 1:npart
-    #   cupartitions[i] = CuVector{Int64}(partitions[i])
-    # end
     Js = Vector{Matrix{Float64}}(undef, npart)
+    nJs = maximum(length.(partitions))
+    id = Matrix{Float64}(I, nJs, nJs)
+    println("Block Jacobi block size: $nJs")
     for i in 1:npart
-      Js[i] = zeros(Float64, length(partitions[i]), length(partitions[i]))
+      Js[i] = Matrix{Float64}(I, nJs, nJs)
     end
-    # cuJs = Vector{CuMatrix{Float64}}(undef, npart)
-    # for i in 1:npart
-    #   cuJs[i] = cuzeros(Float64, length(partitions[i]), length(partitions[i]))
-    # end
-    # P = CuSparseMatrixCSR(J)
-    # return new(npart, partitions, cupartitions, Js)# cuJs, P)
-    return new(npart, partitions, Js, nothing)# cuJs, P)
+    nmap = 0
+    for b in partitions
+      nmap += length(b)
+    end
+    map = Vector{Int64}(undef, nmap)
+    part = Vector{Int64}(undef, nmap)
+    for b in 1:npart
+      for (i,el) in enumerate(partitions[b])
+        map[el] = i
+        part[el] = b
+      end
+    end
+    row = Vector{Float64}()
+    col = Vector{Float64}()
+    nzval = Vector{Float64}()
+
+    for b in 1:npart
+      for x in partitions[b]
+        for y in partitions[b]
+          push!(row, x)
+          push!(col, y)
+          push!(nzval, 1.0)
+        end
+      end
+    end
+    P = sparse(row, col, nzval)
+    if Main.target == "cuda"
+      global cupartitions = Vector{CuVector{Int64}}(undef, npart)
+      for i in 1:npart
+        cupartitions[i] = CuVector{Int64}(partitions[i])
+      end
+      global cuJs = Vector{CuMatrix{Float64}}(undef, length(partitions))
+      for i in 1:length(partitions)
+        cuJs[i] = CuMatrix{Float64}(I, nJs, nJs)
+      end
+      global cumap = cu(map)
+      global cupart = cu(part)
+      global P = CuSparseMatrixCSR(P)
+    else
+      global cuJs = nothing
+      global cupartitions = nothing
+      global cumap = nothing
+      global cupart = nothing
+    end
+    return new(npart, nJs, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P)
   end
 end
 
@@ -69,73 +116,89 @@ end
       return sparse(rows,cols,vals,size(A,1),size(A,2))
   end
 
-  function create_preconditioner(J, p::Partition)
-    if J isa CuSparseMatrixCSR
-      cscJ = collect(switch2csc(J))
-    else
-      cscJ = J
-    end
-    cscP = copy(cscJ)
-    cscP.nzval .= 0 
+  function fillblock_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
 
-    for i in 1:length(p.partitions)
-      p.Js[i] = cscJ[p.partitions[i],p.partitions[i]]
-      p.Js[i] = inv(p.Js[i])
+    Kernels.@getstrideindex()
+
+    for i in index:stride:length(partition)
+      for j in rowPtr[partition[i]]:rowPtr[partition[i]+1]-1
+        if b == part[colVal[j]]
+          @inbounds cuJs[map[partition[i]], map[colVal[j]]] = nzVal[j]
+        end
+      end
     end
-    for i in 1:length(p.partitions)
-      cscP[p.partitions[i], p.partitions[i]] += p.Js[i]
+    return nothing
+  end
+  function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
+
+    Kernels.@getstrideindex()
+
+    for i in index:stride:length(partition)
+      for j in rowPtr[partition[i]]:rowPtr[partition[i]+1]-1
+        if b == part[colVal[j]]
+          @inbounds nzVal[j] += cuJs[map[partition[i]], map[colVal[j]]]
+        end
+      end
     end
-    if J isa CuSparseMatrixCSR
-      p.P = CuSparseMatrixCSR(cscP)
+    return nothing
+  end
+
+  function update(jacobianAD, p::Preconditioner, to=nothing)
+    m = size(jacobianAD.J,1)
+    n = size(jacobianAD.J,2)
+    nblocks = length(p.partitions)
+    J = jacobianAD.J 
+    if jacobianAD.J isa CuSparseMatrixCSR
+      @timeit to "Fill Block Jacobi" begin
+        Kernels.@sync begin
+          for b in 1:nblocks
+            Kernels.@dispatch threads=16 blocks=16 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, J.rowPtr, J.colVal, J.nzVal, p.cupart, b)
+          end
+        end
+      end
+      @timeit to "Invert blocks" begin
+        CuArrays.@sync pivot, info = CuArrays.CUBLAS.getrf_batched!(p.cuJs, true)
+        CuArrays.@sync pivot, info, p.cuJs = CuArrays.CUBLAS.getri_batched(p.cuJs, pivot)
+      end
+      p.P.nzVal .= 0.0
+      @timeit to "Move blocks to P" begin
+        Kernels.@sync begin
+          for b in 1:nblocks
+            Kernels.@dispatch threads=16 blocks=16 fillP_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, b)
+          end
+        end
+      end
     else
-      p.P = cscP
+      J = jacobianAD.J 
+      @timeit to "Fill Block Jacobi" begin
+        for b in 1:nblocks
+          for i in p.partitions[b]
+            for j in J.colptr[i]:J.colptr[i+1]-1
+              if b == p.part[J.rowval[j]]
+                p.Js[b][p.map[J.rowval[j]], p.map[i]] = J.nzval[j]
+              end
+            end
+          end
+        end
+      end
+      @timeit to "Invert blocks" begin
+        for b in 1:nblocks
+          p.Js[b] = inv(p.Js[b])
+        end
+      end
+      p.P.nzval .= 0.0 
+      @timeit to "Move blocks to P" begin
+        for b in 1:nblocks
+          for i in p.partitions[b]
+            for j in p.P.colptr[i]:p.P.colptr[i+1]-1
+              if b == p.part[p.P.rowval[j]]
+                p.P.nzval[j] += p.Js[b][p.map[p.P.rowval[j]], p.map[i]]
+              end
+            end
+          end
+        end
+      end
     end
     return p.P
-  end
-
-  function mulinvP(y, x, p)
-    y .= 0
-    for i in 1:length(p.partitions)
-      y[p.partitions[i]] = p.cuJs[i] * x[p.partitions[i]]
-    end
-    y
-  end
-
-  function mulinvP(x, p)
-    res = similar(x)
-    res .= 0.0
-    for i in 1:length(p.partitions)
-      res[p.partitions[i]] = p.cuJs[i] * x[p.partitions[i]]
-    end
-    res
-  end
-
-  function mulinvP!(y, x, p)
-    y .= 0.0
-    # index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    # stride = blockDim().x * gridDim().x
-    # y[p.partitions] .= p.cuJs * x[p.partitions]
-      for i in 1:p.npart
-        y[p.cupartitions[i]] .= p.cuJs[i] * x[p.cupartitions[i]]
-        # @cuda threads=32 blocks=1 mulinvPpart!(y, x, p.cuJs[i], p.cupartitions[i])
-      end
-    return nothing
-  end
-
-  function mulinvP!(y, x, cuJs, cupartitions)
-    y .= 0.0
-    # index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    # stride = blockDim().x * gridDim().x
-    # y[p.partitions] .= p.cuJs * x[p.partitions]
-      for i in 1:p.npart
-        y[p.cupartitions[i]] .= p.cuJs[i] * x[p.cupartitions[i]]
-        # @cuda threads=32 blocks=1 mulinvPpart!(y, x, p.cuJs[i], p.cupartitions[i])
-      end
-    return nothing
-  end
-
-  function mulinvPpart!(y, x, cuJ, partition)
-    y[partition] = cuJ * x[partition]
-    return nothing
   end
 end
