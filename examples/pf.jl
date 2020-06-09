@@ -7,7 +7,7 @@ using ExaPF.Network
 # datafile = "GO-Data/datasets/Trial_3_Real-Time/Network_13R-015/scenario_11/case.raw"
 # datafile = "test/case14.raw"
 # npartition: Number of partitions for the additive Schwarz preconditioner
-function pf(datafile, npartition, solver="default")
+function pf(datafile, npartition=2, solver="default")
 # read data
 data = Parse.parse_raw(datafile)
 println(solver)
@@ -31,5 +31,5 @@ Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = Network.makeYbus(data);
 # V, Ybus, data
 pf = Pf(V, Ybus, data)
 
-return ExaPF.solve(pf, npartition, solver);
+return solve(pf, npartition, solver);
 end
