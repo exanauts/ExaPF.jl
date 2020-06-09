@@ -363,12 +363,13 @@ function solve(pf::Pf, npartitions=2, solver="default")
 
   J = residualJacobian(V, Ybus, pv, pq)
   dim_J = size(J, 1)
-  @show npartitions
-  nblock = size(J,1)/npartitions
-  println("Blocksize: n = ", nblock, " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
-  println("Partitioning...")
-  preconditioner = Precondition.Preconditioner(J, npartitions)
-  println("$npartitions partitions created")
+  if solver != "default"
+    nblock = size(J,1)/npartitions
+    println("Blocks: $npartitions, Blocksize: n = ", nblock, " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
+    println("Partitioning...")
+    preconditioner = Precondition.Preconditioner(J, npartitions)
+    println("$npartitions partitions created")
+  end
   println("Coloring...")
   @timeit to "Coloring" coloring = T{Int64}(matrix_colors(J))
   ncolors = size(unique(coloring),1)
