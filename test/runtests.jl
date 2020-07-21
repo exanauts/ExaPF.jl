@@ -1,37 +1,36 @@
 using Test
 
-# This is a problem of the code right now. It can only set once per as 
+
+# This is a problem of the code right now. It can only set once per as
 # this variable is used in macros to generate the code at compile time.
 # This implies we cannot both test gpu and cpu code here.
 target = "cpu"
 @testset "Powerflow CPU" begin
+    # Include code to run power flow equation
+    include(joinpath(dirname(@__FILE__), "..", "examples", "pf.jl"))
     datafile = "test/case14.raw"
-    include("../examples/pf.jl")
     # Direct solver
     sol, conv, res = pf(datafile)
     # test convergence is OK
     @test conv
     # test norm is minimized
     @test res < 1e-6
-    # GMRES
-    sol, conv, res = pf(datafile, 8, "gmres")
-    @test conv
-    @test res < 1e-6
-    # Reference BICGSTAB in IterativeSolvers
-    sol, conv, res = pf(datafile, 8, "bicgstab_ref")
-    @test conv
-    @test res < 1e-6
-    # BICGSTAB
-    sol, conv, res = pf(datafile, 8, "bicgstab")
-    @test conv
-    @test res < 1e-6
+
+    nblocks = 8
+    # Note: Reference BICGSTAB in IterativeSolvers
+    for precond in ["gmres", "bicgstab_ref", "bicgstab"]
+        sol, has_conv, res = pf(datafile, nblocks, precond)
+        @test has_conv
+        @test res < 1e-6
+    end
 end
 
-# # TODO: This throws warnings because the cpu version ran before.
+## TODO: This throws warnings because the cpu version ran before.
 target = "cuda"
 @testset "Powerflow GPU" begin
+    # Include code to run power flow equation
+    include(joinpath(dirname(@__FILE__), "..", "examples", "pf.jl"))
     datafile = "test/case14.raw"
-    include("../examples/pf.jl")
     # BICGSTAB
     sol, conv, res = pf(datafile, 2, "bicgstab")
     @test conv
@@ -50,7 +49,7 @@ end
 #    @show ipopt_cost = cfun(xk, uk, p)
 #    gap = abs(red_cost - ipopt_cost)
 #    println("gap = abs(red_cost - ipopt_cost): $gap = abs($red_cost - $ipopt_cost)")
-#    @test gap ≈ 0.0 
+#    @test gap ≈ 0.0
 # end
 
 # @testset "rgm_3bus_ref" begin
@@ -60,5 +59,5 @@ end
 #    @show ipopt_cost = cfun(xk, uk, p)
 #    gap = abs(red_cost - ipopt_cost)
 #    println("gap = abs(red_cost - ipopt_cost): $gap = abs($red_cost - $ipopt_cost)")
-#    @test gap ≈ 0.0 
+#    @test gap ≈ 0.0
 # end
