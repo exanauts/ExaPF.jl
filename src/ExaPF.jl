@@ -258,7 +258,8 @@ function residualJacobian(V, Ybus, pv, pq)
     J = [j11 j12; j21 j22]
 end
 
-function solve(pf::Pf, npartitions=2, solver="default")
+function solve(pf::Pf, npartitions=2, solver="default";
+               tol=1e-6, maxiter=20)
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
@@ -281,10 +282,6 @@ function solve(pf::Pf, npartitions=2, solver="default")
 
     # Convert voltage vector to target
     V = T(V)
-
-    # parameters NR
-    tol = 1e-6
-    maxiter = 20
 
     # iteration variables
     iter = 0
