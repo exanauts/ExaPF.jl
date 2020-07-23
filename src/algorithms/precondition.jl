@@ -1,6 +1,5 @@
 module Precondition
 
-include("../target/kernels.jl")
 using LightGraphs
 using Metis
 using SparseArrays
@@ -8,7 +7,8 @@ using LinearAlgebra
 using CUDA
 using CUDA.CUSPARSE
 using TimerOutputs
-using .Kernels
+
+using ..ExaPF: Kernels
 
 cuzeros = CUDA.zeros
 

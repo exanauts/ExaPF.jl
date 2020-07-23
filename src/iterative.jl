@@ -6,8 +6,7 @@ using LinearAlgebra
 using SparseArrays
 using TimerOutputs
 
-include("algorithms/precondition.jl")
-using .Precondition
+using ..ExaPF: Precondition
 
 export bicgstab
 

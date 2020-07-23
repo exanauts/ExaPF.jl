@@ -23,18 +23,20 @@ using TimerOutputs
 
 export Pf, solve
 
+# Import submodules
 include("parse/parse.jl")
-include("parse/parse_raw.jl")
-include("ad.jl")
+using .Parse
 include("target/kernels.jl")
-include("algorithms/precondition.jl")
-include("iterative.jl")
-include("network.jl")
-
-using .AD
 using .Kernels
+include("ad.jl")
+using .AD
+include("algorithms/precondition.jl")
 using .Precondition
+include("iterative.jl")
 using .Iterative
+include("network.jl")
+using .Network
+
 
 const TIMER = TimerOutput()
 
