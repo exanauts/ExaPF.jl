@@ -346,17 +346,20 @@ function solve(pf::Pf, npartitions=2, solver="default";
 
     # Evaluate residual function
     Kernels.@sync begin
-        Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
-                                                                                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-                                                                                  ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
-                                                                                  pbus, qbus, pv, pq, nbus)
+        Kernels.@dispatch threads=nthreads blocks=nblocks begin
+            residualFunction_polar!(F, Vm, Va,
+                                    ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+                                    ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                                    pbus, qbus, pv, pq, nbus)
+        end
     end
 
     J = residualJacobian(V, Ybus, pv, pq)
     dim_J = size(J, 1)
     if solver != "default"
         nblock = size(J,1)/npartitions
-        println("Blocks: $npartitions, Blocksize: n = ", nblock, " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
+        println("Blocks: $npartitions, Blocksize: n = ", nblock,
+                " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
         println("Partitioning...")
         preconditioner = Precondition.Preconditioner(J, npartitions)
         println("$npartitions partitions created")
@@ -390,8 +393,10 @@ function solve(pf::Pf, npartitions=2, solver="default";
         iter += 1
 
         # J = residualJacobian(V, Ybus, pv, pq)
-        @timeit TIMER "Jacobian" AD.residualJacobianAD!(jacobianAD, residualFunction_polar!, Vm, Va,
-                                                     ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, TIMER)
+        @timeit TIMER "Jacobian" begin
+            AD.residualJacobianAD!(jacobianAD, residualFunction_polar!, Vm, Va,
+                                   ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, TIMER)
+        end
         J = jacobianAD.J
 
         if J isa SparseArrays.SparseMatrixCSC
@@ -469,10 +474,14 @@ function solve(pf::Pf, npartitions=2, solver="default";
 
         F .= 0.0
         Kernels.@sync begin
-            @timeit TIMER "Residual function" Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
-            ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-            ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
-            pbus, qbus, pv, pq, nbus)
+            @timeit TIMER "Residual function" begin
+                Kernels.@dispatch threads=nthreads blocks=nblocks begin
+                    residualFunction_polar!(F, Vm, Va,
+                        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+                        ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                        pbus, qbus, pv, pq, nbus)
+                end
+            end
         end
 
         @timeit TIMER "Norm" normF = norm(F)
