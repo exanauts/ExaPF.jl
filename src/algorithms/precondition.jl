@@ -142,12 +142,11 @@ function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
     return nothing
 end
 
-function update(jacobianAD, p::Preconditioner, to=nothing)
-    m = size(jacobianAD.J,1)
-    n = size(jacobianAD.J,2)
+function update(J, p::Preconditioner, to=nothing)
+    m = size(J, 1)
+    n = size(J, 2)
     nblocks = length(p.partitions)
-    J = jacobianAD.J
-    if jacobianAD.J isa CuSparseMatrixCSR
+    if J isa CuSparseMatrixCSR
         @timeit to "Fill Block Jacobi" begin
             Kernels.@sync begin
                 for b in 1:nblocks
@@ -168,7 +167,6 @@ function update(jacobianAD, p::Preconditioner, to=nothing)
             end
         end
     else
-        J = jacobianAD.J
         @timeit to "Fill Block Jacobi" begin
             for b in 1:nblocks
                 for i in p.partitions[b]

@@ -402,19 +402,19 @@ function solve(pf::Pf, npartitions=2, solver="default";
         if J isa SparseArrays.SparseMatrixCSC
             if solver == "bicgstab_ref"
                 println("Building preconditioner...")
-                @timeit TIMER "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, TIMER)
+                @timeit TIMER "Preconditioner" P = Precondition.update(J, preconditioner, TIMER)
                 println("Solving linear system...")
                 @timeit TIMER "CPU-BICGSTAB" (dx[:], history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
                 push!(linsol_iters, history.iters)
             elseif solver == "bicgstab"
                 println("Building preconditioner...")
-                @timeit TIMER "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, TIMER)
+                @timeit TIMER "Preconditioner" P = Precondition.update(J, preconditioner, TIMER)
                 println("Solving linear system...")
                 @timeit TIMER "GPU-BICGSTAB" dx[:], lin_iter = bicgstab(J, F, P, dx, TIMER, maxiter=10000)
                 push!(linsol_iters, lin_iter)
             elseif solver == "gmres"
                 println("Building preconditioner...")
-                @timeit TIMER "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, TIMER)
+                @timeit TIMER "Preconditioner" P = Precondition.update(J, preconditioner, TIMER)
                 println("Solving linear system...")
                 @timeit TIMER "CPU-GMRES" (dx[:], history) = IterativeSolvers.gmres(P*J, P*F, log=true)
                 push!(linsol_iters, history.iters)
@@ -423,13 +423,12 @@ function solve(pf::Pf, npartitions=2, solver="default";
                 @timeit TIMER "CPU-Default sparse solver" dx .= J\F
                 push!(linsol_iters, 0)
             end
-            dx .= -dx
         end
 
         if J isa CUDA.CUSPARSE.CuSparseMatrixCSR
             if solver == "bicgstab"
                 println("Building preconditioner...")
-                @timeit TIMER "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, TIMER)
+                @timeit TIMER "Preconditioner" P = Precondition.update(J, preconditioner, TIMER)
                 println("Solving linear system...")
                 @timeit TIMER "GPU-BICGSTAB" dx[:], lin_iter = bicgstab(J, F, P, dx, TIMER, maxiter=10000)
                 push!(linsol_iters, lin_iter)
@@ -439,8 +438,8 @@ function solve(pf::Pf, npartitions=2, solver="default";
                 @timeit TIMER "Sparse CUSOLVER" dx  = CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
                 push!(linsol_iters, 0)
             end
-            dx .= -dx
         end
+        dx .= -dx
 
         # update voltage
         @timeit TIMER "Update voltage" begin
