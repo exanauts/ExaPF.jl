@@ -1,10 +1,10 @@
 module AD
-include("target/kernels.jl")
-using ForwardDiff
 using CUDA
-using .Kernels
-using TimerOutputs
+using ForwardDiff
 using SparseArrays
+using TimerOutputs
+
+using ..ExaPF: Kernels
 
 function myseed!(duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
                  seeds::AbstractArray{ForwardDiff.Partials{N,V}}) where {T,V,N}

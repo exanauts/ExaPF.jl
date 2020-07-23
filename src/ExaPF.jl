@@ -9,31 +9,36 @@
 __precompile__(false)
 module ExaPF
 
-export Pf, solve
-
-include("parse/parse.jl")
-include("parse/parse_raw.jl")
-include("ad.jl")
-include("target/kernels.jl")
-include("algorithms/precondition.jl")
-include("iterative.jl")
-include("network.jl")
-using ForwardDiff
-using LinearAlgebra
-using SparseArrays
-using Printf
 using CUDA
 using CUDA.CUSPARSE
 using CUDA.CUSOLVER
-using TimerOutputs
-to = TimerOutput()
-using SparseDiffTools
+using ForwardDiff
 using IterativeSolvers
-using .AD
-using .Kernels
-using .Precondition
-using .Iterative
 using Krylov
+using LinearAlgebra
+using Printf
+using SparseArrays
+using SparseDiffTools
+using TimerOutputs
+
+export Pf, solve
+
+# Import submodules
+include("parse/parse.jl")
+using .Parse
+include("target/kernels.jl")
+using .Kernels
+include("ad.jl")
+using .AD
+include("algorithms/precondition.jl")
+using .Precondition
+include("iterative.jl")
+using .Iterative
+include("network.jl")
+using .Network
+
+
+const TIMER = TimerOutput()
 
 struct Pf
     V::Array{Complex{Float64}}
@@ -96,7 +101,6 @@ Returns vectors indexing buses by type: ref, pv, pq.
 
 """
 function bustypeindex(bus, gen)
-
     # retrieve indeces
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
     BUS_EVLO, BUS_TYPE = Parse.idx_bus()
@@ -109,7 +113,6 @@ function bustypeindex(bus, gen)
     # then that bus turns to a PQ bus.
 
     # Design note: this might be computed once and then modified for each contingency.
-
     gencon = zeros(Int8, size(bus, 1))
 
     for i in 1:size(gen, 1)
@@ -133,10 +136,7 @@ function bustypeindex(bus, gen)
     pv = findall(x->x==2, bustype)
     pq = findall(x->x==1, bustype)
 
-
-
     return ref, pv, pq
-
 end
 
 """
@@ -145,12 +145,11 @@ residualFunction
 Assembly residual function for N-R power flow
 """
 function residualFunction(V, Ybus, Sbus, pv, pq)
-
     # form mismatch vector
     mis = V .* conj(Ybus * V) - Sbus
 
     # form residual vector
-    F = [   real(mis[pv]);
+    F = [real(mis[pv]);
          real(mis[pq]);
     imag(mis[pq]) ];
 
@@ -263,7 +262,8 @@ function residualJacobian(V, Ybus, pv, pq)
     J = [j11 j12; j21 j22]
 end
 
-function solve(pf::Pf, npartitions=2, solver="default")
+function solve(pf::Pf, npartitions=2, solver="default";
+               tol=1e-6, maxiter=20)
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
@@ -286,10 +286,6 @@ function solve(pf::Pf, npartitions=2, solver="default")
 
     # Convert voltage vector to target
     V = T(V)
-
-    # parameters NR
-    tol = 1e-6
-    maxiter = 20
 
     # iteration variables
     iter = 0
@@ -352,23 +348,28 @@ function solve(pf::Pf, npartitions=2, solver="default")
 
     # Evaluate residual function
     Kernels.@sync begin
-        Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
-                                                                                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-                                                                                  ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
-                                                                                  pbus, qbus, pv, pq, nbus)
+        Kernels.@dispatch threads=nthreads blocks=nblocks begin
+            residualFunction_polar!(F, Vm, Va,
+                                    ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+                                    ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                                    pbus, qbus, pv, pq, nbus)
+        end
     end
 
     J = residualJacobian(V, Ybus, pv, pq)
     dim_J = size(J, 1)
+    preconditioner = Precondition.NoPreconditioner()
     if solver != "default"
         nblock = size(J,1)/npartitions
-        println("Blocks: $npartitions, Blocksize: n = ", nblock, " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
+        println("Blocks: $npartitions, Blocksize: n = ", nblock,
+                " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
         println("Partitioning...")
         preconditioner = Precondition.Preconditioner(J, npartitions)
         println("$npartitions partitions created")
     end
+
     println("Coloring...")
-    @timeit to "Coloring" coloring = T{Int64}(matrix_colors(J))
+    @timeit TIMER "Coloring" coloring = T{Int64}(matrix_colors(J))
     ncolors = size(unique(coloring),1)
     println("Number of Jacobian colors: ", ncolors)
     J = M(J)
@@ -391,60 +392,25 @@ function solve(pf::Pf, npartitions=2, solver="default")
     dx12 = view(dx, j1:j2)
     dx34 = view(dx, j3:j4)
     dx56 = view(dx, j5:j6)
-    @timeit to "Newton" while ((!converged) && (iter < maxiter))
+    @timeit TIMER "Newton" while ((!converged) && (iter < maxiter))
 
         iter += 1
 
         # J = residualJacobian(V, Ybus, pv, pq)
-        @timeit to "Jacobian" AD.residualJacobianAD!(jacobianAD, residualFunction_polar!, Vm, Va,
-                                                     ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
+        @timeit TIMER "Jacobian" begin
+            AD.residualJacobianAD!(jacobianAD, residualFunction_polar!, Vm, Va,
+                                   ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, TIMER)
+        end
         J = jacobianAD.J
 
-        if J isa SparseArrays.SparseMatrixCSC
-            if solver == "bicgstab_ref"
-                println("Building preconditioner...")
-                @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
-                println("Solving linear system...")
-                @timeit to "CPU-BICGSTAB" (dx[:], history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
-                push!(linsol_iters, history.iters)
-            elseif solver == "bicgstab"
-                println("Building preconditioner...")
-                @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
-                println("Solving linear system...")
-                @timeit to "GPU-BICGSTAB" dx[:], lin_iter = bicgstab(J, F, P, dx, to, maxiter=10000)
-                push!(linsol_iters, lin_iter)
-            elseif solver == "gmres"
-                println("Building preconditioner...")
-                @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
-                println("Solving linear system...")
-                @timeit to "CPU-GMRES" (dx[:], history) = IterativeSolvers.gmres(P*J, P*F, log=true)
-                push!(linsol_iters, history.iters)
-            else
-                println("Solving linear system...")
-                @timeit to "CPU-Default sparse solver" dx .= J\F
-                push!(linsol_iters, 0)
-            end
-            dx .= -dx
-        end
-
-        if J isa CUDA.CUSPARSE.CuSparseMatrixCSR
-            if solver == "bicgstab"
-                println("Building preconditioner...")
-                @timeit to "Preconditioner" P = Precondition.update(jacobianAD, preconditioner, to)
-                println("Solving linear system...")
-                @timeit to "GPU-BICGSTAB" dx[:], lin_iter = bicgstab(J, F, P, dx, to, maxiter=10000)
-                push!(linsol_iters, lin_iter)
-            else
-                println("Solving linear system...")
-                lintol = 1e-8
-                @timeit to "Sparse CUSOLVER" dx  = CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
-                push!(linsol_iters, 0)
-            end
-            dx .= -dx
-        end
+        # Find descent direction
+        n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)
+        push!(linsol_iters, n_iters)
+        # Sometimes it is better to move backward
+        dx .= -dx
 
         # update voltage
-        @timeit to "Update voltage" begin
+        @timeit TIMER "Update voltage" begin
             if (npv != 0)
                 # Va[pv] .= Va[pv] .+ dx[j1:j2]
                 Vapv .= Vapv .+ dx12
@@ -457,9 +423,9 @@ function solve(pf::Pf, npartitions=2, solver="default")
             end
         end
 
-        @timeit to "Exponential" V .= Vm .* exp.(1im .*Va)
+        @timeit TIMER "Exponential" V .= Vm .* exp.(1im .*Va)
 
-        @timeit to "Angle and magnitude" begin
+        @timeit TIMER "Angle and magnitude" begin
             Vm .= abs.(V)
             Va .= Kernels.@angle(V)
         end
@@ -475,13 +441,17 @@ function solve(pf::Pf, npartitions=2, solver="default")
 
         F .= 0.0
         Kernels.@sync begin
-            @timeit to "Residual function" Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
-            ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-            ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
-            pbus, qbus, pv, pq, nbus)
+            @timeit TIMER "Residual function" begin
+                Kernels.@dispatch threads=nthreads blocks=nblocks begin
+                    residualFunction_polar!(F, Vm, Va,
+                        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+                        ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                        pbus, qbus, pv, pq, nbus)
+                end
+            end
         end
 
-        @timeit to "Norm" normF = norm(F)
+        @timeit TIMER "Norm" normF = norm(F)
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
 
         if normF < tol
@@ -496,12 +466,11 @@ function solve(pf::Pf, npartitions=2, solver="default")
     end
 
     # Timer outputs display
-    show(to)
+    show(TIMER)
     println("")
-    reset_timer!(to)
+    reset_timer!(TIMER)
 
     return V, converged, normF, linsol_iters[1], sum(linsol_iters)
-
 end
 
 # end of module

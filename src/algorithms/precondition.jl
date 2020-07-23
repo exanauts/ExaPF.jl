@@ -1,6 +1,5 @@
 module Precondition
 
-include("../target/kernels.jl")
 using LightGraphs
 using Metis
 using SparseArrays
@@ -8,11 +7,16 @@ using LinearAlgebra
 using CUDA
 using CUDA.CUSPARSE
 using TimerOutputs
-using .Kernels
+
+using ..ExaPF: Kernels
 
 cuzeros = CUDA.zeros
 
-mutable struct Preconditioner
+abstract type AbstractPreconditioner end
+
+struct NoPreconditioner <: AbstractPreconditioner end
+
+mutable struct Preconditioner <: AbstractPreconditioner
     npart::Int64
     nJs::Int64
     partitions::Vector{Vector{Int64}}
@@ -70,6 +74,7 @@ mutable struct Preconditioner
             end
         end
         P = sparse(row, col, nzval)
+        # TODO: clean global variables
         if Main.target == "cuda"
             global cupartitions = Vector{CuVector{Int64}}(undef, npart)
             for i in 1:npart
@@ -142,12 +147,11 @@ function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
     return nothing
 end
 
-function update(jacobianAD, p::Preconditioner, to=nothing)
-    m = size(jacobianAD.J,1)
-    n = size(jacobianAD.J,2)
+function update(J, p, to)
+    m = size(J, 1)
+    n = size(J, 2)
     nblocks = length(p.partitions)
-    J = jacobianAD.J
-    if jacobianAD.J isa CuSparseMatrixCSR
+    if J isa CuSparseMatrixCSR
         @timeit to "Fill Block Jacobi" begin
             Kernels.@sync begin
                 for b in 1:nblocks
@@ -168,7 +172,6 @@ function update(jacobianAD, p::Preconditioner, to=nothing)
             end
         end
     else
-        J = jacobianAD.J
         @timeit to "Fill Block Jacobi" begin
             for b in 1:nblocks
                 for i in p.partitions[b]

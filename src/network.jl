@@ -1,8 +1,8 @@
 module Network
 
 using SparseArrays
-include("parse/parse.jl")
-include("parse/parse_raw.jl")
+
+using ..ExaPF: Parse
 
 # Create an admittance matrix. The implementation is a modification of
 # MATPOWER's makeYbus. We attach the original MATPOWER's license in makeYbus.m:
@@ -32,12 +32,12 @@ function makeYbus(raw_data)
     fsh = raw_data["FIXED SHUNT"]
 
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-        BUS_EVLO = idx_bus()
+        BUS_EVLO = Parse.idx_bus()
     BR_FR, BR_TO, BR_CKT, BR_R, BR_X, BR_B, BR_RATEA, BR_RATEC,
-        BR_STAT = idx_branch()
+        BR_STAT = Parse.idx_branch()
     TR_FR, TR_TO, TR_CKT, TR_MAG1, TR_MAG2, TR_STAT, TR_R, TR_X, TR_WINDV1,
-        TR_ANG, TR_RATEA, TR_RATEC, TR_WINDV2 = idx_transformer()
-    FSH_BUS, FSH_ID, FSH_STAT, FSH_G, FSH_B = idx_fshunt()
+        TR_ANG, TR_RATEA, TR_RATEC, TR_WINDV2 = Parse.idx_transformer()
+    FSH_BUS, FSH_ID, FSH_STAT, FSH_G, FSH_B = Parse.idx_fshunt()
 
     nb = size(bus, 1)
     nbr = size(branch, 1)
