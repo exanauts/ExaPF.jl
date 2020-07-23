@@ -8,7 +8,7 @@ target = "cpu"
 @testset "Powerflow CPU" begin
     # Include code to run power flow equation
     include(joinpath(dirname(@__FILE__), "..", "examples", "pf.jl"))
-    datafile = "test/case14.raw"
+    datafile = joinpath(dirname(@__FILE__), "case14.raw")
     # Direct solver
     sol, conv, res = pf(datafile)
     # test convergence is OK
@@ -31,7 +31,7 @@ if has_cuda_gpu()
     @testset "Powerflow GPU" begin
         # Include code to run power flow equation
         include(joinpath(dirname(@__FILE__), "..", "examples", "pf.jl"))
-        datafile = "test/case14.raw"
+        datafile = joinpath(dirname(@__FILE__), "case14.raw")
         # BICGSTAB
         sol, conv, res = pf(datafile, 2, "bicgstab")
         @test conv
