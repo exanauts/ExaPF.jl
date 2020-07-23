@@ -1,16 +1,16 @@
 module Iterative
 
-include("algorithms/precondition.jl")
-using LinearAlgebra
-using .Precondition
 using CUDA
-using TimerOutputs
+using LinearAlgebra
 using SparseArrays
+using TimerOutputs
 
-cuzeros = CUDA.zeros
+include("algorithms/precondition.jl")
+using .Precondition
 
 export bicgstab
 
+cuzeros = CUDA.zeros
 # mulinvP = Precondition.mulinvP
 # mulinvP! = Precondition.mulinvP!
 
@@ -21,7 +21,6 @@ Van der Vorst, Henk A.
 "Bi-CGSTAB: A fast and smoothly converging variant of Bi-CG for the solution of nonsymmetric linear systems."
 SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
 """
-
 function bicgstab(A, b, P, xi, to = nothing; tol = 1e-6, maxiter = size(A,1),
                   verbose=false)
     # parameters

@@ -9,6 +9,18 @@
 __precompile__(false)
 module ExaPF
 
+using CUDA
+using CUDA.CUSPARSE
+using CUDA.CUSOLVER
+using ForwardDiff
+using IterativeSolvers
+using Krylov
+using LinearAlgebra
+using Printf
+using SparseArrays
+using SparseDiffTools
+using TimerOutputs
+
 export Pf, solve
 
 include("parse/parse.jl")
@@ -18,21 +30,11 @@ include("target/kernels.jl")
 include("algorithms/precondition.jl")
 include("iterative.jl")
 include("network.jl")
-using ForwardDiff
-using LinearAlgebra
-using SparseArrays
-using Printf
-using CUDA
-using CUDA.CUSPARSE
-using CUDA.CUSOLVER
-using TimerOutputs
-using SparseDiffTools
-using IterativeSolvers
+
 using .AD
 using .Kernels
 using .Precondition
 using .Iterative
-using Krylov
 
 const TIMER = TimerOutput()
 
