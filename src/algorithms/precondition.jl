@@ -12,7 +12,11 @@ using .Kernels
 
 cuzeros = CUDA.zeros
 
-mutable struct Preconditioner
+abstract type AbstractPreconditioner end
+
+struct NoPreconditioner <: AbstractPreconditioner end
+
+mutable struct Preconditioner <: AbstractPreconditioner
     npart::Int64
     nJs::Int64
     partitions::Vector{Vector{Int64}}
@@ -70,6 +74,7 @@ mutable struct Preconditioner
             end
         end
         P = sparse(row, col, nzval)
+        # TODO: clean global variables
         if Main.target == "cuda"
             global cupartitions = Vector{CuVector{Int64}}(undef, npart)
             for i in 1:npart
@@ -142,7 +147,7 @@ function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
     return nothing
 end
 
-function update(J, p::Preconditioner, to=nothing)
+function update(J, p, to)
     m = size(J, 1)
     n = size(J, 2)
     nblocks = length(p.partitions)

@@ -1,6 +1,7 @@
 module Iterative
 
 using CUDA
+using IterativeSolvers
 using LinearAlgebra
 using SparseArrays
 using TimerOutputs
@@ -11,8 +12,6 @@ using .Precondition
 export bicgstab
 
 cuzeros = CUDA.zeros
-# mulinvP = Precondition.mulinvP
-# mulinvP! = Precondition.mulinvP!
 
 """
 bicgstab according to
@@ -27,7 +26,6 @@ function bicgstab(A, b, P, xi, to = nothing; tol = 1e-6, maxiter = size(A,1),
     n    = size(b, 1)
     x0   = similar(b)
     x0 = P * b
-    # mulinvP!(x0, b, p)
     r0   = b - A * x0
     br0  = copy(r0)
     rho0 = 1.0
@@ -44,7 +42,6 @@ function bicgstab(A, b, P, xi, to = nothing; tol = 1e-6, maxiter = size(A,1),
     omegai = copy(omega0)
     vi = copy(v0)
     pi = copy(p0)
-    # xi = x
     xi .= x0
 
     y = similar(pi)
@@ -76,7 +73,6 @@ function bicgstab(A, b, P, xi, to = nothing; tol = 1e-6, maxiter = size(A,1),
             @timeit to "Main stage" begin
                 omegai1 = dot(t1, t2) / dot(t1, t1)
                 xi1 .= xi .+ alpha .* y .+ omegai1 .* z
-                # xi1 .= xi .+ alpha .* y .+ omegai1 .* z
             end
 
             @timeit to "End stage" begin
@@ -110,6 +106,51 @@ function bicgstab(A, b, P, xi, to = nothing; tol = 1e-6, maxiter = size(A,1),
     end
 
     return xi, iter
+end
+
+function ldiv!(
+    dx::AbstractVector,
+    J::SparseArrays.SparseMatrixCSC,
+    F::AbstractVector,
+    solver::String,
+    preconditioner,
+    timer::TimerOutputs.TimerOutput=nothing,
+)
+    if solver == "bicgstab_ref"
+        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
+        @timeit timer "CPU-BICGSTAB" (dx[:], history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
+        n_iters = history.iters
+    elseif solver == "bicgstab"
+        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
+        @timeit timer "GPU-BICGSTAB" dx[:], n_iters = bicgstab(J, F, P, dx, timer, maxiter=10000)
+    elseif solver == "gmres"
+        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
+        @timeit timer "CPU-GMRES" (dx[:], history) = IterativeSolvers.gmres(P*J, P*F, log=true)
+        n_iters = history.iters
+    else
+        @timeit timer "CPU-Default sparse solver" dx .= J\F
+        n_iters = 0
+    end
+    return n_iters
+end
+
+function ldiv!(
+    dx::CuVector,
+    J::CUDA.CUSPARSE.CuSparseMatrixCSR,
+    F::CuVector,
+    solver::String,
+    preconditioner,
+    timer=nothing,
+)
+    if solver == "bicgstab"
+        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
+        @timeit timer "GPU-BICGSTAB" dx[:], n_iters = bicgstab(J, F, P, dx, timer, maxiter=10000)
+    else
+        lintol = 1e-8
+        @timeit timer "Sparse CUSOLVER" dx  = CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
+        n_iters = 0
+    end
+    return n_iters
 end
 
 end
