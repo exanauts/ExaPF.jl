@@ -1,5 +1,5 @@
 using Test
-
+using CUDA
 
 # This is a problem of the code right now. It can only set once per as
 # this variable is used in macros to generate the code at compile time.
@@ -26,19 +26,21 @@ target = "cpu"
 end
 
 ## TODO: This throws warnings because the cpu version ran before.
-target = "cuda"
-@testset "Powerflow GPU" begin
-    # Include code to run power flow equation
-    include(joinpath(dirname(@__FILE__), "..", "examples", "pf.jl"))
-    datafile = "test/case14.raw"
-    # BICGSTAB
-    sol, conv, res = pf(datafile, 2, "bicgstab")
-    @test conv
-    @test res < 1e-6
-    # DIRECT
-    sol, conv, res = pf(datafile)
-    @test conv
-    @test res < 1e-6
+if has_cuda_gpu()
+    target = "cuda"
+    @testset "Powerflow GPU" begin
+        # Include code to run power flow equation
+        include(joinpath(dirname(@__FILE__), "..", "examples", "pf.jl"))
+        datafile = "test/case14.raw"
+        # BICGSTAB
+        sol, conv, res = pf(datafile, 2, "bicgstab")
+        @test conv
+        @test res < 1e-6
+        # DIRECT
+        sol, conv, res = pf(datafile)
+        @test conv
+        @test res < 1e-6
+    end
 end
 
 # # Not working yet. Will check whether Ipopt and reduced method match in objective
