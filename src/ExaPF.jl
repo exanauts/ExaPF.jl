@@ -348,12 +348,10 @@ function solve(pf::Pf, npartitions=2, solver="default";
 
     # Evaluate residual function
     Kernels.@sync begin
-        Kernels.@dispatch threads=nthreads blocks=nblocks begin
-            residualFunction_polar!(F, Vm, Va,
+        Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
                                     ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
                                     ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                                     pbus, qbus, pv, pq, nbus)
-        end
     end
 
     J = residualJacobian(V, Ybus, pv, pq)
@@ -442,12 +440,10 @@ function solve(pf::Pf, npartitions=2, solver="default";
         F .= 0.0
         Kernels.@sync begin
             @timeit TIMER "Residual function" begin
-                Kernels.@dispatch threads=nthreads blocks=nblocks begin
-                    residualFunction_polar!(F, Vm, Va,
+                Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
                         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
                         ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                         pbus, qbus, pv, pq, nbus)
-                end
             end
         end
 
