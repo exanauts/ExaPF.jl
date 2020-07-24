@@ -1,3 +1,9 @@
+# ExaPF
+
+| **Build Status** |
+|:----------------:|
+| [![Build Status][build-img]][build-url] |
+
 ExaPF is a HPC package for solving power flow (PF) on a GPU. It currently solves PF using the Newton-Raphson algorithm on NVIDIA GPUs.
 Its main features are:
 
@@ -8,7 +14,7 @@ Its main features are:
 
 This code will serve as the basis for OPF on GPUs using the reduced gradient method. A similar abstraction than CuArrays will be used to port the code to AMD ROCm and Intel oneAPI.
 
-# Installation
+## Installation
 
 The package is not yet available through the Julia registrator.
 
@@ -16,10 +22,15 @@ The package is not yet available through the Julia registrator.
 pkg> dev git@github.com:exanauts/ExaPF.jl.git
 ```
 
-# Test
+## Test
 ```julia
 pkg> test ExaPF
 ```
-# Documentation
+
+## Documentation
 WIP
+
+
+[build-img]: https://travis-ci.org/exanauts/ExaPF.jl.svg?branch=master
+[build-url]: https://travis-ci.org/exanauts/ExaPF.jl
 
