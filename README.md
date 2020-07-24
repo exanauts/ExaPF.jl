@@ -31,6 +31,6 @@ pkg> test ExaPF
 WIP
 
 
-[build-img]: https://travis-ci.org/exanauts/ExaPF.jl.svg?branch=master
-[build-url]: https://travis-ci.org/exanauts/ExaPF.jl
+[build-img]: https://travis-ci.com/exanauts/ExaPF.jl.svg?branch=master
+[build-url]: https://travis-ci.com/exanauts/ExaPF.jl
 
