@@ -1,7 +1,6 @@
 using ExaPF
 using ExaPF.Parse
 using ExaPF.PowerSystem
-using ExaPF.Network
 
 # file locations
 # datafile = "GO-Data/datasets/Trial_3_Real-Time/Network_30R-025/scenario_1/case.raw"
@@ -12,6 +11,6 @@ function pf(datafile, npartition=2, solver="default")
     # read data
     println(solver)
     
-    pf = PowerSystem.Pf(datafile)
+    pf = PowerSystem.PowerNetwork(datafile)
     return solve(pf, npartition, solver);
 end

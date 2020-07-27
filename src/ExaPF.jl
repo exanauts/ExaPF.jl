@@ -34,9 +34,7 @@ include("algorithms/precondition.jl")
 using .Precondition
 include("iterative.jl")
 using .Iterative
-include("network.jl")
-using .Network
-include("psystem.jl")
+include("powersystem.jl")
 using .PowerSystem
 
 const TIMER = TimerOutput()
@@ -180,7 +178,7 @@ function residualJacobian(V, Ybus, pv, pq)
     J = [j11 j12; j21 j22]
 end
 
-function solve(pf::PowerSystem.Pf, npartitions=2, solver="default";
+function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
                tol=1e-6, maxiter=20)
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
