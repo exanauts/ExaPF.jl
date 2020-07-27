@@ -21,7 +21,7 @@ using SparseArrays
 using SparseDiffTools
 using TimerOutputs
 
-export Pf, solve
+export solve
 
 # Import submodules
 include("parse/parse.jl")
@@ -34,17 +34,11 @@ include("algorithms/precondition.jl")
 using .Precondition
 include("iterative.jl")
 using .Iterative
-include("network.jl")
-using .Network
-
+include("powersystem.jl")
+using .PowerSystem
 
 const TIMER = TimerOutput()
 
-struct Pf
-    V::Array{Complex{Float64}}
-    Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
-    data::Dict{String,Array}
-end
 
 mutable struct Spmat{T}
     colptr
@@ -59,85 +53,7 @@ mutable struct Spmat{T}
     end
 end
 
-"""
-assembleSbus(data)
 
-Assembles vector of constant power injections (generator - load). Since
-we do not have voltage-dependent loads, this vector only needs to be
-assembled once at the beginning of the power flow routine.
-
-"""
-function assembleSbus(gen, load, SBASE, nbus)
-    Sbus = zeros(Complex{Float64}, nbus)
-
-    ngen = size(gen, 1)
-    nload = size(load, 1)
-
-    # retrieve indeces
-    GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-    GEN_PT, GEN_PB = Parse.idx_gen()
-
-    LOAD_BUS, LOAD_ID, LOAD_STAT, LOAD_PL, LOAD_QL = Parse.idx_load()
-
-    for i in 1:ngen
-        if gen[i, GEN_STAT] == 1
-            Sbus[gen[i, GEN_BUS]] += (gen[i, GEN_PG] + 1im*gen[i, GEN_QG])/SBASE
-        end
-    end
-
-    for i in 1:nload
-        if load[i, LOAD_STAT] == 1
-            Sbus[load[i, LOAD_BUS]] -= (load[i, LOAD_PL] + 1im*load[i, LOAD_QL])/SBASE
-        end
-    end
-
-    return Sbus
-end
-
-"""
-bustypeindex(data)
-
-Returns vectors indexing buses by type: ref, pv, pq.
-
-"""
-function bustypeindex(bus, gen)
-    # retrieve indeces
-    BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-    BUS_EVLO, BUS_TYPE = Parse.idx_bus()
-
-    GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-    GEN_PT, GEN_PB = Parse.idx_gen()
-
-    # form vector that lists the number of generators per bus.
-    # If a PV bus has 0 generators (e.g. due to contingency)
-    # then that bus turns to a PQ bus.
-
-    # Design note: this might be computed once and then modified for each contingency.
-    gencon = zeros(Int8, size(bus, 1))
-
-    for i in 1:size(gen, 1)
-        if gen[i, GEN_STAT] == 1
-            gencon[gen[i, GEN_BUS]] += 1
-        end
-    end
-
-    bustype = copy(bus[:, BUS_TYPE])
-
-    for i in 1:size(bus, 1)
-        if (bustype[i] == 2) && (gencon[i] == 0)
-            bustype[i] = 1
-        elseif (bustype[i] == 1) && (gencon[i] > 0)
-            bustype[i] = 2
-        end
-    end
-
-    # form vectors
-    ref = findall(x->x==3, bustype)
-    pv = findall(x->x==2, bustype)
-    pq = findall(x->x==1, bustype)
-
-    return ref, pv, pq
-end
 
 """
 residualFunction
@@ -262,7 +178,7 @@ function residualJacobian(V, Ybus, pv, pq)
     J = [j11 j12; j21 j22]
 end
 
-function solve(pf::Pf, npartitions=2, solver="default";
+function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
                tol=1e-6, maxiter=20)
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
@@ -306,18 +222,20 @@ function solve(pf::Pf, npartitions=2, solver="default";
     gen = data["GENERATOR"]
     load = data["LOAD"]
 
-    nbus = size(bus, 1)
-    ngen = size(gen, 1)
-    nload = size(load, 1)
+    nbus = pf.nbus
+    ngen = pf.ngen
+    nload = pf.nload
+    
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
 
     # retrieve ref, pv and pq index
-    ref, pv, pq = bustypeindex(bus, gen)
     pv = T(pv)
     pq = T(pq)
 
     # retrieve power injections
-    SBASE = data["CASE IDENTIFICATION"][1]
-    Sbus = assembleSbus(gen, load, SBASE, nbus)
+    Sbus = pf.Sbus
     pbus = T(real(Sbus))
     qbus = T(imag(Sbus))
 
