@@ -19,7 +19,7 @@ Van der Vorst, Henk A.
 "Bi-CGSTAB: A fast and smoothly converging variant of Bi-CG for the solution of nonsymmetric linear systems."
 SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
 """
-function bicgstab(A, b, P, xi, to = nothing; tol = 1e-6, maxiter = size(A,1),
+function bicgstab(A, b, P, xi, to::TimerOutput; tol = 1e-6, maxiter = size(A,1),
                   verbose=false)
     # parameters
     n    = size(b, 1)

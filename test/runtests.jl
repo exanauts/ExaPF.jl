@@ -1,24 +1,53 @@
+using LinearAlgebra
+using Random
+using SparseArrays
 using Test
+using TimerOutputs
 using CUDA
 
 # This is a problem of the code right now. It can only set once per as
 # this variable is used in macros to generate the code at compile time.
 # This implies we cannot both test gpu and cpu code here.
 target = "cpu"
+using ExaPF
+
+@testset "Iterative solvers" begin
+    n, m = 32, 32
+    # Add a diagonal term for conditionning
+    A = randn(n, m) + 15I
+    x♯ = randn(m)
+    b = A * x♯
+    # Careful: all algorithms work with sparse matrix
+    As = sparse(A)
+    precond = ExaPF.Precondition.Preconditioner(As, 2)
+    to = TimerOutputs.TimerOutput()
+
+    @testset "BICGSTAB" begin
+        # Need to update preconditioner before resolution
+        ExaPF.Precondition.update(As, precond, to)
+        P = precond.P
+        x_sol, n_iters = ExaPF.Iterative.bicgstab(As, b, P, zeros(m), to)
+        @test n_iters <= m
+        @test x_sol ≈ x♯
+    end
+    @testset "Interface for iterative algorithm ($algo)" for algo in [
+        "bicgstab", "bicgstab_ref", "gmres"]
+        x_sol = zeros(m)
+        n_iters = ExaPF.Iterative.ldiv!(x_sol, As, b, algo, precond, to)
+        @test n_iters <= m
+        @test x_sol ≈ x♯
+    end
+end
+
 @testset "Powerflow CPU" begin
     # Include code to run power flow equation
     include(joinpath(dirname(@__FILE__), "..", "examples", "pf.jl"))
     datafile = joinpath(dirname(@__FILE__), "case14.raw")
-    # Direct solver
-    sol, conv, res = pf(datafile)
-    # test convergence is OK
-    @test conv
-    # test norm is minimized
-    @test res < 1e-6
 
+    # Direct solver
     nblocks = 8
     # Note: Reference BICGSTAB in IterativeSolvers
-    for precond in ["gmres", "bicgstab_ref", "bicgstab"]
+    @testset "Powerflow solver $precond" for precond in ["default", "gmres", "bicgstab_ref", "bicgstab"]
         sol, has_conv, res = pf(datafile, nblocks, precond)
         @test has_conv
         @test res < 1e-6
