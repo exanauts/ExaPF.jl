@@ -1,9 +1,12 @@
+using KernelAbstractions
 using LinearAlgebra
 using Random
 using SparseArrays
 using Test
 using TimerOutputs
 using CUDA
+
+Random.seed!(2713)
 
 # This is a problem of the code right now. It can only set once per as
 # this variable is used in macros to generate the code at compile time.
@@ -12,10 +15,14 @@ target = "cpu"
 using ExaPF
 import ExaPF: Parse, PowerSystem
 
+case = "case14.raw"
+nblocks = 8
+# case = "ACTIVSg70K.raw"
+# nblocks = 5000
 @testset "Powerflow residuals and Jacobian" begin
     # read data
     to = TimerOutputs.TimerOutput()
-    datafile = joinpath(dirname(@__FILE__), "case14.raw")
+    datafile = joinpath(dirname(@__FILE__), case)
     data = Parse.parse_raw(datafile)
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
     BUS_EVLO, BUS_TYPE = Parse.idx_bus()
@@ -111,13 +118,12 @@ end
 
 @testset "Powerflow CPU" begin
     # Include code to run power flow equation
-    datafile = joinpath(dirname(@__FILE__), "case14.raw")
+    datafile = joinpath(dirname(@__FILE__), case)
     # Direct solver
-    nblocks = 8
     # Create a network object:
     pf = ExaPF.PowerSystem.PowerNetwork(datafile)
     # Note: Reference BICGSTAB in IterativeSolvers
-    @testset "Powerflow solver $precond" for precond in ["default", "gmres", "bicgstab_ref", "bicgstab"]
+    @testset "Powerflow solver $precond" for precond in ["default", "gmres", "dqgmres", "bicgstab_ref", "bicgstab"]
         sol, has_conv, res = solve(pf, nblocks, precond)
         @test has_conv
         @test res < 1e-6
@@ -129,10 +135,10 @@ if has_cuda_gpu()
     target = CUDADevice()
     @testset "Powerflow GPU" begin
         # Include code to run power flow equation
-        datafile = joinpath(dirname(@__FILE__), "case14.raw")
+        datafile = joinpath(dirname(@__FILE__), case)
         pf = ExaPF.PowerSystem.PowerNetwork(datafile)
-        @testset "Powerflow solver $precond" for precond in ["default", "bicgstab"]
-            sol, conv, res = solve(pf, 2, precond, device=target)
+        @testset "Powerflow solver $precond" for precond in ["default", "dqgmres", "bicgstab"]
+            sol, conv, res = solve(pf, nblocks, precond, device=target)
             @test conv
             @test res < 1e-6
         end
