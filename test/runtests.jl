@@ -13,6 +13,7 @@ using ExaPF
 
 @testset "Powerflow residuals and Jacobian" begin
     # read data
+    to = TimerOutputs.TimerOutput()
     datafile = joinpath(dirname(@__FILE__), "case14.raw")
     data = Parse.parse_raw(datafile)
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
@@ -49,11 +50,10 @@ using ExaPF
     npv = size(pv, 1);
     npq = size(pq, 1);
 
-    # First compute a reference value for resisual computed at V
-    F♯ = ExaPF.residualFunction(V, Ybus, Sbus, pv, pq)
-
-    @testset "Residual polar" begin
+    @testset "Computing residuals" begin
         F = zeros(Float64, npv + 2*npq)
+        # First compute a reference value for resisual computed at V
+        F♯ = ExaPF.residualFunction(V, Ybus, Sbus, pv, pq)
         # residual_polar! uses only binary types as this function is meant
         # to be deported on the GPU
         ExaPF.residualFunction_polar!(F, Vm, Va,
@@ -61,6 +61,21 @@ using ExaPF
             ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
             pbus, qbus, pv, pq, nbus)
         @test F ≈ F♯
+    end
+    @testset "Computing Jacobian of residuals" begin
+        F = zeros(Float64, npv + 2*npq)
+        # Compute Jacobian at point V manually and use it as reference
+        J = ExaPF.residualJacobian(V, Ybus, pv, pq)
+        J♯ = copy(J)
+
+        # Then, create a JacobianAD object
+        coloring = ExaPF.matrix_colors(J)
+        jacobianAD = ExaPF.AD.JacobianAD(J, coloring, F, Vm, Va, pv, pq)
+        # and compute Jacobian with ForwardDiff
+        ExaPF.AD.residualJacobianAD!(
+            jacobianAD, ExaPF.residualFunction_polar!, Vm, Va,
+            ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
+        @test jacobianAD.J ≈ J♯
     end
 end
 
@@ -70,11 +85,12 @@ end
     A = randn(n, m) + 15I
     x♯ = randn(m)
     b = A * x♯
-    # Careful: all algorithms work with sparse matrix
+    # Be careful: all algorithms work with sparse matrix
     As = sparse(A)
     precond = ExaPF.Precondition.Preconditioner(As, 2)
     to = TimerOutputs.TimerOutput()
 
+    # First test the custom implementation of BICGSTAB
     @testset "BICGSTAB" begin
         # Need to update preconditioner before resolution
         ExaPF.Precondition.update(As, precond, to)
