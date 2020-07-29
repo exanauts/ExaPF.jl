@@ -5,6 +5,8 @@ using Test
 using TimerOutputs
 using CUDA
 
+Random.seed!(2713)
+
 # This is a problem of the code right now. It can only set once per as
 # this variable is used in macros to generate the code at compile time.
 # This implies we cannot both test gpu and cpu code here.
