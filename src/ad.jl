@@ -1,46 +1,40 @@
 module AD
+
 using CUDA
 using ForwardDiff
+using KernelAbstractions
 using SparseArrays
 using TimerOutputs
 
 using ..ExaPF: Kernels
 
-function myseed!(duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
+@kernel function myseed_kernel(duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
                  seeds::AbstractArray{ForwardDiff.Partials{N,V}}) where {T,V,N}
-
-    Kernels.@getstrideindex()
-
-    for i in index:stride:size(duals,1)
-        #   for i in 1:size(duals,1)
-        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
-        # duals[i].value = x[i]
-    end
-    return nothing
+    i = @index(Global, Linear)
+    @inbounds duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
 end
 
-function getpartials(compressedJ, t1sF)
-
-    Kernels.@getstrideindex()
-
-    for i in index:stride:size(t1sF,1) # Go over outputs
-        compressedJ[:,i] .= ForwardDiff.partials.(t1sF[i]).values
-    end
+@kernel function getpartials_kernel(compressedJ, t1sF)
+    i = @index(Global, Linear)
+    @inbounds compressedJ[:,i] .= ForwardDiff.partials.(t1sF[i]).values
 end
 
+# uncompress (for GPU only)
+# TODO: should convert to @kernel
 function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
-
-    Kernels.@getstrideindex()
-
+    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    stride = blockDim().x * gridDim().x
     for i in index:stride:nmap
         for j in J_rowPtr[i]:J_rowPtr[i+1]-1
-            J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
+            @inbounds J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
         end
     end
 end
 
 function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
                              ybus_re, ybus_im, pinj, qinj, pv, pq, nbus, to = nothing)
+    device = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? CPU() : CUDADevice()
+
     @timeit to "Before" begin
         @timeit to "Setup" begin
             nv_m = size(v_m, 1)
@@ -58,9 +52,12 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
         end
     end
     @timeit to "Seeding" begin
-        Kernels.@sync begin
-            Kernels.@dispatch threads=nthreads blocks=nblocks myseed!(arrays.t1svarx, arrays.varx, arrays.t1sseeds)
-        end
+        ev = myseed_kernel(device)(
+            arrays.t1svarx,
+            arrays.varx,
+            arrays.t1sseeds,
+            ndrange=length(arrays.t1svarx))
+        wait(ev)
     end
     nthreads=256
     nblocks=ceil(Int64, nbus/nthreads)
@@ -75,9 +72,12 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     end
 
     @timeit to "Get partials" begin
-        Kernels.@sync begin
-            Kernels.@dispatch threads=nthreads blocks=nblocks getpartials(arrays.compressedJ, arrays.t1sF)
-        end
+        ev = getpartials_kernel(device)(
+            arrays.compressedJ,
+            arrays.t1sF,
+            ndrange=length(arrays.t1sF)
+        )
+        wait(ev)
     end
     @timeit to "Uncompress" begin
         # Uncompress matrix. Sparse matrix elements have different names with CUDA
@@ -89,12 +89,15 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
             end
         end
         if arrays.J isa CUDA.CUSPARSE.CuSparseMatrixCSR
-            Kernels.@sync begin
-                Kernels.@dispatch threads=nthreads blocks=nblocks uncompress(
-                                                                             arrays.J.nzVal, arrays.J.rowPtr, arrays.J.colVal, arrays.compressedJ, arrays.coloring, nmap)
+            CUDA.@sync begin
+                @cuda threads=nthreads blocks=nblocks uncompress(
+                        arrays.J.nzVal,
+                        arrays.J.rowPtr,
+                        arrays.J.colVal,
+                        arrays.compressedJ,
+                        arrays.coloring, nmap)
             end
         end
-        # @show J.nzVal
         return nothing
     end
 end
@@ -154,9 +157,6 @@ struct JacobianAD
         t1svarx = view(t1sx, map)
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
-        # CUDA.@sync begin
-        # ad.myseed!(t1svarx, varx, t1sseeds)
-        # end
         return new(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, varx, t1svarx, map)
     end
 end
