@@ -6,7 +6,6 @@
 # by Ray Zimmerman, PSERC Cornell
 #
 # Covered by the 3-clause BSD License.
-__precompile__(false)
 module ExaPF
 
 using CUDA
@@ -14,6 +13,7 @@ using CUDA.CUSPARSE
 using CUDA.CUSOLVER
 using ForwardDiff
 using IterativeSolvers
+using KernelAbstractions
 using Krylov
 using LinearAlgebra
 using Printf
@@ -26,8 +26,6 @@ export solve
 # Import submodules
 include("parse/parse.jl")
 using .Parse
-include("target/kernels.jl")
-using .Kernels
 include("ad.jl")
 using .AD
 include("algorithms/precondition.jl")
@@ -53,8 +51,6 @@ mutable struct Spmat{T}
     end
 end
 
-
-
 """
 residualFunction
 
@@ -63,12 +59,10 @@ Assembly residual function for N-R power flow
 function residualFunction(V, Ybus, Sbus, pv, pq)
     # form mismatch vector
     mis = V .* conj(Ybus * V) - Sbus
-
     # form residual vector
-    F = [real(mis[pv]);
-         real(mis[pq]);
-    imag(mis[pq]) ];
-
+    F = [real(mis[pv])
+         real(mis[pq])
+         imag(mis[pq]) ]
     return F
 end
 
@@ -114,50 +108,56 @@ function residualFunction_real!(F, v_re, v_im,
     return F
 end
 
-function residualFunction_polar!(F, v_m, v_a,
-                                 ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                                 ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
-                                 pinj, qinj, pv, pq, nbus)
+@kernel function residual_kernel!(F, v_m, v_a,
+                     ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
+                     ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
+                     pinj, qinj, pv, pq, nbus)
 
     npv = size(pv, 1)
     npq = size(pq, 1)
 
-    Kernels.@getstrideindex()
-
-    # REAL PV
-    for i in index:stride:npv
-        fr = pv[i]
-        F[i] -= pinj[fr]
-        for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
-            to = ybus_re_rowval[c]
-            aij = v_a[fr] - v_a[to]
-            F[i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*Kernels.@cos(aij) + ybus_im_nzval[c]*Kernels.@sin(aij))
+    i = @index(Global, Linear)
+    # REAL PV: 1:npv
+    # REAL PQ: (npv+1:npv+npq)
+    # IMAG PQ: (npv+npq+1:npv+2npq)
+    fr = (i <= npv) ? pv[i] : pq[i - npv]
+    F[i] -= pinj[fr]
+    if i > npv
+        F[i + npq] -= qinj[fr]
+    end
+    @inbounds for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
+        to = ybus_re_rowval[c]
+        aij = v_a[fr] - v_a[to]
+        # f_re = a * cos + b * sin
+        # f_im = a * sin - b * cos
+        coef_cos = v_m[fr]*v_m[to]*ybus_re_nzval[c]
+        coef_sin = v_m[fr]*v_m[to]*ybus_im_nzval[c]
+        cos_val = cos(aij)
+        sin_val = sin(aij)
+        F[i] += coef_cos * cos_val + coef_sin * sin_val
+        if i > npv
+            F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
         end
     end
+end
 
-    # REAL PQ
-    for i in index:stride:npq
-        fr = pq[i]
-        F[npv + i] -= pinj[fr]
-        for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
-            to = ybus_re_rowval[c]
-            aij = v_a[fr] - v_a[to]
-            F[npv + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*Kernels.@cos(aij) + ybus_im_nzval[c]*Kernels.@sin(aij))
-        end
+function residualFunction_polar!(F, v_m, v_a,
+                     ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
+                     ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
+                     pinj, qinj, pv, pq, nbus)
+    npv = length(pv)
+    npq = length(pq)
+    if isa(F, Array)
+        kernel! = residual_kernel!(CPU(),4)
+    else
+        kernel! = residual_kernel!(CUDADevice(),256)
     end
-
-    # IMAG PQ
-    for i in index:stride:npq
-        fr = pq[i]
-        F[npv + npq + i] -= qinj[fr]
-        for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
-            to = ybus_re_rowval[c]
-            aij = v_a[fr] - v_a[to]
-            F[npv + npq + i] += v_m[fr]*v_m[to]*(ybus_re_nzval[c]*Kernels.@sin(aij) - ybus_im_nzval[c]*Kernels.@cos(aij))
-        end
-    end
-
-    return nothing
+    ev = kernel!(F, v_m, v_a,
+                 ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
+                 ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
+                 pinj, qinj, pv, pq, nbus,
+                 ndrange=npv+npq)
+    wait(ev)
 end
 
 function residualJacobian(V, Ybus, pv, pq)
@@ -178,21 +178,32 @@ function residualJacobian(V, Ybus, pv, pq)
     J = [j11 j12; j21 j22]
 end
 
+# small utils function
+function polar!(Vm, Va, V, ::CPU)
+    Vm .= abs.(V)
+    Va .= angle.(V)
+end
+function polar!(Vm, Va, V, ::CUDADevice)
+    Vm .= CUDA.abs.(V)
+    Va .= CUDA.angle.(V)
+end
+
 function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
-               tol=1e-6, maxiter=20)
+               tol=1e-6, maxiter=20, device=CPU())
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
-    println("Target set to $(Main.target)")
-    if Main.target == "cpu"
+    println("Target set to device $(device)")
+    if isa(device, CPU)
         T = Vector
         M = SparseMatrixCSC
         A = Array
-    end
-    if Main.target == "cuda"
+    elseif isa(device, CUDADevice)
         T = CuVector
         M = CuSparseMatrixCSR
         A = CuArray
+    else
+        error("Only `CPU` and `CUDADevice` are supported.")
     end
 
     # Retrieve parameter and initial voltage guess
@@ -225,7 +236,7 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
     nbus = pf.nbus
     ngen = pf.ngen
     nload = pf.nload
-    
+
     ref = pf.ref
     pv = pf.pv
     pq = pf.pq
@@ -240,9 +251,8 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
     qbus = T(imag(Sbus))
 
     # voltage
-    Vm = abs.(V)
-    Va = Kernels.@angle(V)
-
+    Vm, Va = similar(V), similar(V)
+    polar!(Vm, Va, V, device)
     # Number of GPU threads
     nthreads=256
     nblocks=ceil(Int64, nbus/nthreads)
@@ -257,20 +267,15 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
     j5 = j4 + 1
     j6 = j4 + npq
 
-    # v_re[:] = real(V)
-    # v_im[:] = imag(V)
-
     # form residual function
     F = T(zeros(Float64, npv + 2*npq))
     dx = similar(F)
 
     # Evaluate residual function
-    Kernels.@sync begin
-        Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
-                                    ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-                                    ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
-                                    pbus, qbus, pv, pq, nbus)
-    end
+    residualFunction_polar!(F, Vm, Va,
+                            ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+                            ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                            pbus, qbus, pv, pq, nbus)
 
     J = residualJacobian(V, Ybus, pv, pq)
     dim_J = size(J, 1)
@@ -280,7 +285,7 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
         println("Blocks: $npartitions, Blocksize: n = ", nblock,
                 " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
         println("Partitioning...")
-        preconditioner = Precondition.Preconditioner(J, npartitions)
+        preconditioner = Precondition.Preconditioner(J, npartitions, device)
         println("$npartitions partitions created")
     end
 
@@ -308,11 +313,11 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
     dx12 = view(dx, j1:j2)
     dx34 = view(dx, j3:j4)
     dx56 = view(dx, j5:j6)
+
     @timeit TIMER "Newton" while ((!converged) && (iter < maxiter))
 
         iter += 1
 
-        # J = residualJacobian(V, Ybus, pv, pq)
         @timeit TIMER "Jacobian" begin
             AD.residualJacobianAD!(jacobianAD, residualFunction_polar!, Vm, Va,
                                    ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, TIMER)
@@ -342,27 +347,15 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
         @timeit TIMER "Exponential" V .= Vm .* exp.(1im .*Va)
 
         @timeit TIMER "Angle and magnitude" begin
-            Vm .= abs.(V)
-            Va .= Kernels.@angle(V)
+            polar!(Vm, Va, V, device)
         end
 
-        # evaluate residual and check for convergence
-        # F = residualFunction(V, Ybus, Sbus, pv, pq)
-
-        # v_re[:] = real(V)
-        # v_im[:] = imag(V)
-        #F .= 0.0
-        #residualFunction_real!(F, v_re, v_im,
-        #        ybus_re, ybus_im, pbus, qbus, pv, pq, nbus)
-
         F .= 0.0
-        Kernels.@sync begin
-            @timeit TIMER "Residual function" begin
-                Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(F, Vm, Va,
-                        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-                        ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
-                        pbus, qbus, pv, pq, nbus)
-            end
+        @timeit TIMER "Residual function" begin
+            residualFunction_polar!(F, Vm, Va,
+                ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+                ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                pbus, qbus, pv, pq, nbus)
         end
 
         @timeit TIMER "Norm" normF = norm(F)

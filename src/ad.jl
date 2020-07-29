@@ -6,7 +6,6 @@ using KernelAbstractions
 using SparseArrays
 using TimerOutputs
 
-using ..ExaPF: Kernels
 
 @kernel function myseed_kernel(duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
                  seeds::AbstractArray{ForwardDiff.Partials{N,V}}) where {T,V,N}
@@ -63,12 +62,15 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     nblocks=ceil(Int64, nbus/nthreads)
 
     @timeit to "Function" begin
-        Kernels.@sync begin
-            Kernels.@dispatch threads=nthreads blocks=nblocks residualFunction_polar!(arrays.t1sF, arrays.t1sx[1:nv_m], arrays.t1sx[nv_m+1:nv_m+nv_a],
-                                                                                      ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-                                                                                      ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
-                                                                                      pinj, qinj, pv, pq, nbus)
-        end
+        residualFunction_polar!(
+            arrays.t1sF,
+            arrays.t1sx[1:nv_m],
+            arrays.t1sx[nv_m+1:nv_m+nv_a],
+            ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+            ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+            pinj, qinj,
+            pv, pq, nbus
+        )
     end
 
     @timeit to "Get partials" begin

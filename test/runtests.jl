@@ -126,13 +126,13 @@ end
 
 ## TODO: This throws warnings because the cpu version ran before.
 if has_cuda_gpu()
-    target = "cuda"
+    target = CUDADevice()
     @testset "Powerflow GPU" begin
         # Include code to run power flow equation
         datafile = joinpath(dirname(@__FILE__), "case14.raw")
         pf = ExaPF.PowerSystem.PowerNetwork(datafile)
         @testset "Powerflow solver $precond" for precond in ["default", "bicgstab"]
-            sol, conv, res = solve(pf, 2, precond)
+            sol, conv, res = solve(pf, 2, precond, device=target)
             @test conv
             @test res < 1e-6
         end

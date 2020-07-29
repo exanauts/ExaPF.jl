@@ -1,11 +1,12 @@
 module Precondition
 
+using CUDA
+using CUDA.CUSPARSE
+using KernelAbstractions
 using LightGraphs
 using Metis
 using SparseArrays
 using LinearAlgebra
-using CUDA
-using CUDA.CUSPARSE
 using TimerOutputs
 
 cuzeros = CUDA.zeros
@@ -26,7 +27,7 @@ mutable struct Preconditioner <: AbstractPreconditioner
     part
     cupart
     P
-    function Preconditioner(J, npart)
+    function Preconditioner(J, npart, device=CPU())
         m, n = size(J)
         if npart < 2
             error("Number of partitions `npart` should be at" *
@@ -75,7 +76,7 @@ mutable struct Preconditioner <: AbstractPreconditioner
             end
         end
         P = sparse(row, col, nzval)
-        if Main.target == "cuda"
+        if isa(device, CUDADevice)
             cupartitions = Vector{CuVector{Int64}}(undef, npart)
             for i in 1:npart
                 cupartitions[i] = CuVector{Int64}(partitions[i])
