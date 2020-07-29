@@ -11,7 +11,60 @@ using CUDA
 target = "cpu"
 using ExaPF
 
-@testset "Iterative solvers" begin
+@testset "Powerflow residuals and Jacobian" begin
+    # read data
+    datafile = joinpath(dirname(@__FILE__), "case14.raw")
+    data = Parse.parse_raw(datafile)
+    BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
+    BUS_EVLO, BUS_TYPE = Parse.idx_bus()
+    bus = data["BUS"]
+    nbus = size(bus, 1)
+
+    # obtain V0 from raw data
+    V = Array{Complex{Float64}}(undef, nbus)
+    T = Vector
+    for i in 1:nbus
+        V[i] = bus[i, BUS_VM]*exp(1im * pi/180 * bus[i, BUS_VA])
+    end
+
+    # form Y matrix
+    Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = PowerSystem.makeYbus(data);
+
+    Vm = abs.(V)
+    Va = angle.(V)
+    bus = data["BUS"]
+    gen = data["GENERATOR"]
+    load = data["LOAD"]
+    nbus = size(bus, 1)
+    ngen = size(gen, 1)
+    nload = size(load, 1)
+
+    ybus_re, ybus_im = ExaPF.Spmat{T}(Ybus)
+    SBASE = data["CASE IDENTIFICATION"][1]
+    Sbus = PowerSystem.assembleSbus(gen, load, SBASE, nbus)
+    pbus = real(Sbus)
+    qbus = imag(Sbus)
+
+    ref, pv, pq = PowerSystem.bustypeindex(bus, gen)
+    npv = size(pv, 1);
+    npq = size(pq, 1);
+
+    # First compute a reference value for resisual computed at V
+    F♯ = ExaPF.residualFunction(V, Ybus, Sbus, pv, pq)
+
+    @testset "Residual polar" begin
+        F = zeros(Float64, npv + 2*npq)
+        # residual_polar! uses only binary types as this function is meant
+        # to be deported on the GPU
+        ExaPF.residualFunction_polar!(F, Vm, Va,
+            ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+            ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+            pbus, qbus, pv, pq, nbus)
+        @test F ≈ F♯
+    end
+end
+
+@testset "Wrapping of iterative solvers" begin
     n, m = 32, 32
     # Add a diagonal term for conditionning
     A = randn(n, m) + 15I
