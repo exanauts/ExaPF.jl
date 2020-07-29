@@ -10,6 +10,7 @@ using CUDA
 # This implies we cannot both test gpu and cpu code here.
 target = "cpu"
 using ExaPF
+import ExaPF: Parse, PowerSystem
 
 @testset "Powerflow residuals and Jacobian" begin
     # read data
