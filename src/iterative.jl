@@ -2,6 +2,7 @@ module Iterative
 
 using CUDA
 using IterativeSolvers
+using Krylov
 using LinearAlgebra
 using SparseArrays
 using TimerOutputs
@@ -124,8 +125,12 @@ function ldiv!(
         @timeit timer "GPU-BICGSTAB" dx[:], n_iters = bicgstab(J, F, P, dx, timer, maxiter=10000)
     elseif solver == "gmres"
         @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-        @timeit timer "CPU-GMRES" (dx[:], history) = IterativeSolvers.gmres(P*J, P*F, log=true)
+        @timeit timer "CPU-GMRES" (dx[:], history) = IterativeSolvers.gmres(P*J, P*F, restart=4, log=true)
         n_iters = history.iters
+    elseif solver == "dqgmres"
+        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
+        @timeit timer "GPU-DQGMRES" (dx[:], status) = Krylov.dqgmres(J, F, M=P, memory=4)
+        n_iters = length(status.residuals)
     else
         @timeit timer "CPU-Default sparse solver" dx .= J\F
         n_iters = 0
@@ -144,6 +149,10 @@ function ldiv!(
     if solver == "bicgstab"
         @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
         @timeit timer "GPU-BICGSTAB" dx[:], n_iters = bicgstab(J, F, P, dx, timer, maxiter=10000)
+    elseif solver == "dqgmres"
+        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
+        @timeit timer "GPU-DQGMRES" (dx[:], status) = Krylov.dqgmres(J, F, M=P, memory=4)
+        n_iters = length(status.residuals)
     else
         lintol = 1e-8
         @timeit timer "Sparse CUSOLVER" dx  = CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')

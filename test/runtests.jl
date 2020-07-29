@@ -15,7 +15,7 @@ import ExaPF: Parse, PowerSystem
 case = "case14.raw"
 nblocks = 8
 # case = "ACTIVSg70K.raw"
-# nblocks = 64
+# nblocks = 5000
 @testset "Powerflow residuals and Jacobian" begin
     # read data
     to = TimerOutputs.TimerOutput()
@@ -120,7 +120,7 @@ end
     # Create a network object:
     pf = ExaPF.PowerSystem.PowerNetwork(datafile)
     # Note: Reference BICGSTAB in IterativeSolvers
-    @testset "Powerflow solver $precond" for precond in ["default", "gmres", "bicgstab_ref", "bicgstab"]
+    @testset "Powerflow solver $precond" for precond in ["default", "gmres", "dqgmres", "bicgstab_ref", "bicgstab"]
         sol, has_conv, res = solve(pf, nblocks, precond)
         @test has_conv
         @test res < 1e-6
@@ -134,7 +134,7 @@ if has_cuda_gpu()
         # Include code to run power flow equation
         datafile = joinpath(dirname(@__FILE__), case)
         pf = ExaPF.PowerSystem.PowerNetwork(datafile)
-        @testset "Powerflow solver $precond" for precond in ["default", "bicgstab"]
+        @testset "Powerflow solver $precond" for precond in ["default", "dqgmres", "bicgstab"]
             sol, conv, res = solve(pf, nblocks, precond)
             @test conv
             @test res < 1e-6
