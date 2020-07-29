@@ -24,6 +24,7 @@ struct PowerNetwork
     ngen::Int64
     nload::Int64
 
+    bustype::Array{Int64}
     ref::Array{Int64}
     pv::Array{Int64}
     pq::Array{Int64}
@@ -61,11 +62,12 @@ struct PowerNetwork
         Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = makeYbus(data)
 
         # bus type indexing
-        ref, pv, pq = bustypeindex(bus, gen)
-
+        ref, pv, pq, bustype = bustypeindex(bus, gen)
+    
         Sbus = assembleSbus(gen, load, SBASE, nbus)
-
-        new(V, Ybus, data, nbus, ngen, nload, ref, pv, pq, Sbus)
+        
+        new(V, Ybus, data, nbus, ngen, nload, bustype, ref, pv, pq,
+            Sbus)
     end
 
 end
@@ -85,12 +87,13 @@ function view(pf::PowerNetwork)
 
     
     for i=1:pf.nbus
+        type = pf.bustype[i]
         vmag = abs(pf.V[i])
         vang = angle(pf.V[i])*(360.0/pi)
         pinj = real(pf.Sbus[i])
         qinj = imag(pf.Sbus[i])
-        @printf("\t%i \t -1 \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
-                vmag, vang, pinj, pinj)
+        @printf("\t%i \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
+                type, vmag, vang, pinj, pinj)
     end
 
 
@@ -142,7 +145,7 @@ function bustypeindex(bus, gen)
     pv = findall(x->x==2, bustype)
     pq = findall(x->x==1, bustype)
 
-    return ref, pv, pq
+    return ref, pv, pq, bustype
 end
 
 
