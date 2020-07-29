@@ -110,14 +110,14 @@ end
 
 @testset "Powerflow CPU" begin
     # Include code to run power flow equation
-    include(joinpath(dirname(@__FILE__), "..", "examples", "pf.jl"))
     datafile = joinpath(dirname(@__FILE__), "case14.raw")
-
     # Direct solver
     nblocks = 8
+    # Create a network object:
+    pf = ExaPF.PowerSystem.PowerNetwork(datafile)
     # Note: Reference BICGSTAB in IterativeSolvers
     @testset "Powerflow solver $precond" for precond in ["default", "gmres", "bicgstab_ref", "bicgstab"]
-        sol, has_conv, res = pf(datafile, nblocks, precond)
+        sol, has_conv, res = solve(pf, nblocks, precond)
         @test has_conv
         @test res < 1e-6
     end
@@ -128,16 +128,13 @@ if has_cuda_gpu()
     target = "cuda"
     @testset "Powerflow GPU" begin
         # Include code to run power flow equation
-        include(joinpath(dirname(@__FILE__), "..", "examples", "pf.jl"))
         datafile = joinpath(dirname(@__FILE__), "case14.raw")
-        # BICGSTAB
-        sol, conv, res = pf(datafile, 2, "bicgstab")
-        @test conv
-        @test res < 1e-6
-        # DIRECT
-        sol, conv, res = pf(datafile)
-        @test conv
-        @test res < 1e-6
+        pf = ExaPF.PowerSystem.PowerNetwork(datafile)
+        @testset "Powerflow solver $precond" for precond in ["default", "bicgstab"]
+            sol, conv, res = solve(pf, 2, precond)
+            @test conv
+            @test res < 1e-6
+        end
     end
 end
 
