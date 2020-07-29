@@ -29,10 +29,13 @@ mutable struct Preconditioner <: AbstractPreconditioner
     cupart
     P
     function Preconditioner(J, npart)
+        m, n = size(J)
+        if npart < 2
+            error("Number of partitions `npart` should be at" *
+                  "least 2 for partitioning in Metis")
+        end
         adj = build_adjmatrix(J)
         g = Graph(adj)
-        m = size(J,1)
-        n = size(J,2)
         part = Metis.partition(g, npart)
         partitions = Vector{Vector{Int64}}()
         for i in 1:npart
