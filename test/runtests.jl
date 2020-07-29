@@ -12,10 +12,14 @@ target = "cpu"
 using ExaPF
 import ExaPF: Parse, PowerSystem
 
+case = "case14.raw"
+nblocks = 8
+# case = "ACTIVSg70K.raw"
+# nblocks = 64
 @testset "Powerflow residuals and Jacobian" begin
     # read data
     to = TimerOutputs.TimerOutput()
-    datafile = joinpath(dirname(@__FILE__), "case14.raw")
+    datafile = joinpath(dirname(@__FILE__), case)
     data = Parse.parse_raw(datafile)
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
     BUS_EVLO, BUS_TYPE = Parse.idx_bus()
@@ -111,9 +115,8 @@ end
 
 @testset "Powerflow CPU" begin
     # Include code to run power flow equation
-    datafile = joinpath(dirname(@__FILE__), "case14.raw")
+    datafile = joinpath(dirname(@__FILE__), case)
     # Direct solver
-    nblocks = 8
     # Create a network object:
     pf = ExaPF.PowerSystem.PowerNetwork(datafile)
     # Note: Reference BICGSTAB in IterativeSolvers
@@ -129,10 +132,10 @@ if has_cuda_gpu()
     target = "cuda"
     @testset "Powerflow GPU" begin
         # Include code to run power flow equation
-        datafile = joinpath(dirname(@__FILE__), "case14.raw")
+        datafile = joinpath(dirname(@__FILE__), case)
         pf = ExaPF.PowerSystem.PowerNetwork(datafile)
         @testset "Powerflow solver $precond" for precond in ["default", "bicgstab"]
-            sol, conv, res = solve(pf, 2, precond)
+            sol, conv, res = solve(pf, nblocks, precond)
             @test conv
             @test res < 1e-6
         end
