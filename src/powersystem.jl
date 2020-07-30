@@ -84,7 +84,6 @@ function view(pf::PowerNetwork)
     @printf("\t==============================================\n")
     @printf("\tBUS \t TYPE \t VMAG \t VANG \t P \t Q\n")
     @printf("\t==============================================\n")
-
     
     for i=1:pf.nbus
         type = pf.bustype[i]
@@ -96,8 +95,33 @@ function view(pf::PowerNetwork)
                 type, vmag, vang, pinj, pinj)
     end
 
+end
+
+
+function assemble_x(pf::PowerNetwork)
+    
+    dimension = 2*(pf.nbus - length(pf.ref))
+    x = zeros(dimension, 1)
+
+    k = 1
+
+    for bus=1:pf.nbus
+        if pf.bustype[bus] == 1 #PQ
+            x[2*k - 1] = real(pf.V[bus])
+            x[2*k] = imag(pf.V[bus])
+            k = k + 1
+        elseif pf.bustype[bus] == 2 #PV
+            x[2*k - 1] = imag(pf.V[bus])
+            x[2*k] = imag(pf.Sbus[bus])
+            k = k + 1
+        end
+    end
+
+
+    return x
 
 end
+
 
 
 
