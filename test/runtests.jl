@@ -1,24 +1,20 @@
+using CUDA
+using CUDA.CUSPARSE
+using ExaPF
 using KernelAbstractions
 using LinearAlgebra
 using Random
 using SparseArrays
 using Test
 using TimerOutputs
-using CUDA
+
+import ExaPF: Parse, PowerSystem
 
 Random.seed!(2713)
 
-# This is a problem of the code right now. It can only set once per as
-# this variable is used in macros to generate the code at compile time.
-# This implies we cannot both test gpu and cpu code here.
-target = "cpu"
-using ExaPF
-import ExaPF: Parse, PowerSystem
-
 case = "case14.raw"
-nblocks = 8
 # case = "ACTIVSg70K.raw"
-# nblocks = 5000
+
 @testset "Powerflow residuals and Jacobian" begin
     # read data
     to = TimerOutputs.TimerOutput()
@@ -88,56 +84,65 @@ nblocks = 8
 end
 
 @testset "Wrapping of iterative solvers" begin
+    nblocks = 2
     n, m = 32, 32
+    to = TimerOutputs.TimerOutput()
+
     # Add a diagonal term for conditionning
     A = randn(n, m) + 15I
     x♯ = randn(m)
     b = A * x♯
-    # Be careful: all algorithms work with sparse matrix
-    As = sparse(A)
-    precond = ExaPF.Precondition.Preconditioner(As, 2)
-    to = TimerOutputs.TimerOutput()
 
-    # First test the custom implementation of BICGSTAB
-    @testset "BICGSTAB" begin
-        # Need to update preconditioner before resolution
-        ExaPF.Precondition.update(As, precond, to)
-        P = precond.P
-        x_sol, n_iters = ExaPF.Iterative.bicgstab(As, b, P, zeros(m), to)
-        @test n_iters <= m
-        @test x_sol ≈ x♯
-    end
-    @testset "Interface for iterative algorithm ($algo)" for algo in [
-        "bicgstab", "bicgstab_ref", "gmres"]
-        x_sol = zeros(m)
-        n_iters = ExaPF.Iterative.ldiv!(x_sol, As, b, algo, precond, to)
-        @test n_iters <= m
-        @test x_sol ≈ x♯
+    # Be careful: all algorithms work with sparse matrix
+    A = sparse(A)
+    # Init iterators for KernelAbstractions
+    iterators = zip([CPU(), CUDADevice()],
+                    [Array{Float64}, CuVector{Float64}],
+                    [SparseMatrixCSC, CuSparseMatrixCSR])
+    @testset "Run iterative solvers on device $(device)" for (device, V, SM) in iterators
+        As = SM(A)
+        bs = convert(V, b)
+        x0 = convert(V, zeros(m))
+        xs♯ = convert(V, x♯)
+
+        # TODO: currently Preconditioner takes as input only sparse matrix
+        # defined on the main memory.
+        precond = ExaPF.Precondition.Preconditioner(A, nblocks, device)
+
+        # First test the custom implementation of BICGSTAB
+        @testset "BICGSTAB" begin
+            # Need to update preconditioner before resolution
+            ExaPF.Precondition.update(As, precond, to)
+            P = precond.P
+            fill!(x0, 0.0)
+            x_sol, n_iters = ExaPF.bicgstab(As, bs, P, x0, to)
+            @test n_iters <= m
+            @test x_sol ≈ xs♯ atol=1e-6
+        end
+        @testset "Interface for iterative algorithm ($algo)" for algo in ExaPF.list_solvers(device)
+            fill!(x0, 0.0)
+            n_iters = ExaPF.Iterative.ldiv!(x0, As, bs, algo, precond, to)
+            @test n_iters <= m
+            @test x0 ≈ xs♯ atol=1e-6
+        end
     end
 end
 
-@testset "Powerflow CPU" begin
-    # Include code to run power flow equation
+@testset "Powerflow solver" begin
     datafile = joinpath(dirname(@__FILE__), case)
-    # Direct solver
+    nblocks = 8
     # Create a network object:
     pf = ExaPF.PowerSystem.PowerNetwork(datafile)
-    # Note: Reference BICGSTAB in IterativeSolvers
-    @testset "Powerflow solver $precond" for precond in ["default", "gmres", "dqgmres", "bicgstab_ref", "bicgstab"]
-        sol, has_conv, res = solve(pf, nblocks, precond)
+    target = CPU()
+    @testset "[CPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
+        sol, has_conv, res = solve(pf, nblocks, precond, device=target)
         @test has_conv
         @test res < 1e-6
     end
-end
 
-## TODO: This throws warnings because the cpu version ran before.
-if has_cuda_gpu()
-    target = CUDADevice()
-    @testset "Powerflow GPU" begin
-        # Include code to run power flow equation
-        datafile = joinpath(dirname(@__FILE__), case)
-        pf = ExaPF.PowerSystem.PowerNetwork(datafile)
-        @testset "Powerflow solver $precond" for precond in ["default", "dqgmres", "bicgstab"]
+    if has_cuda_gpu()
+        target = CUDADevice()
+        @testset "[GPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
             sol, conv, res = solve(pf, nblocks, precond, device=target)
             @test conv
             @test res < 1e-6

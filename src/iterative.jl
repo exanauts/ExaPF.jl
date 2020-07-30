@@ -1,6 +1,7 @@
 module Iterative
 
 using CUDA
+using KernelAbstractions
 using IterativeSolvers
 using Krylov
 using LinearAlgebra
@@ -9,7 +10,7 @@ using TimerOutputs
 
 using ..ExaPF: Precondition
 
-export bicgstab
+export bicgstab, list_solvers
 
 cuzeros = CUDA.zeros
 
@@ -88,13 +89,13 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
 
                 if anorm < tol
                     go = false
-                    println("Tolerance reached at iteration $iter")
+                    verbose && println("Tolerance reached at iteration $iter")
                 end
 
                 if maxiter == iter
                     @show iter
                     go = false
-                    println("Not converged")
+                    verbose && println("Not converged")
                 end
 
                 ri     .= s .- omegai1 .* t
@@ -110,6 +111,8 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
 
     return xi, iter
 end
+
+list_solvers(::CPU) = ["bicgstab_ref", "bicgstab", "gmres", "dqgmres", "default"]
 
 function ldiv!(
     dx::AbstractVector,
@@ -140,6 +143,8 @@ function ldiv!(
     end
     return n_iters
 end
+
+list_solvers(::CUDADevice) = ["bicgstab", "dqgmres", "default"]
 
 function ldiv!(
     dx::CuVector,
