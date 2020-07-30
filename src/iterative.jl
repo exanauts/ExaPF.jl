@@ -1,6 +1,7 @@
 module Iterative
 
 using CUDA
+using KernelAbstractions
 using IterativeSolvers
 using Krylov
 using LinearAlgebra
@@ -9,7 +10,7 @@ using TimerOutputs
 
 using ..ExaPF: Precondition
 
-export bicgstab
+export bicgstab, list_solvers
 
 cuzeros = CUDA.zeros
 
@@ -17,11 +18,12 @@ cuzeros = CUDA.zeros
 bicgstab according to
 
 Van der Vorst, Henk A.
-"Bi-CGSTAB: A fast and smoothly converging variant of Bi-CG for the solution of nonsymmetric linear systems."
+"Bi-CGSTAB: A fast and smoothly converging variant of Bi-CG for the solution
+of nonsymmetric linear systems."
 SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
 """
-function bicgstab(A, b, P, xi, to::TimerOutput; tol = 1e-6, maxiter = size(A,1),
-                  verbose=false)
+function bicgstab(A, b, P, xi, to::TimerOutput;
+                  tol=1e-6, maxiter=size(A, 1), verbose=false)
     # parameters
     n    = size(b, 1)
     x0   = similar(b)
@@ -32,9 +34,11 @@ function bicgstab(A, b, P, xi, to::TimerOutput; tol = 1e-6, maxiter = size(A,1),
     alpha = 1.0
     omega0 = 1.0
     if A isa SparseArrays.SparseMatrixCSC
-        v0   = p0 = zeros(Float64, n)
+        v0 = zeros(Float64, n)
+        p0 = zeros(Float64, n)
     else
-        v0   = p0 = cuzeros(Float64, n)
+        v0 = cuzeros(Float64, n)
+        p0 = cuzeros(Float64, n)
     end
 
     ri     = copy(r0)
@@ -85,13 +89,13 @@ function bicgstab(A, b, P, xi, to::TimerOutput; tol = 1e-6, maxiter = size(A,1),
 
                 if anorm < tol
                     go = false
-                    println("Tolerance reached at iteration $iter")
+                    verbose && println("Tolerance reached at iteration $iter")
                 end
 
                 if maxiter == iter
                     @show iter
                     go = false
-                    println("Not converged")
+                    verbose && println("Not converged")
                 end
 
                 ri     .= s .- omegai1 .* t
@@ -107,6 +111,8 @@ function bicgstab(A, b, P, xi, to::TimerOutput; tol = 1e-6, maxiter = size(A,1),
 
     return xi, iter
 end
+
+list_solvers(::CPU) = ["bicgstab_ref", "bicgstab", "gmres", "dqgmres", "default"]
 
 function ldiv!(
     dx::AbstractVector,
@@ -137,6 +143,8 @@ function ldiv!(
     end
     return n_iters
 end
+
+list_solvers(::CUDADevice) = ["bicgstab", "dqgmres", "default"]
 
 function ldiv!(
     dx::CuVector,
