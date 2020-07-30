@@ -7,8 +7,10 @@ using SparseArrays
 using TimerOutputs
 
 
-@kernel function myseed_kernel(duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
-                 seeds::AbstractArray{ForwardDiff.Partials{N,V}}) where {T,V,N}
+@kernel function myseed_kernel(
+    duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
+    seeds::AbstractArray{ForwardDiff.Partials{N,V}}
+) where {T,V,N}
     i = @index(Global, Linear)
     @inbounds duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
 end
@@ -55,7 +57,8 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
             arrays.t1svarx,
             arrays.varx,
             arrays.t1sseeds,
-            ndrange=length(arrays.t1svarx))
+            ndrange=length(arrays.t1svarx)
+        )
         wait(ev)
     end
     nthreads=256
@@ -97,7 +100,8 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
                         arrays.J.rowPtr,
                         arrays.J.colVal,
                         arrays.compressedJ,
-                        arrays.coloring, nmap)
+                        arrays.coloring, nmap
+                )
             end
         end
         return nothing

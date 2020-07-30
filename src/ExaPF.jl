@@ -148,9 +148,9 @@ function residualFunction_polar!(F, v_m, v_a,
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
-        kernel! = residual_kernel!(CPU(),4)
+        kernel! = residual_kernel!(CPU(), 4)
     else
-        kernel! = residual_kernel!(CUDADevice(),256)
+        kernel! = residual_kernel!(CUDADevice(), 256)
     end
     ev = kernel!(F, v_m, v_a,
                  ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
@@ -250,12 +250,9 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
     pbus = T(real(Sbus))
     qbus = T(imag(Sbus))
 
-    # voltage
+    # initiate voltage
     Vm, Va = similar(V), similar(V)
     polar!(Vm, Va, V, device)
-    # Number of GPU threads
-    nthreads=256
-    nblocks=ceil(Int64, nbus/nthreads)
 
     # indices
     npv = size(pv, 1);
@@ -277,11 +274,12 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
                             ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                             pbus, qbus, pv, pq, nbus)
 
+    # Initiate coloring for AD
     J = residualJacobian(V, Ybus, pv, pq)
     dim_J = size(J, 1)
     preconditioner = Precondition.NoPreconditioner()
     if solver != "default"
-        nblock = size(J,1)/npartitions
+        nblock = size(J,1) / npartitions
         println("Blocks: $npartitions, Blocksize: n = ", nblock,
                 " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
         println("Partitioning...")
@@ -293,8 +291,8 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
     @timeit TIMER "Coloring" coloring = T{Int64}(matrix_colors(J))
     ncolors = size(unique(coloring),1)
     println("Number of Jacobian colors: ", ncolors)
-    J = M(J)
     println("Creating JacobianAD...")
+    J = M(J)
     jacobianAD = AD.JacobianAD(J, coloring, F, Vm, Va, pv, pq)
 
     # check for convergence
@@ -344,7 +342,7 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
             end
         end
 
-        @timeit TIMER "Exponential" V .= Vm .* exp.(1im .*Va)
+        @timeit TIMER "Exponential" V .= Vm .* exp.(1im .* Va)
 
         @timeit TIMER "Angle and magnitude" begin
             polar!(Vm, Va, V, device)
@@ -358,7 +356,7 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
                 pbus, qbus, pv, pq, nbus)
         end
 
-        @timeit TIMER "Norm" normF = norm(F)
+        @timeit TIMER "Norm" normF = norm(F, Inf)
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
 
         if normF < tol
@@ -374,7 +372,6 @@ function solve(pf::PowerSystem.PowerNetwork, npartitions=2, solver="default";
 
     # Timer outputs display
     show(TIMER)
-    println("")
     reset_timer!(TIMER)
 
     return V, converged, normF, linsol_iters[1], sum(linsol_iters)

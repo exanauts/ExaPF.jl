@@ -4,9 +4,9 @@ using CUDA
 using CUDA.CUSPARSE
 using KernelAbstractions
 using LightGraphs
+using LinearAlgebra
 using Metis
 using SparseArrays
-using LinearAlgebra
 using TimerOutputs
 
 cuzeros = CUDA.zeros

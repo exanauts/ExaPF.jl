@@ -18,7 +18,7 @@ struct PowerNetwork
     V::Array{Complex{Float64}}
     Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
     data::Dict{String,Array}
-    
+
     nbus::Int64
     ngen::Int64
     nload::Int64
@@ -26,12 +26,12 @@ struct PowerNetwork
     ref::Array{Int64}
     pv::Array{Int64}
     pq::Array{Int64}
-    
+
     Sbus::Array{Complex{Float64}}
 
     function PowerNetwork(datafile::String)
         data = Parse.parse_raw(datafile)
-        
+
         # Parsed data indexes
         BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
         BUS_EVLO, BUS_TYPE = Parse.idx_bus()
@@ -55,15 +55,15 @@ struct PowerNetwork
         for i in 1:nbus
             V[i] = bus[i, BUS_VM]*exp(1im * pi/180 * bus[i, BUS_VA])
         end
-        
+
         # form Y matrix
         Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = makeYbus(data)
-        
+
         # bus type indexing
         ref, pv, pq = bustypeindex(bus, gen)
-    
+
         Sbus = assembleSbus(gen, load, SBASE, nbus)
-        
+
         new(V, Ybus, data, nbus, ngen, nload, ref, pv, pq, Sbus)
     end
 end
