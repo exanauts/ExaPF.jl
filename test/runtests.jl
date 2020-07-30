@@ -96,9 +96,13 @@ end
     # Be careful: all algorithms work with sparse matrix
     A = sparse(A)
     # Init iterators for KernelAbstractions
-    iterators = zip([CPU(), CUDADevice()],
-                    [Array{Float64}, CuVector{Float64}],
-                    [SparseMatrixCSC, CuSparseMatrixCSR])
+    if has_cuda_gpu()
+        iterators = zip([CPU(), CUDADevice()],
+                        [Array{Float64}, CuVector{Float64}],
+                        [SparseMatrixCSC, CuSparseMatrixCSR])
+    else
+        iterators = zip([CPU()], [Array{Float64}], [SparseMatrixCSC])
+    end
     @testset "Run iterative solvers on device $(device)" for (device, V, SM) in iterators
         As = SM(A)
         bs = convert(V, b)
