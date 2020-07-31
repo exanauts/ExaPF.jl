@@ -12,5 +12,6 @@ function pf(datafile, npartition=2, solver="default")
     println(solver)
     
     pf = PowerSystem.PowerNetwork(datafile)
-    return solve(pf, npartition, solver);
+    x, u, p = ExaPF.PowerSystem.assemble_vecs(pf)
+    return solve(pf, x, u, p, npartition, solver);
 end
