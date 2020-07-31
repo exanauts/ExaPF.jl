@@ -188,7 +188,6 @@ function assemble_vecs(pf::PowerNetwork)
     end
 
     return x, u, p
-
 end
 
 """
@@ -233,12 +232,9 @@ function xup_to_vs(pf::PowerNetwork, x::Array{Float64}, u::Array{Float64},
             u_idx += 1
             p_idx += 1
         end
-
     end
 
-
     return vmag, vang, pinj, qinj
-
 end
 
 """
