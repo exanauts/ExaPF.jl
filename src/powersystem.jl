@@ -195,6 +195,57 @@ function assemble_vecs(pf::PowerNetwork)
 end
 
 
+"""
+    xup_to_vs(PowerNetwork, x, u, p)
+
+Converts x, u, p vectors to vmag, vang, pinj and qinj.
+"""
+function xup_to_vs(pf::PowerNetwork, x::Array{Float64}, u::Array{Float64},
+                   p::Array{Float64})
+
+    nbus = pf.nbus
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+
+    vmag = zeros(nbus)
+    vang = zeros(nbus)
+    pinj = zeros(nbus)
+    qinj = zeros(nbus)
+
+    x_idx = 1
+    u_idx = 1
+    p_idx = 1
+
+    for bus=1:nbus
+        if pf.bustype[bus] == 1 #PQ
+            vmag[bus] = x[x_idx]
+            vang[bus] = x[x_idx + 1]
+            pinj[bus] = p[p_idx]
+            qinj[bus] = p[p_idx + 1]
+            x_idx += 2
+            p_idx += 2
+        elseif pf.bustype[bus] == 2 #PV
+            vmag[bus] = u[u_idx]
+            pinj[bus] = u[u_idx + 1]
+            vang[bus] = x[x_idx]
+            u_idx += 2
+            x_idx += 1
+        elseif pf.bustype[bus] == 3 # ref
+            vmag[bus] = u[u_idx]
+            vang[bus] = p[p_idx]
+            u_idx += 1
+            p_idx += 1
+        end
+
+    end
+
+
+    return vmag, vang, pinj, qinj
+
+end
+
+
 
 
 
