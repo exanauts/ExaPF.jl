@@ -2,6 +2,7 @@ module PowerSystem
 
 using ..ExaPF: Parse
 
+import Base: show
 using SparseArrays
 using Printf
 
@@ -78,8 +79,7 @@ end
 Prints power network characteristics.
 
 """
-
-function view(pf::PowerNetwork)
+function Base.show(io::IO, pf::PowerNetwork)
     println("Power Network characteristics:")
     @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),
             length(pf.pv), length(pf.pq))
