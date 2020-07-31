@@ -72,6 +72,12 @@ struct PowerNetwork
 
 end
 
+"""
+    view(PowerNetwork)
+
+Prints power network characteristics.
+
+"""
 
 function view(pf::PowerNetwork)
     println("Power Network characteristics:")
@@ -98,27 +104,93 @@ function view(pf::PowerNetwork)
 end
 
 
-function assemble_x(pf::PowerNetwork)
-    
-    dimension = 2*(pf.nbus - length(pf.ref))
-    x = zeros(dimension, 1)
 
+
+"""
+    assemble_vecs(PowerNetwork)
+
+Returns vectors x, u, p from network variables (VMAG, VANG, P and Q)
+and bus type info.
+
+
+Vector x is the variable vector, consisting on:
+    - VMAG, VANG for buses of type PQ (type 1)
+    - VANG for buses of type PV (type 2)
+These variables are determined by the physics of the network.
+
+Vector u is the control vector, consisting on:
+    - VMAG, P for buses of type PV (type 1)
+    - VM for buses of type SLACK (type 3)
+These variables are controlled by the grid operator.
+
+Vector p is the parameter vector, consisting on:
+    - VA for buses of type SLACK (type 3)
+    - P, Q for buses of type PQ (type 1)
+These parameters are fixed through the problem.
+
+In addition, variables:
+    - Q for buses of type PV (type 2)
+    - P, Q for buses of type SLACK (type 3)
+are explicitly obtained from the previous variables, and hence
+not needed in the computation.
+"""
+function assemble_vecs(pf::PowerNetwork)
+ 
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+    println(nref, npv, npq)
+
+
+    # build vector x
+    dimension = 2*npq + npv
+    x = zeros(dimension, 1)
     k = 1
 
     for bus=1:pf.nbus
         if pf.bustype[bus] == 1 #PQ
-            x[2*k - 1] = real(pf.V[bus])
-            x[2*k] = imag(pf.V[bus])
-            k = k + 1
+            x[k] = abs(pf.V[bus])
+            x[k + 1] = angle(pf.V[bus])
+            k = k + 2
         elseif pf.bustype[bus] == 2 #PV
-            x[2*k - 1] = imag(pf.V[bus])
-            x[2*k] = imag(pf.Sbus[bus])
+            x[k] = angle(pf.V[bus])
             k = k + 1
         end
     end
 
+    # build vector u
+    dimension = 2*npv + nref
+    u = zeros(dimension, 1)
+    k = 1
 
-    return x
+    for bus=1:pf.nbus
+        if pf.bustype[bus] == 2 #PV
+            u[k] = abs(pf.V[bus])
+            u[k + 1] = real(pf.Sbus[bus])
+            k = k + 2
+        elseif pf.bustype[bus] == 3 # slack
+            u[k] = abs(pf.V[bus])
+            k = k + 1
+        end
+    end
+
+    # build vector p
+    dimension = nref + 2*npq
+    p = zeros(dimension, 1)
+    k = 1
+    
+    for bus=1:pf.nbus
+        if pf.bustype[bus] == 3 #slack
+            p[k] = abs(pf.V[bus])
+            k = k + 1
+        elseif pf.bustype[bus] == 1 # PQ
+            p[k] = real(pf.Sbus[bus])
+            p[k + 1] = imag(pf.Sbus[bus])
+            k = k + 2
+        end
+    end
+
+    return x, u, p
 
 end
 
