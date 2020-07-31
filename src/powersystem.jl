@@ -103,9 +103,6 @@ function Base.show(io::IO, pf::PowerNetwork)
 
 end
 
-
-
-
 """
     assemble_vecs(PowerNetwork)
 
@@ -194,7 +191,6 @@ function assemble_vecs(pf::PowerNetwork)
 
 end
 
-
 """
     xup_to_vs(PowerNetwork, x, u, p)
 
@@ -245,11 +241,6 @@ function xup_to_vs(pf::PowerNetwork, x::Array{Float64}, u::Array{Float64},
 
 end
 
-
-
-
-
-
 """
     bustypeindex(bus, gen)
 
@@ -294,7 +285,6 @@ function bustypeindex(bus, gen)
 
     return ref, pv, pq, bustype
 end
-
 
 """
     assembleSbus(gen, load, SBASE, nbus)
