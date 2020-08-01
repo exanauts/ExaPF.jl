@@ -137,7 +137,9 @@ end
     nblocks = 8
     # Create a network object:
     pf = ExaPF.PowerSystem.PowerNetwork(datafile)
-    x, u, p = ExaPF.PowerSystem.assemble_vecs(pf)
+    x = ExaPF.PowerSystem.get_x(pf)
+    u = ExaPF.PowerSystem.get_u(pf)
+    p = ExaPF.PowerSystem.get_p(pf)
     target = CPU()
     @testset "[CPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
         sol, has_conv, res = solve(pf, x, u, p, nblocks, precond, device=target)
