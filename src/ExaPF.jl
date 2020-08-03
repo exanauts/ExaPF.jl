@@ -188,7 +188,8 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
-function solve(pf::PowerSystem.PowerNetwork, x, u, p, npartitions=2, solver="default";
+function solve(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
+               p::AbstractArray, npartitions=2, solver="default";
                tol=1e-6, maxiter=20, device=CPU())
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
