@@ -2,8 +2,13 @@ module PowerSystem
 
 using ..ExaPF: Parse
 
+import Base: show
 using SparseArrays
+using Printf
 
+const PQ_BUS_TYPE = 1
+const PV_BUS_TYPE = 2
+const REF_BUS_TYPE  = 3
 """
     PowerNetwork
 
@@ -23,6 +28,7 @@ struct PowerNetwork
     ngen::Int64
     nload::Int64
 
+    bustype::Array{Int64}
     ref::Array{Int64}
     pv::Array{Int64}
     pq::Array{Int64}
@@ -60,14 +66,200 @@ struct PowerNetwork
         Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = makeYbus(data)
 
         # bus type indexing
-        ref, pv, pq = bustypeindex(bus, gen)
-
+        ref, pv, pq, bustype = bustypeindex(bus, gen)
+    
         Sbus = assembleSbus(gen, load, SBASE, nbus)
-
-        new(V, Ybus, data, nbus, ngen, nload, ref, pv, pq, Sbus)
+        
+        new(V, Ybus, data, nbus, ngen, nload, bustype, ref, pv, pq,
+            Sbus)
     end
+
 end
 
+"""
+    view(PowerNetwork)
+
+Prints power network characteristics.
+
+"""
+function Base.show(io::IO, pf::PowerNetwork)
+    println("Power Network characteristics:")
+    @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),
+            length(pf.pv), length(pf.pq))
+    println("\tGenerators: ", pf.ngen, ".")
+    println("\tLoads: ", pf.nload, ".")
+    # Print system status
+    @printf("\t==============================================\n")
+    @printf("\tBUS \t TYPE \t VMAG \t VANG \t P \t Q\n")
+    @printf("\t==============================================\n")
+    
+    for i=1:pf.nbus
+        type = pf.bustype[i]
+        vmag = abs(pf.V[i])
+        vang = angle(pf.V[i])*(360.0/pi)
+        pinj = real(pf.Sbus[i])
+        qinj = imag(pf.Sbus[i])
+        @printf("\t%i \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
+                type, vmag, vang, pinj, pinj)
+    end
+
+end
+
+"""
+    get_x(PowerNetwork)
+
+Returns vector x from network variables (VMAG, VANG, P and Q)
+and bus type info.
+
+Vector x is the variable vector, consisting on:
+    - VMAG, VANG for buses of type PQ (type 1)
+    - VANG for buses of type PV (type 2)
+These variables are determined by the physics of the network.
+"""
+function get_x(pf::PowerNetwork)
+ 
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+
+    # build vector x
+    dimension = 2*npq + npv
+    x = zeros(dimension, 1)
+    k = 1
+
+    for bus=1:pf.nbus
+        if pf.bustype[bus] == PQ_BUS_TYPE
+            x[k] = abs(pf.V[bus])
+            x[k + 1] = angle(pf.V[bus])
+            k = k + 2
+        elseif pf.bustype[bus] == PV_BUS_TYPE
+            x[k] = angle(pf.V[bus])
+            k = k + 1
+        end
+    end
+
+    return x
+end
+
+"""
+    get_u(PowerNetwork)
+
+Returns vector x from network variables (VMAG, VANG, P and Q)
+and bus type info.
+
+Vector u is the control vector, consisting on:
+    - VMAG, P for buses of type PV (type 1)
+    - VM for buses of type SLACK (type 3)
+These variables are controlled by the grid operator.
+"""
+
+function get_u(pf::PowerNetwork)
+    
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+    
+    # build vector u
+    dimension = 2*npv + nref
+    u = zeros(dimension, 1)
+    k = 1
+
+    for bus=1:pf.nbus
+        if pf.bustype[bus] == PV_BUS_TYPE
+            u[k] = abs(pf.V[bus])
+            u[k + 1] = real(pf.Sbus[bus])
+            k = k + 2
+        elseif pf.bustype[bus] == REF_BUS_TYPE
+            u[k] = abs(pf.V[bus])
+            k = k + 1
+        end
+    end
+
+    return u
+end
+
+"""
+    get_p(PowerNetwork)
+
+Returns vector p from network variables (VMAG, VANG, P and Q)
+and bus type info.
+
+Vector p is the parameter vector, consisting on:
+    - VA for buses of type SLACK (type 3)
+    - P, Q for buses of type PQ (type 1)
+These parameters are fixed through the problem.
+"""
+function get_p(pf::PowerNetwork)
+    
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+    
+    # build vector p
+    dimension = nref + 2*npq
+    p = zeros(dimension, 1)
+    k = 1
+    
+    for bus=1:pf.nbus
+        if pf.bustype[bus] == REF_BUS_TYPE
+            p[k] = abs(pf.V[bus])
+            k = k + 1
+        elseif pf.bustype[bus] == PQ_BUS_TYPE
+            p[k] = real(pf.Sbus[bus])
+            p[k + 1] = imag(pf.Sbus[bus])
+            k = k + 2
+        end
+    end
+
+    return p
+end
+
+"""
+    retrieve_physics(PowerNetwork, x, u, p)
+
+Converts x, u, p vectors to vmag, vang, pinj and qinj.
+"""
+function retrieve_physics(pf::PowerNetwork, x::Array{Float64}, u::Array{Float64},
+                   p::Array{Float64})
+
+    nbus = pf.nbus
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+
+    vmag = zeros(nbus)
+    vang = zeros(nbus)
+    pinj = zeros(nbus)
+    qinj = zeros(nbus)
+
+    x_idx = 1
+    u_idx = 1
+    p_idx = 1
+
+    for bus=1:nbus
+        if pf.bustype[bus] == PQ_BUS_TYPE
+            vmag[bus] = x[x_idx]
+            vang[bus] = x[x_idx + 1]
+            pinj[bus] = p[p_idx]
+            qinj[bus] = p[p_idx + 1]
+            x_idx += 2
+            p_idx += 2
+        elseif pf.bustype[bus] == PV_BUS_TYPE
+            vmag[bus] = u[u_idx]
+            pinj[bus] = u[u_idx + 1]
+            vang[bus] = x[x_idx]
+            u_idx += 2
+            x_idx += 1
+        elseif pf.bustype[bus] == REF_BUS_TYPE
+            vmag[bus] = u[u_idx]
+            vang[bus] = p[p_idx]
+            u_idx += 1
+            p_idx += 1
+        end
+    end
+
+    return vmag, vang, pinj, qinj
+end
 
 """
     bustypeindex(bus, gen)
@@ -111,9 +303,8 @@ function bustypeindex(bus, gen)
     pv = findall(x->x==2, bustype)
     pq = findall(x->x==1, bustype)
 
-    return ref, pv, pq
+    return ref, pv, pq, bustype
 end
-
 
 """
     assembleSbus(gen, load, SBASE, nbus)

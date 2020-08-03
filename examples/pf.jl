@@ -12,5 +12,8 @@ function pf(datafile, npartition=2, solver="default")
     println(solver)
     
     pf = PowerSystem.PowerNetwork(datafile)
-    return solve(pf, npartition, solver);
+    x = ExaPF.PowerSystem.get_x(pf)
+    u = ExaPF.PowerSystem.get_u(pf)
+    p = ExaPF.PowerSystem.get_p(pf)
+    return solve(pf, x, u, p, npartition, solver);
 end

@@ -137,9 +137,12 @@ end
     nblocks = 8
     # Create a network object:
     pf = ExaPF.PowerSystem.PowerNetwork(datafile)
+    x = ExaPF.PowerSystem.get_x(pf)
+    u = ExaPF.PowerSystem.get_u(pf)
+    p = ExaPF.PowerSystem.get_p(pf)
     target = CPU()
     @testset "[CPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
-        sol, has_conv, res = solve(pf, nblocks, precond, device=target)
+        sol, has_conv, res = solve(pf, x, u, p, nblocks, precond, device=target)
         @test has_conv
         @test res < 1e-6
     end
@@ -147,7 +150,7 @@ end
     if has_cuda_gpu()
         target = CUDADevice()
         @testset "[GPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
-            sol, conv, res = solve(pf, nblocks, precond, device=target)
+            sol, conv, res = solve(pf, x, u, p, nblocks, precond, device=target)
             @test conv
             @test res < 1e-6
         end
