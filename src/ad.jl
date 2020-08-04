@@ -7,17 +7,38 @@ using SparseArrays
 using TimerOutputs
 
 
-@kernel function myseed_kernel(
+function myseed_kernel_cpu(
     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
 ) where {T,V,N}
-    i = @index(Global, Linear)
-    @inbounds duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
+	for i in 1:size(duals,1)
+		duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
+	end
 end
 
-@kernel function getpartials_kernel(compressedJ, t1sF)
-    i = @index(Global, Linear)
-    @inbounds compressedJ[:,i] .= ForwardDiff.partials.(t1sF[i]).values
+function myseed_kernel_gpu(
+    duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
+    seeds::AbstractArray{ForwardDiff.Partials{N,V}}
+) where {T,V,N}
+    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    stride = blockDim().x * gridDim().x
+    for i in index:stride:size(duals,1)
+		duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
+	end
+end
+
+function getpartials_cpu(compressedJ, t1sF)
+    for i in 1:size(t1sF,1) # Go over outputs
+        compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
+    end
+end
+
+function getpartials_gpu(compressedJ, t1sF)
+    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    stride = blockDim().x * gridDim().x
+    for i in index:stride:size(t1sF, 1) # Go over outputs
+        compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
+    end
 end
 
 # uncompress (for GPU only)
@@ -53,13 +74,21 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
         end
     end
     @timeit to "Seeding" begin
-        ev = myseed_kernel(device)(
-            arrays.t1svarx,
-            arrays.varx,
-            arrays.t1sseeds,
-            ndrange=length(arrays.t1svarx)
-        )
-        wait(ev)
+        if isa(device, CUDADevice)
+            CUDA.@sync begin
+                @cuda threads=nthreads blocks=nblocks myseed_kernel_gpu(
+                    arrays.t1svarx,
+                    arrays.varx,
+                    arrays.t1sseeds,
+                )
+            end
+        else
+            ev = myseed_kernel_cpu(
+                arrays.t1svarx,
+                arrays.varx,
+                arrays.t1sseeds,
+            )
+        end
     end
     nthreads=256
     nblocks=ceil(Int64, nbus/nthreads)
@@ -77,12 +106,19 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     end
 
     @timeit to "Get partials" begin
-        ev = getpartials_kernel(device)(
-            arrays.compressedJ,
-            arrays.t1sF,
-            ndrange=length(arrays.t1sF)
-        )
-        wait(ev)
+        if isa(device, CUDADevice)
+            CUDA.@sync begin
+                @cuda threads=nthreads blocks=nblocks getpartials_gpu(
+                    arrays.compressedJ,
+                    arrays.t1sF
+                )
+            end
+        else
+            ev = getpartials_cpu(
+                arrays.compressedJ,
+                arrays.t1sF,
+            )
+        end
     end
     @timeit to "Uncompress" begin
         # Uncompress matrix. Sparse matrix elements have different names with CUDA
