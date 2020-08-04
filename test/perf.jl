@@ -6,6 +6,7 @@ using LinearAlgebra
 using BenchmarkTools
 using SparseArrays
 using TimerOutputs
+import ExaPF: Parse, PowerSystem
 
 # read data
 function run_benchmark(datafile)
