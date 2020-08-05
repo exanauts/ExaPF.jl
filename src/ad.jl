@@ -156,7 +156,9 @@ function getpartials_gpu(compressedJ, t1sF)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
     for i in index:stride:size(t1sF, 1) # Go over outputs
-        compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
+        for j in eachindex(ForwardDiff.partials.(t1sF[i]).values)
+            @inbounds compressedJ[j, i] = ForwardDiff.partials.(t1sF[i]).values[j]
+        end
     end
 end
 

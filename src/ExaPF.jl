@@ -125,7 +125,7 @@ end
     if i > npv
         F[i + npq] -= qinj[fr]
     end
-    @inbounds for (j,c) in enumerate(ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1)
+    @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
         to = ybus_re_rowval[c]
         aij = v_a[fr] - v_a[to]
         # f_re = a * cos + b * sin
@@ -252,7 +252,7 @@ function solve(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
     qbus = T(imag(Sbus))
 
     # initiate voltage
-    Vm, Va = similar(V), similar(V)
+    Vm, Va = similar(V, Float64), similar(V, Float64)
     polar!(Vm, Va, V, device)
 
     # indices
