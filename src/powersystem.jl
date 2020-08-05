@@ -100,7 +100,7 @@ function Base.show(io::IO, pf::PowerNetwork)
         pinj = real(pf.Sbus[i])
         qinj = imag(pf.Sbus[i])
         @printf("\t%i \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
-                type, vmag, vang, pinj, pinj)
+                type, vmag, vang, pinj, qinj)
     end
 
 end
@@ -115,6 +115,10 @@ Vector x is the variable vector, consisting on:
     - VMAG, VANG for buses of type PQ (type 1)
     - VANG for buses of type PV (type 2)
 These variables are determined by the physics of the network.
+
+Ordering:
+
+x = [VMAG^{PQ}, VANG^{PQ}, VANG^{PV}]
 """
 function get_x(pf::PowerNetwork)
  
@@ -125,18 +129,10 @@ function get_x(pf::PowerNetwork)
     # build vector x
     dimension = 2*npq + npv
     x = zeros(dimension, 1)
-    k = 1
 
-    for bus=1:pf.nbus
-        if pf.bustype[bus] == PQ_BUS_TYPE
-            x[k] = abs(pf.V[bus])
-            x[k + 1] = angle(pf.V[bus])
-            k = k + 2
-        elseif pf.bustype[bus] == PV_BUS_TYPE
-            x[k] = angle(pf.V[bus])
-            k = k + 1
-        end
-    end
+    x[1:npq] = abs.(pf.V[pf.pq])
+    x[npq + 1:2*npq] = angle.(pf.V[pf.pq])
+    x[2*npq + 1:2*npq + npv] = angle.(pf.V[pf.pv])
 
     return x
 end
@@ -151,8 +147,11 @@ Vector u is the control vector, consisting on:
     - VMAG, P for buses of type PV (type 1)
     - VM for buses of type SLACK (type 3)
 These variables are controlled by the grid operator.
-"""
 
+Ordering:
+
+u = [VMAG^{REF}, P^{PV}, V^{PV}]
+"""
 function get_u(pf::PowerNetwork)
     
     nref = length(pf.ref)
@@ -162,18 +161,10 @@ function get_u(pf::PowerNetwork)
     # build vector u
     dimension = 2*npv + nref
     u = zeros(dimension, 1)
-    k = 1
-
-    for bus=1:pf.nbus
-        if pf.bustype[bus] == PV_BUS_TYPE
-            u[k] = abs(pf.V[bus])
-            u[k + 1] = real(pf.Sbus[bus])
-            k = k + 2
-        elseif pf.bustype[bus] == REF_BUS_TYPE
-            u[k] = abs(pf.V[bus])
-            k = k + 1
-        end
-    end
+    
+    u[1:nref] = abs.(pf.V[pf.ref])
+    u[nref + 1:nref + npv] = real.(pf.Sbus[pf.pv])
+    u[nref + npv + 1:nref + 2*npv] = abs.(pf.V[pf.pv])
 
     return u
 end
@@ -188,6 +179,10 @@ Vector p is the parameter vector, consisting on:
     - VA for buses of type SLACK (type 3)
     - P, Q for buses of type PQ (type 1)
 These parameters are fixed through the problem.
+
+Order:
+
+p = [vang^{ref}, p^{pq}, q^{pq}]
 """
 function get_p(pf::PowerNetwork)
     
@@ -198,18 +193,10 @@ function get_p(pf::PowerNetwork)
     # build vector p
     dimension = nref + 2*npq
     p = zeros(dimension, 1)
-    k = 1
-    
-    for bus=1:pf.nbus
-        if pf.bustype[bus] == REF_BUS_TYPE
-            p[k] = abs(pf.V[bus])
-            k = k + 1
-        elseif pf.bustype[bus] == PQ_BUS_TYPE
-            p[k] = real(pf.Sbus[bus])
-            p[k + 1] = imag(pf.Sbus[bus])
-            k = k + 2
-        end
-    end
+
+    p[1:nref] = angle.(pf.V[pf.ref])
+    p[nref + 1:nref + npq] = real.(pf.Sbus[pf.pq])
+    p[nref + npq + 1:nref + 2*npq] = imag.(pf.Sbus[pf.pq])
 
     return p
 end
@@ -231,32 +218,18 @@ function retrieve_physics(pf::PowerNetwork, x::Array{Float64}, u::Array{Float64}
     vang = zeros(nbus)
     pinj = zeros(nbus)
     qinj = zeros(nbus)
+    
+    vmag[pf.pq] = x[1:npq]
+    vang[pf.pq] = x[npq + 1:2*npq]
+    vang[pf.pv] = x[2*npq + 1:2*npq + npv]
+    
+    vmag[pf.ref] = u[1:nref]
+    pinj[pf.pv] = u[nref + 1:nref + npv]
+    vmag[pf.pv] = u[nref + npv + 1:nref + 2*npv]
 
-    x_idx = 1
-    u_idx = 1
-    p_idx = 1
-
-    for bus=1:nbus
-        if pf.bustype[bus] == PQ_BUS_TYPE
-            vmag[bus] = x[x_idx]
-            vang[bus] = x[x_idx + 1]
-            pinj[bus] = p[p_idx]
-            qinj[bus] = p[p_idx + 1]
-            x_idx += 2
-            p_idx += 2
-        elseif pf.bustype[bus] == PV_BUS_TYPE
-            vmag[bus] = u[u_idx]
-            pinj[bus] = u[u_idx + 1]
-            vang[bus] = x[x_idx]
-            u_idx += 2
-            x_idx += 1
-        elseif pf.bustype[bus] == REF_BUS_TYPE
-            vmag[bus] = u[u_idx]
-            vang[bus] = p[p_idx]
-            u_idx += 1
-            p_idx += 1
-        end
-    end
+    vang[pf.ref] = p[1:nref]
+    pinj[pf.pq] = p[nref + 1:nref + npq]
+    qinj[pf.pq] = p[nref + npq + 1:nref + 2*npq]
 
     return vmag, vang, pinj, qinj
 end
