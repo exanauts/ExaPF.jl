@@ -303,7 +303,7 @@ function designJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     end
     nthreads=256
     nblocks=ceil(Int64, nbus/nthreads)
-    t1sv_m = zeros(eltype(arrays.t1sF), length(v_m))
+    t1sv_m = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? zeros(eltype(arrays.t1sF), length(v_m)) : CUDA.zeros(eltype(arrays.t1sF), length(v_m))
     t1sv_m .= v_m
     @timeit to "Function" begin
         residualFunction_polar!(
