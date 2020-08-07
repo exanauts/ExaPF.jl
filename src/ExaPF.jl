@@ -24,14 +24,14 @@ using TimerOutputs
 export solve
 
 # Import submodules
-include("parse/parse.jl")
-using .Parse
 include("ad.jl")
 using .AD
 include("algorithms/precondition.jl")
 using .Precondition
 include("iterative.jl")
 using .Iterative
+include("parse/parse.jl")
+using .Parse
 include("powersystem.jl")
 using .PowerSystem
 
@@ -227,19 +227,6 @@ function solve(pf::PowerSystem.PowerNetwork,
     converged = false
 
     ybus_re, ybus_im = Spmat{T}(Ybus)
-
-    # data index
-    BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-    BUS_EVLO, BUS_TYPE = Parse.idx_bus()
-
-    GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-    GEN_PT, GEN_PB = Parse.idx_gen()
-
-    LOAD_BUS, LOAD_ID, LOAD_STATUS, LOAD_PL, LOAD_QL = Parse.idx_load()
-
-    bus = data["BUS"]
-    gen = data["GENERATOR"]
-    load = data["LOAD"]
 
     nbus = pf.nbus
     ngen = pf.ngen
