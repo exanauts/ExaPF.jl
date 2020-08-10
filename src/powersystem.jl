@@ -1,14 +1,15 @@
 module PowerSystem
 
+using SparseArrays
+using Printf
 using ..ExaPF: Parse
 
 import Base: show
-using SparseArrays
-using Printf
 
 const PQ_BUS_TYPE = 1
 const PV_BUS_TYPE = 2
 const REF_BUS_TYPE  = 3
+
 """
     PowerNetwork
 
@@ -67,21 +68,14 @@ struct PowerNetwork
 
         # bus type indexing
         ref, pv, pq, bustype = bustypeindex(bus, gen)
-    
+
         Sbus = assembleSbus(gen, load, SBASE, nbus)
-        
-        new(V, Ybus, data, nbus, ngen, nload, bustype, ref, pv, pq,
-            Sbus)
+
+        new(V, Ybus, data, nbus, ngen, nload, bustype, ref, pv, pq, Sbus)
     end
 
 end
 
-"""
-    view(PowerNetwork)
-
-Prints power network characteristics.
-
-"""
 function Base.show(io::IO, pf::PowerNetwork)
     println("Power Network characteristics:")
     @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),
@@ -92,7 +86,7 @@ function Base.show(io::IO, pf::PowerNetwork)
     @printf("\t==============================================\n")
     @printf("\tBUS \t TYPE \t VMAG \t VANG \t P \t Q\n")
     @printf("\t==============================================\n")
-    
+
     for i=1:pf.nbus
         type = pf.bustype[i]
         vmag = abs(pf.V[i])
@@ -121,7 +115,7 @@ Ordering:
 x = [VMAG^{PQ}, VANG^{PQ}, VANG^{PV}]
 """
 function get_x(pf::PowerNetwork)
- 
+
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
@@ -153,15 +147,15 @@ Ordering:
 u = [VMAG^{REF}, P^{PV}, V^{PV}]
 """
 function get_u(pf::PowerNetwork)
-    
+
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
-    
+
     # build vector u
     dimension = 2*npv + nref
     u = zeros(dimension, 1)
-    
+
     u[1:nref] = abs.(pf.V[pf.ref])
     u[nref + 1:nref + npv] = real.(pf.Sbus[pf.pv])
     u[nref + npv + 1:nref + 2*npv] = abs.(pf.V[pf.pv])
@@ -185,11 +179,11 @@ Order:
 p = [vang^{ref}, p^{pq}, q^{pq}]
 """
 function get_p(pf::PowerNetwork)
-    
+
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
-    
+
     # build vector p
     dimension = nref + 2*npq
     p = zeros(dimension, 1)
@@ -206,8 +200,12 @@ end
 
 Converts x, u, p vectors to vmag, vang, pinj and qinj.
 """
-function retrieve_physics(pf::PowerNetwork, x::Array{Float64}, u::Array{Float64},
-                   p::Array{Float64})
+function retrieve_physics(
+    pf::PowerNetwork,
+    x::VT,
+    u::VT,
+    p::VT,
+) where {T<:Real, VT<:AbstractVector{T}}
 
     nbus = pf.nbus
     nref = length(pf.ref)
@@ -218,11 +216,11 @@ function retrieve_physics(pf::PowerNetwork, x::Array{Float64}, u::Array{Float64}
     vang = zeros(nbus)
     pinj = zeros(nbus)
     qinj = zeros(nbus)
-    
+
     vmag[pf.pq] = x[1:npq]
     vang[pf.pq] = x[npq + 1:2*npq]
     vang[pf.pv] = x[2*npq + 1:2*npq + npv]
-    
+
     vmag[pf.ref] = u[1:nref]
     pinj[pf.pv] = u[nref + 1:nref + npv]
     vmag[pf.pv] = u[nref + npv + 1:nref + 2*npv]
