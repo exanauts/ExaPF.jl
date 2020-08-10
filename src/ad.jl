@@ -11,9 +11,9 @@ function myseed_kernel_cpu(
     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
 ) where {T,V,N}
-	for i in 1:size(duals,1)
-		duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
-	end
+    for i in 1:size(duals,1)
+        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
+    end
 end
 
 function myseed_kernel_gpu(
@@ -23,8 +23,8 @@ function myseed_kernel_gpu(
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
     for i in index:stride:size(duals,1)
-		duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
-	end
+        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
+    end
 end
 
 function getpartials_cpu(compressedJ, t1sF)
@@ -56,11 +56,11 @@ function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
 end
 
 function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
-                             ybus_re, ybus_im, pinj, qinj, pv, pq, nbus, to = nothing)
+                             ybus_re, ybus_im, pinj, qinj, pv, pq, nbus, timer = nothing)
     device = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? CPU() : CUDADevice()
 
-    @timeit to "Before" begin
-        @timeit to "Setup" begin
+    @timeit timer "Before" begin
+        @timeit timer "Setup" begin
             nv_m = size(v_m, 1)
             nv_a = size(v_a, 1)
             nmap = size(arrays.map, 1)
@@ -68,14 +68,14 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
             nblocks=ceil(Int64, nmap/nthreads)
             n = nv_m + nv_a
         end
-        @timeit to "Arrays" begin
+        @timeit timer "Arrays" begin
             arrays.x[1:nv_m] .= v_m
             arrays.t1sx .= arrays.x
             arrays.x[nv_m+1:nv_m+nv_a] .= v_a
             arrays.t1sF .= 0.0
         end
     end
-    @timeit to "Seeding" begin
+    @timeit timer "Seeding" begin
         if isa(device, CUDADevice)
             CUDA.@sync begin
                 @cuda threads=nthreads blocks=nblocks myseed_kernel_gpu(
@@ -85,17 +85,17 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
                 )
             end
         else
-            ev = myseed_kernel_cpu(
+            myseed_kernel_cpu(
                 arrays.t1svarx,
                 arrays.varx,
                 arrays.t1sseeds,
             )
         end
     end
-    nthreads=256
-    nblocks=ceil(Int64, nbus/nthreads)
+    nthreads = 256
+    nblocks = ceil(Int64, nbus/nthreads)
 
-    @timeit to "Function" begin
+    @timeit timer "Function" begin
         residualFunction_polar!(
             arrays.t1sF,
             arrays.t1sx[1:nv_m],
@@ -107,7 +107,7 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
         )
     end
 
-    @timeit to "Get partials" begin
+    @timeit timer "Get partials" begin
         if isa(device, CUDADevice)
             CUDA.@sync begin
                 @cuda threads=nthreads blocks=nblocks getpartials_gpu(
@@ -122,7 +122,7 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
             )
         end
     end
-    @timeit to "Uncompress" begin
+    @timeit timer "Uncompress" begin
         # Uncompress matrix. Sparse matrix elements have different names with CUDA
         if arrays.J isa SparseArrays.SparseMatrixCSC
             for i in 1:nmap
@@ -199,8 +199,6 @@ struct JacobianAD
         end
         compressedJ = M{Float64}(zeros(Float64, ncolor, nmap))
         t1svarx = view(t1sx, map)
-        nthreads=256
-        nblocks=ceil(Int64, nmap/nthreads)
         return new(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, varx, t1svarx, map)
     end
 end
