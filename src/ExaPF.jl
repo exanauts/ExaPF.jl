@@ -188,9 +188,16 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
-function solve(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
-               p::AbstractArray, npartitions=2, solver="default";
-               tol=1e-6, maxiter=20, device=CPU())
+function solve(pf::PowerSystem.PowerNetwork,
+    x::AbstractArray,
+    u::AbstractArray,
+    p::AbstractArray;
+    npartitions=2,
+    solver="default",
+    tol=1e-6,
+    maxiter=20,
+    device=CPU()
+)
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
@@ -375,6 +382,8 @@ function solve(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
     show(TIMER)
     reset_timer!(TIMER)
 
+    AD.residualJacobianAD!(jacobianAD, residualFunction_polar!, Vm, Va,
+                                ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, TIMER)
     return V, converged, normF, linsol_iters[1], sum(linsol_iters)
 end
 
