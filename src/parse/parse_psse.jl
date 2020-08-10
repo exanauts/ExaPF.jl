@@ -1,4 +1,4 @@
-module Parse
+module ParsePSSE
 
 function parse_skipsection(lines::Array{String}, pos::Int)
     while pos <= length(lines)

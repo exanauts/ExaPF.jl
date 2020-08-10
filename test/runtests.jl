@@ -8,7 +8,7 @@ using SparseArrays
 using Test
 using TimerOutputs
 
-import ExaPF: Parse, PowerSystem
+import ExaPF: ParsePSSE, PowerSystem
 
 Random.seed!(2713)
 
@@ -19,9 +19,9 @@ case = "case14.raw"
     # read data
     to = TimerOutputs.TimerOutput()
     datafile = joinpath(dirname(@__FILE__), case)
-    data = Parse.parse_raw(datafile)
+    data = ParsePSSE.parse_raw(datafile)
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-    BUS_EVLO, BUS_TYPE = Parse.idx_bus()
+    BUS_EVLO, BUS_TYPE = ParsePSSE.idx_bus()
     bus = data["BUS"]
     nbus = size(bus, 1)
 

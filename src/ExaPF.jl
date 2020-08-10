@@ -30,8 +30,8 @@ include("algorithms/precondition.jl")
 using .Precondition
 include("iterative.jl")
 using .Iterative
-include("parse/parse.jl")
-using .Parse
+include("parse/parse_psse.jl")
+using .ParsePSSE
 include("powersystem.jl")
 using .PowerSystem
 

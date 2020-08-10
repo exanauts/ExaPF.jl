@@ -2,7 +2,7 @@ module PowerSystem
 
 using SparseArrays
 using Printf
-using ..ExaPF: Parse
+using ..ExaPF: ParsePSSE
 
 import Base: show
 
@@ -37,14 +37,14 @@ struct PowerNetwork
     Sbus::Array{Complex{Float64}}
 
     function PowerNetwork(datafile::String)
-        data = Parse.parse_raw(datafile)
+        data = ParsePSSE.parse_raw(datafile)
 
         # Parsed data indexes
         BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-        BUS_EVLO, BUS_TYPE = Parse.idx_bus()
+        BUS_EVLO, BUS_TYPE = ParsePSSE.idx_bus()
         GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-        GEN_PT, GEN_PB = Parse.idx_gen()
-        LOAD_BUS, LOAD_ID, LOAD_STATUS, LOAD_PL, LOAD_QL = Parse.idx_load()
+        GEN_PT, GEN_PB = ParsePSSE.idx_gen()
+        LOAD_BUS, LOAD_ID, LOAD_STATUS, LOAD_PL, LOAD_QL = ParsePSSE.idx_load()
 
         # retrive required data
         bus = data["BUS"]
@@ -241,10 +241,10 @@ Returns vectors indexing buses by type: ref, pv, pq.
 function bustypeindex(bus, gen)
     # retrieve indeces
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-    BUS_EVLO, BUS_TYPE = Parse.idx_bus()
+    BUS_EVLO, BUS_TYPE = ParsePSSE.idx_bus()
 
     GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-    GEN_PT, GEN_PB = Parse.idx_gen()
+    GEN_PT, GEN_PB = ParsePSSE.idx_gen()
 
     # form vector that lists the number of generators per bus.
     # If a PV bus has 0 generators (e.g. due to contingency)
@@ -293,9 +293,9 @@ function assembleSbus(gen, load, SBASE, nbus)
 
     # retrieve indeces
     GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-    GEN_PT, GEN_PB = Parse.idx_gen()
+    GEN_PT, GEN_PB = ParsePSSE.idx_gen()
 
-    LOAD_BUS, LOAD_ID, LOAD_STAT, LOAD_PL, LOAD_QL = Parse.idx_load()
+    LOAD_BUS, LOAD_ID, LOAD_STAT, LOAD_PL, LOAD_QL = ParsePSSE.idx_load()
 
     for i in 1:ngen
         if gen[i, GEN_STAT] == 1
@@ -340,12 +340,12 @@ function makeYbus(raw_data)
     fsh = raw_data["FIXED SHUNT"]
 
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-        BUS_EVLO = Parse.idx_bus()
+        BUS_EVLO = ParsePSSE.idx_bus()
     BR_FR, BR_TO, BR_CKT, BR_R, BR_X, BR_B, BR_RATEA, BR_RATEC,
-        BR_STAT = Parse.idx_branch()
+        BR_STAT = ParsePSSE.idx_branch()
     TR_FR, TR_TO, TR_CKT, TR_MAG1, TR_MAG2, TR_STAT, TR_R, TR_X, TR_WINDV1,
-        TR_ANG, TR_RATEA, TR_RATEC, TR_WINDV2 = Parse.idx_transformer()
-    FSH_BUS, FSH_ID, FSH_STAT, FSH_G, FSH_B = Parse.idx_fshunt()
+        TR_ANG, TR_RATEA, TR_RATEC, TR_WINDV2 = ParsePSSE.idx_transformer()
+    FSH_BUS, FSH_ID, FSH_STAT, FSH_G, FSH_B = ParsePSSE.idx_fshunt()
 
     nb = size(bus, 1)
     nbr = size(branch, 1)

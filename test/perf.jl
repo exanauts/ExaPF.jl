@@ -6,14 +6,14 @@ using LinearAlgebra
 using BenchmarkTools
 using SparseArrays
 using TimerOutputs
-import ExaPF: Parse, PowerSystem
+import ExaPF: ParsePSSE, PowerSystem
 
 # read data
 function run_benchmark(datafile)
     to = TimerOutputs.TimerOutput()
     data = Parse.parse_raw(datafile)
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-    BUS_EVLO, BUS_TYPE = Parse.idx_bus()
+    BUS_EVLO, BUS_TYPE = ParsePSSE.idx_bus()
     bus = data["BUS"]
     nbus = size(bus, 1)
 
