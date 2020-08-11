@@ -74,11 +74,11 @@ case = "case14.raw"
 
         # Then, create a JacobianAD object
         coloring = ExaPF.matrix_colors(J)
-        jacobianAD = ExaPF.AD.JacobianAD(J, coloring, F, Vm, Va, pv, pq)
+        jacobianAD = ExaPF.AD.StateJacobianAD(J, coloring, F, Vm, Va, pbus, pv, pq, ref)
         # and compute Jacobian with ForwardDiff
         ExaPF.AD.residualJacobianAD!(
             jacobianAD, ExaPF.residualFunction_polar!, Vm, Va,
-            ybus_re, ybus_im, pbus, qbus, pv, pq, nbus, to)
+            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
         @test jacobianAD.J ≈ J♯
     end
 end
