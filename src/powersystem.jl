@@ -1,10 +1,10 @@
 module PowerSystem
 
-using SparseArrays
-using Printf
-using ..ExaPF: ParsePSSE
+using ..ExaPF: ParsePSSE, IdxSet
 
 import Base: show
+using Printf
+using SparseArrays
 
 const PQ_BUS_TYPE = 1
 const PV_BUS_TYPE = 2
@@ -365,6 +365,7 @@ function makeYbus(raw_data)
     f = [b2i[b] for b in branch[:, BR_FR]]
     t = [b2i[b] for b in branch[:, BR_TO]]
     i = collect(1:nbr)
+    println(Yff_br)
     Cf_br = sparse(i, f, ones(nbr), nbr, nb)
     Ct_br = sparse(i, t, ones(nbr), nbr, nb)
     Yf_br = sparse(i, i, Yff_br, nbr, nbr) * Cf_br +
@@ -402,5 +403,70 @@ function makeYbus(raw_data)
 
     return Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr
 end
+
+function makeYbus_bis(data)
+    baseMVA = data["baseMVA"]
+    bus     = data["bus"]
+    branch  = data["branch"]
+    
+    F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C, TAP, SHIFT, BR_STATUS,
+    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IdxSet.idx_branch() 
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+
+    # constants
+    nb = size(bus, 1)          # number of buses
+    nl = size(branch, 1)       # number of lines
+
+    # define named indices into bus, branch matrices
+
+    # for each branch, compute the elements of the branch admittance matrix where
+    #
+    #      | If |   | Yff  Yft |   | Vf |
+    #      |    | = |          | * |    |
+    #      | It |   | Ytf  Ytt |   | Vt |
+    #
+    stat = branch[:, BR_STATUS]                     # ones at in-service branches
+    Ys = stat ./ (branch[:, BR_R] + 1im * branch[:, BR_X])  # series admittance
+    Bc = stat .* branch[:, BR_B]                           # line charging susceptance
+    tap = ones(nl)                               # default tap ratio = 1
+    i = findall(branch[:, TAP] .!= 0)              # indices of non-zero tap ratios
+    tap[i] = branch[i, TAP]                         # assign non-zero tap ratios
+    tap = tap .* exp.(1im*pi/180 * branch[:, SHIFT]) # add phase shifters
+    Ytt = Ys + 1im*Bc/2
+    Yff = Ytt ./ (tap .* conj(tap))
+    Yft = - Ys ./ conj(tap)
+    Ytf = - Ys ./ tap
+
+    # compute shunt admittance
+    # if Psh is the real power consumed by the shunt at V = 1.0 p.u.
+    # and Qsh is the reactive power injected by the shunt at V = 1.0 p.u.
+    # then Psh - j Qsh = V * conj(Ysh * V) = conj(Ysh) = Gs - j Bs,
+    # i.e. Ysh = Psh + j Qsh, so ...
+    Ysh = (bus[:, GS] + 1im * bus[:, BS]) / baseMVA[1] # vector of shunt admittances
+    
+	# build connection matrices
+    f = branch[:, F_BUS]                           # list of "from" buses
+    t = branch[:, T_BUS]                            # list of "to" buses
+    
+    Cf = sparse(1:nl, f, ones(nl), nl, nb)       # connection matrix for line & from buses
+    Ct = sparse(1:nl, t, ones(nl), nl, nb)       # connection matrix for line & to buses
+
+    # build Yf and Yt such that Yf * V is the vector of complex branch currents injected
+    # at each branch's "from" bus, and Yt is the same for the "to" bus end
+    i = [1:nl; 1:nl]
+	Yf = sparse(i, [f; t], [Yff; Yft], nl, nb)
+	Yt = sparse(i, [f; t], [Ytf; Ytt], nl, nb)
+    
+    # Yf = spdiags(Yff, 0, nl, nl) * Cf + spdiags(Yft, 0, nl, nl) * Ct;
+    # Yt = spdiags(Ytf, 0, nl, nl) * Cf + spdiags(Ytt, 0, nl, nl) * Ct;
+
+    # build Ybus
+    Ybus = Cf' * Yf + Ct' * Yt + sparse(1:nb, 1:nb, Ysh, nb, nb)
+    
+    return Ybus
+
+end
+
 
 end

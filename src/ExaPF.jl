@@ -28,6 +28,8 @@ include("ad.jl")
 using .AD
 include("algorithms/precondition.jl")
 using .Precondition
+include("indexes.jl")
+using .IdxSet
 include("iterative.jl")
 using .Iterative
 include("parse/parse_psse.jl")
