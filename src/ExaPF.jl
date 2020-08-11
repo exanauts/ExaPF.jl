@@ -302,7 +302,7 @@ function solve(pf::PowerSystem.PowerNetwork,
     println("Creating JacobianAD...")
     J = M(J)
     stateJacobianAD = AD.StateJacobianAD(J, coloring, F, Vm, Va, pbus, pv, pq, ref)
-    designJacobianAD = AD.DesignJacobianAD(J, coloring, F, Vm, Va, pbus, pv, pq, ref)
+    # designJacobianAD = AD.DesignJacobianAD(J, coloring, F, Vm, Va, pbus, pv, pq, ref)
 
     # check for convergence
     normF = norm(F, Inf)
@@ -382,9 +382,9 @@ function solve(pf::PowerSystem.PowerNetwork,
     # Timer outputs display
     show(TIMER)
     reset_timer!(TIMER)
-    AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
-                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
-    return V, converged, normF, linsol_iters[1], sum(linsol_iters), designJacobianAD.J
+    # AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
+    #                         ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
+    return V, converged, normF, linsol_iters[1], sum(linsol_iters)#, designJacobianAD.J
 end
 
 # end of module
