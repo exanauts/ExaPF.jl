@@ -142,7 +142,10 @@ end
     p = ExaPF.PowerSystem.get_p(pf)
     target = CPU()
     @testset "[CPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
-        sol, has_conv, res = solve(pf, x, u, p, nblocks, precond, device=target)
+        sol, has_conv, res = solve(pf, x, u, p;
+                                   npartitions=nblocks,
+                                   solver=precond,
+                                   device=target)
         @test has_conv
         @test res < 1e-6
     end
@@ -150,8 +153,11 @@ end
     if has_cuda_gpu()
         target = CUDADevice()
         @testset "[GPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
-            sol, conv, res = solve(pf, x, u, p, nblocks, precond, device=target)
-            @test conv
+            sol, has_conv, res = solve(pf, x, u, p;
+                                   npartitions=nblocks,
+                                   solver=precond,
+                                   device=target)
+            @test has_conv
             @test res < 1e-6
         end
     end
