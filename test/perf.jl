@@ -6,15 +6,22 @@ using LinearAlgebra
 using BenchmarkTools
 using SparseArrays
 using TimerOutputs
-import ExaPF: ParsePSSE, PowerSystem
+import ExaPF: ParsePSSE, PowerSystem, IdxSet
 
 # read data
 function run_benchmark(datafile)
     to = TimerOutputs.TimerOutput()
-    data = Parse.parse_raw(datafile)
-    BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-    BUS_EVLO, BUS_TYPE = ParsePSSE.idx_bus()
-    bus = data["BUS"]
+    data_raw = ParsePSSE.parse_raw(datafile)
+    data = ParsePSSE.raw_to_exapf(data_raw)
+    
+    # Parsed data indexes
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, BUS_VM, BUS_VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+
+    # retrive required data
+    bus = data["bus"]
+    gen = data["gen"]
+    SBASE = data["baseMVA"][1]
     nbus = size(bus, 1)
 
     # obtain V0 from raw data
@@ -25,20 +32,18 @@ function run_benchmark(datafile)
     end
 
     # form Y matrix
-    Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = PowerSystem.makeYbus(data);
+    Ybus = PowerSystem.makeYbus(data);
 
     Vm = abs.(V)
     Va = angle.(V)
-    bus = data["BUS"]
-    gen = data["GENERATOR"]
-    load = data["LOAD"]
+    bus = data["bus"]
+    gen = data["gen"]
+    SBASE = data["baseMVA"][1]
     nbus = size(bus, 1)
-    ngen = size(gen, 1)
-    nload = size(load, 1)
 
     ybus_re, ybus_im = ExaPF.Spmat{T}(Ybus)
-    SBASE = data["CASE IDENTIFICATION"][1]
-    Sbus = PowerSystem.assembleSbus(gen, load, SBASE, nbus)
+    SBASE = data["baseMVA"][1]
+    Sbus = PowerSystem.assembleSbus(gen, bus, SBASE)
     pbus = real(Sbus)
     qbus = imag(Sbus)
 

@@ -232,7 +232,6 @@ function solve(pf::PowerSystem.PowerNetwork,
 
     nbus = pf.nbus
     ngen = pf.ngen
-    nload = pf.nload
 
     ref = pf.ref
     pv = pf.pv

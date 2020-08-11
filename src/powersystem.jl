@@ -27,7 +27,6 @@ struct PowerNetwork
 
     nbus::Int64
     ngen::Int64
-    nload::Int64
 
     bustype::Array{Int64}
     ref::Array{Int64}
@@ -37,41 +36,37 @@ struct PowerNetwork
     Sbus::Array{Complex{Float64}}
 
     function PowerNetwork(datafile::String)
-        data = ParsePSSE.parse_raw(datafile)
+        data_raw = ParsePSSE.parse_raw(datafile)
+        data = ParsePSSE.raw_to_exapf(data_raw)
 
         # Parsed data indexes
-        BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-        BUS_EVLO, BUS_TYPE = ParsePSSE.idx_bus()
-        GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-        GEN_PT, GEN_PB = ParsePSSE.idx_gen()
-        LOAD_BUS, LOAD_ID, LOAD_STATUS, LOAD_PL, LOAD_QL = ParsePSSE.idx_load()
+        BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+        LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
 
         # retrive required data
-        bus = data["BUS"]
-        gen = data["GENERATOR"]
-        load = data["LOAD"]
-        SBASE = data["CASE IDENTIFICATION"][1]
+        bus = data["bus"]
+        gen = data["gen"]
+        SBASE = data["baseMVA"][1]
 
         # size of the system
         nbus = size(bus, 1)
         ngen = size(gen, 1)
-        nload = size(load, 1)
 
         # obtain V0 from raw data
         V = Array{Complex{Float64}}(undef, nbus)
         for i in 1:nbus
-            V[i] = bus[i, BUS_VM]*exp(1im * pi/180 * bus[i, BUS_VA])
+            V[i] = bus[i, VM]*exp(1im * pi/180 * bus[i, VA])
         end
 
         # form Y matrix
-        Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr = makeYbus(data)
+        Ybus = makeYbus(data)
 
         # bus type indexing
         ref, pv, pq, bustype = bustypeindex(bus, gen)
-
-        Sbus = assembleSbus(gen, load, SBASE, nbus)
-
-        new(V, Ybus, data, nbus, ngen, nload, bustype, ref, pv, pq, Sbus)
+    
+        Sbus = assembleSbus(gen, bus, SBASE)
+        
+        new(V, Ybus, data, nbus, ngen, bustype, ref, pv, pq, Sbus)
     end
 
 end
@@ -240,11 +235,13 @@ Returns vectors indexing buses by type: ref, pv, pq.
 """
 function bustypeindex(bus, gen)
     # retrieve indeces
-    BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-    BUS_EVLO, BUS_TYPE = ParsePSSE.idx_bus()
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+    
+    GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
+    MU_QMIN = IdxSet.idx_gen()
 
-    GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-    GEN_PT, GEN_PB = ParsePSSE.idx_gen()
 
     # form vector that lists the number of generators per bus.
     # If a PV bus has 0 generators (e.g. due to contingency)
@@ -254,8 +251,8 @@ function bustypeindex(bus, gen)
     gencon = zeros(Int8, size(bus, 1))
 
     for i in 1:size(gen, 1)
-        if gen[i, GEN_STAT] == 1
-            gencon[gen[i, GEN_BUS]] += 1
+        if gen[i, GEN_STATUS] == 1
+            gencon[Int(gen[i, GEN_BUS])] += 1
         end
     end
 
@@ -285,28 +282,28 @@ we do not have voltage-dependent loads, this vector only needs to be
 assembled once at the beginning of the power flow routine.
 
 """
-function assembleSbus(gen, load, SBASE, nbus)
-    Sbus = zeros(Complex{Float64}, nbus)
+function assembleSbus(gen, bus, baseMVA)
 
     ngen = size(gen, 1)
-    nload = size(load, 1)
+    nbus = size(bus, 1)
+    Sbus = zeros(Complex{Float64}, nbus)
 
     # retrieve indeces
-    GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-    GEN_PT, GEN_PB = ParsePSSE.idx_gen()
-
-    LOAD_BUS, LOAD_ID, LOAD_STAT, LOAD_PL, LOAD_QL = ParsePSSE.idx_load()
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+    
+    GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
+    MU_QMIN = IdxSet.idx_gen()
 
     for i in 1:ngen
-        if gen[i, GEN_STAT] == 1
-            Sbus[gen[i, GEN_BUS]] += (gen[i, GEN_PG] + 1im*gen[i, GEN_QG])/SBASE
+        if gen[i, GEN_STATUS] == 1
+            Sbus[Int(gen[i, GEN_BUS])] += (gen[i, PG] + 1im*gen[i, QG])/baseMVA
         end
     end
 
-    for i in 1:nload
-        if load[i, LOAD_STAT] == 1
-            Sbus[load[i, LOAD_BUS]] -= (load[i, LOAD_PL] + 1im*load[i, LOAD_QL])/SBASE
-        end
+    for i in 1:nbus
+        Sbus[Int(bus[i, BUS_I])] -= (bus[i, PD] + 1im*bus[i, QD])/baseMVA
     end
 
     return Sbus
@@ -332,7 +329,7 @@ end
 # where nb is the number of buses, nbr is the number of non-transformer
 # branches, and ntr is the number of transformer branches.
 
-function makeYbus(raw_data)
+function makeYbus_bis(raw_data)
     baseMVA = raw_data["CASE IDENTIFICATION"][1]
     bus = raw_data["BUS"]
     branch = raw_data["BRANCH"]
@@ -404,7 +401,7 @@ function makeYbus(raw_data)
     return Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr
 end
 
-function makeYbus_bis(data)
+function makeYbus(data)
     baseMVA = data["baseMVA"]
     bus     = data["bus"]
     branch  = data["branch"]
