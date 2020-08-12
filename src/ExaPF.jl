@@ -32,6 +32,8 @@ include("indexes.jl")
 using .IdxSet
 include("iterative.jl")
 using .Iterative
+include("parse/parse_mat.jl")
+using .ParseMAT
 include("parse/parse_psse.jl")
 using .ParsePSSE
 include("powersystem.jl")

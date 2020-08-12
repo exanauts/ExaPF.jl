@@ -1,6 +1,6 @@
 module PowerSystem
 
-using ..ExaPF: ParsePSSE, IdxSet
+using ..ExaPF: ParsePSSE, ParseMAT, IdxSet
 
 import Base: show
 using Printf
@@ -35,10 +35,16 @@ struct PowerNetwork
 
     Sbus::Array{Complex{Float64}}
 
-    function PowerNetwork(datafile::String)
-        data_raw = ParsePSSE.parse_raw(datafile)
-        data = ParsePSSE.raw_to_exapf(data_raw)
+    function PowerNetwork(datafile::String, data_format::Int64=0)
 
+        if data_format == 0
+            println("Reading PSSE format")
+            data_raw = ParsePSSE.parse_raw(datafile)
+            data = ParsePSSE.raw_to_exapf(data_raw)
+        elseif data_format == 1
+            data_mat = ParseMAT.parse_mat(datafile)
+            data = ParseMAT.mat_to_exapf(data_mat)
+        end
         # Parsed data indexes
         BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
         LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
@@ -328,79 +334,6 @@ end
 #
 # where nb is the number of buses, nbr is the number of non-transformer
 # branches, and ntr is the number of transformer branches.
-
-function makeYbus_bis(raw_data)
-    baseMVA = raw_data["CASE IDENTIFICATION"][1]
-    bus = raw_data["BUS"]
-    branch = raw_data["BRANCH"]
-    trans = raw_data["TRANSFORMER"]
-    fsh = raw_data["FIXED SHUNT"]
-
-    BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-        BUS_EVLO = ParsePSSE.idx_bus()
-    BR_FR, BR_TO, BR_CKT, BR_R, BR_X, BR_B, BR_RATEA, BR_RATEC,
-        BR_STAT = ParsePSSE.idx_branch()
-    TR_FR, TR_TO, TR_CKT, TR_MAG1, TR_MAG2, TR_STAT, TR_R, TR_X, TR_WINDV1,
-        TR_ANG, TR_RATEA, TR_RATEC, TR_WINDV2 = ParsePSSE.idx_transformer()
-    FSH_BUS, FSH_ID, FSH_STAT, FSH_G, FSH_B = ParsePSSE.idx_fshunt()
-
-    nb = size(bus, 1)
-    nbr = size(branch, 1)
-    ntr = size(trans, 1)
-
-    i2b = bus[:, BUS_B]
-    b2i = sparse(i2b, ones(nb), collect(1:nb), maximum(i2b), 1)
-
-    st_br = branch[:, BR_STAT]
-    Ys_br = st_br ./ (branch[:, BR_R] .+ im*branch[:, BR_X])
-    B_br = st_br .* branch[:, BR_B]
-    Ytt_br = Ys_br + im*B_br/2
-    Yff_br = Ytt_br
-    Yft_br = -Ys_br
-    Ytf_br = -Ys_br
-
-    f = [b2i[b] for b in branch[:, BR_FR]]
-    t = [b2i[b] for b in branch[:, BR_TO]]
-    i = collect(1:nbr)
-    println(Yff_br)
-    Cf_br = sparse(i, f, ones(nbr), nbr, nb)
-    Ct_br = sparse(i, t, ones(nbr), nbr, nb)
-    Yf_br = sparse(i, i, Yff_br, nbr, nbr) * Cf_br +
-            sparse(i, i, Yft_br, nbr, nbr) * Ct_br
-    Yt_br = sparse(i, i, Ytf_br, nbr, nbr) * Cf_br +
-            sparse(i, i, Ytt_br, nbr, nbr) * Ct_br
-
-    st_tr = trans[:, TR_STAT]
-    Ys_tr = st_tr ./ (trans[:, TR_R] .+ im*trans[:, TR_X])
-    tap = (trans[:, TR_WINDV1] ./ trans[:, TR_WINDV2]) .* exp.(im*pi/180 .* trans[:, TR_ANG])
-    Ymag = st_tr .* (trans[:, TR_MAG1] .+ im*trans[:, TR_MAG2])
-    Ytt_tr = Ys_tr
-    Yff_tr = (Ytt_tr ./ (tap .* conj(tap))) .+ Ymag
-    Yft_tr = -Ys_tr ./ conj(tap)
-    Ytf_tr = -Ys_tr ./ tap
-
-    f = [b2i[b] for b in trans[:, TR_FR]]
-    t = [b2i[b] for b in trans[:, TR_TO]]
-    i = collect(1:ntr)
-    Cf_tr = sparse(i, f, ones(ntr), ntr, nb)
-    Ct_tr = sparse(i, t, ones(ntr), ntr, nb)
-    Yf_tr = sparse(i, i, Yff_tr, ntr, ntr) * Cf_tr +
-            sparse(i, i, Yft_tr, ntr, ntr) * Ct_tr
-    Yt_tr = sparse(i, i, Ytf_tr, ntr, ntr) * Cf_tr +
-            sparse(i, i, Ytt_tr, ntr, ntr) * Ct_tr
-
-    Ysh = zeros(Complex{Float64}, nb)
-    for i=1:size(fsh, 1)
-        Ysh[b2i[fsh[i, FSH_BUS]]] += fsh[i, FSH_STAT] * (fsh[i, FSH_G] + im*fsh[i, FSH_B])/baseMVA
-    end
-
-    Ybus = Cf_br' * Yf_br + Ct_br' * Yt_br +  # branch admittances
-           Cf_tr' * Yf_tr + Ct_tr' * Yt_tr +  # transformer admittances
-           sparse(1:nb, 1:nb, Ysh, nb, nb)    # shunt admittances
-
-    return Ybus, Yf_br, Yt_br, Yf_tr, Yt_tr
-end
-
 function makeYbus(data)
     baseMVA = data["baseMVA"]
     bus     = data["bus"]
@@ -464,6 +397,5 @@ function makeYbus(data)
     return Ybus
 
 end
-
 
 end
