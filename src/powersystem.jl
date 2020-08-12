@@ -122,7 +122,7 @@ function get_x(pf::PowerNetwork)
 
     # build vector x
     dimension = 2*npq + npv
-    x = zeros(dimension, 1)
+    x = zeros(dimension)
 
     x[1:npq] = abs.(pf.V[pf.pq])
     x[npq + 1:2*npq] = angle.(pf.V[pf.pq])
@@ -154,7 +154,7 @@ function get_u(pf::PowerNetwork)
 
     # build vector u
     dimension = 2*npv + nref
-    u = zeros(dimension, 1)
+    u = zeros(dimension)
 
     u[1:nref] = abs.(pf.V[pf.ref])
     u[nref + 1:nref + npv] = real.(pf.Sbus[pf.pv])
@@ -186,7 +186,7 @@ function get_p(pf::PowerNetwork)
 
     # build vector p
     dimension = nref + 2*npq
-    p = zeros(dimension, 1)
+    p = zeros(dimension)
 
     p[1:nref] = angle.(pf.V[pf.ref])
     p[nref + 1:nref + npq] = real.(pf.Sbus[pf.pq])

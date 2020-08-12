@@ -291,7 +291,6 @@ function solve(pf::PowerSystem.PowerNetwork,
                             ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
                             ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                             pbus, qbus, pv, pq, nbus)
-
     # Initiate coloring for AD
     J = residualJacobian(V, Ybus, pv, pq)
     dim_J = size(J, 1)
@@ -340,6 +339,7 @@ function solve(pf::PowerSystem.PowerNetwork,
                                    ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
         J = stateJacobianAD.J
+        J = residualJacobian(V, Ybus, pv, pq)
 
         # Find descent direction
         n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)
