@@ -192,6 +192,26 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
+function cost(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
+              p::AbstractArray)
+
+    # for now, let's just return the sum of all generator power
+    vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
+    
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
+
+    cost = 0.0
+
+    # add pv buses
+    cost += sum(pinj[pv])
+
+    # TODO: add slack bus injection
+
+    return cost
+end
+
 function solve(pf::PowerSystem.PowerNetwork,
     x::AbstractArray,
     u::AbstractArray,

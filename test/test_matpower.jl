@@ -17,4 +17,6 @@ import ExaPF: ParseMAT, PowerSystem, IdxSet
     # test impedance matrix entries
     @test isapprox(real(pf.Ybus[1, 1]), 0.0)
     @test isapprox(imag(pf.Ybus[1, 1]), -17.3611111)
+
+    c = ExaPF.cost(pf, x, u, p)
 end
