@@ -82,7 +82,6 @@ function Base.show(io::IO, pf::PowerNetwork)
     @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),
             length(pf.pv), length(pf.pq))
     println("\tGenerators: ", pf.ngen, ".")
-    println("\tLoads: ", pf.nload, ".")
     # Print system status
     @printf("\t==============================================\n")
     @printf("\tBUS \t TYPE \t VMAG \t VANG \t P \t Q\n")

@@ -11,12 +11,11 @@ import ExaPF: ParseMAT, PowerSystem, IdxSet
     u = ExaPF.PowerSystem.get_u(pf)
     p = ExaPF.PowerSystem.get_p(pf)
 
-    vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
     ExaPF.solve(pf, x, u, p)
 
     # test impedance matrix entries
     @test isapprox(real(pf.Ybus[1, 1]), 0.0)
     @test isapprox(imag(pf.Ybus[1, 1]), -17.3611111)
 
-    c = ExaPF.cost(pf, x, u, p)
+    #c = ExaPF.cost(pf, x, u, p)
 end
