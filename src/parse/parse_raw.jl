@@ -222,7 +222,7 @@ function parse_raw(filename::AbstractString; delim=",")
 end
 
 function raw_to_exapf(rawdata::Dict{String, Array})
-        
+
     BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
     BUS_EVLO, BUS_TYPE = idx_bus()
     GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
@@ -233,7 +233,7 @@ function raw_to_exapf(rawdata::Dict{String, Array})
     TR_FR, TR_TO, TR_CKT, TR_MAG1, TR_MAG2, TR_STAT, TR_R, TR_X, TR_WINDV1,
         TR_ANG, TR_RATEA, TR_RATEC, TR_WINDV2 = idx_transformer()
     FSH_BUS, FSH_ID, FSH_STAT, FSH_G, FSH_B = idx_fshunt()
-    
+
     data = Dict{String,Array}()
     bus = rawdata["BUS"]
     gen = rawdata["GENERATOR"]
@@ -242,7 +242,7 @@ function raw_to_exapf(rawdata::Dict{String, Array})
     trans = rawdata["TRANSFORMER"]
     fsh = rawdata["FIXED SHUNT"]
     SBASE = rawdata["CASE IDENTIFICATION"][1]
-    
+
     nbus = size(bus, 1)
     ngen = size(gen, 1)
     nload = size(load, 1)
@@ -315,7 +315,7 @@ function raw_to_exapf(rawdata::Dict{String, Array})
         branch_array[i, 10] = 0.0
         branch_array[i, 11] = branch[i, BR_STAT]
     end
-    
+
     for i in 1:ntrans
         branch_array[nbranch + i, 1] = trans[i, TR_FR]
         branch_array[nbranch + i, 2] = trans[i, TR_TO]
@@ -329,6 +329,8 @@ function raw_to_exapf(rawdata::Dict{String, Array})
     end
     data["branch"] = branch_array
 
-    return data
+    # TODO:
+    bus_id_to_indexes = Dict{Int, Int}([(i, i) for i in 1:nbus])
+    return data, bus_id_to_indexes
 end
 

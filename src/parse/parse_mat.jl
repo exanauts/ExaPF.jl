@@ -17,7 +17,6 @@ include("im_common.jl")
 "Parses the matpwer data from either a filename or an IO object"
 function parse_matpower(io::IO)::Dict
     mp_data = _parse_matpower_string(read(io, String))
-    #pm_data = _matpower_to_powermodels!(mp_data)
     return mp_data
 end
 
@@ -29,36 +28,41 @@ function parse_mat(file::String; kwargs...)::Dict
 end
 
 function mat_to_exapf(data_mat)
-    
+
     # create new data structure
     data = Dict{String,Array}()
-    
+
     # baseMVA
     data["baseMVA"] = [data_mat["baseMVA"]]
 
     # buses
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
-    
+
     nbus = length(data_mat["bus"])
     bus_array = zeros(nbus, 17)
 
+    # Keep the correspondence between Matpower's ID and ExaPF
+    # contiguous indexing.
+    bus_id_to_indexes = Dict{Int,Int}()
+
     for (i, bus) in enumerate(data_mat["bus"])
-        busn = i # we need an external2internal function
-        bus_array[busn, BUS_I] = busn
-        bus_array[busn, BUS_TYPE] = bus["bus_type"]
-        bus_array[busn, PD] = bus["pd"]
-        bus_array[busn, PD] = bus["pd"]
-        bus_array[busn, QD] = bus["qd"]
-        bus_array[busn, GS] = bus["gs"]
-        bus_array[busn, BS] = bus["bs"]
-        bus_array[busn, BUS_AREA] = bus["area"]
-        bus_array[busn, VM] = bus["vm"]
-        bus_array[busn, VA] = bus["va"]
-        bus_array[busn, BASE_KV] = bus["base_kv"]
-        bus_array[busn, ZONE] = bus["zone"]
-        bus_array[busn, VMAX] = bus["vmax"]
-        bus_array[busn, VMIN] = bus["vmin"]
+        busn = bus["bus_i"]
+        bus_id_to_indexes[busn] = i
+        bus_array[i, BUS_I] = busn
+        bus_array[i, BUS_TYPE] = bus["bus_type"]
+        bus_array[i, PD] = bus["pd"]
+        bus_array[i, PD] = bus["pd"]
+        bus_array[i, QD] = bus["qd"]
+        bus_array[i, GS] = bus["gs"]
+        bus_array[i, BS] = bus["bs"]
+        bus_array[i, BUS_AREA] = bus["area"]
+        bus_array[i, VM] = bus["vm"]
+        bus_array[i, VA] = bus["va"]
+        bus_array[i, BASE_KV] = bus["base_kv"]
+        bus_array[i, ZONE] = bus["zone"]
+        bus_array[i, VMAX] = bus["vmax"]
+        bus_array[i, VMIN] = bus["vmin"]
     end
     data["bus"] = bus_array
 
@@ -66,7 +70,7 @@ function mat_to_exapf(data_mat)
     GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IdxSet.idx_gen()
-    
+
     ngen = length(data_mat["gen"])
     gen_array = zeros(ngen, 25)
 
@@ -80,16 +84,18 @@ function mat_to_exapf(data_mat)
         gen_array[i, GEN_STATUS] = gen["gen_status"]
         gen_array[i, PMAX] = gen["pmax"]
         gen_array[i, PMIN] = gen["pmin"]
-        gen_array[i, PC1] = gen["pc1"]
-        gen_array[i, PC2] = gen["pc2"]
-        gen_array[i, QC1MIN] = gen["qc1min"]
-        gen_array[i, QC2MIN] = gen["qc2min"]
+        # pc1, pc2, qc1min, qc2min could be not specified.
+        # Set default value to 0.
+        gen_array[i, PC1] = get(gen, "pc1", 0.0)
+        gen_array[i, PC2] = get(gen, "pc2", 0.0)
+        gen_array[i, QC1MIN] = get(gen, "qc1min", 0.0)
+        gen_array[i, QC2MIN] = get(gen, "qc2min", 0.0)
     end
     data["gen"] = gen_array
-    
+
     F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C, TAP, SHIFT, BR_STATUS,
-    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IdxSet.idx_branch() 
-    
+    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IdxSet.idx_branch()
+
     nbranch = length(data_mat["branch"])
     branch_array = zeros(nbranch, 21)
 
@@ -113,7 +119,7 @@ function mat_to_exapf(data_mat)
     end
     data["branch"] = branch_array
 
-    return data
+    return data, bus_id_to_indexes
 end
 
 ### Data and functions specific to Matpower format ###
