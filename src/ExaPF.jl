@@ -24,14 +24,18 @@ using TimerOutputs
 export solve
 
 # Import submodules
-include("parse/parse.jl")
-using .Parse
 include("ad.jl")
 using .AD
 include("algorithms/precondition.jl")
 using .Precondition
+include("indexes.jl")
+using .IndexSet
 include("iterative.jl")
 using .Iterative
+include("parse/parse_mat.jl")
+using .ParseMAT
+include("parse/parse_psse.jl")
+using .ParsePSSE
 include("powersystem.jl")
 using .PowerSystem
 
@@ -188,6 +192,91 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
+function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+    P = 0.0
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+    end
+
+    return P
+end
+
+function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
+              p::AbstractArray, device=CPU())
+    
+    # indexes
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
+    GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
+    MU_QMIN = IndexSet.idx_gen()
+    MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
+    
+    # Set array type
+    # For CPU choose Vector and SparseMatrixCSC
+    # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
+    println("Target set to device $(device)")
+    if isa(device, CPU)
+        T = Vector
+        M = SparseMatrixCSC
+        A = Array
+    elseif isa(device, CUDADevice)
+        T = CuVector
+        M = CuSparseMatrixCSR
+        A = CuArray
+    else
+        error("Only `CPU` and `CUDADevice` are supported.")
+    end
+
+    # for now, let's just return the sum of all generator power
+    vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
+    
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
+    b2i = pf.bus_to_indexes
+    
+    ybus_re, ybus_im = Spmat{T}(pf.Ybus)
+    
+    # matpower assumes gens are ordered. Genrator in row i has its cost on row i
+    # of the cost table.
+    gens = pf.data["gen"]
+    baseMVA = pf.data["baseMVA"][1]
+    bus = pf.data["bus"]
+    cost_data = pf.data["cost"]
+    ngens = size(gens)[1]
+
+    # initialize cost
+    cost = 0.0
+    
+    # iterate generators and check if pv or ref.
+    for i = 1:ngens
+        # only 2nd degree polynomial implemented for now.
+        @assert cost_data[i, MODEL] == 2
+        @assert cost_data[i, NCOST] == 3
+        genbus = b2i[gens[i, GEN_BUS]]
+        bustype = bus[genbus, BUS_TYPE]
+
+        # polynomial coefficients
+        c0 = cost_data[i, COST][3] 
+        c1 = cost_data[i, COST][2] 
+        c2 = cost_data[i, COST][1]
+
+        if bustype == 2
+            cost += c0 + c1*pinj[genbus]*baseMVA + c2*(pinj[genbus]*baseMVA)^2
+        elseif bustype == 3
+            pinj_ref = get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
+            cost += c0 + c1*pinj_ref*baseMVA + c2*(pinj_ref*baseMVA)^2
+        end
+            
+    end
+
+    return cost
+end
+
 function solve(pf::PowerSystem.PowerNetwork,
     x::AbstractArray,
     u::AbstractArray,
@@ -228,22 +317,8 @@ function solve(pf::PowerSystem.PowerNetwork,
 
     ybus_re, ybus_im = Spmat{T}(Ybus)
 
-    # data index
-    BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
-    BUS_EVLO, BUS_TYPE = Parse.idx_bus()
-
-    GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
-    GEN_PT, GEN_PB = Parse.idx_gen()
-
-    LOAD_BUS, LOAD_ID, LOAD_STATUS, LOAD_PL, LOAD_QL = Parse.idx_load()
-
-    bus = data["BUS"]
-    gen = data["GENERATOR"]
-    load = data["LOAD"]
-
     nbus = pf.nbus
     ngen = pf.ngen
-    nload = pf.nload
 
     ref = pf.ref
     pv = pf.pv
@@ -281,7 +356,6 @@ function solve(pf::PowerSystem.PowerNetwork,
                             ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
                             ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                             pbus, qbus, pv, pq, nbus)
-
     # Initiate coloring for AD
     J = residualJacobian(V, Ybus, pv, pq)
     dim_J = size(J, 1)
@@ -330,6 +404,7 @@ function solve(pf::PowerSystem.PowerNetwork,
                                    ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
         J = stateJacobianAD.J
+        J = residualJacobian(V, Ybus, pv, pq)
 
         # Find descent direction
         n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)

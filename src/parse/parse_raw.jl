@@ -220,3 +220,117 @@ function parse_raw(filename::AbstractString; delim=",")
 
     return rawdata
 end
+
+function raw_to_exapf(rawdata::Dict{String, Array})
+
+    BUS_B, BUS_AREA, BUS_VM, BUS_VA, BUS_NVHI, BUS_NVLO, BUS_EVHI,
+    BUS_EVLO, BUS_TYPE = idx_bus()
+    GEN_BUS, GEN_ID, GEN_PG, GEN_QG, GEN_QT, GEN_QB, GEN_STAT,
+    GEN_PT, GEN_PB = idx_gen()
+    LOAD_BUS, LOAD_ID, LOAD_STATUS, LOAD_PL, LOAD_QL = idx_load()
+    BR_FR, BR_TO, BR_CKT, BR_R, BR_X, BR_B, BR_RATEA, BR_RATEC,
+        BR_STAT = idx_branch()
+    TR_FR, TR_TO, TR_CKT, TR_MAG1, TR_MAG2, TR_STAT, TR_R, TR_X, TR_WINDV1,
+        TR_ANG, TR_RATEA, TR_RATEC, TR_WINDV2 = idx_transformer()
+    FSH_BUS, FSH_ID, FSH_STAT, FSH_G, FSH_B = idx_fshunt()
+
+    data = Dict{String,Array}()
+    bus = rawdata["BUS"]
+    gen = rawdata["GENERATOR"]
+    load = rawdata["LOAD"]
+    branch = rawdata["BRANCH"]
+    trans = rawdata["TRANSFORMER"]
+    fsh = rawdata["FIXED SHUNT"]
+    SBASE = rawdata["CASE IDENTIFICATION"][1]
+
+    nbus = size(bus, 1)
+    ngen = size(gen, 1)
+    nload = size(load, 1)
+    nbranch = size(branch, 1)
+    ntrans = size(trans, 1)
+    nfsh = size(fsh, 1)
+
+    # create new data structure
+    data = Dict{String,Array}()
+
+    # perunit base
+    data["baseMVA"] = [SBASE]
+
+    # buses
+    bus_array = zeros(nbus, 17)
+    for i in 1:nbus
+        bus_array[i, 1] = bus[i, BUS_B]
+        bus_array[i, 2] = bus[i, BUS_TYPE]
+        bus_array[i, 3] = 0.0
+        bus_array[i, 4] = 0.0
+        bus_array[i, 5] = 0.0
+        bus_array[i, 6] = 0.0
+        bus_array[i, 7] = bus[i, BUS_AREA]
+        bus_array[i, 8] = bus[i, BUS_VM]
+        bus_array[i, 9] = bus[i, BUS_VA]
+    end
+
+    # fixed shunt
+    for i in 1:nfsh
+        if fsh[i, FSH_STAT] == 0
+            break
+        end
+        bus_idx = fsh[i, FSH_BUS]
+        bus_array[bus_idx, 5] += fsh[i, FSH_G]
+        bus_array[bus_idx, 6] += fsh[i, FSH_B]
+    end
+
+    # add load
+    for i in 1:nload
+        if load[i, LOAD_STATUS] == 0
+            break
+        end
+        bus_idx = load[i, LOAD_BUS]
+        Pd = load[i, LOAD_PL]
+        Qd = load[i, LOAD_PL]
+        bus_array[bus_idx, 3] += Pd
+        bus_array[bus_idx, 4] += Qd
+    end
+    data["bus"] = bus_array
+
+    # gens
+    gen_array = zeros(ngen, 25)
+    for i in 1:ngen
+        gen_array[i, 1] = gen[i, GEN_BUS]
+        gen_array[i, 2] = gen[i, GEN_PG]
+        gen_array[i, 3] = gen[i, GEN_QG]
+        gen_array[i, 8] = gen[i, GEN_STAT]
+    end
+    data["gen"] = gen_array
+
+    # branches
+    branch_array = zeros(nbranch + ntrans, 21)
+    for i in 1:nbranch
+        branch_array[i, 1] = branch[i, BR_FR]
+        branch_array[i, 2] = branch[i, BR_TO]
+        branch_array[i, 3] = branch[i, BR_R]
+        branch_array[i, 4] = branch[i, BR_X]
+        branch_array[i, 5] = branch[i, BR_B]
+        branch_array[i, 9] = 0.0
+        branch_array[i, 10] = 0.0
+        branch_array[i, 11] = branch[i, BR_STAT]
+    end
+
+    for i in 1:ntrans
+        branch_array[nbranch + i, 1] = trans[i, TR_FR]
+        branch_array[nbranch + i, 2] = trans[i, TR_TO]
+        branch_array[nbranch + i, 3] = trans[i, TR_R]
+        branch_array[nbranch + i, 4] = trans[i, TR_X]
+        branch_array[nbranch + i, 5] = 0.0
+        tap = trans[i, TR_WINDV1] / trans[i, TR_WINDV2]
+        branch_array[nbranch + i, 9] = tap
+        branch_array[nbranch + i, 10] = trans[i, TR_ANG]
+        branch_array[nbranch + i, 11] = trans[i, TR_STAT]
+    end
+    data["branch"] = branch_array
+
+    # TODO:
+    bus_id_to_indexes = Dict{Int, Int}([(i, i) for i in 1:nbus])
+    return data, bus_id_to_indexes
+end
+
