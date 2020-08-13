@@ -29,6 +29,7 @@ struct PowerNetwork
     ngen::Int64
 
     bustype::Array{Int64}
+    bus_to_indexes::Dict{Int, Int}
     ref::Array{Int64}
     pv::Array{Int64}
     pq::Array{Int64}
@@ -40,10 +41,10 @@ struct PowerNetwork
         if data_format == 0
             println("Reading PSSE format")
             data_raw = ParsePSSE.parse_raw(datafile)
-            data = ParsePSSE.raw_to_exapf(data_raw)
+            data, bus_id_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
         elseif data_format == 1
             data_mat = ParseMAT.parse_mat(datafile)
-            data = ParseMAT.mat_to_exapf(data_mat)
+            data, bus_id_to_indexes = ParseMAT.mat_to_exapf(data_mat)
         end
         # Parsed data indexes
         BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -65,14 +66,14 @@ struct PowerNetwork
         end
 
         # form Y matrix
-        Ybus = makeYbus(data)
+        Ybus = makeYbus(data, bus_id_to_indexes)
 
         # bus type indexing
-        ref, pv, pq, bustype = bustypeindex(bus, gen)
-    
-        Sbus = assembleSbus(gen, bus, SBASE)
-        
-        new(V, Ybus, data, nbus, ngen, bustype, ref, pv, pq, Sbus)
+        ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
+
+        Sbus = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
+
+        new(V, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, Sbus)
     end
 
 end
@@ -238,11 +239,11 @@ end
 Returns vectors indexing buses by type: ref, pv, pq.
 
 """
-function bustypeindex(bus, gen)
+function bustypeindex(bus, gen, bus_to_indexes)
     # retrieve indeces
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
-    
+
     GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IdxSet.idx_gen()
@@ -257,7 +258,8 @@ function bustypeindex(bus, gen)
 
     for i in 1:size(gen, 1)
         if gen[i, GEN_STATUS] == 1
-            gencon[Int(gen[i, GEN_BUS])] += 1
+            id_bus = bus_to_indexes[gen[i, GEN_BUS]]
+            gencon[id_bus] += 1
         end
     end
 
@@ -287,7 +289,7 @@ we do not have voltage-dependent loads, this vector only needs to be
 assembled once at the beginning of the power flow routine.
 
 """
-function assembleSbus(gen, bus, baseMVA)
+function assembleSbus(gen, bus, baseMVA, bus_to_indexes)
 
     ngen = size(gen, 1)
     nbus = size(bus, 1)
@@ -296,19 +298,21 @@ function assembleSbus(gen, bus, baseMVA)
     # retrieve indeces
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
-    
+
     GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IdxSet.idx_gen()
 
     for i in 1:ngen
         if gen[i, GEN_STATUS] == 1
-            Sbus[Int(gen[i, GEN_BUS])] += (gen[i, PG] + 1im*gen[i, QG])/baseMVA
+            id_bus = bus_to_indexes[gen[i, GEN_BUS]]
+            Sbus[id_bus] += (gen[i, PG] + 1im*gen[i, QG])/baseMVA
         end
     end
 
     for i in 1:nbus
-        Sbus[Int(bus[i, BUS_I])] -= (bus[i, PD] + 1im*bus[i, QD])/baseMVA
+        id_bus = bus_to_indexes[bus[i, BUS_I]]
+        Sbus[id_bus] -= (bus[i, PD] + 1im*bus[i, QD])/baseMVA
     end
 
     return Sbus
@@ -333,13 +337,12 @@ end
 #
 # where nb is the number of buses, nbr is the number of non-transformer
 # branches, and ntr is the number of transformer branches.
-function makeYbus(data)
+function makeYbus(data, bus_to_indexes)
     baseMVA = data["baseMVA"]
     bus     = data["bus"]
     branch  = data["branch"]
-    
     F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C, TAP, SHIFT, BR_STATUS,
-    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IdxSet.idx_branch() 
+    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IdxSet.idx_branch()
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
 
@@ -373,26 +376,26 @@ function makeYbus(data)
     # then Psh - j Qsh = V * conj(Ysh * V) = conj(Ysh) = Gs - j Bs,
     # i.e. Ysh = Psh + j Qsh, so ...
     Ysh = (bus[:, GS] + 1im * bus[:, BS]) / baseMVA[1] # vector of shunt admittances
-    
-	# build connection matrices
-    f = branch[:, F_BUS]                           # list of "from" buses
-    t = branch[:, T_BUS]                            # list of "to" buses
-    
+
+    # build connection matrices
+    f = [bus_to_indexes[e] for e in branch[:, F_BUS]] # list of "from" buses
+    t = [bus_to_indexes[e] for e in branch[:, T_BUS]] # list of "to" buses
+
     Cf = sparse(1:nl, f, ones(nl), nl, nb)       # connection matrix for line & from buses
     Ct = sparse(1:nl, t, ones(nl), nl, nb)       # connection matrix for line & to buses
 
     # build Yf and Yt such that Yf * V is the vector of complex branch currents injected
     # at each branch's "from" bus, and Yt is the same for the "to" bus end
     i = [1:nl; 1:nl]
-	Yf = sparse(i, [f; t], [Yff; Yft], nl, nb)
-	Yt = sparse(i, [f; t], [Ytf; Ytt], nl, nb)
-    
+    Yf = sparse(i, [f; t], [Yff; Yft], nl, nb)
+    Yt = sparse(i, [f; t], [Ytf; Ytt], nl, nb)
+
     # Yf = spdiags(Yff, 0, nl, nl) * Cf + spdiags(Yft, 0, nl, nl) * Ct;
     # Yt = spdiags(Ytf, 0, nl, nl) * Cf + spdiags(Ytt, 0, nl, nl) * Ct;
 
     # build Ybus
     Ybus = Cf' * Yf + Ct' * Yt + sparse(1:nb, 1:nb, Ysh, nb, nb)
-    
+
     return Ybus
 
 end
