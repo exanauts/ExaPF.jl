@@ -192,8 +192,20 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
+function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+    P = 0.0
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+    end
+
+    return P
+end
+
 function cost(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
-              p::AbstractArray)
+              p::AbstractArray, device=CPU())
     
     # indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -202,6 +214,22 @@ function cost(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IdxSet.idx_gen()
     MODEL, STARTUP, SHUTDOWN, NCOST, COST = IdxSet.idx_cost()
+    
+    # Set array type
+    # For CPU choose Vector and SparseMatrixCSC
+    # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
+    println("Target set to device $(device)")
+    if isa(device, CPU)
+        T = Vector
+        M = SparseMatrixCSC
+        A = Array
+    elseif isa(device, CUDADevice)
+        T = CuVector
+        M = CuSparseMatrixCSR
+        A = CuArray
+    else
+        error("Only `CPU` and `CUDADevice` are supported.")
+    end
 
     # for now, let's just return the sum of all generator power
     vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
@@ -209,7 +237,10 @@ function cost(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
     ref = pf.ref
     pv = pf.pv
     pq = pf.pq
-
+    b2i = pf.bus_to_indexes
+    
+    ybus_re, ybus_im = Spmat{T}(pf.Ybus)
+    
     # matpower assumes gens are ordered. Genrator in row i has its cost on row i
     # of the cost table.
     gens = pf.data["gen"]
@@ -226,17 +257,22 @@ function cost(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
         # only 2nd degree polynomial implemented for now.
         @assert cost_data[i, MODEL] == 2
         @assert cost_data[i, NCOST] == 3
-        genbus = gens[i, GEN_BUS]
+        genbus = b2i[gens[i, GEN_BUS]]
         bustype = bus[genbus, BUS_TYPE]
 
         # polynomial coefficients
         c0 = cost_data[i, COST][3] 
         c1 = cost_data[i, COST][2] 
-        c2 = cost_data[i, COST][1] 
-        cost += c0 + c1*pinj[genbus]*baseMVA + c2*(pinj[genbus]*baseMVA)^2
+        c2 = cost_data[i, COST][1]
+
+        if bustype == 2
+            cost += c0 + c1*pinj[genbus]*baseMVA + c2*(pinj[genbus]*baseMVA)^2
+        elseif bustype == 3
+            pinj_ref = get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
+            cost += c0 + c1*pinj_ref*baseMVA + c2*(pinj_ref*baseMVA)^2
+        end
             
     end
-
 
     return cost
 end
