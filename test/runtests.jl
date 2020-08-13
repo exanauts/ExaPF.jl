@@ -20,8 +20,8 @@ case = "case14.raw"
     to = TimerOutputs.TimerOutput()
     datafile = joinpath(dirname(@__FILE__), case)
     data_raw = ParsePSSE.parse_raw(datafile)
-    data = ParsePSSE.raw_to_exapf(data_raw)
-    
+    data, bus_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
+
     # Parsed data indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
@@ -40,7 +40,7 @@ case = "case14.raw"
     end
 
     # form Y matrix
-    Ybus = PowerSystem.makeYbus(data);
+    Ybus = PowerSystem.makeYbus(data, bus_to_indexes);
 
     Vm = abs.(V)
     Va = angle.(V)
@@ -51,11 +51,11 @@ case = "case14.raw"
 
     ybus_re, ybus_im = ExaPF.Spmat{T}(Ybus)
     SBASE = data["baseMVA"][1]
-    Sbus = PowerSystem.assembleSbus(gen, bus, SBASE)
+    Sbus = PowerSystem.assembleSbus(gen, bus, SBASE, bus_to_indexes)
     pbus = real(Sbus)
     qbus = imag(Sbus)
 
-    ref, pv, pq = PowerSystem.bustypeindex(bus, gen)
+    ref, pv, pq = PowerSystem.bustypeindex(bus, gen, bus_to_indexes)
     npv = size(pv, 1)
     npq = size(pq, 1)
 
