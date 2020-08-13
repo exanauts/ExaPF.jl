@@ -1,10 +1,14 @@
 module AD
 
 using CUDA
+using CUDA.CUSPARSE
 using ForwardDiff
 using KernelAbstractions
 using SparseArrays
 using TimerOutputs
+using SparsityDetection
+using SparseDiffTools
+using ..ExaPF: Spmat
 
 abstract type AbstractJacobianAD end
 
@@ -19,10 +23,9 @@ struct StateJacobianAD <: AbstractJacobianAD
     varx
     t1svarx
     map
-    function StateJacobianAD(J, coloring, F, v_m, v_a, pbus, pv, pq, ref)
+    function StateJacobianAD(residualFunction, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
-        ncolor = size(unique(coloring),1)
         if F isa Array
             T = Vector
             M = Matrix
@@ -40,6 +43,39 @@ struct StateJacobianAD <: AbstractJacobianAD
         map = T{Int64}(vcat(mappv, mappq, pq))
         nmap = size(map,1)
 
+        # Need a host arrays for the sparsity detection below
+        spmap = Vector(map)
+        hybus_re = Spmat{Vector}(ybus_re)
+        hybus_im = Spmat{Vector}(ybus_im)
+        hpv = Vector(pv)
+        hpq = Vector(pq)
+        hpinj = Vector(pinj)
+        hqinj = Vector(qinj)
+        # Get the sparsity pattern
+        function sparsity_residual(output,input)
+            x = zeros(eltype(input), nv_m + nv_a)
+            x[spmap] .= input
+            residualFunction(
+                output,
+                x[1:nv_m],
+                x[nv_m+1:nv_m+nv_a],
+                hybus_re,
+                hybus_im,
+                hpinj, hqinj,
+                hpv, hpq, nbus
+            )
+        end
+        input = rand(nmap)
+        output = zeros(Float64, length(F))
+        sparsity_pattern = SparsityDetection.jacobian_sparsity(sparsity_residual, output, input)
+        J = Float64.(sparse(sparsity_pattern))
+        coloring = T{Int64}(matrix_colors(J))
+        ncolor = size(unique(coloring),1)
+        println("Number of Jacobian colors: ", ncolor)
+        println("Creating JacobianAD...")
+        if F isa CuArray
+            J = CuSparseMatrixCSR(J)
+        end
         t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
         # x = T{Float64}(undef, nv_m + nv_a)
         x = T(zeros(Float64, nv_m + nv_a))
@@ -77,10 +113,11 @@ struct DesignJacobianAD <: AbstractJacobianAD
     varx
     t1svarx
     map
-    function DesignJacobianAD(J, coloring, F, v_m, v_a, pbus, pv, pq, ref)
+    # function DesignJacobianAD(J, coloring, F, v_m, v_a, pbus, pv, pq, ref)
+    function DesignJacobianAD(residualFunction, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
-        npbus = size(pbus, 1)
+        npbus = size(pinj, 1)
         nref = size(ref, 1)
         # ncolor = size(unique(coloring),1)
         if F isa Array
@@ -99,6 +136,38 @@ struct DesignJacobianAD <: AbstractJacobianAD
         map = T{Int64}(vcat(ref, mappv, pv))
         nmap = size(map,1)
 
+        # Need a host arrays for the sparsity detection below
+        spmap = Vector(map)
+        hybus_re = Spmat{Vector}(ybus_re)
+        hybus_im = Spmat{Vector}(ybus_im)
+        hpv = Vector(pv)
+        hpq = Vector(pq)
+        hpinj = Vector(pinj)
+        hqinj = Vector(qinj)
+        # Get the sparsity pattern
+        function sparsity_residual(output,input)
+            x = zeros(eltype(input), nv_m + nv_a)
+            x[spmap] .= input
+            residualFunction(
+                output,
+                x[1:nv_m],
+                x[nv_m+1:nv_m+nv_a],
+                hybus_re, hybus_im,
+                hpinj, hqinj,
+                hpv, hpq, nbus
+            )
+        end
+        input = rand(nmap)
+        output = zeros(Float64, length(F))
+        sparsity_pattern = SparsityDetection.jacobian_sparsity(sparsity_residual, output, input)
+        J = Float64.(sparse(sparsity_pattern))
+        coloring = T{Int64}(matrix_colors(J))
+        ncolor = size(unique(coloring),1)
+        println("Number of Jacobian colors: ", ncolor)
+        println("Creating JacobianAD...")
+        if F isa CuArray
+            J = CuSparseMatrixCSR(J)
+        end
         t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
         # x = T{Float64}(undef, nv_m + nv_a)
         x = T(zeros(Float64, npbus + nv_a))
@@ -111,9 +180,9 @@ struct DesignJacobianAD <: AbstractJacobianAD
         t1sseeds = T{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
         for i in 1:nmap
             for j in 1:ncolor
-                # if coloring[i] == j
+                if coloring[i] == j
                     t1sseedvec[j] = 1.0
-                # end
+                end
             end
             t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
             t1sseedvec .= 0
@@ -218,8 +287,7 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
             arrays.t1sF,
             arrays.t1sx[1:nv_m],
             arrays.t1sx[nv_m+1:nv_m+nv_a],
-            ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-            ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+            ybus_re, ybus_im,
             pinj, qinj,
             pv, pq, nbus
         )
@@ -310,8 +378,7 @@ function designJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
             arrays.t1sF,
             t1sv_m,
             arrays.t1sx[1:nv_a],
-            ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-            ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+            ybus_re, ybus_im,
             arrays.t1sx[nv_a+1:nv_a + npinj], qinj,
             pv, pq, nbus
         )

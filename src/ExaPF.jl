@@ -24,6 +24,7 @@ using TimerOutputs
 export solve
 
 # Import submodules
+include("helpers.jl")
 include("parse/parse.jl")
 using .Parse
 include("ad.jl")
@@ -36,20 +37,6 @@ include("powersystem.jl")
 using .PowerSystem
 
 const TIMER = TimerOutput()
-
-
-mutable struct Spmat{T}
-    colptr
-    rowval
-    nzval
-
-    # function spmat{T}(colptr::Vector{Int64}, rowval::Vector{Int64}, nzval::Vector{T}) where T
-    function Spmat{T}(mat::SparseMatrixCSC{Complex{Float64}, Int}) where T
-        matreal = new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(real.(mat.nzval)))
-        matimag = new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(imag.(mat.nzval)))
-        return matreal, matimag
-    end
-end
 
 """
 residualFunction
@@ -107,6 +94,37 @@ function residualFunction_real!(F, v_re, v_im,
 
     return F
 end
+function residualFunction_polar_sparsity!(F, v_m, v_a,
+                     ybus_re, ybus_im,
+                     pinj, qinj, pv, pq, nbus)
+
+    npv = size(pv, 1)
+    npq = size(pq, 1)
+
+    for i in 1:length(pv)+length(pq)
+        # REAL PQ: (npv+1:npv+npq)
+        # IMAG PQ: (npv+npq+1:npv+2npq)
+        fr = (i <= npv) ? pv[i] : pq[i - npv]
+        F[i] -= pinj[fr]
+        if i > npv
+            F[i + npq] -= qinj[fr]
+        end
+        for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
+            to = ybus_re.rowval[c]
+            aij = v_a[fr] - v_a[to]
+            # f_re = a * cos + b * sin
+            # f_im = a * sin - b * cos
+            coef_cos = v_m[fr]*v_m[to]*ybus_re.nzval[c]
+            coef_sin = v_m[fr]*v_m[to]*ybus_im.nzval[c]
+            cos_val = cos(aij)
+            sin_val = sin(aij)
+            F[i] += coef_cos * cos_val + coef_sin * sin_val
+            if i > npv
+                F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
+            end
+        end
+    end
+end
 
 @kernel function residual_kernel!(F, v_m, v_a,
                      ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
@@ -142,8 +160,8 @@ end
 end
 
 function residualFunction_polar!(F, v_m, v_a,
-                     ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                     ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
+                     ybus_re,
+                     ybus_im,
                      pinj, qinj, pv, pq, nbus)
     npv = length(pv)
     npq = length(pq)
@@ -153,8 +171,8 @@ function residualFunction_polar!(F, v_m, v_a,
         kernel! = residual_kernel!(CUDADevice(), 256)
     end
     ev = kernel!(F, v_m, v_a,
-                 ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                 ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
+                 ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+                 ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                  pinj, qinj, pv, pq, nbus,
                  ndrange=npv+npq)
     wait(ev)
@@ -278,13 +296,14 @@ function solve(pf::PowerSystem.PowerNetwork,
 
     # Evaluate residual function
     residualFunction_polar!(F, Vm, Va,
-                            ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-                            ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                            ybus_re, ybus_im,
                             pbus, qbus, pv, pq, nbus)
-
-    # Initiate coloring for AD
-    J = residualJacobian(V, Ybus, pv, pq)
-    dim_J = size(J, 1)
+    # Build the AD Jacobian structure
+    stateJacobianAD = AD.StateJacobianAD(residualFunction_polar_sparsity!, F, Vm, Va,
+                                         ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
+    designJacobianAD = AD.DesignJacobianAD(residualFunction_polar_sparsity!, F, Vm, Va, 
+                                           ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
+    J = stateJacobianAD.J
     preconditioner = Precondition.NoPreconditioner()
     if solver != "default"
         nblock = size(J,1) / npartitions
@@ -294,15 +313,6 @@ function solve(pf::PowerSystem.PowerNetwork,
         preconditioner = Precondition.Preconditioner(J, npartitions, device)
         println("$npartitions partitions created")
     end
-
-    println("Coloring...")
-    @timeit TIMER "Coloring" coloring = T{Int64}(matrix_colors(J))
-    ncolors = size(unique(coloring),1)
-    println("Number of Jacobian colors: ", ncolors)
-    println("Creating JacobianAD...")
-    J = M(J)
-    stateJacobianAD = AD.StateJacobianAD(J, coloring, F, Vm, Va, pbus, pv, pq, ref)
-    # designJacobianAD = AD.DesignJacobianAD(J, coloring, F, Vm, Va, pbus, pv, pq, ref)
 
     # check for convergence
     normF = norm(F, Inf)
@@ -360,8 +370,7 @@ function solve(pf::PowerSystem.PowerNetwork,
         F .= 0.0
         @timeit TIMER "Residual function" begin
             residualFunction_polar!(F, Vm, Va,
-                ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-                ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                ybus_re, ybus_im,
                 pbus, qbus, pv, pq, nbus)
         end
 
@@ -382,9 +391,9 @@ function solve(pf::PowerSystem.PowerNetwork,
     # Timer outputs display
     show(TIMER)
     reset_timer!(TIMER)
-    # AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
-    #                         ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
-    return V, converged, normF, linsol_iters[1], sum(linsol_iters)#, designJacobianAD.J
+    AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
+                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
+    return V, converged, normF, linsol_iters[1], sum(linsol_iters), designJacobianAD.J
 end
 
 # end of module
