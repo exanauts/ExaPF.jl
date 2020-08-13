@@ -24,5 +24,5 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     @test isapprox(S, pf.Sbus)
 
 
-    #c = ExaPF.cost(pf, x, u, p)
+    c = ExaPF.cost_function(pf, x, u, p)
 end

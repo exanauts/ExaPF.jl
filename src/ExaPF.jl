@@ -204,7 +204,7 @@ function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
     return P
 end
 
-function cost(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
+function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
               p::AbstractArray, device=CPU())
     
     # indexes

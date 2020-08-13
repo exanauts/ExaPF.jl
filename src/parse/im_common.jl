@@ -4,7 +4,6 @@ function arrays_to_dicts!(data::Dict{String, <:Any})
     # update lookup structure
     for (k, v) in data
         if isa(v, Array) && length(v) > 0 && isa(v[1], Dict)
-            #println("updating $(k)")
             dict = Dict{String, Any}()
             for (i, item) in enumerate(v)
                 if haskey(item, "index")

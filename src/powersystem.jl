@@ -390,9 +390,6 @@ function makeYbus(data, bus_to_indexes)
     Yf = sparse(i, [f; t], [Yff; Yft], nl, nb)
     Yt = sparse(i, [f; t], [Ytf; Ytt], nl, nb)
 
-    # Yf = spdiags(Yff, 0, nl, nl) * Cf + spdiags(Yft, 0, nl, nl) * Ct;
-    # Yt = spdiags(Ytf, 0, nl, nl) * Cf + spdiags(Ytt, 0, nl, nl) * Ct;
-
     # build Ybus
     Ybus = Cf' * Yf + Ct' * Yt + sparse(1:nb, 1:nb, Ysh, nb, nb)
 
