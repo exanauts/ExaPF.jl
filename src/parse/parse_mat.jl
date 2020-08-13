@@ -41,7 +41,7 @@ function mat_to_exapf(data_mat)
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
     
     nbus = length(data_mat["bus"])
-    bus_array = zeros(nbus, 17)
+    bus_array = Array{Any}(undef, nbus, 17)
 
     for (i, bus) in enumerate(data_mat["bus"])
         busn = i # we need an external2internal function
@@ -68,8 +68,8 @@ function mat_to_exapf(data_mat)
     MU_QMIN = IdxSet.idx_gen()
     
     ngen = length(data_mat["gen"])
-    gen_array = zeros(ngen, 25)
-
+    gen_array = Array{Any}(undef, ngen, 25)
+    
     for (i, gen) in enumerate(data_mat["gen"])
         gen_array[i, GEN_BUS] = gen["gen_bus"]
         gen_array[i, PG] = gen["pg"]
@@ -91,6 +91,7 @@ function mat_to_exapf(data_mat)
     ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IdxSet.idx_branch() 
     
     nbranch = length(data_mat["branch"])
+    #branch_array = Array{Any}(undef, nbranch, 21)
     branch_array = zeros(nbranch, 21)
 
     for (i, branch) in enumerate(data_mat["branch"])
@@ -112,6 +113,18 @@ function mat_to_exapf(data_mat)
         #branch_array[i, QT] = branch["qt"]
     end
     data["branch"] = branch_array
+    
+    MODEL, STARTUP, SHUTDOWN, NCOST, COST = IdxSet.idx_cost()
+    ncost = length(data_mat["gencost"])
+    cost_array = Array{Any}(undef, ncost, 5)
+    for (i, cos) in enumerate(data_mat["gencost"])
+        cost_array[i, MODEL] = cos["model"]
+        cost_array[i, STARTUP] = cos["startup"]
+        cost_array[i, SHUTDOWN] = cos["shutdown"]
+        cost_array[i, NCOST] = cos["ncost"]
+        cost_array[i, COST] = cos["cost"]
+    end
+    data["cost"] = cost_array
 
     return data
 end

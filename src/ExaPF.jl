@@ -194,6 +194,14 @@ end
 
 function cost(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
               p::AbstractArray)
+    
+    # indexes
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+    GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
+    MU_QMIN = IdxSet.idx_gen()
+    MODEL, STARTUP, SHUTDOWN, NCOST, COST = IdxSet.idx_cost()
 
     # for now, let's just return the sum of all generator power
     vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
@@ -202,12 +210,33 @@ function cost(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
     pv = pf.pv
     pq = pf.pq
 
+    # matpower assumes gens are ordered. Genrator in row i has its cost on row i
+    # of the cost table.
+    gens = pf.data["gen"]
+    baseMVA = pf.data["baseMVA"][1]
+    bus = pf.data["bus"]
+    cost_data = pf.data["cost"]
+    ngens = size(gens)[1]
+
+    # initialize cost
     cost = 0.0
+    
+    # iterate generators and check if pv or ref.
+    for i = 1:ngens
+        # only 2nd degree polynomial implemented for now.
+        @assert cost_data[i, MODEL] == 2
+        @assert cost_data[i, NCOST] == 3
+        genbus = gens[i, GEN_BUS]
+        bustype = bus[genbus, BUS_TYPE]
 
-    # add pv buses
-    cost += sum(pinj[pv])
+        # polynomial coefficients
+        c0 = cost_data[i, COST][3] 
+        c1 = cost_data[i, COST][2] 
+        c2 = cost_data[i, COST][1] 
+        cost += c0 + c1*pinj[genbus]*baseMVA + c2*(pinj[genbus]*baseMVA)^2
+            
+    end
 
-    # TODO: add slack bus injection
 
     return cost
 end

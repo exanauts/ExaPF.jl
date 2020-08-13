@@ -96,7 +96,7 @@ function idx_cost()
                        # or number of coefficients in polynomial cost function
     COST        = 5    # parameters defining total cost function begin in this col
     
-    return MODEL, STARTUP, NCOST, COST
+    return MODEL, STARTUP, SHUTDOWN, NCOST, COST
 end
 
 end
