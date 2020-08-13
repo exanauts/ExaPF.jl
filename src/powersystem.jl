@@ -1,6 +1,6 @@
 module PowerSystem
 
-using ..ExaPF: ParsePSSE, ParseMAT, IdxSet
+using ..ExaPF: ParsePSSE, ParseMAT, IndexSet
 
 import Base: show
 using Printf
@@ -48,7 +48,7 @@ struct PowerNetwork
         end
         # Parsed data indexes
         BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-        LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+        LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
         # retrive required data
         bus = data["bus"]
@@ -242,11 +242,11 @@ Returns vectors indexing buses by type: ref, pv, pq.
 function bustypeindex(bus, gen, bus_to_indexes)
     # retrieve indeces
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
     GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
-    MU_QMIN = IdxSet.idx_gen()
+    MU_QMIN = IndexSet.idx_gen()
 
 
     # form vector that lists the number of generators per bus.
@@ -297,11 +297,11 @@ function assembleSbus(gen, bus, baseMVA, bus_to_indexes)
 
     # retrieve indeces
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
     GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
-    MU_QMIN = IdxSet.idx_gen()
+    MU_QMIN = IndexSet.idx_gen()
 
     for i in 1:ngen
         if gen[i, GEN_STATUS] == 1
@@ -342,9 +342,9 @@ function makeYbus(data, bus_to_indexes)
     bus     = data["bus"]
     branch  = data["branch"]
     F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C, TAP, SHIFT, BR_STATUS,
-    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IdxSet.idx_branch()
+    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IndexSet.idx_branch()
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
     # constants
     nb = size(bus, 1)          # number of buses

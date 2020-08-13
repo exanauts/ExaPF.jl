@@ -29,7 +29,7 @@ using .AD
 include("algorithms/precondition.jl")
 using .Precondition
 include("indexes.jl")
-using .IdxSet
+using .IndexSet
 include("iterative.jl")
 using .Iterative
 include("parse/parse_mat.jl")
@@ -209,11 +209,11 @@ function cost(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
     
     # indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
     GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
-    MU_QMIN = IdxSet.idx_gen()
-    MODEL, STARTUP, SHUTDOWN, NCOST, COST = IdxSet.idx_cost()
+    MU_QMIN = IndexSet.idx_gen()
+    MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
     
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC

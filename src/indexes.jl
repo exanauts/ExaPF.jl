@@ -1,4 +1,4 @@
-module IdxSet
+module IndexSet
 
 # WE USE MATPOWER'S DATA FORMAT
 

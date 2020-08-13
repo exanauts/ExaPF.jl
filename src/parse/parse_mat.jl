@@ -9,7 +9,7 @@
 
 module ParseMAT
 
-using ..ExaPF: IdxSet
+using ..ExaPF: IndexSet
 
 include("matlab.jl")
 include("im_common.jl")
@@ -37,7 +37,7 @@ function mat_to_exapf(data_mat)
 
     # buses
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
     nbus = length(data_mat["bus"])
     bus_array = Array{Any}(undef, nbus, 17)
@@ -69,7 +69,7 @@ function mat_to_exapf(data_mat)
     # generators
     GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
-    MU_QMIN = IdxSet.idx_gen()
+    MU_QMIN = IndexSet.idx_gen()
 
     ngen = length(data_mat["gen"])
     gen_array = Array{Any}(undef, ngen, 25)
@@ -94,7 +94,7 @@ function mat_to_exapf(data_mat)
     data["gen"] = gen_array
 
     F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C, TAP, SHIFT, BR_STATUS,
-    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IdxSet.idx_branch()
+    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IndexSet.idx_branch()
 
     nbranch = length(data_mat["branch"])
     #branch_array = Array{Any}(undef, nbranch, 21)
@@ -120,7 +120,7 @@ function mat_to_exapf(data_mat)
     end
     data["branch"] = branch_array
     
-    MODEL, STARTUP, SHUTDOWN, NCOST, COST = IdxSet.idx_cost()
+    MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
     ncost = length(data_mat["gencost"])
     cost_array = Array{Any}(undef, ncost, 5)
     for (i, cos) in enumerate(data_mat["gencost"])

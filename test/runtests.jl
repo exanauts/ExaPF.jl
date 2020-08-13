@@ -8,7 +8,7 @@ using SparseArrays
 using Test
 using TimerOutputs
 
-import ExaPF: ParsePSSE, PowerSystem, IdxSet
+import ExaPF: ParsePSSE, PowerSystem, IndexSet
 
 Random.seed!(2713)
 
@@ -24,7 +24,7 @@ case = "case14.raw"
 
     # Parsed data indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IdxSet.idx_bus()
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
     # retrive required data
     bus = data["bus"]

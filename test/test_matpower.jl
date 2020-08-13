@@ -2,7 +2,7 @@
 using Test
 using ExaPF
 
-import ExaPF: ParseMAT, PowerSystem, IdxSet
+import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "Power flow 9 bus case" begin
     datafile = "test/case9.m"
