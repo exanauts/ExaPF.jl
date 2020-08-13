@@ -29,6 +29,7 @@ struct PowerNetwork
     ngen::Int64
 
     bustype::Array{Int64}
+    bus_to_indexes::Dict{Int, Int}
     ref::Array{Int64}
     pv::Array{Int64}
     pq::Array{Int64}
@@ -72,7 +73,7 @@ struct PowerNetwork
 
         Sbus = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
 
-        new(V, Ybus, data, nbus, ngen, bustype, ref, pv, pq, Sbus)
+        new(V, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, Sbus)
     end
 
 end
