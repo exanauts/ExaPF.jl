@@ -200,6 +200,11 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
+"""
+get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+Computes the power injection at node "fr".
+"""
 function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
 
     P = 0.0
@@ -210,6 +215,28 @@ function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
     end
 
     return P
+end
+
+function get_power_injection_partials(fr, v_m, v_a, ybus_re, ybus_im)
+    
+    nbus = length(v_m)
+    dPdVm = zeros(nbus)
+    dPdVa = zeros(nbus)
+    
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        # partials w.r.t "to" buses
+        if to != fr
+            dPdVm[to] = v_m[fr]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+            dPdVa[to] = v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
+        end
+
+        # partial w.r.t "fr" bus
+        dPdVm[fr] += v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+        dPdVa[fr] += v_m[to]*v_m[fr]*(-ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
+    end
+    return dPdVm, dPdVa
 end
 
 function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
@@ -283,6 +310,95 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
     end
 
     return cost
+end
+
+function cost_gradients(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
+              p::AbstractArray, device=CPU())
+
+    # indexes
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
+    GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
+    MU_QMIN = IndexSet.idx_gen()
+    MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
+
+    # Set array type
+    # For CPU choose Vector and SparseMatrixCSC
+    # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
+    println("Target set to device $(device)")
+    if isa(device, CPU)
+        T = Vector
+        M = SparseMatrixCSC
+        A = Array
+    elseif isa(device, CUDADevice)
+        T = CuVector
+        M = CuSparseMatrixCSR
+        A = CuArray
+    else
+        error("Only `CPU` and `CUDADevice` are supported.")
+    end
+
+    # for now, let's just return the sum of all generator power
+    vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
+
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
+    b2i = pf.bus_to_indexes
+
+    nref = length(ref)
+    npv = length(pv)
+    npq = length(pq)
+
+    ybus_re, ybus_im = Spmat{T}(pf.Ybus)
+
+    # matpower assumes gens are ordered. Genrator in row i has its cost on row i
+    # of the cost table.
+    gens = pf.data["gen"]
+    baseMVA = pf.data["baseMVA"][1]
+    bus = pf.data["bus"]
+    cost_data = pf.data["cost"]
+    ngens = size(gens)[1]
+
+
+    dCdx = zeros(length(x))
+    dCdu = zeros(length(u))
+    
+    for i = 1:ngens
+        # only 2nd degree polynomial implemented for now.
+        @assert cost_data[i, MODEL] == 2
+        @assert cost_data[i, NCOST] == 3
+        genbus = b2i[gens[i, GEN_BUS]]
+        bustype = bus[genbus, BUS_TYPE]
+
+        # polynomial coefficients
+        c0 = cost_data[i, COST][3]
+        c1 = cost_data[i, COST][2]
+        c2 = cost_data[i, COST][1]
+
+        if bustype == 2
+            # This is shameful. Cannot think of a better way to do it r.n
+            idx_pv = findall(pv.==genbus)[1]
+            dCdu[nref + idx_pv] = c1*baseMVA + 2*c2*baseMVA*pinj[genbus]
+        elseif bustype == 3
+            # let c_i(x, u) = c0 + c1*baseMVA*f(x, u) + c2*(baseMVA*f(x, u))^2
+            # c_i(x, u) = c1*baseMVA*f'(x, u) + 2*c2*baseMVA*f(x, u)*f'(x, u)
+            idx_ref = findall(ref.==genbus)[1]
+            dPdVm, dPdVa = get_power_injection_partials(genbus, vmag, vang, ybus_re, ybus_im)
+            pinj_ref = get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
+
+            dCdx[1:npq] += c1*baseMVA*dPdVm[pq] + 2*c2*baseMVA*pinj_ref*dPdVm[pq]
+            dCdx[npq + 1:2*npq] += c1*baseMVA*dPdVa[pq] + 2*c2*baseMVA*pinj_ref*dPdVa[pq]
+            dCdx[2*npq + 1:2*npq + npv] += c1*baseMVA*dPdVa[pv] + 2*c2*baseMVA*pinj_ref*dPdVa[pv]
+        
+            dCdu[1:nref] += c1*baseMVA*dPdVm[ref] + 2*c2*baseMVA*pinj_ref*dPdVm[ref]
+            dCdu[nref + npv + 1:nref + 2*npv] += (c1*baseMVA*dPdVm[pv] 
+                                                    + 2*c2*baseMVA*pinj_ref*dPdVm[pv])
+        end
+
+    end
+    return dCdx, dCdu
 end
 
 function solve(pf::PowerSystem.PowerNetwork,

@@ -25,4 +25,5 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 
     c = ExaPF.cost_function(pf, x, u, p)
+    dCdx, dCdu = ExaPF.cost_gradients(pf, x, u, p)
 end
