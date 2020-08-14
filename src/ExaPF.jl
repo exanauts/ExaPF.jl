@@ -55,6 +55,14 @@ mutable struct Spmat{T}
     end
 end
 
+struct ConvergenceStatus
+    has_converged::Bool
+    n_iterations::Int
+    norm_residuals::Float64
+    n_linear_solves::Int
+end
+
+
 """
 residualFunction
 
@@ -206,7 +214,7 @@ end
 
 function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
               p::AbstractArray, device=CPU())
-    
+
     # indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
@@ -214,7 +222,7 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
     MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
-    
+
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
@@ -233,14 +241,14 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
 
     # for now, let's just return the sum of all generator power
     vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
-    
+
     ref = pf.ref
     pv = pf.pv
     pq = pf.pq
     b2i = pf.bus_to_indexes
-    
+
     ybus_re, ybus_im = Spmat{T}(pf.Ybus)
-    
+
     # matpower assumes gens are ordered. Genrator in row i has its cost on row i
     # of the cost table.
     gens = pf.data["gen"]
@@ -251,7 +259,7 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
 
     # initialize cost
     cost = 0.0
-    
+
     # iterate generators and check if pv or ref.
     for i = 1:ngens
         # only 2nd degree polynomial implemented for now.
@@ -261,8 +269,8 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
         bustype = bus[genbus, BUS_TYPE]
 
         # polynomial coefficients
-        c0 = cost_data[i, COST][3] 
-        c1 = cost_data[i, COST][2] 
+        c0 = cost_data[i, COST][3]
+        c1 = cost_data[i, COST][2]
         c2 = cost_data[i, COST][1]
 
         if bustype == 2
@@ -271,7 +279,7 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
             pinj_ref = get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
             cost += c0 + c1*pinj_ref*baseMVA + c2*(pinj_ref*baseMVA)^2
         end
-            
+
     end
 
     return cost
@@ -404,7 +412,6 @@ function solve(pf::PowerSystem.PowerNetwork,
                                    ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
         J = stateJacobianAD.J
-        J = residualJacobian(V, Ybus, pv, pq)
 
         # Find descent direction
         n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)
@@ -459,7 +466,8 @@ function solve(pf::PowerSystem.PowerNetwork,
     reset_timer!(TIMER)
     # AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
     #                         ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
-    return V, converged, normF, linsol_iters[1], sum(linsol_iters)#, designJacobianAD.J
+    conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
+    return V, conv
 end
 
 # end of module
