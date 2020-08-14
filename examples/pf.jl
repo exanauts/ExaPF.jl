@@ -1,7 +1,7 @@
 using ExaPF
-using ExaPF.Parse
-using ExaPF.PowerSystem
 using KernelAbstractions
+
+import ExaPF: ParsePSSE, PowerSystem, IndexSet
 
 # file locations
 # datafile = "GO-Data/datasets/Trial_3_Real-Time/Network_30R-025/scenario_1/case.raw"
