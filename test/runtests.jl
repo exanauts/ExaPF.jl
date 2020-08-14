@@ -16,9 +16,10 @@ case = "case14.raw"
 # case = "ACTIVSg70K.raw"
 
 @testset "Powerflow residuals and Jacobian" begin
+    local_case = "case14.raw"
     # read data
     to = TimerOutputs.TimerOutput()
-    datafile = joinpath(dirname(@__FILE__), case)
+    datafile = joinpath(dirname(@__FILE__), local_case)
     data_raw = ParsePSSE.parse_raw(datafile)
     data, bus_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
 
@@ -38,9 +39,26 @@ case = "case14.raw"
     for i in 1:nbus
         V[i] = bus[i, VM]*exp(1im * pi/180 * bus[i, VA])
     end
+    @test V ≈ Complex{Float64}[
+        1.06 + 0.0im,
+        1.0410510706561686 - 0.0907616013832108im,
+        0.985192522040012 - 0.22247627854771523im,
+        1.0012292929704543 - 0.18218707911892243im,
+        1.0075796620614788 - 0.15551162239548505im,
+        1.0372102511734809 - 0.2628590779498494im,
+        1.0327942548732372 - 0.24527685887754397im,
+        1.0605035588701377 - 0.2518575026156106im,
+        1.0202428186152266 - 0.27219984563562466im,
+        1.0147053262903118 - 0.27373721193522754im,
+        1.0218895875940064 - 0.26981552747562876im,
+        1.0188740342304141 - 0.27444787933420284im,
+        1.0138437793219441 - 0.2746250817572887im,
+        0.995247767507711 - 0.286014443990015im
+    ]
 
     # form Y matrix
     Ybus = PowerSystem.makeYbus(data, bus_to_indexes);
+    println(Ybus)
 
     Vm = abs.(V)
     Va = angle.(V)
@@ -54,6 +72,24 @@ case = "case14.raw"
     Sbus = PowerSystem.assembleSbus(gen, bus, SBASE, bus_to_indexes)
     pbus = real(Sbus)
     qbus = imag(Sbus)
+
+    # Test that Sbus is correctly specified
+    @test Sbus ≈ Complex{Float64}[
+         2.32393 - 0.16549im,
+         0.23189298795657234 + 0.3255213997211121im,
+        -0.8066188947413118 + 0.028255632303189476im,
+        -0.5123531308565288 + 0.035668879376258705im,
+        -0.07125129097998142 - 0.02060016150325537im,
+        -0.1098278333939612 + 0.07281082918372937im,
+         0.0 + 0.0im,
+         0.0 + 0.17623im,
+        -0.24683805744186976 - 0.15824985834313557im,
+        -0.08821656550979241 - 0.05553726513776928im,
+        -0.038463023291667925 - 0.014532033764664084im,
+        -0.05643415630748495 - 0.017413308476656675im,
+        -0.11665673277410679 - 0.05281302692126483im,
+        -0.13051302125309594 - 0.04527619677595794im
+    ]
 
     ref, pv, pq = PowerSystem.bustypeindex(bus, gen, bus_to_indexes)
     npv = size(pv, 1)
@@ -147,23 +183,25 @@ end
     p = ExaPF.PowerSystem.get_p(pf)
     target = CPU()
     @testset "[CPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
-        sol, has_conv, res = solve(pf, x, u, p;
-                                   npartitions=nblocks,
-                                   solver=precond,
-                                   device=target)
-        @test has_conv
-        @test res < 1e-6
+        sol, convergence = solve(pf, x, u, p;
+                                 npartitions=nblocks,
+                                 solver=precond,
+                                 device=target)
+        @test convergence.has_converged
+        @test convergence.norm_residuals < 1e-6
+        @test convergence.n_iterations == 2
     end
 
     if has_cuda_gpu()
         target = CUDADevice()
         @testset "[GPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
-            sol, has_conv, res = solve(pf, x, u, p;
-                                   npartitions=nblocks,
-                                   solver=precond,
-                                   device=target)
-            @test has_conv
-            @test res < 1e-6
+            sol, convergence = solve(pf, x, u, p;
+                                     npartitions=nblocks,
+                                     solver=precond,
+                                     device=target)
+            @test convergence.has_converged
+            @test convergence.norm_residuals < 1e-6
+            @test convergence.n_iterations == 2
         end
     end
 end

@@ -287,7 +287,7 @@ function raw_to_exapf(rawdata::Dict{String, Array})
         end
         bus_idx = load[i, LOAD_BUS]
         Pd = load[i, LOAD_PL]
-        Qd = load[i, LOAD_PL]
+        Qd = load[i, LOAD_QL]
         bus_array[bus_idx, 3] += Pd
         bus_array[bus_idx, 4] += Qd
     end
