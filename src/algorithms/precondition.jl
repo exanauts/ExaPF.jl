@@ -30,8 +30,6 @@ mutable struct Preconditioner <: AbstractPreconditioner
     function Preconditioner(J, npart, device=CPU())
         if isa(J, CuSparseMatrixCSR)
             J = SparseMatrixCSC(J)
-        # else
-        #     J = cuJ
         end
         m, n = size(J)
         if npart < 2
