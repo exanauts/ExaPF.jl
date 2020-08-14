@@ -21,7 +21,7 @@ enabled, some of the contents will be moved to the device.
 
 """
 struct PowerNetwork
-    V::Array{Complex{Float64}}
+    vbus::Array{Complex{Float64}}
     Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
     data::Dict{String,Array}
 
@@ -34,7 +34,7 @@ struct PowerNetwork
     pv::Array{Int64}
     pq::Array{Int64}
 
-    Sbus::Array{Complex{Float64}}
+    sbus::Array{Complex{Float64}}
 
     function PowerNetwork(datafile::String, data_format::Int64=0)
 
@@ -60,9 +60,9 @@ struct PowerNetwork
         ngen = size(gen, 1)
 
         # obtain V0 from raw data
-        V = Array{Complex{Float64}}(undef, nbus)
+        vbus = Array{Complex{Float64}}(undef, nbus)
         for i in 1:nbus
-            V[i] = bus[i, VM]*exp(1im * pi/180 * bus[i, VA])
+            vbus[i] = bus[i, VM]*exp(1im * pi/180 * bus[i, VA])
         end
 
         # form Y matrix
@@ -71,9 +71,9 @@ struct PowerNetwork
         # bus type indexing
         ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
 
-        Sbus = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
+        sbus = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
 
-        new(V, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, Sbus)
+        new(vbus, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus)
     end
 
 end
@@ -90,10 +90,10 @@ function Base.show(io::IO, pf::PowerNetwork)
 
     for i=1:pf.nbus
         type = pf.bustype[i]
-        vmag = abs(pf.V[i])
-        vang = angle(pf.V[i])*(360.0/pi)
-        pinj = real(pf.Sbus[i])
-        qinj = imag(pf.Sbus[i])
+        vmag = abs(pf.vbus[i])
+        vang = angle(pf.vbus[i])*(360.0/pi)
+        pinj = real(pf.sbus[i])
+        qinj = imag(pf.sbus[i])
         @printf("\t%i \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
                 type, vmag, vang, pinj, qinj)
     end
@@ -125,9 +125,9 @@ function get_x(pf::PowerNetwork)
     dimension = 2*npq + npv
     x = zeros(dimension)
 
-    x[1:npq] = abs.(pf.V[pf.pq])
-    x[npq + 1:2*npq] = angle.(pf.V[pf.pq])
-    x[2*npq + 1:2*npq + npv] = angle.(pf.V[pf.pv])
+    x[1:npq] = abs.(pf.vbus[pf.pq])
+    x[npq + 1:2*npq] = angle.(pf.vbus[pf.pq])
+    x[2*npq + 1:2*npq + npv] = angle.(pf.vbus[pf.pv])
 
     return x
 end
@@ -157,9 +157,9 @@ function get_u(pf::PowerNetwork)
     dimension = 2*npv + nref
     u = zeros(dimension)
 
-    u[1:nref] = abs.(pf.V[pf.ref])
-    u[nref + 1:nref + npv] = real.(pf.Sbus[pf.pv])
-    u[nref + npv + 1:nref + 2*npv] = abs.(pf.V[pf.pv])
+    u[1:nref] = abs.(pf.vbus[pf.ref])
+    u[nref + 1:nref + npv] = real.(pf.sbus[pf.pv])
+    u[nref + npv + 1:nref + 2*npv] = abs.(pf.vbus[pf.pv])
 
     return u
 end
@@ -189,9 +189,9 @@ function get_p(pf::PowerNetwork)
     dimension = nref + 2*npq
     p = zeros(dimension)
 
-    p[1:nref] = angle.(pf.V[pf.ref])
-    p[nref + 1:nref + npq] = real.(pf.Sbus[pf.pq])
-    p[nref + npq + 1:nref + 2*npq] = imag.(pf.Sbus[pf.pq])
+    p[1:nref] = angle.(pf.vbus[pf.ref])
+    p[nref + 1:nref + npq] = real.(pf.sbus[pf.pq])
+    p[nref + npq + 1:nref + 2*npq] = imag.(pf.sbus[pf.pq])
 
     return p
 end
@@ -293,7 +293,7 @@ function assembleSbus(gen, bus, baseMVA, bus_to_indexes)
 
     ngen = size(gen, 1)
     nbus = size(bus, 1)
-    Sbus = zeros(Complex{Float64}, nbus)
+    sbus = zeros(Complex{Float64}, nbus)
 
     # retrieve indeces
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -306,16 +306,16 @@ function assembleSbus(gen, bus, baseMVA, bus_to_indexes)
     for i in 1:ngen
         if gen[i, GEN_STATUS] == 1
             id_bus = bus_to_indexes[gen[i, GEN_BUS]]
-            Sbus[id_bus] += (gen[i, PG] + 1im*gen[i, QG])/baseMVA
+            sbus[id_bus] += (gen[i, PG] + 1im*gen[i, QG])/baseMVA
         end
     end
 
     for i in 1:nbus
         id_bus = bus_to_indexes[bus[i, BUS_I]]
-        Sbus[id_bus] -= (bus[i, PD] + 1im*bus[i, QD])/baseMVA
+        sbus[id_bus] -= (bus[i, PD] + 1im*bus[i, QD])/baseMVA
     end
 
-    return Sbus
+    return sbus
 end
 
 # Create an admittance matrix. The implementation is a modification of

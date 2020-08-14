@@ -12,15 +12,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     p = ExaPF.PowerSystem.get_p(pf)
 
     # test impedance matrix entries
-    @test isapprox(real(pf.Ybus[1, 1]), 0.0)
-    @test isapprox(imag(pf.Ybus[1, 1]), -17.3611111)
 
-	S = [0.0000 + 0.0000im, 1.6300 + 0.0000im, 0.8500 + 0.0000im, 0.0000 + 0.0000im,
-		-0.9000 - 0.3000im, 0.0000 + 0.0000im, -1.0000 - 0.3500im, 0.0000 + 0.0000im,
-		-1.2500 - 0.5000im]
-
-    @test isapprox(S, pf.sbus)
-    
     # solve power flow
     ExaPF.solve(pf, x, u, p)
 

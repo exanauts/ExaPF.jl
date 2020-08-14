@@ -58,7 +58,6 @@ case = "case14.raw"
 
     # form Y matrix
     Ybus = PowerSystem.makeYbus(data, bus_to_indexes);
-    println(Ybus)
 
     Vm = abs.(V)
     Va = angle.(V)

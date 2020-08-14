@@ -383,7 +383,7 @@ function cost_gradients(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstr
             dCdu[nref + idx_pv] = c1*baseMVA + 2*c2*baseMVA*pinj[genbus]
         elseif bustype == 3
             # let c_i(x, u) = c0 + c1*baseMVA*f(x, u) + c2*(baseMVA*f(x, u))^2
-            # c_i(x, u) = c1*baseMVA*f'(x, u) + 2*c2*baseMVA*f(x, u)*f'(x, u)
+            # c_i'(x, u) = c1*baseMVA*f'(x, u) + 2*c2*baseMVA*f(x, u)*f'(x, u)
             idx_ref = findall(ref.==genbus)[1]
             dPdVm, dPdVa = get_power_injection_partials(genbus, vmag, vang, ybus_re, ybus_im)
             pinj_ref = get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
@@ -428,7 +428,7 @@ function solve(pf::PowerSystem.PowerNetwork,
     end
 
     # Retrieve parameter and initial voltage guess
-    V = pf.V
+    V = pf.vbus
     data = pf.data
     Ybus = pf.Ybus
 
@@ -453,7 +453,7 @@ function solve(pf::PowerSystem.PowerNetwork,
     pq = T(pq)
 
     # retrieve power injections
-    Sbus = pf.Sbus
+    Sbus = pf.sbus
     pbus = T(real(Sbus))
     qbus = T(imag(Sbus))
 
@@ -528,6 +528,7 @@ function solve(pf::PowerSystem.PowerNetwork,
                                    ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
         J = stateJacobianAD.J
+        J = residualJacobian(V, Ybus, pv, pq)
 
         # Find descent direction
         n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)
