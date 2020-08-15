@@ -578,13 +578,26 @@ function solve(pf::PowerSystem.PowerNetwork,
         @printf("N-R did not converge.\n")
     end
 
+    # update powersystem struct
+    # This following 3 lines breaks test (runtests.jl)
+    for i in 1:nbus
+        pf.vbus[i] = V[i]
+    end
+
+    for i in 1:length(ref)
+        bus_idx = ref[i]
+        pf.sbus[bus_idx] = get_power_injection(bus_idx, Vm, Va, ybus_re, ybus_im)
+    end
+    # obtain new x vector
+    xk = PowerSystem.get_x(pf)
+
     # Timer outputs display
     show(TIMER)
     reset_timer!(TIMER)
     # AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
     #                         ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
-    return V, conv
+    return xk, conv
 end
 
 # end of module
