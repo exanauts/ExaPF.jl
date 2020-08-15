@@ -239,6 +239,23 @@ function get_power_injection_partials(fr, v_m, v_a, ybus_re, ybus_im)
     return dPdVm, dPdVa
 end
 
+"""
+get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+Computes the reactive power injection at node "fr".
+"""
+function get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+    Q = 0.0
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        Q += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
+    end
+
+    return Q
+end
+
 function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
               p::AbstractArray, device=CPU())
 
@@ -500,7 +517,7 @@ function solve(pf::PowerSystem.PowerNetwork,
     println("Creating JacobianAD...")
     J = M(J)
     stateJacobianAD = AD.StateJacobianAD(J, coloring, F, Vm, Va, pbus, pv, pq, ref)
-    # designJacobianAD = AD.DesignJacobianAD(J, coloring, F, Vm, Va, pbus, pv, pq, ref)
+    designJacobianAD = AD.DesignJacobianAD(J, coloring, F, Vm, Va, pbus, pv, pq, ref)
 
     # check for convergence
     normF = norm(F, Inf)
@@ -580,24 +597,27 @@ function solve(pf::PowerSystem.PowerNetwork,
 
     # update powersystem struct
     # This following 3 lines breaks test (runtests.jl)
-    for i in 1:nbus
-        pf.vbus[i] = V[i]
-    end
+    #for i in 1:nbus
+    #    pf.vbus[i] = V[i]
+    #end
 
-    for i in 1:length(ref)
-        bus_idx = ref[i]
-        pf.sbus[bus_idx] = get_power_injection(bus_idx, Vm, Va, ybus_re, ybus_im)
-    end
+    #for i in 1:length(ref)
+    #    bus_idx = ref[i]
+    #    pgen = get_power_injection(bus_idx, Vm, Va, ybus_re, ybus_im)
+    #    qgen = get_react_injection(bus_idx, Vm, Va, ybus_re, ybus_im)
+    #    pf.sbus[bus_idx] = pgen + 1im*qgen
+    #end
     # obtain new x vector
     xk = PowerSystem.get_x(pf)
 
     # Timer outputs display
     show(TIMER)
     reset_timer!(TIMER)
-    # AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
-    #                         ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
+    AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
+                             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
+    Ju = designJacobianAD.J
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
-    return xk, conv
+    return xk, J, Ju, conv
 end
 
 # end of module

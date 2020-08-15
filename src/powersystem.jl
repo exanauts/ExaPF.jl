@@ -91,10 +91,10 @@ function Base.show(io::IO, pf::PowerNetwork)
     for i=1:pf.nbus
         type = pf.bustype[i]
         vmag = abs(pf.vbus[i])
-        vang = angle(pf.vbus[i])*(360.0/pi)
+        vang = angle(pf.vbus[i])*(180.0/pi)
         pinj = real(pf.sbus[i])
         qinj = imag(pf.sbus[i])
-        @printf("\t%i \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
+        @printf("\t%d \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
                 type, vmag, vang, pinj, qinj)
     end
 
