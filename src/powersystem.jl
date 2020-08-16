@@ -1,6 +1,6 @@
 module PowerSystem
 
-using ..ExaPF: ParsePSSE, ParseMAT, IndexSet
+using ..ExaPF: ParsePSSE, ParseMAT, IndexSet, Spmat, get_power_injection, get_react_injection
 
 import Base: show
 using Printf
@@ -247,6 +247,19 @@ function retrieve_physics(
     vang[pf.ref] = p[1:nref]
     pinj[pf.pq] = p[nref + 1:nref + npq]
     qinj[pf.pq] = p[nref + npq + 1:nref + 2*npq]
+
+    # (p, q) for ref and (q) for pv is obtained as a function
+    # of the rest of variables
+    ybus_re, ybus_im = Spmat{Vector}(pf.Ybus)
+
+    for bus in pf.ref
+        pinj[bus] = get_power_injection(bus, vmag, vang, ybus_re, ybus_im)
+        qinj[bus] = get_react_injection(bus, vmag, vang, ybus_re, ybus_im)
+    end
+
+    for bus in pf.pv
+        qinj[bus] = get_react_injection(bus, vmag, vang, ybus_re, ybus_im)
+    end
 
     return vmag, vang, pinj, qinj
 end

@@ -464,12 +464,16 @@ function solve(pf::PowerSystem.PowerNetwork,
     end
 
     # Retrieve parameter and initial voltage guess
-    V = pf.vbus
     data = pf.data
     Ybus = pf.Ybus
+    V = pf.vbus
 
-    # Convert voltage vector to target
-    V = T(V)
+    # Convert vectors to target
+    vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
+    Vm = T(vmag)
+    Va = T(vang)
+    pbus = T(pinj)
+    qbus = T(qinj)
 
     # iteration variables
     iter = 0
@@ -487,15 +491,6 @@ function solve(pf::PowerSystem.PowerNetwork,
     # retrieve ref, pv and pq index
     pv = T(pv)
     pq = T(pq)
-
-    # retrieve power injections
-    Sbus = pf.sbus
-    pbus = T(real(Sbus))
-    qbus = T(imag(Sbus))
-
-    # initiate voltage
-    Vm, Va = similar(V, Float64), similar(V, Float64)
-    polar!(Vm, Va, V, device)
 
     # indices
     npv = size(pv, 1);
