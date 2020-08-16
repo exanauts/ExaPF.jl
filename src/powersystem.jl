@@ -101,7 +101,7 @@ function Base.show(io::IO, pf::PowerNetwork)
 end
 
 """
-    get_x(PowerNetwork)
+    get_x(PowerNetwork, vmag, vang, pbus, qbus)
 
 Returns vector x from network variables (VMAG, VANG, P and Q)
 and bus type info.
@@ -115,7 +115,13 @@ Ordering:
 
 x = [VMAG^{PQ}, VANG^{PQ}, VANG^{PV}]
 """
-function get_x(pf::PowerNetwork)
+function get_x(
+    pf::PowerNetwork,
+    vmag::VT,
+    vang::VT,
+    pbus::VT,
+    qbus::VT,
+) where {T<:Real, VT<:AbstractVector{T}}
 
     nref = length(pf.ref)
     npv = length(pf.pv)
@@ -125,17 +131,17 @@ function get_x(pf::PowerNetwork)
     dimension = 2*npq + npv
     x = zeros(dimension)
 
-    x[1:npq] = abs.(pf.vbus[pf.pq])
-    x[npq + 1:2*npq] = angle.(pf.vbus[pf.pq])
-    x[2*npq + 1:2*npq + npv] = angle.(pf.vbus[pf.pv])
+    x[1:npq] = vmag[pf.pq]
+    x[npq + 1:2*npq] = vang[pf.pq]
+    x[2*npq + 1:2*npq + npv] = vang[pf.pv]
 
     return x
 end
 
 """
-    get_u(PowerNetwork)
+    get_u(PowerNetwork, vmag, vang, pbus, qbus)
 
-Returns vector x from network variables (VMAG, VANG, P and Q)
+Returns vector u from network variables (VMAG, VANG, P and Q)
 and bus type info.
 
 Vector u is the control vector, consisting on:
@@ -145,9 +151,15 @@ These variables are controlled by the grid operator.
 
 Ordering:
 
-u = [VMAG^{REF}, P^{PV}, V^{PV}]
+u = [VMAG^{REF}, P^{PV}, VMAG^{PV}]
 """
-function get_u(pf::PowerNetwork)
+function get_u(
+    pf::PowerNetwork,
+    vmag::VT,
+    vang::VT,
+    pbus::VT,
+    qbus::VT,
+) where {T<:Real, VT<:AbstractVector{T}}
 
     nref = length(pf.ref)
     npv = length(pf.pv)
@@ -157,15 +169,15 @@ function get_u(pf::PowerNetwork)
     dimension = 2*npv + nref
     u = zeros(dimension)
 
-    u[1:nref] = abs.(pf.vbus[pf.ref])
-    u[nref + 1:nref + npv] = real.(pf.sbus[pf.pv])
-    u[nref + npv + 1:nref + 2*npv] = abs.(pf.vbus[pf.pv])
+    u[1:nref] = vmag[pf.ref]
+    u[nref + 1:nref + npv] = pbus[pf.pv]
+    u[nref + npv + 1:nref + 2*npv] = vmag[pf.pv]
 
     return u
 end
 
 """
-    get_p(PowerNetwork)
+    get_p(PowerNetwork, vmag, vang, pbus, qbus)
 
 Returns vector p from network variables (VMAG, VANG, P and Q)
 and bus type info.
@@ -179,7 +191,13 @@ Order:
 
 p = [vang^{ref}, p^{pq}, q^{pq}]
 """
-function get_p(pf::PowerNetwork)
+function get_p(
+    pf::PowerNetwork,
+    vmag::VT,
+    vang::VT,
+    pbus::VT,
+    qbus::VT,
+) where {T<:Real, VT<:AbstractVector{T}}
 
     nref = length(pf.ref)
     npv = length(pf.pv)
@@ -189,9 +207,9 @@ function get_p(pf::PowerNetwork)
     dimension = nref + 2*npq
     p = zeros(dimension)
 
-    p[1:nref] = angle.(pf.vbus[pf.ref])
-    p[nref + 1:nref + npq] = real.(pf.sbus[pf.pq])
-    p[nref + npq + 1:nref + 2*npq] = imag.(pf.sbus[pf.pq])
+    p[1:nref] = vang[pf.ref]
+    p[nref + 1:nref + npq] = pbus[pf.pq]
+    p[nref + npq + 1:nref + 2*npq] = qbus[pf.pq]
 
     return p
 end

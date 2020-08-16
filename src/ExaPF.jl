@@ -606,20 +606,7 @@ function solve(pf::PowerSystem.PowerNetwork,
         @printf("N-R did not converge.\n")
     end
 
-    # update powersystem struct
-    # This following 3 lines breaks test (runtests.jl)
-    #for i in 1:nbus
-    #    pf.vbus[i] = V[i]
-    #end
-
-    #for i in 1:length(ref)
-    #    bus_idx = ref[i]
-    #    pgen = get_power_injection(bus_idx, Vm, Va, ybus_re, ybus_im)
-    #    qgen = get_react_injection(bus_idx, Vm, Va, ybus_re, ybus_im)
-    #    pf.sbus[bus_idx] = pgen + 1im*qgen
-    #end
-    # obtain new x vector
-    xk = PowerSystem.get_x(pf)
+    xk = PowerSystem.get_x(pf, Vm, Va, pbus, qbus)
 
     # Timer outputs display
     show(TIMER)

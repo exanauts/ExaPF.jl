@@ -7,9 +7,16 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 @testset "Power flow 9 bus case" begin
     datafile = "test/case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
-    x = ExaPF.PowerSystem.get_x(pf)
-    u = ExaPF.PowerSystem.get_u(pf)
-    p = ExaPF.PowerSystem.get_p(pf)
+
+    # retrieve initial state of network
+    pbus = real.(pf.sbus)
+    qbus = imag.(pf.sbus)
+    vmag = abs.(pf.vbus)
+    vang = angle.(pf.vbus)
+
+    x = ExaPF.PowerSystem.get_x(pf, vmag, vang, pbus, qbus)
+    u = ExaPF.PowerSystem.get_u(pf, vmag, vang, pbus, qbus)
+    p = ExaPF.PowerSystem.get_p(pf, vmag, vang, pbus, qbus)
 
     # test impedance matrix entries
     @test isapprox(real(pf.Ybus[1, 1]), 0.0)
