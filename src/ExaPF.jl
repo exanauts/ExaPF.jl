@@ -219,61 +219,6 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
-"""
-get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
-Computes the power injection at node "fr".
-"""
-function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
-    P = 0.0
-    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
-        to = ybus_re.rowval[c]
-        aij = v_a[fr] - v_a[to]
-        P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
-    end
-
-    return P
-end
-
-function get_power_injection_partials(fr, v_m, v_a, ybus_re, ybus_im)
-    
-    nbus = length(v_m)
-    dPdVm = zeros(nbus)
-    dPdVa = zeros(nbus)
-    
-    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
-        to = ybus_re.rowval[c]
-        aij = v_a[fr] - v_a[to]
-        # partials w.r.t "to" buses
-        if to != fr
-            dPdVm[to] = v_m[fr]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
-            dPdVa[to] = v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
-        end
-
-        # partial w.r.t "fr" bus
-        dPdVm[fr] += v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
-        dPdVa[fr] += v_m[to]*v_m[fr]*(-ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
-    end
-    return dPdVm, dPdVa
-end
-
-"""
-get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
-Computes the reactive power injection at node "fr".
-"""
-function get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
-    Q = 0.0
-    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
-        to = ybus_re.rowval[c]
-        aij = v_a[fr] - v_a[to]
-        Q += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
-    end
-
-    return Q
-end
 
 function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
               p::AbstractArray, device=CPU())
@@ -338,7 +283,7 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
         if bustype == 2
             cost += c0 + c1*pinj[genbus]*baseMVA + c2*(pinj[genbus]*baseMVA)^2
         elseif bustype == 3
-            pinj_ref = get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
+            pinj_ref = PowerSystem.get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
             cost += c0 + c1*pinj_ref*baseMVA + c2*(pinj_ref*baseMVA)^2
         end
 
@@ -419,8 +364,8 @@ function cost_gradients(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstr
             # let c_i(x, u) = c0 + c1*baseMVA*f(x, u) + c2*(baseMVA*f(x, u))^2
             # c_i'(x, u) = c1*baseMVA*f'(x, u) + 2*c2*baseMVA*f(x, u)*f'(x, u)
             idx_ref = findall(ref.==genbus)[1]
-            dPdVm, dPdVa = get_power_injection_partials(genbus, vmag, vang, ybus_re, ybus_im)
-            pinj_ref = get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
+            dPdVm, dPdVa = PowerSystem.get_power_injection_partials(genbus, vmag, vang, ybus_re, ybus_im)
+            pinj_ref = PowerSystem.get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
 
             dCdx[1:npq] += c1*baseMVA*dPdVm[pq] + 2*c2*(baseMVA^2)*pinj_ref*dPdVm[pq]
             dCdx[npq + 1:2*npq] += c1*baseMVA*dPdVa[pq] + 2*c2*(baseMVA^2)*pinj_ref*dPdVa[pq]
@@ -467,7 +412,7 @@ function solve(pf::PowerSystem.PowerNetwork,
     V = pf.vbus
 
     # Convert vectors to target
-    vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
+    vmag, vang, pinj, qinj = PowerSystem.retrieve_physics(pf, x, u, p)
     Vm = T(vmag)
     Va = T(vang)
     pbus = T(pinj)

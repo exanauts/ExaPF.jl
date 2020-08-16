@@ -1,6 +1,6 @@
 module PowerSystem
 
-using ..ExaPF: ParsePSSE, ParseMAT, IndexSet, Spmat, get_power_injection, get_react_injection
+using ..ExaPF: ParsePSSE, ParseMAT, IndexSet, Spmat
 
 import Base: show
 using Printf
@@ -235,6 +235,62 @@ function get_p(
 end
 
 """
+get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+Computes the power injection at node "fr".
+"""
+function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+    P = 0.0
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+    end
+
+    return P
+end
+
+function get_power_injection_partials(fr, v_m, v_a, ybus_re, ybus_im)
+    
+    nbus = length(v_m)
+    dPdVm = zeros(nbus)
+    dPdVa = zeros(nbus)
+    
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        # partials w.r.t "to" buses
+        if to != fr
+            dPdVm[to] = v_m[fr]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+            dPdVa[to] = v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
+        end
+
+        # partial w.r.t "fr" bus
+        dPdVm[fr] += v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+        dPdVa[fr] += v_m[to]*v_m[fr]*(-ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
+    end
+    return dPdVm, dPdVa
+end
+
+"""
+get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+Computes the reactive power injection at node "fr".
+"""
+function get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+    Q = 0.0
+    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        Q += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
+    end
+
+    return Q
+end
+
+"""
     retrieve_physics(PowerNetwork, x, u, p)
 
 Converts x, u, p vectors to vmag, vang, pinj and qinj.
@@ -449,3 +505,4 @@ function makeYbus(data, bus_to_indexes)
 end
 
 end
+
