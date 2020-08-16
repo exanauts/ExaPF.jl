@@ -545,7 +545,7 @@ function solve(pf::PowerSystem.PowerNetwork,
                                    ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
         J = stateJacobianAD.J
-        J = residualJacobian(V, Ybus, pv, pq)
+        # J = residualJacobian(V, Ybus, pv, pq)
 
         # Find descent direction
         n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)
