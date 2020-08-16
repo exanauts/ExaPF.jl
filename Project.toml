@@ -6,6 +6,7 @@ version = "0.2.0"
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 IterativeSolvers = "42fd0dbc-a981-5370-80f2-aaf504508153"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"

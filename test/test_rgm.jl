@@ -1,10 +1,11 @@
 # Verify solutions against matpower results
 using Test
 using ExaPF
+using FiniteDiff
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
-@testset "Power flow 9 bus case" begin
+@testset "RGM Optimal Power flow 9 bus case" begin
     datafile = "test/case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
     
@@ -19,8 +20,24 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     p = ExaPF.PowerSystem.get_p(pf, vmag, vang, pbus, qbus)
 
     # solve power flow
-    ExaPF.solve(pf, x, u, p)
+    xk, dGdx, dGdu, convergence = ExaPF.solve(pf, x, u, p)
 
-    c = ExaPF.cost_function(pf, x, u, p)
-    dCdx, dCdu = ExaPF.cost_gradients(pf, x, u, p)
+    c = ExaPF.cost_function(pf, xk, u, p)
+    dCdx, dCdu = ExaPF.cost_gradients(pf, xk, u, p)
+
+    function cost_x(xk)
+        return ExaPF.cost_function(pf, xk, u, p)
+    end
+    
+    function cost_u(uk)
+        return ExaPF.cost_function(pf, xk, uk, p)
+    end
+    
+    println("dCdx")
+    dCdx_fd = FiniteDiff.finite_difference_gradient(cost_x,xk)
+    println("dCdu")
+    dCdu_fd = FiniteDiff.finite_difference_gradient(cost_u,u)
+    
+    @test isapprox(dCdx,dCdx_fd)
+    @test isapprox(dCdu,dCdu_fd)
 end

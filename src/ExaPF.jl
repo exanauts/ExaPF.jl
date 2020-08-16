@@ -289,7 +289,6 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
-    println("Target set to device $(device)")
     if isa(device, CPU)
         T = Vector
         M = SparseMatrixCSC
@@ -362,7 +361,6 @@ function cost_gradients(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstr
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
-    println("Target set to device $(device)")
     if isa(device, CPU)
         T = Vector
         M = SparseMatrixCSC
@@ -416,7 +414,7 @@ function cost_gradients(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstr
         if bustype == 2
             # This is shameful. Cannot think of a better way to do it r.n
             idx_pv = findall(pv.==genbus)[1]
-            dCdu[nref + idx_pv] = c1*baseMVA + 2*c2*baseMVA*pinj[genbus]
+            dCdu[nref + idx_pv] = c1*baseMVA + 2*c2*(baseMVA^2)*pinj[genbus]
         elseif bustype == 3
             # let c_i(x, u) = c0 + c1*baseMVA*f(x, u) + c2*(baseMVA*f(x, u))^2
             # c_i'(x, u) = c1*baseMVA*f'(x, u) + 2*c2*baseMVA*f(x, u)*f'(x, u)
@@ -424,13 +422,13 @@ function cost_gradients(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstr
             dPdVm, dPdVa = get_power_injection_partials(genbus, vmag, vang, ybus_re, ybus_im)
             pinj_ref = get_power_injection(genbus, vmag, vang, ybus_re, ybus_im)
 
-            dCdx[1:npq] += c1*baseMVA*dPdVm[pq] + 2*c2*baseMVA*pinj_ref*dPdVm[pq]
-            dCdx[npq + 1:2*npq] += c1*baseMVA*dPdVa[pq] + 2*c2*baseMVA*pinj_ref*dPdVa[pq]
-            dCdx[2*npq + 1:2*npq + npv] += c1*baseMVA*dPdVa[pv] + 2*c2*baseMVA*pinj_ref*dPdVa[pv]
+            dCdx[1:npq] += c1*baseMVA*dPdVm[pq] + 2*c2*(baseMVA^2)*pinj_ref*dPdVm[pq]
+            dCdx[npq + 1:2*npq] += c1*baseMVA*dPdVa[pq] + 2*c2*(baseMVA^2)*pinj_ref*dPdVa[pq]
+            dCdx[2*npq + 1:2*npq + npv] += c1*baseMVA*dPdVa[pv] + 2*c2*(baseMVA^2)*pinj_ref*dPdVa[pv]
         
-            dCdu[1:nref] += c1*baseMVA*dPdVm[ref] + 2*c2*baseMVA*pinj_ref*dPdVm[ref]
+            dCdu[1:nref] += c1*baseMVA*dPdVm[ref] + 2*c2*(baseMVA^2)*pinj_ref*dPdVm[ref]
             dCdu[nref + npv + 1:nref + 2*npv] += (c1*baseMVA*dPdVm[pv] 
-                                                    + 2*c2*baseMVA*pinj_ref*dPdVm[pv])
+                                                  + 2*c2*(baseMVA^2)*pinj_ref*dPdVm[pv])
         end
 
     end
