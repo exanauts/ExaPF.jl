@@ -27,9 +27,22 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 		-1.2500 - 0.5000im]
 
     @test isapprox(S, pf.sbus)
-    
+ 
+    println("Before solve")
+    ExaPF.PowerSystem.print_state(pf, x, u, p)
+
     # solve power flow
-    ExaPF.solve(pf, x, u, p)
+    xk, J, Ju, convergence = ExaPF.solve(pf, x, u, p)
+    
+    println("Before solve")
+    ExaPF.PowerSystem.print_state(pf, xk, u, p)
+
+    x_sol = [0.9870068781579537, 0.9754722045044448, 1.003375449839184, 0.9856449067439345,
+             0.996185273317625, 0.9576210937650547, -0.04200385129447893, -0.07011446830092488,
+             0.033608106889679565, 0.010848015284769322, 0.06630715934781146, 
+             -0.07592061900861094, 0.16875136481876485, 0.0832709533581424]
+    
+    @test isapprox(x_sol, xk)
 
     c = ExaPF.cost_function(pf, x, u, p)
     dCdx, dCdu = ExaPF.cost_gradients(pf, x, u, p)
