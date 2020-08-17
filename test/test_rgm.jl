@@ -3,6 +3,7 @@ using Test
 using ExaPF
 using FiniteDiff
 using ForwardDiff
+using LinearAlgebra
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
@@ -26,6 +27,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     c = ExaPF.cost_function(pf, xk, u, p)
     dCdx, dCdu = ExaPF.cost_gradients(pf, xk, u, p)
 
+    # Test gradients
     function cost_x(xk)
         return ExaPF.cost_function(pf, xk, u, p; V=eltype(xk))
     end
@@ -34,10 +36,8 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         return ExaPF.cost_function(pf, xk, uk, p; V=eltype(uk))
     end
     
-    println("dCdx")
     dCdx_fd = FiniteDiff.finite_difference_gradient(cost_x,xk)
     dCdx_ad = ForwardDiff.gradient(cost_x,xk)
-    println("dCdu")
     dCdu_fd = FiniteDiff.finite_difference_gradient(cost_u,u)
     dCdu_ad = ForwardDiff.gradient(cost_u,u)
     
@@ -45,4 +45,29 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     @test isapprox(dCdu,dCdu_fd)
     @test isapprox(dCdx,dCdx_ad)
     @test isapprox(dCdu,dCdu_ad)
+
+    # reduced gradient method
+    iterations = 0
+    uk = copy(u)
+    step = 0.0001
+
+    for i = 1:1
+        println("Iteration: ", i)
+        # solve power flow and compute gradients
+        xk, dGdx, dGdu, convergence = ExaPF.solve(pf, xk, uk, p)
+        dCdx, dCdu = ExaPF.cost_gradients(pf, xk, uk, p)
+
+        # evaluate cost
+        c = ExaPF.cost_function(pf, xk, u, p)
+        println("Cost: ", c)
+
+        # lamba calculation
+        lambda = -(dGdx\dCdx)
+
+        # compute gradient
+        grad = dCdu + (dGdu')*lambda
+        println("Norm: ", norm(grad))
+        # compute control step
+        uk = uk - step*grad
+    end
 end
