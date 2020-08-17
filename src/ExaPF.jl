@@ -388,7 +388,8 @@ function solve(pf::PowerSystem.PowerNetwork,
     solver="default",
     tol=1e-6,
     maxiter=20,
-    device=CPU()
+    device=CPU(),
+    verbose=false
 )
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
@@ -547,8 +548,10 @@ function solve(pf::PowerSystem.PowerNetwork,
     xk = PowerSystem.get_x(pf, Vm, Va, pbus, qbus)
 
     # Timer outputs display
-    show(TIMER)
-    println("") #this really bugs me
+    if verbose
+        show(TIMER)
+        println("") #this really bugs me
+    end
     reset_timer!(TIMER)
     AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
                              ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
@@ -560,6 +563,4 @@ function solve(pf::PowerSystem.PowerNetwork,
     conv = 1
     return xk, J, Ju, conv
 end
-
-# end of module
 end
