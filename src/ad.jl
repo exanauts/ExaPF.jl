@@ -339,15 +339,15 @@ function designJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     @timeit timer "Before" begin
         @timeit timer "Setup" begin
             npinj = size(pinj , 1)
-            nv_a = size(v_a, 1)
+            nv_m = size(v_m, 1)
             nmap = size(arrays.map, 1)
             nthreads=256
             nblocks=ceil(Int64, nmap/nthreads)
-            n = npinj + nv_a
+            n = npinj + nv_m
         end
         @timeit timer "Arrays" begin
-            arrays.x[1:nv_a] .= v_a
-            arrays.x[nv_a+1:nv_a+npinj] .= pinj
+            arrays.x[1:nv_m] .= v_m
+            arrays.x[nv_m+1:nv_m+npinj] .= pinj
             arrays.t1sx .= arrays.x
             arrays.t1sF .= 0.0
         end
@@ -371,18 +371,17 @@ function designJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     end
     nthreads=256
     nblocks=ceil(Int64, nbus/nthreads)
-    t1sv_m = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? zeros(eltype(arrays.t1sF), length(v_m)) : CUDA.zeros(eltype(arrays.t1sF), length(v_m))
-    t1sv_m .= v_m
     @timeit timer "Function" begin
         residualFunction_polar!(
             arrays.t1sF,
-            t1sv_m,
-            arrays.t1sx[1:nv_a],
+            arrays.t1sx[1:nv_m],
+            v_a,
             ybus_re, ybus_im,
-            arrays.t1sx[nv_a+1:nv_a + npinj], qinj,
+            arrays.t1sx[nv_m+1:nv_m + npinj], qinj,
             pv, pq, nbus
         )
     end
+    @show ForwardDiff.value.(arrays.t1sF)
 
     @timeit timer "Get partials" begin
         if isa(device, CUDADevice)
