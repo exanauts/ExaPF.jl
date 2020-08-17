@@ -381,7 +381,6 @@ function designJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
             pv, pq, nbus
         )
     end
-    @show ForwardDiff.value.(arrays.t1sF)
 
     @timeit timer "Get partials" begin
         if isa(device, CUDADevice)
