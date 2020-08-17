@@ -3,6 +3,7 @@ using Test
 using ExaPF
 using FiniteDiff
 using ForwardDiff
+using LinearAlgebra
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
@@ -62,15 +63,11 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
         # lamba calculation
         lambda = -(dGdx\dCdx)
-        println(dGdu'*lambda)
-        println(dCdu)
 
         # compute gradient
         grad = dCdu + (dGdu')*lambda
-
-        println(uk)
+        println("Norm: ", norm(grad))
         # compute control step
         uk = uk - step*grad
-        println(uk)
     end
 end
