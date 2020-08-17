@@ -221,7 +221,7 @@ end
 
 
 function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
-              p::AbstractArray, device=CPU())
+              p::AbstractArray, device=CPU(); V=Float64)
 
     # indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -247,7 +247,7 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
     end
 
     # for now, let's just return the sum of all generator power
-    vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p)
+    vmag, vang, pinj, qinj = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p; V=V)
 
     ref = pf.ref
     pv = pf.pv

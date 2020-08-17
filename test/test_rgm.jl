@@ -2,6 +2,7 @@
 using Test
 using ExaPF
 using FiniteDiff
+using ForwardDiff
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
@@ -26,18 +27,22 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     dCdx, dCdu = ExaPF.cost_gradients(pf, xk, u, p)
 
     function cost_x(xk)
-        return ExaPF.cost_function(pf, xk, u, p)
+        return ExaPF.cost_function(pf, xk, u, p; V=eltype(xk))
     end
     
     function cost_u(uk)
-        return ExaPF.cost_function(pf, xk, uk, p)
+        return ExaPF.cost_function(pf, xk, uk, p; V=eltype(uk))
     end
     
     println("dCdx")
     dCdx_fd = FiniteDiff.finite_difference_gradient(cost_x,xk)
+    dCdx_ad = ForwardDiff.gradient(cost_x,xk)
     println("dCdu")
     dCdu_fd = FiniteDiff.finite_difference_gradient(cost_u,u)
+    dCdu_ad = ForwardDiff.gradient(cost_u,u)
     
     @test isapprox(dCdx,dCdx_fd)
     @test isapprox(dCdu,dCdu_fd)
+    @test isapprox(dCdx,dCdx_ad)
+    @test isapprox(dCdu,dCdu_ad)
 end
