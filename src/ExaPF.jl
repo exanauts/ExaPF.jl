@@ -552,7 +552,8 @@ function solve(pf::PowerSystem.PowerNetwork,
     AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
                              ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     Ju = designJacobianAD.J
-    conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
+    #conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
+    conv = 1
     return xk, J, Ju, conv
 end
 

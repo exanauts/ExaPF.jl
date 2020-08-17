@@ -25,6 +25,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     c = ExaPF.cost_function(pf, xk, u, p)
     dCdx, dCdu = ExaPF.cost_gradients(pf, xk, u, p)
 
+    # Test gradients
     function cost_x(xk)
         return ExaPF.cost_function(pf, xk, u, p)
     end
@@ -33,11 +34,24 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         return ExaPF.cost_function(pf, xk, uk, p)
     end
     
-    println("dCdx")
     dCdx_fd = FiniteDiff.finite_difference_gradient(cost_x,xk)
-    println("dCdu")
     dCdu_fd = FiniteDiff.finite_difference_gradient(cost_u,u)
     
     @test isapprox(dCdx,dCdx_fd)
     @test isapprox(dCdu,dCdu_fd)
+
+    # reduced gradient method
+    iterations = 0
+    uk = copy(u)
+    xk = copy(xk)
+ 
+    # solve power flow and compute gradients
+    xk, dGdx, dGdu, convergence = ExaPF.solve(pf, xk, uk, p)
+    #dCdx, dCdu = ExaPF.cost_gradients(pf, xk, uk, p)
+    
+    # lamba calculation
+    #lambda = -(dGdx\dCdx)
+    #println(lambda)
+
+
 end
