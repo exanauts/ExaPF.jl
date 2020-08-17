@@ -295,22 +295,17 @@ end
 
 Converts x, u, p vectors to vmag, vang, pinj and qinj.
 """
-function retrieve_physics(
-    pf::PowerNetwork,
-    x::VT,
-    u::VT,
-    p::VT,
-) where {T<:Real, VT<:AbstractVector{T}}
+function retrieve_physics(pf::PowerNetwork, x, u, p; V=Float64)
 
     nbus = pf.nbus
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
-
-    vmag = zeros(nbus)
-    vang = zeros(nbus)
-    pinj = zeros(nbus)
-    qinj = zeros(nbus)
+    
+    vmag = zeros(V, nbus)
+    vang = zeros(V, nbus)
+    pinj = zeros(V, nbus)
+    qinj = zeros(V, nbus)
 
     vmag[pf.pq] = x[1:npq]
     vang[pf.pq] = x[npq + 1:2*npq]
