@@ -548,10 +548,14 @@ function solve(pf::PowerSystem.PowerNetwork,
 
     # Timer outputs display
     show(TIMER)
+    println("") #this really bugs me
     reset_timer!(TIMER)
     AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
                              ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
+    AD.residualJacobianAD!(stateJacobianAD, residualFunction_polar!, Vm, Va,
+                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     Ju = designJacobianAD.J
+    J = stateJacobianAD.J
     #conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
     conv = 1
     return xk, J, Ju, conv

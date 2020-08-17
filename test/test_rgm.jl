@@ -43,15 +43,30 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     # reduced gradient method
     iterations = 0
     uk = copy(u)
-    xk = copy(xk)
- 
-    # solve power flow and compute gradients
-    xk, dGdx, dGdu, convergence = ExaPF.solve(pf, xk, uk, p)
-    #dCdx, dCdu = ExaPF.cost_gradients(pf, xk, uk, p)
-    
-    # lamba calculation
-    #lambda = -(dGdx\dCdx)
-    #println(lambda)
+    step = 0.0001
 
+    for i = 1:1
+        println("Iteration: ", i)
+        # solve power flow and compute gradients
+        xk, dGdx, dGdu, convergence = ExaPF.solve(pf, xk, uk, p)
+        dCdx, dCdu = ExaPF.cost_gradients(pf, xk, uk, p)
+
+        # evaluate cost
+        c = ExaPF.cost_function(pf, xk, u, p)
+        println("Cost: ", c)
+
+        # lamba calculation
+        lambda = -(dGdx\dCdx)
+        println(dGdu'*lambda)
+        println(dCdu)
+
+        # compute gradient
+        grad = dCdu + (dGdu')*lambda
+
+        println(uk)
+        # compute control step
+        uk = uk - step*grad
+        println(uk)
+    end
 
 end
