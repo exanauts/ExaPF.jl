@@ -602,14 +602,28 @@ function solve(pf::PowerSystem.PowerNetwork,
     show(TIMER)
     println("") #this really bugs me
     reset_timer!(TIMER)
-    AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
-                             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
-    AD.residualJacobianAD!(stateJacobianAD, residualFunction_polar!, Vm, Va,
-                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
-    Ju = designJacobianAD.J
-    J = stateJacobianAD.J
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
-    return xk, J, Ju, conv
+    function Ju(pf, x, u, p)
+        Vm, Va, pbus, qbus = PowerSystem.retrieve_physics(pf, x, u, p)
+        AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
+                                ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
+        return designJacobianAD.J 
+    end
+    function Jx(pf, x, u, p)
+        Vm, Va, pbus, qbus = PowerSystem.retrieve_physics(pf, x, u, p)
+        AD.residualJacobianAD!(stateJacobianAD, residualFunction_polar!, Vm, Va,
+                                ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
+        return stateJacobianAD.J 
+    end
+    function g(pf, x, u, p)
+        Vm, Va, pbus, qbus = PowerSystem.retrieve_physics(pf, x, u, p)
+        residualFunction_polar!(F, Vm, Va,
+                                ybus_re,
+                                ybus_im,
+                                pbus, qbus, pv, pq, nbus)
+        return F
+    end
+    return xk, g, Jx, Ju, conv
 end
 
 # end of module

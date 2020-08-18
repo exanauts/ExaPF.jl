@@ -5,6 +5,9 @@ using FiniteDiff
 using ForwardDiff
 using LinearAlgebra
 
+# Include the linesearch here for now
+include("../src/algorithms/linesearches.jl")
+
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "RGM Optimal Power flow 9 bus case" begin
@@ -22,7 +25,9 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     p = ExaPF.PowerSystem.get_p(pf, vmag, vang, pbus, qbus)
 
     # solve power flow
-    xk, dGdx, dGdu, convergence = ExaPF.solve(pf, x, u, p)
+    xk, g, Jx, Ju, convergence = ExaPF.solve(pf, x, u, p)
+    dGdx = Jx(pf, x, u, p)
+    dGdu = Ju(pf, x, u, p)
 
     c = ExaPF.cost_function(pf, xk, u, p)
     dCdx, dCdu = ExaPF.cost_gradients(pf, xk, u, p)
@@ -58,8 +63,13 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     while norm_grad > norm_tol && iter < iter_max
         println("Iteration: ", iter)
         # solve power flow and compute gradients
-        xk, dGdx, dGdu, convergence = ExaPF.solve(pf, xk, uk, p)
-        dCdx, dCdu = ExaPF.cost_gradients(pf, xk, uk, p)
+        xk, g, Jx, Ju, convergence = ExaPF.solve(pf, xk, uk, p)
+        dGdx = Jx(pf, xk, uk, p)
+        dGdu = Ju(pf, xk, uk, p)
+        fdCdx = xk -> ForwardDiff.gradient(cost_x,xk)
+        fdCdu = uk -> ForwardDiff.gradient(cost_u,uk)
+        dCdx = fdCdx(xk)
+        dCdu = fdCdu(uk)
 
         # evaluate cost
         c = ExaPF.cost_function(pf, xk, uk, p)
@@ -67,10 +77,15 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         # lamba calculation
         lambda = -(dGdx\dCdx)
 
+        # Form functions
+        Lu = u -> ExaPF.cost_function(pf, xk, u, p) + (g(pf, xk, u, p))'*lambda
+        grad_Lu = u -> fdCdu(u) + (Ju(pf, xk, u, p)')*lambda
         # compute gradient
-        grad = dCdu + (dGdu')*lambda
+        grad = grad_Lu(uk)
         println("Cost: ", c)
         println("Norm: ", norm(grad))
+        # Optional linesearch
+        # step = ls(uk, grad, Lu, grad_Lu)
         # compute control step
         uk = uk - step*grad
         ExaPF.project_constraints!(pf, xk, uk, p, grad)

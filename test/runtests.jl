@@ -189,7 +189,7 @@ end
 
     target = CPU()
     @testset "[CPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
-        sol, J, Ju, convergence = solve(pf, x, u, p;
+        sol, g, Jx, Ju, convergence = solve(pf, x, u, p;
                                  npartitions=nblocks,
                                  solver=precond,
                                  device=target)
@@ -201,7 +201,7 @@ end
     if has_cuda_gpu()
         target = CUDADevice()
         @testset "[GPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
-            sol, J, Ju, convergence = solve(pf, x, u, p;
+            sol, g, Jx, Ju, convergence = solve(pf, x, u, p;
                                      npartitions=nblocks,
                                      solver=precond,
                                      device=target)
