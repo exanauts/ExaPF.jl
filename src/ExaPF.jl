@@ -221,10 +221,10 @@ end
 
 function project_constraints!(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
               p::AbstractArray, grad::AbstractArray, device=CPU(); V=Float64)
-    
+
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
-    
+
     vmag, vang, pinj, qinj = PowerSystem.retrieve_physics(pf, x, u, p)
 
     # constraint projection: if vmag in uk is outside bounds, we project it into the bounds.
@@ -250,7 +250,7 @@ function project_constraints!(pf::PowerSystem.PowerNetwork, x::AbstractArray, u:
             grad[nref + npv + i] = 0.0
         end
     end
-    
+
     for i in 1:length(pf.ref)
         bus_idx = pf.ref[i]
         vm_max = pf.data["bus"][bus_idx, VMAX]
@@ -268,7 +268,7 @@ function project_constraints!(pf::PowerSystem.PowerNetwork, x::AbstractArray, u:
             grad[i] = 0.0
         end
     end
-    
+
     return u
 end
 
@@ -395,7 +395,7 @@ function cost_gradients(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstr
 
     dCdx = zeros(length(x))
     dCdu = zeros(length(u))
-    
+
     for i = 1:ngens
         # only 2nd degree polynomial implemented for now.
         @assert cost_data[i, MODEL] == 2
@@ -422,9 +422,9 @@ function cost_gradients(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstr
             dCdx[1:npq] += c1*baseMVA*dPdVm[pq] + 2*c2*(baseMVA^2)*pinj_ref*dPdVm[pq]
             dCdx[npq + 1:2*npq] += c1*baseMVA*dPdVa[pq] + 2*c2*(baseMVA^2)*pinj_ref*dPdVa[pq]
             dCdx[2*npq + 1:2*npq + npv] += c1*baseMVA*dPdVa[pv] + 2*c2*(baseMVA^2)*pinj_ref*dPdVa[pv]
-        
+
             dCdu[1:nref] += c1*baseMVA*dPdVm[ref] + 2*c2*(baseMVA^2)*pinj_ref*dPdVm[ref]
-            dCdu[nref + npv + 1:nref + 2*npv] += (c1*baseMVA*dPdVm[pv] 
+            dCdu[nref + npv + 1:nref + 2*npv] += (c1*baseMVA*dPdVm[pv]
                                                   + 2*c2*(baseMVA^2)*pinj_ref*dPdVm[pv])
         end
 
@@ -461,10 +461,10 @@ function solve(pf::PowerSystem.PowerNetwork,
     # Retrieve parameter and initial voltage guess
     data = pf.data
     Ybus = pf.Ybus
-    V = pf.vbus
+    vmag, vang, pinj, qinj = PowerSystem.retrieve_physics(pf, x, u, p)
 
     # Convert vectors to target
-    vmag, vang, pinj, qinj = PowerSystem.retrieve_physics(pf, x, u, p)
+    V = T(pf.vbus)
     Vm = T(vmag)
     Va = T(vang)
     pbus = T(pinj)
@@ -508,7 +508,7 @@ function solve(pf::PowerSystem.PowerNetwork,
     # Build the AD Jacobian structure
     stateJacobianAD = AD.StateJacobianAD(residualFunction_polar_sparsity!, F, Vm, Va,
                                          ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
-    designJacobianAD = AD.DesignJacobianAD(residualFunction_polar_sparsity!, F, Vm, Va, 
+    designJacobianAD = AD.DesignJacobianAD(residualFunction_polar_sparsity!, F, Vm, Va,
                                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
     J = stateJacobianAD.J
     preconditioner = Precondition.NoPreconditioner()
@@ -529,7 +529,7 @@ function solve(pf::PowerSystem.PowerNetwork,
         converged = true
     end
 
-    linsol_iters = []
+    linsol_iters = Int[]
     dx = T{Float64}(undef, size(J,1))
     Vapv = view(Va, pv)
     Vapq = view(Va, pq)
@@ -608,8 +608,7 @@ function solve(pf::PowerSystem.PowerNetwork,
                             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     Ju = designJacobianAD.J
     J = stateJacobianAD.J
-    #conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
-    conv = 1
+    conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
     return xk, J, Ju, conv
 end
 
