@@ -219,6 +219,58 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
+function project_constraints!(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
+              p::AbstractArray, grad::AbstractArray, device=CPU(); V=Float64)
+    
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
+    
+    vmag, vang, pinj, qinj = PowerSystem.retrieve_physics(pf, x, u, p)
+
+    # constraint projection: if vmag in uk is outside bounds, we project it into the bounds.
+    # we also set it's gradient entry to 0 (NOTE: is this right??)
+
+    npv = length(pf.pv)
+    nref = length(pf.ref)
+
+    for i in 1:length(pf.pv)
+        bus_idx = pf.pv[i]
+        vm_max = pf.data["bus"][bus_idx, VMAX]
+        vm_min = pf.data["bus"][bus_idx, VMIN]
+        if vmag[bus_idx] > vm_max
+            @printf("voltage magnitude at bus %d above the limit. Projecting.(%f to %f) \n",
+                    bus_idx, vmag[bus_idx], vm_max)
+            u[nref + npv + i] = vm_max
+            grad[nref + npv + i] = 0.0
+
+        elseif vmag[bus_idx] < vm_min
+            @printf("voltage magnitude at bus %d below the limit. Projecting.(%f to %f) \n",
+                    bus_idx, vmag[bus_idx], vm_min)
+            u[nref + npv + i] = vm_min
+            grad[nref + npv + i] = 0.0
+        end
+    end
+    
+    for i in 1:length(pf.ref)
+        bus_idx = pf.ref[i]
+        vm_max = pf.data["bus"][bus_idx, VMAX]
+        vm_min = pf.data["bus"][bus_idx, VMIN]
+        if vmag[bus_idx] > vm_max
+            @printf("voltage magnitude at bus %d above the limit. Projecting.(%f to %f) \n",
+                    bus_idx, vmag[bus_idx], vm_max)
+            u[i] = vm_max
+            grad[i] = 0.0
+
+        elseif vmag[bus_idx] < vm_min
+            @printf("voltage magnitude at bus %d below the limit. Projecting.(%f to %f) \n",
+                    bus_idx, vmag[bus_idx], vm_min)
+            u[i] = vm_min
+            grad[i] = 0.0
+        end
+    end
+    
+    return u
+end
 
 function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
               p::AbstractArray, device=CPU(); V=Float64)
