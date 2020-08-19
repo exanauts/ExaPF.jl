@@ -33,8 +33,10 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     dCdx, dCdu = ExaPF.cost_gradients(pf, xk, u, p)
 
     # Test gradients
+    # We need uk here for the closure
+    uk = copy(u)
     function cost_x(xk)
-        return ExaPF.cost_function(pf, xk, u, p; V=eltype(xk))
+        return ExaPF.cost_function(pf, xk, uk, p; V=eltype(xk))
     end
 
     function cost_u(uk)
@@ -54,7 +56,6 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     # reduced gradient method
     iterations = 0
     iter_max = 100
-    uk = copy(u)
     step = 0.0001
     norm_grad = 10000
     norm_tol = 1e-5
