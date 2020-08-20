@@ -10,58 +10,83 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 # Build all the callbacks in a single closure.
 function build_callback(pf, x0, u, p)
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
     # Compute initial point.
-    x, g, Jx, Ju, _ = ExaPF.solve(pf, x0, u, p)
-    gdGdx = Jx(pf, x, u, p)
-    gdGdu = Ju(pf, x, u, p)
-    previous_x = copy(x)
-    dCdx, dCdu = ExaPF.cost_gradients(pf, x, u, p)
-    λk = -(gdGdx\dCdx)
+    xk, g, Jx, Ju, _ = ExaPF.solve(pf, x0, u, p)
+    ∇gₓ = Jx(pf, xk, u, p)
+    ∇gᵤ = Ju(pf, xk, u, p)
+    ∇fₓ, ∇fᵤ = ExaPF.cost_gradients(pf, xk, u, p)
+    λk = -(∇gₓ\∇fₓ)
     # Store initial hash.
     hash_u = hash(u)
     function _update(u)
         # It looks like the tolerance of the Newton algorithm
         # could impact the convergence.
-        x, g, Jx, Ju, conv = ExaPF.solve(pf, previous_x, u, p, maxiter=100, tol=1e-12)
+        x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=200, tol=1e-10)
         dGdx = Jx(pf, x, u, p)
         dGdu = Ju(pf, x, u, p)
         # I like to live dangerously
         !conv.has_converged && error("Fail to converge")
         # Copy in closure's arrays
-        copy!(gdGdx, dGdx)
-        copy!(gdGdu, dGdu)
-        copy!(previous_x, x)
+        copy!(∇gₓ, dGdx)
+        copy!(∇gᵤ, dGdu)
+        copy!(xk, x)
         # Update hash
         hash_u = hash(u)
     end
     function eval_f(u)
         (hash_u != hash(u)) && _update(u)
-        c_u =  ExaPF.cost_function(pf, previous_x, u, p; V=eltype(u))
+        c_u =  ExaPF.cost_function(pf, xk, u, p; V=eltype(u))
         # TODO: determine if we should include g(x, u), even if ≈ 0
-        return c_u + λk' * g(pf, previous_x, u, p)
+        return c_u + λk' * g(pf, xk, u, p)
     end
     function eval_grad_f(u, grad_f)
         (hash_u != hash(u)) && _update(u)
         # Update gradient
-        cost_x = xk -> ExaPF.cost_function(pf, xk, u, p; V=eltype(xk))
-        cost_u = uk -> ExaPF.cost_function(pf, previous_x, uk, p; V=eltype(uk))
+        cost_x = x_ -> ExaPF.cost_function(pf, x_, u, p; V=eltype(x_))
+        cost_u = u_ -> ExaPF.cost_function(pf, xk, u_, p; V=eltype(u_))
         fdCdx = xk -> ForwardDiff.gradient(cost_x, xk)
         fdCdu = uk -> ForwardDiff.gradient(cost_u, uk)
-        dCdx = fdCdx(previous_x)
-        dCdu = fdCdu(u)
+        ∇fₓ = fdCdx(xk)
+        ∇fᵤ = fdCdu(u)
 
+        # S = - inv(Array(∇gₓ))' * ∇gᵤ
+        # grad_f .= ∇fᵤ + S' * ∇fₓ
         # dCdx, dCdu = ExaPF.cost_gradients(pf, previous_x, u, p)
         # lamba calculation
-        lambda = -(gdGdx\dCdx)
-        copy!(λk, lambda)
+        λk = -(∇gₓ\∇fₓ)
         # compute reduced gradient
-        grad_f .= dCdu + (gdGdu')*lambda
+        grad_f .= ∇fᵤ + (∇gᵤ')*λk
         return nothing
     end
-    function eval_g(x, g)
+    function eval_g(u, g)
+        # (hash_u != hash(u)) && _update(u)
+        # g .= xk[1:npq]
         return nothing
     end
-    function eval_jac_g(x::Vector{Float64}, mode, rows::Vector{Int32}, cols::Vector{Int32}, values::Vector{Float64})
+    function eval_jac_g(u::Vector{Float64}, mode, rows::Vector{Int32}, cols::Vector{Int32}, values::Vector{Float64})
+        # n = length(u)
+        # if mode == :Structure
+        #     idx = 1
+        #     for c in 1:npq #number of constraints
+        #         for i in 1:n # number of variables
+        #             rows[idx] = c ; cols[idx] = i
+        #             idx += 1
+        #         end
+        #     end
+        # else
+        #     (hash_u != hash(u)) && _update(u)
+        #     jac = - inv(Array(∇gₓ)) * ∇gᵤ
+        #     k = 1
+        #     for i in 1:npq
+        #         for j in 1:n
+        #             values[k] = jac[i, j]
+        #             k += 1
+        #         end
+        #     end
+        # end
         return nothing
     end
     function eval_h(u::Vector{Float64}, mode,
@@ -80,23 +105,23 @@ function build_callback(pf, x0, u, p)
         else
             (hash_u != hash(u)) && _update(u)
             # ExaPF.PowerSystem.print_state(pf, previous_x, u, p)
-            cost_x = xk -> ExaPF.cost_function(pf, xk, u, p; V=eltype(xk))
-            cost_u = uk -> ExaPF.cost_function(pf, previous_x, uk, p; V=eltype(uk))
+            cost_x = x_ -> ExaPF.cost_function(pf, x_, u, p; V=eltype(x_))
+            cost_u = u_ -> ExaPF.cost_function(pf, xk, u_, p; V=eltype(u_))
             # Sensitivity matrix
-            S = - inv(Array(gdGdx)) * gdGdu
+            S = - inv(Array(∇gₓ)) * gdGdu
             # ∂u²
             H_uu = zeros(n, n)
             ForwardDiff.hessian!(H_uu, cost_u, u)
             # ∂x²
-            nx = length(previous_x)
+            nx = length(xk)
             H_xx = zeros(nx, nx)
-            ForwardDiff.hessian!(H_xx, cost_x, previous_x)
+            ForwardDiff.hessian!(H_xx, cost_x, xk)
             # ∂x∂u
             function cross_f_xu(x, u)
                 cost_x = x_ -> ExaPF.cost_function(pf, x_, u, p; V=eltype(x_))
                 return ForwardDiff.gradient(cost_x, x)
             end
-            H_xu = FiniteDiff.finite_difference_jacobian(u_ -> cross_f_xu(previous_x, u_), u)
+            H_xu = FiniteDiff.finite_difference_jacobian(u_ -> cross_f_xu(xk, u_), u)
 
             H = H_uu + S'*H_xx*S + S'*H_xu + H_xu' * S
             index = 0
@@ -112,8 +137,9 @@ function build_callback(pf, x0, u, p)
     return eval_f, eval_grad_f, eval_g, eval_jac_g, eval_h
 end
 
-function run_reduced_ipopt(; hessian=false)
+function run_reduced_ipopt(; hessian=false, cons=false)
     datafile = "test/case9.m"
+    # datafile = "test/case14.raw"
     # datafile = "../pglib-opf/pglib_opf_case1354_pegase.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
@@ -133,6 +159,8 @@ function run_reduced_ipopt(; hessian=false)
     # Build callbacks in closure
     eval_f, eval_grad_f, eval_g, eval_jac_g, eval_hh = build_callback(pf, xk, uk, p)
 
+    v_min = 0.9
+    v_max = 1.1
     n = length(uk)
     nref = length(pf.ref)
     npv = length(pf.pv)
@@ -141,19 +169,27 @@ function run_reduced_ipopt(; hessian=false)
     x_L = zeros(n)
     x_U = zeros(n)
     # ... wrt. reference's voltages
-    x_L[1:nref] .= 0.9
-    x_U[1:nref] .= 1.1
+    x_L[1:nref] .= v_min
+    x_U[1:nref] .= v_max
     # ... wrt. active power in PV buses
     x_L[nref + 1:nref + npv] .= 0.0
-    x_U[nref + 1:nref + npv] .= 3.0
+    x_U[nref + 1:nref + npv] .= 4.0
     # ... wrt. voltages in PV buses
-    x_L[nref + npv + 1:nref + 2*npv] .= 0.9
-    x_U[nref + npv + 1:nref + 2*npv] .= 1.1
+    x_L[nref + npv + 1:nref + 2*npv] .= v_min
+    x_U[nref + npv + 1:nref + 2*npv] .= v_max
 
-    # do not consider any constraint (yet)
-    m = 0
-    g_L = Float64[]
-    g_U = Float64[]
+    # add constraint on PQ's voltage magnitude
+    if cons
+        m = npq
+        jnnz = m * n
+        g_L = fill(v_min, m)
+        g_U = fill(v_max, m)
+    else
+        m = 0
+        jnnz = 0
+        g_L = Float64[]
+        g_U = Float64[]
+    end
 
     # Number of nonzeros in upper triangular Hessian
     if hessian
@@ -164,7 +200,7 @@ function run_reduced_ipopt(; hessian=false)
         eval_h = nothing
     end
 
-    prob = createProblem(n, x_L, x_U, m, g_L, g_U, 0, hnnz,
+    prob = createProblem(n, x_L, x_U, m, g_L, g_U, jnnz, hnnz,
                          eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
 
     prob.x = uk
@@ -190,9 +226,10 @@ function run_reduced_ipopt(; hessian=false)
     # addOption(prob, "derivative_test", "first-order")
     setIntermediateCallback(prob, intermediate)
 
+    # println(xk)
     solveProblem(prob)
     return prob
 end
 
-prob = run_reduced_ipopt(hessian=false)
+prob = run_reduced_ipopt(hessian=false, cons=false)
 println(prob.x)
