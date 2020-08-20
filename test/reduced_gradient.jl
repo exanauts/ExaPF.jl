@@ -60,21 +60,25 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     ∇gₓ_fd = FiniteDiff.finite_difference_jacobian(g_x, xk)
     # This function should return the same matrix as ∇gₓ, but it
     # appears that is not the case
-    @test_broken isapprox(∇gₓ_fd, ∇gₓ)
+    @test isapprox(∇gₓ_fd, Array(∇gₓ))
+    @info("m1: ", ∇gₓ_fd)
+    @info("m2: ", Array(∇gₓ))
 
     g_u = u_ -> g2(pf, xk, u_, p)
     ∇gᵤ_fd = FiniteDiff.finite_difference_jacobian(g_u, uk)
     # However, it appears that the Jacobian wrt u is correct
-    @test isapprox(∇gᵤ_fd, ∇gᵤ)
+    @test isapprox(∇gᵤ_fd, Array(∇gᵤ), rtol=1e-3)
+    @info("M: " ,Array(∇gᵤ))
+    @info("M: " ,∇gᵤ_fd)
 
     # evaluate cost
     c = ExaPF.cost_function(pf, xk, uk, p)
     ## ADJOINT
     # lamba calculation
-    λk  = -(∇gₓ) \ ∇fₓ
+    λk  = -(∇gₓ') \ ∇fₓ
     grad_adjoint = ∇fᵤ + ∇gᵤ' * λk
     ## DIRECT
-    S = - inv(Array(∇gₓ))' * ∇gᵤ
+    S = - inv(Array(∇gₓ)) * ∇gᵤ
     grad_direct = ∇fᵤ + S' * ∇fₓ
     @test isapprox(grad_adjoint, grad_direct)
 
@@ -86,5 +90,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
     grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, uk)
     # At the end, we are unable to compute the reduced gradient
-    @test_broken is_approx(grad_fd, grad_adjoint)
+    @info("gd", grad_fd)
+    @info("gd", grad_adjoint)
+    @test isapprox(grad_fd, grad_adjoint)
 end

@@ -40,8 +40,7 @@ struct StateJacobianAD <: AbstractJacobianAD
 
         mappv = [i + nv_m for i in pv]
         mappq = [i + nv_m for i in pq]
-        # map = T{Int64}(vcat(mappv, mappq, pq))
-        map = T{Int64}(vcat(pq, mappv, mappq))
+        map = T{Int64}(vcat(pq, mappq, mappv))
         nmap = size(map,1)
 
         # Need a host arrays for the sparsity detection below
@@ -68,7 +67,7 @@ struct StateJacobianAD <: AbstractJacobianAD
         end
         input = rand(nmap)
         output = zeros(Float64, length(F))
-        sparsity_pattern = SparsityDetection.jacobian_sparsity(sparsity_residual, output, input)
+        sparsity_pattern = SparsityDetection.jacobian_sparsity(sparsity_residual, output, input, verbose=false)
         J = Float64.(sparse(sparsity_pattern))
         coloring = T{Int64}(matrix_colors(J))
         ncolor = size(unique(coloring),1)
@@ -160,7 +159,8 @@ struct DesignJacobianAD <: AbstractJacobianAD
         end
         input = rand(nmap)
         output = zeros(Float64, length(F))
-        sparsity_pattern = SparsityDetection.jacobian_sparsity(sparsity_residual, output, input)
+        sparsity_pattern = SparsityDetection.jacobian_sparsity(sparsity_residual, output, input,
+                                                               verbose=false)
         J = Float64.(sparse(sparsity_pattern))
         coloring = T{Int64}(matrix_colors(J))
         ncolor = size(unique(coloring),1)

@@ -509,10 +509,10 @@ function solve(pf::PowerSystem.PowerNetwork,
     npq = size(pq, 1);
     j5 = 1
     j6 = npq
-    j1 = j6 + 1
-    j2 = j6 + npv
-    j3 = j2 + 1
-    j4 = j2 + npq
+    j3 = j6 + 1
+    j4 = j6 + npq
+    j1 = j4 + 1
+    j2 = j4 + npv
 
     # form residual function
     F = T(zeros(Float64, npv + 2*npq))
