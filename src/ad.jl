@@ -40,7 +40,8 @@ struct StateJacobianAD <: AbstractJacobianAD
 
         mappv = [i + nv_m for i in pv]
         mappq = [i + nv_m for i in pq]
-        map = T{Int64}(vcat(mappv, mappq, pq))
+        # map = T{Int64}(vcat(mappv, mappq, pq))
+        map = T{Int64}(vcat(pq, mappv, mappq))
         nmap = size(map,1)
 
         # Need a host arrays for the sparsity detection below

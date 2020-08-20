@@ -507,12 +507,12 @@ function solve(pf::PowerSystem.PowerNetwork,
     # indices
     npv = size(pv, 1);
     npq = size(pq, 1);
-    j1 = 1
-    j2 = npv
+    j5 = 1
+    j6 = npq
+    j1 = j6 + 1
+    j2 = j6 + npv
     j3 = j2 + 1
     j4 = j2 + npq
-    j5 = j4 + 1
-    j6 = j4 + npq
 
     # form residual function
     F = T(zeros(Float64, npv + 2*npq))
