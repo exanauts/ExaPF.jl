@@ -315,6 +315,7 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
     bus = pf.data["bus"]
     cost_data = pf.data["cost"]
     ngens = size(gens)[1]
+    nbus = size(bus)[1]
 
     # initialize cost
     cost = 0.0
@@ -340,6 +341,21 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
         end
 
     end
+
+    # Dommel an Tinney recommend to increase S every iteration
+	s = 0.0
+	for i = 1:nbus
+		bustype = bus[i, BUS_TYPE]
+		if bustype == 1
+			vm_max = bus[i, VMAX]
+			vm_min = bus[i, VMIN]
+			if vmag[i] > vm_max
+				cost += s*(vmag[i] - vm_max)^2
+			elseif vmag[i] < vm_min
+                cost += s*(vm_min - vmag[i])^2
+			end
+		end
+	end
 
     return cost
 end
@@ -438,7 +454,7 @@ function solve(pf::PowerSystem.PowerNetwork,
     p::AbstractArray;
     npartitions=2,
     solver="default",
-    tol=1e-6,
+    tol=1e-7,
     maxiter=20,
     device=CPU(),
     verbose=false
