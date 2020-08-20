@@ -76,7 +76,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         c = ExaPF.cost_function(pf, xk, uk, p)
 
         # lamba calculation
-        lambda = -(dGdx\dCdx)
+        lambda = -(dGdx'\dCdx)
 
         # Form functions
         Lu = u -> ExaPF.cost_function(pf, xk, u, p) + (g(pf, xk, u, p))'*lambda
