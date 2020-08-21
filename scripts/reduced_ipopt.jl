@@ -62,31 +62,41 @@ function build_callback(pf, x0, u, p)
         return nothing
     end
     function eval_g(u, g)
-        # (hash_u != hash(u)) && _update(u)
-        # g .= xk[1:npq]
+        (hash_u != hash(u)) && _update(u)
+        g .= xk[1:npq]
         return nothing
     end
     function eval_jac_g(u::Vector{Float64}, mode, rows::Vector{Int32}, cols::Vector{Int32}, values::Vector{Float64})
-        # n = length(u)
-        # if mode == :Structure
-        #     idx = 1
-        #     for c in 1:npq #number of constraints
-        #         for i in 1:n # number of variables
-        #             rows[idx] = c ; cols[idx] = i
-        #             idx += 1
-        #         end
-        #     end
-        # else
-        #     (hash_u != hash(u)) && _update(u)
-        #     jac = - inv(Array(∇gₓ)) * ∇gᵤ
-        #     k = 1
-        #     for i in 1:npq
-        #         for j in 1:n
-        #             values[k] = jac[i, j]
-        #             k += 1
-        #         end
-        #     end
-        # end
+        n = length(u)
+        if mode == :Structure
+            idx = 1
+            for c in 1:npq #number of constraints
+                for i in 1:n # number of variables
+                    rows[idx] = c ; cols[idx] = i
+                    idx += 1
+                end
+            end
+        else
+            (hash_u != hash(u)) && _update(u)
+            nx = length(xk)
+            n = length(u)
+            J = zeros(npq, n)
+            rhs = zeros(nx)
+            λ = zeros(nx)
+            for ix in 1:npq
+                rhs .= 0.0
+                rhs[ix] = 1.0
+                λ .= - ∇gₓ' \ rhs
+                J[ix, :] .= ∇gᵤ' * λ
+            end
+            k = 1
+            for i in 1:npq
+                for j in 1:n
+                    values[k] = J[i, j]
+                    k += 1
+                end
+            end
+        end
         return nothing
     end
     function eval_h(u::Vector{Float64}, mode,
@@ -228,8 +238,11 @@ function run_reduced_ipopt(; hessian=false, cons=false)
 
     # println(xk)
     Ipopt.solveProblem(prob)
+    u = prob.x
+    x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=50, tol=1e-14)
+    ExaPF.PowerSystem.print_state(pf, x, u, p)
     return prob
 end
 
-prob = run_reduced_ipopt(hessian=false, cons=false)
+prob = run_reduced_ipopt(hessian=false, cons=true)
 println(prob.x)

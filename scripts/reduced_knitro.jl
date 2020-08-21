@@ -14,7 +14,7 @@ function build_callback(pf, x0, u, p)
     npv = length(pf.pv)
     npq = length(pf.pq)
     # Compute initial point.
-    xk, g, Jx, Ju, _ = ExaPF.solve(pf, x0, u, p)
+    xk, g, Jx, Ju, _ = ExaPF.solve(pf, x0, u, p, tol=1e-10)
     ∇gₓ = Jx(pf, xk, u, p)
     ∇gᵤ = Ju(pf, xk, u, p)
     ∇fₓ, ∇fᵤ = ExaPF.cost_gradients(pf, xk, u, p)
@@ -28,7 +28,11 @@ function build_callback(pf, x0, u, p)
         dGdx = Jx(pf, x, u, p)
         dGdu = Ju(pf, x, u, p)
         # I like to live dangerously
-        !conv.has_converged && error("Fail to converge")
+        if !conv.has_converged
+            @info("uₖ = ", u)
+            println(conv.norm_residuals)
+            error("Fail to converge")
+        end
         # Copy in closure's arrays
         copy!(∇gₓ, dGdx)
         copy!(∇gᵤ, dGdu)
@@ -61,31 +65,33 @@ function build_callback(pf, x0, u, p)
         return nothing
     end
     function eval_g(u, g)
-        # (hash_u != hash(u)) && _update(u)
-        # g .= xk[1:npq]
+        (hash_u != hash(u)) && _update(u)
+        g .= xk[1:npq]
         return nothing
     end
-    function eval_jac_g(u::Vector{Float64}, mode, rows::Vector{Int32}, cols::Vector{Int32}, values::Vector{Float64})
-        # n = length(u)
-        # if mode == :Structure
-        #     idx = 1
-        #     for c in 1:npq #number of constraints
-        #         for i in 1:n # number of variables
-        #             rows[idx] = c ; cols[idx] = i
-        #             idx += 1
-        #         end
-        #     end
-        # else
-        #     (hash_u != hash(u)) && _update(u)
-        #     jac = - inv(Array(∇gₓ)) * ∇gᵤ
-        #     k = 1
-        #     for i in 1:npq
-        #         for j in 1:n
-        #             values[k] = jac[i, j]
-        #             k += 1
-        #         end
-        #     end
-        # end
+    function eval_jac_g(
+        jac_g::Vector{Float64},
+        u::Vector{Float64}
+    )
+        (hash_u != hash(u)) && _update(u)
+        nx = length(xk)
+        n = length(u)
+        J = zeros(npq, n)
+        rhs = zeros(nx)
+        λ = zeros(nx)
+        for ix in 1:npq
+            rhs .= 0.0
+            rhs[ix] = 1.0
+            λ .= - ∇gₓ' \ rhs
+            J[ix, :] .= ∇gᵤ' * λ
+        end
+        k = 1
+        for i in 1:npq
+            for j in 1:n
+                jac_g[k] = J[i, j]
+                k += 1
+            end
+        end
         return nothing
     end
     function eval_h(u::Vector{Float64}, mode,
@@ -136,13 +142,19 @@ function build_callback(pf, x0, u, p)
     return eval_f, eval_grad_f, eval_g, eval_jac_g, eval_h
 end
 
-function run_reduced_knitro(; hessian=false, cons=false)
-    datafile = "test/case9.m"
+function run_reduced_knitro(; eval_hessian=false, eval_cons=false)
+    # datafile = "test/case9.m"
     # datafile = "test/case14.raw"
-    # datafile = "../pglib-opf/pglib_opf_case1354_pegase.m"
+    # datafile = "/home/frapac/dev/pglib-opf/pglib_opf_case30_ieee.m"
+    datafile = "/home/frapac/dev/pglib-opf/pglib_opf_case14_ieee.m"
+    # datafile = "/home/frapac/dev/pglib-opf/pglib_opf_case300_ieee.m"
+    # datafile = "/home/frapac/dev/pglib-opf/pglib_opf_case89_pegase.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
     pbus = real.(pf.sbus)
     qbus = imag.(pf.sbus)
     vmag = abs.(pf.vbus)
@@ -154,16 +166,15 @@ function run_reduced_knitro(; hessian=false, cons=false)
 
     xk = copy(x)
     uk = copy(u)
+    n = length(uk)
 
     # Build callbacks in closure
     eval_f, eval_grad_f, eval_g, eval_jac_g, eval_hh = build_callback(pf, xk, uk, p)
+    jac_g = zeros(n * npq)
+    eval_jac_g(jac_g, uk)
 
     v_min = 0.9
     v_max = 1.1
-    n = length(uk)
-    nref = length(pf.ref)
-    npv = length(pf.pv)
-    npq = length(pf.pq)
     # Set bounds on decision variable
     x_L = zeros(n)
     x_U = zeros(n)
@@ -172,17 +183,26 @@ function run_reduced_knitro(; hessian=false, cons=false)
     x_U[1:nref] .= v_max
     # ... wrt. active power in PV buses
     x_L[nref + 1:nref + npv] .= 0.0
-    x_U[nref + 1:nref + npv] .= 2.3
+    x_U[nref + 1:nref + npv] .= 3.0
     # ... wrt. voltages in PV buses
     x_L[nref + npv + 1:nref + 2*npv] .= v_min
     x_U[nref + npv + 1:nref + 2*npv] .= v_max
 
     # add constraint on PQ's voltage magnitude
-    if cons
+    if eval_cons
         m = npq
         jnnz = m * n
         g_L = fill(v_min, m)
         g_U = fill(v_max, m)
+        jac_rows = zeros(Cint, jnnz)
+        jac_cols = zeros(Cint, jnnz)
+        idx = 1
+        for c in 1:npq #number of constraints
+            for i in 1:n # number of variables
+                jac_rows[idx] = c - 1; jac_cols[idx] = i - 1
+                idx += 1
+            end
+        end
     else
         m = 0
         jnnz = 0
@@ -191,7 +211,7 @@ function run_reduced_knitro(; hessian=false, cons=false)
     end
 
     # Number of nonzeros in upper triangular Hessian
-    if hessian
+    if eval_hessian
         hnnz = div(n * (n+1), 2)
         eval_h = eval_hh
     else
@@ -201,14 +221,19 @@ function run_reduced_knitro(; hessian=false, cons=false)
     function kn_eval_f(kc, cb, evalRequest, evalResult, userParams)
         x = evalRequest.x
         evalResult.obj[1] = eval_f(x)
+        if length(evalResult.c) > 0
+            eval_g(x, evalResult.c)
+        end
         return 0
     end
     function kn_eval_g(kc, cb, evalRequest, evalResult, userParams)
         x = evalRequest.x
         eval_grad_f(x, evalResult.objGrad)
+        if length(evalResult.jac) > 0
+            eval_jac_g(evalResult.jac, x)
+        end
         return 0
     end
-    println(eval_f(uk))
 
     kc = KNITRO.KN_new()
     iᵤ = KNITRO.KN_add_vars(kc, n)
@@ -216,18 +241,34 @@ function run_reduced_knitro(; hessian=false, cons=false)
     KNITRO.KN_set_var_upbnds(kc, iᵤ, x_U)
     KNITRO.KN_set_var_primal_init_values(kc, iᵤ, uk)
 
-    cb = KNITRO.KN_add_objective_callback(kc, kn_eval_f)
-    KNITRO.KN_set_cb_grad(kc, cb, kn_eval_g)
+    if eval_cons
+        indexCons = KNITRO.KN_add_cons(kc, m)
+        c_l = fill(v_min, m)
+        c_u = fill(v_max, m)
+        KNITRO.KN_set_con_lobnds(kc, indexCons, c_l)
+        KNITRO.KN_set_con_upbnds(kc, indexCons, c_u)
+        cb = KNITRO.KN_add_eval_callback(kc, true, indexCons, kn_eval_f)
+        KNITRO.KN_set_cb_grad(kc, cb, kn_eval_g;
+                              jacIndexCons=jac_rows,
+                              jacIndexVars=jac_cols)
+    else
+        cb = KNITRO.KN_add_objective_callback(kc, kn_eval_f)
+        KNITRO.KN_set_cb_grad(kc, cb, kn_eval_g)
+    end
 
-    KNITRO.KN_set_param(kc, "algorithm", 4)
+    KNITRO.KN_set_param(kc, "algorithm", 1)
     KNITRO.KN_set_param(kc, "hessopt", 2)
-    KNITRO.KN_set_param(kc, "derivcheck", 1)
-    KNITRO.KN_set_param(kc, "derivcheck_type", 2)
+    # KNITRO.KN_set_param(kc, "derivcheck", 1)
+    # KNITRO.KN_set_param(kc, "derivcheck_type", 2)
 
     KNITRO.KN_solve(kc)
     res = KNITRO.KN_get_solution(kc)
     KNITRO.KN_free(kc)
+
+    u = res[3]
+    x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=50, tol=1e-14)
+    ExaPF.PowerSystem.print_state(pf, x, u, p)
     return res
 end
 
-prob = run_reduced_knitro(hessian=false, cons=false)
+prob = run_reduced_knitro(;eval_hessian=false, eval_cons=true)
