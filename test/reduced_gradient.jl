@@ -4,6 +4,7 @@ using ExaPF
 using FiniteDiff
 using ForwardDiff
 using LinearAlgebra
+using SparseArrays
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
@@ -20,9 +21,16 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     p = ExaPF.PowerSystem.get_p(pf, vmag, vang, pbus, qbus)
 
     # solve power flow
-    xk, g, Jx, Ju, convergence = ExaPF.solve(pf, x, u, p)
+    xk, g, Jx, Ju, convergence, residualFunction_x! = ExaPF.solve(pf, x, u, p)
     ∇gₓ = Jx(pf, xk, u, p)
     ∇gᵤ = Ju(pf, xk, u, p)
+    vecx = Vector{Float64}(undef, length(x) + length(u))
+    vecx[1:length(x)] .= xk
+    vecx[length(x)+1:end] .= u
+    jac = ForwardDiff.jacobian(residualFunction_x!, vecx)
+    hes = ForwardDiff.hessian(residualFunction_x!, vecx)
+    spjacx = sparse(jac[:,1:length(x)])
+    @test isapprox(∇gₓ, spjacx)
 
     c = ExaPF.cost_function(pf, xk, u, p)
     ∇fₓ, ∇fᵤ = ExaPF.cost_gradients(pf, xk, u, p)

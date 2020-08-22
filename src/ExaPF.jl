@@ -642,6 +642,20 @@ function solve(pf::PowerSystem.PowerNetwork,
                                 pbus, qbus, pv, pq, nbus)
         return F
     end
-    return xk, g, Jx, Ju, conv
+    function residualFunction_x!(vecx)
+        x_ = Vector{eltype(vecx)}(undef, length(x))
+        u_ = Vector{eltype(vecx)}(undef, length(u))
+        x_ .= vecx[1:length(x)]
+        u_ .= vecx[length(x)+1:end]
+        F_ = Vector{eltype(vecx)}(undef, length(F))
+        F_ .= 0
+        Vm, Va, pbus, qbus = ExaPF.PowerSystem.retrieve_physics(pf, x_, u_, p; V=eltype(vecx))
+        residualFunction_polar!(F_, Vm, Va,
+                                ybus_re,
+                                ybus_im,
+                                pbus, qbus, pv, pq, nbus)
+        return F_                        
+    end
+    return xk, g, Jx, Ju, conv, residualFunction_x!
 end
 end
