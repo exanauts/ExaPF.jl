@@ -27,10 +27,20 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     vecx = Vector{Float64}(undef, length(x) + length(u))
     vecx[1:length(x)] .= xk
     vecx[length(x)+1:end] .= u
-    jac = ForwardDiff.jacobian(residualFunction_x!, vecx)
-    hes = ForwardDiff.hessian(residualFunction_x!, vecx)
-    spjacx = sparse(jac[:,1:length(x)])
-    @test isapprox(∇gₓ, spjacx)
+    fjac = vecx -> ForwardDiff.jacobian(residualFunction_x!, vecx)
+    jac = fjac(vecx)
+    jacx = sparse(jac[:,1:length(x)])
+    jacu = sparse(jac[:,length(x)+1:end])
+    @test isapprox(∇gₓ, jacx)
+    @test isapprox(∇gᵤ, jacu)
+    hes = ForwardDiff.jacobian(fjac, vecx)
+    # I am not sure about the reshape.
+    # It could be that length(xk) goes at the end. This tensor stuff is a brain twister.
+    hes = reshape(hes, (length(xk), length(xk) + length(u), length(xk) + length(u)))
+    hesxx = hes[:, 1:length(x), 1:length(x)]
+    hesxu = hes[:, 1:length(x), length(x)+1:end]
+    hesuu = hes[:, length(x)+1:end, length(x)+1:end]
+
 
     c = ExaPF.cost_function(pf, xk, u, p)
     ∇fₓ, ∇fᵤ = ExaPF.cost_gradients(pf, xk, u, p)
