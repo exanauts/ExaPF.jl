@@ -219,57 +219,90 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
-function project_constraints!(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
-              p::AbstractArray, grad::AbstractArray, device=CPU(); V=Float64)
+function project_constraints!(u::AbstractArray, grad::AbstractArray, u_min::AbstractArray,
+                              u_max::AbstractArray)
+    dim = length(u)
+    for i=1:dim
+        if u[i] > u_max[i]
+            @printf("Projecting u[%d] = %f to u_max = %f.\n", i, u[i], u_max[i])
+            u[i] = u_max[i]
+            grad[i] = 0.0
+        elseif u[i] < u_min[i]
+            @printf("Projecting u[%d] = %f to u_max = %f.\n", i, u[i], u_max[i])
+            u[i] = u_max[i]
+            grad[i] = 0.0
+        end
+    end
+end
+
+"""
+    get_constraints(pf)
+
+Given PowerNetwork object, returns vectors xmin, xmax, umin, umax of the OPF box constraints.
+
+If xmin[i] > xmax[i] we assume there's NO limit.
+"""
+function get_constraints(pf::PowerSystem.PowerNetwork)
 
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
+    GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
+    MU_QMIN = IndexSet.idx_gen()
 
-    vmag, vang, pinj, qinj = PowerSystem.retrieve_physics(pf, x, u, p)
-
-    # constraint projection: if vmag in uk is outside bounds, we project it into the bounds.
-    # we also set it's gradient entry to 0 (NOTE: is this right??)
-
-    npv = length(pf.pv)
     nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+    b2i = pf.bus_to_indexes
+    
+    gens = pf.data["gen"]
+    baseMVA = pf.data["baseMVA"][1]
+    bus = pf.data["bus"]
+    ngens = size(gens)[1]
+    
+    dimension_u = 2*npv + nref
+    dimension_x = 2*npq + npv
+
+    u_min = ones(dimension_u)
+    u_max = -ones(dimension_u)
+    x_min = ones(dimension_x)
+    x_max = -ones(dimension_x)
+
+    for i in 1:length(pf.pq)
+        bus_idx = pf.pq[i]
+        vm_max = bus[bus_idx, VMAX]
+        vm_min = bus[bus_idx, VMIN]
+        x_min[i] = vm_min
+        x_max[i] = vm_max
+    end
 
     for i in 1:length(pf.pv)
         bus_idx = pf.pv[i]
-        vm_max = pf.data["bus"][bus_idx, VMAX]
-        vm_min = pf.data["bus"][bus_idx, VMIN]
-        if vmag[bus_idx] > vm_max
-            @printf("voltage magnitude at bus %d above the limit. Projecting.(%f to %f) \n",
-                    bus_idx, vmag[bus_idx], vm_max)
-            u[nref + npv + i] = vm_max
-            grad[nref + npv + i] = 0.0
-
-        elseif vmag[bus_idx] < vm_min
-            @printf("voltage magnitude at bus %d below the limit. Projecting.(%f to %f) \n",
-                    bus_idx, vmag[bus_idx], vm_min)
-            u[nref + npv + i] = vm_min
-            grad[nref + npv + i] = 0.0
-        end
+        vm_max = bus[bus_idx, VMAX]
+        vm_min = bus[bus_idx, VMIN]
+        u_min[nref + npv + i] = vm_min
+        u_max[nref + npv + i] = vm_max
     end
 
     for i in 1:length(pf.ref)
         bus_idx = pf.ref[i]
-        vm_max = pf.data["bus"][bus_idx, VMAX]
-        vm_min = pf.data["bus"][bus_idx, VMIN]
-        if vmag[bus_idx] > vm_max
-            @printf("voltage magnitude at bus %d above the limit. Projecting.(%f to %f) \n",
-                    bus_idx, vmag[bus_idx], vm_max)
-            u[i] = vm_max
-            grad[i] = 0.0
-
-        elseif vmag[bus_idx] < vm_min
-            @printf("voltage magnitude at bus %d below the limit. Projecting.(%f to %f) \n",
-                    bus_idx, vmag[bus_idx], vm_min)
-            u[i] = vm_min
-            grad[i] = 0.0
+        vm_max = bus[bus_idx, VMAX]
+        vm_min = bus[bus_idx, VMIN]
+        u_min[i] = vm_min
+        u_max[i] = vm_max
+    end
+    
+    for i = 1:ngens
+        genbus = b2i[gens[i, GEN_BUS]]
+        bustype = bus[genbus, BUS_TYPE]
+        if bustype == 2
+            idx_pv = findall(pf.pv.==genbus)[1]
+            u_min[nref + idx_pv] = gens[i, PMIN]/baseMVA
+            u_max[nref + idx_pv] = gens[i, PMAX]/baseMVA
         end
     end
 
-    return u
+    return u_min, u_max, x_min, x_max
 end
 
 function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,

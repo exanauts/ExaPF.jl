@@ -23,6 +23,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     x = ExaPF.PowerSystem.get_x(pf, vmag, vang, pbus, qbus)
     u = ExaPF.PowerSystem.get_u(pf, vmag, vang, pbus, qbus)
     p = ExaPF.PowerSystem.get_p(pf, vmag, vang, pbus, qbus)
+    u_min, u_max, x_min, x_max = ExaPF.get_constraints(pf)
 
     # solve power flow
     xk, g, Jx, Ju, convergence = ExaPF.solve(pf, x, u, p)
@@ -63,6 +64,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     iter = 1
     while norm_grad > norm_tol && iter < iter_max
         println("Iteration: ", iter)
+        
         # solve power flow and compute gradients
         xk, g, Jx, Ju, convergence = ExaPF.solve(pf, xk, uk, p)
         dGdx = Jx(pf, xk, uk, p)
@@ -89,7 +91,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         # step = ls(uk, grad, Lu, grad_Lu)
         # compute control step
         uk = uk - step*grad
-        ExaPF.project_constraints!(pf, xk, uk, p, grad)
+        ExaPF.project_constraints!(uk, grad, u_min, u_max)
         println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
 
