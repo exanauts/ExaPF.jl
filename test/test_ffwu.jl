@@ -39,11 +39,14 @@ function deltax_approx(delta_u, dGdx, dGdu)
     return delta_x
 end
 
-function descent_direction(rk, u, u_min, u_max)
+function descent_direction(pf, rk, u, u_min, u_max)
 
     dim = length(u)
     delta_u = zeros(dim)
-
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+    
     for i=1:dim
         if u[i] < u_max[i] && u[i] > u_min[i]
             delta_u[i] = -rk[i]
@@ -52,6 +55,12 @@ function descent_direction(rk, u, u_min, u_max)
         elseif isapprox(u[i], u_min[i]) && rk[i] < 0.0
             delta_u[i] = -rk[i]
         end
+    end
+
+    # u = [VMAG^{REF}, P^{PV}, VMAG^{PV}]
+    scale = 2.0
+    for i=1:npv
+        delta_u[nref + i] = scale*delta_u[nref + i]
     end
 
     return delta_u
@@ -106,7 +115,6 @@ function alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
             alpha_x = min(alpha_x, a_prop)
         end
     end
-
     return min(alpha_x, alpha_u)
 end
 
@@ -171,15 +179,14 @@ end
         converged = check_convergence(grad, uk, u_min, u_max)
 
         # compute descent direction
-        delta_u = descent_direction(grad, uk, u_min, u_max)
+        delta_u = descent_direction(pf, grad, uk, u_min, u_max)
 
         # line search
         delta_x = deltax_approx(delta_u, dGdx, dGdu)
-        a_m = alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
-        a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
-
+        #a_m = alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
+        #a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
         # compute control step
-        uk = uk + a_dav*delta_u
+        uk = uk + step*delta_u
         
         println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
