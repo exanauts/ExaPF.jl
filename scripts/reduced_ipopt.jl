@@ -8,6 +8,21 @@ using Ipopt
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
+function gₚ(pf, x, u, p; V=Float64)
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+
+    Vm, Va, pbus, qbus = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p; V=V)
+    p_ref = zeros(V, nref)
+
+    ybus_re, ybus_im = ExaPF.Spmat{Vector}(pf.Ybus)
+    for (i, bus) in enumerate(pf.ref)
+        p_ref[i] = ExaPF.PowerSystem.get_power_injection(bus, Vm, Va, ybus_re, ybus_im)
+    end
+    return p_ref
+end
+
 # Build all the callbacks in a single closure.
 function build_callback(pf, x0, u, p)
     nref = length(pf.ref)
@@ -18,17 +33,21 @@ function build_callback(pf, x0, u, p)
     ∇gₓ = Jx(pf, xk, u, p)
     ∇gᵤ = Ju(pf, xk, u, p)
     ∇fₓ, ∇fᵤ = ExaPF.cost_gradients(pf, xk, u, p)
-    λk = -(∇gₓ\∇fₓ)
+    λk = -(∇gₓ'\∇fₓ)
     # Store initial hash.
     hash_u = hash(u)
     function _update(u)
         # It looks like the tolerance of the Newton algorithm
         # could impact the convergence.
-        x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=200, tol=1e-14)
+        x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=20, tol=1e-10)
         dGdx = Jx(pf, x, u, p)
         dGdu = Ju(pf, x, u, p)
         # I like to live dangerously
-        !conv.has_converged && error("Fail to converge")
+        if !conv.has_converged
+            println(u)
+            println(conv.norm_residuals)
+            error("Fail to converge")
+        end
         # Copy in closure's arrays
         copy!(∇gₓ, dGdx)
         copy!(∇gᵤ, dGdu)
@@ -63,14 +82,18 @@ function build_callback(pf, x0, u, p)
     end
     function eval_g(u, g)
         (hash_u != hash(u)) && _update(u)
-        g .= xk[1:npq]
+        # Constraints on vmag_{pq}
+        g[1:npq] .= xk[1:npq]
+        # Constraint on p_{ref}
+        g[npq+1:npq+nref] .= gₚ(pf, xk, u, p)
         return nothing
     end
     function eval_jac_g(u::Vector{Float64}, mode, rows::Vector{Int32}, cols::Vector{Int32}, values::Vector{Float64})
         n = length(u)
+        m = npq + nref
         if mode == :Structure
             idx = 1
-            for c in 1:npq #number of constraints
+            for c in 1:m #number of constraints
                 for i in 1:n # number of variables
                     rows[idx] = c ; cols[idx] = i
                     idx += 1
@@ -80,17 +103,30 @@ function build_callback(pf, x0, u, p)
             (hash_u != hash(u)) && _update(u)
             nx = length(xk)
             n = length(u)
-            J = zeros(npq, n)
+            J = zeros(m, n)
             rhs = zeros(nx)
             λ = zeros(nx)
+            # Evaluate reduced Jacobian for bounds on vmag_{pq}
             for ix in 1:npq
                 rhs .= 0.0
                 rhs[ix] = 1.0
                 λ .= - ∇gₓ' \ rhs
                 J[ix, :] .= ∇gᵤ' * λ
             end
+            # Evaluate reduced Jacobian for bounds on p_{ref}
+            gg_x(x_) = gₚ(pf, x_, u, p; V=eltype(x_))
+            gg_u(u_) = gₚ(pf, xk, u_, p; V=eltype(u_))
+            jac_p_x = ForwardDiff.jacobian(gg_x, xk)
+            jac_p_u = ForwardDiff.jacobian(gg_u, u)
+            for ix in 1:nref
+                rhs = jac_p_x[ix, :]
+                λ .= - ∇gₓ' \ rhs
+                J[npq + ix, :] .= jac_p_u[ix, :] + ∇gᵤ' * λ
+            end
+
+            # Copy to Ipopt's Jacobian
             k = 1
-            for i in 1:npq
+            for i in 1:m
                 for j in 1:n
                     values[k] = J[i, j]
                     k += 1
@@ -149,9 +185,10 @@ end
 
 function run_reduced_ipopt(; hessian=false, cons=false)
     datafile = "test/case9.m"
-    # datafile = "test/case14.raw"
-    # datafile = "../pglib-opf/pglib_opf_case1354_pegase.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
 
     # retrieve initial state of network
     pbus = real.(pf.sbus)
@@ -165,35 +202,26 @@ function run_reduced_ipopt(; hessian=false, cons=false)
 
     xk = copy(x)
     uk = copy(u)
+    n = length(uk)
+    uk .= max.(uk, 0.0)
 
     # Build callbacks in closure
     eval_f, eval_grad_f, eval_g, eval_jac_g, eval_hh = build_callback(pf, xk, uk, p)
 
     v_min = 0.9
     v_max = 1.1
-    n = length(uk)
-    nref = length(pf.ref)
-    npv = length(pf.pv)
-    npq = length(pf.pq)
+    u_min, u_max, x_min, x_max, p_min, p_max = ExaPF.get_constraints(pf)
+
     # Set bounds on decision variable
-    x_L = zeros(n)
-    x_U = zeros(n)
-    # ... wrt. reference's voltages
-    x_L[1:nref] .= v_min
-    x_U[1:nref] .= v_max
-    # ... wrt. active power in PV buses
-    x_L[nref + 1:nref + npv] .= 0.0
-    x_U[nref + 1:nref + npv] .= 2.5
-    # ... wrt. voltages in PV buses
-    x_L[nref + npv + 1:nref + 2*npv] .= v_min
-    x_U[nref + npv + 1:nref + 2*npv] .= v_max
+    x_L = u_min
+    x_U = u_max
 
     # add constraint on PQ's voltage magnitude
     if cons
-        m = npq
+        m = npq + nref
         jnnz = m * n
-        g_L = fill(v_min, m)
-        g_U = fill(v_max, m)
+        g_L = [fill(v_min, npq); p_min]
+        g_U = [fill(v_max, npq); p_max]
     else
         m = 0
         jnnz = 0
@@ -213,6 +241,7 @@ function run_reduced_ipopt(; hessian=false, cons=false)
     prob = Ipopt.createProblem(n, x_L, x_U, m, g_L, g_U, jnnz, hnnz,
                          eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
 
+    # prob.x = (u_min .+ u_max) ./ 2.0
     prob.x = uk
 
     # This tests callbacks.
@@ -220,7 +249,7 @@ function run_reduced_ipopt(; hessian=false, cons=false)
                           obj_value::Float64, inf_pr::Float64, inf_du::Float64, mu::Float64,
                           d_norm::Float64, regularization_size::Float64, alpha_du::Float64, alpha_pr::Float64,
                           ls_trials::Int)
-        return iter_count < 100  # Interrupts after one iteration.
+        return iter_count < 200  # Interrupts after one iteration.
     end
 
     # I am too lazy to compute second order information
@@ -229,18 +258,15 @@ function run_reduced_ipopt(; hessian=false, cons=false)
         addOption(prob, "limited_memory_initialization", "scalar1")
         # addOption(prob, "limited_memory_update_type", "sr1")
     end
-    # I am an agressive guy (and at some point computing more trial steps
-    # deteriorate the convergence)
     addOption(prob, "accept_after_max_steps", 10)
-    # The derivative check is failing... so deactivate it
-    addOption(prob, "derivative_test", "first-order")
+    # addOption(prob, "derivative_test", "first-order")
     Ipopt.setIntermediateCallback(prob, intermediate)
 
-    # println(xk)
     Ipopt.solveProblem(prob)
     u = prob.x
     x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=50, tol=1e-14)
     ExaPF.PowerSystem.print_state(pf, x, u, p)
+    println(p_max)
     return prob
 end
 

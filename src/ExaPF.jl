@@ -201,10 +201,10 @@ function residualJacobian(V, Ybus, pv, pq)
     dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
     dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
 
-    j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-    j12 = real(dSbus_dVm[[pv; pq], pq])
-    j21 = imag(dSbus_dVa[pq, [pv; pq]])
-    j22 = imag(dSbus_dVm[pq, pq])
+    j11 = real(dSbus_dVm[[pv; pq], pq])
+    j12 = real(dSbus_dVa[[pv; pq], [pq; pv]])
+    j21 = imag(dSbus_dVm[pq, pq])
+    j22 = imag(dSbus_dVa[pq, [pq; pv]])
 
     J = [j11 j12; j21 j22]
 end
@@ -240,7 +240,6 @@ end
 
 Given PowerNetwork object, returns vectors xmin, xmax, umin, umax of the OPF box constraints.
 
-If xmin[i] > xmax[i] we assume there's NO limit.
 """
 function get_constraints(pf::PowerSystem.PowerNetwork)
 
@@ -254,19 +253,21 @@ function get_constraints(pf::PowerSystem.PowerNetwork)
     npv = length(pf.pv)
     npq = length(pf.pq)
     b2i = pf.bus_to_indexes
-    
+
     gens = pf.data["gen"]
     baseMVA = pf.data["baseMVA"][1]
     bus = pf.data["bus"]
     ngens = size(gens)[1]
-    
+
     dimension_u = 2*npv + nref
     dimension_x = 2*npq + npv
 
-    u_min = ones(dimension_u)
-    u_max = -ones(dimension_u)
-    x_min = ones(dimension_x)
-    x_max = -ones(dimension_x)
+    u_min = fill(-Inf, dimension_u)
+    u_max = fill(Inf, dimension_u)
+    x_min = fill(-Inf, dimension_x)
+    x_max = fill(Inf, dimension_x)
+    p_min = fill(-Inf, nref)
+    p_max = fill(Inf, nref)
 
     for i in 1:length(pf.pq)
         bus_idx = pf.pq[i]
@@ -291,18 +292,22 @@ function get_constraints(pf::PowerSystem.PowerNetwork)
         u_min[i] = vm_min
         u_max[i] = vm_max
     end
-    
+
     for i = 1:ngens
         genbus = b2i[gens[i, GEN_BUS]]
         bustype = bus[genbus, BUS_TYPE]
-        if bustype == 2
-            idx_pv = findall(pf.pv.==genbus)[1]
-            u_min[nref + idx_pv] = gens[i, PMIN]/baseMVA
-            u_max[nref + idx_pv] = gens[i, PMAX]/baseMVA
+        if bustype == PowerSystem.PV_BUS_TYPE
+            idx_pv = findfirst(pf.pv.==genbus)
+            u_min[nref + idx_pv] = gens[i, PMIN] / baseMVA
+            u_max[nref + idx_pv] = gens[i, PMAX] / baseMVA
+        elseif bustype == PowerSystem.REF_BUS_TYPE
+            idx = findfirst(pf.ref .== genbus)
+            p_min[idx] = gens[i, PMIN] / baseMVA
+            p_max[idx] = gens[i, PMAX] / baseMVA
         end
     end
 
-    return u_min, u_max, x_min, x_max
+    return u_min, u_max, x_min, x_max, p_min, p_max
 end
 
 function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,
@@ -540,12 +545,12 @@ function solve(pf::PowerSystem.PowerNetwork,
     # indices
     npv = size(pv, 1);
     npq = size(pq, 1);
-    j5 = 1
-    j6 = npq
-    j3 = j6 + 1
-    j4 = j6 + npq
-    j1 = j4 + 1
-    j2 = j4 + npv
+    j1 = 1
+    j2 = npq
+    j3 = j2 + 1
+    j4 = j2 + npq
+    j5 = j4 + 1
+    j6 = j4 + npv
 
     # form residual function
     F = T(zeros(Float64, npv + 2*npq))
@@ -608,14 +613,14 @@ function solve(pf::PowerSystem.PowerNetwork,
         # update voltage
         @timeit TIMER "Update voltage" begin
             if (npv != 0)
-                # Va[pv] .= Va[pv] .+ dx[j1:j2]
-                Vapv .= Vapv .+ dx12
+                # Va[pv] .= Va[pv] .+ dx[j5:j6]
+                Vapv .= Vapv .+ dx56
             end
             if (npq != 0)
+                # Vm[pq] .= Vm[pq] .+ dx[j1:j2]
+                Vmpq .= Vmpq .+ dx12
                 # Va[pq] .= Va[pq] .+ dx[j3:j4]
                 Vapq .= Vapq .+ dx34
-                # Vm[pq] .= Vm[pq] .+ dx[j5:j6]
-                Vmpq .= Vmpq .+ dx56
             end
         end
 
@@ -659,13 +664,13 @@ function solve(pf::PowerSystem.PowerNetwork,
         Vm, Va, pbus, qbus = PowerSystem.retrieve_physics(pf, x, u, p)
         AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
                                 ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
-        return designJacobianAD.J 
+        return designJacobianAD.J
     end
     function Jx(pf, x, u, p)
         Vm, Va, pbus, qbus = PowerSystem.retrieve_physics(pf, x, u, p)
         AD.residualJacobianAD!(stateJacobianAD, residualFunction_polar!, Vm, Va,
                                 ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
-        return stateJacobianAD.J 
+        return stateJacobianAD.J
     end
     function g(pf, x, u, p)
         Vm, Va, pbus, qbus = PowerSystem.retrieve_physics(pf, x, u, p)
@@ -687,7 +692,7 @@ function solve(pf::PowerSystem.PowerNetwork,
                                 ybus_re,
                                 ybus_im,
                                 pbus, qbus, pv, pq, nbus)
-        return F_                        
+        return F_
     end
     return xk, g, Jx, Ju, conv, residualFunction_x!
 end

@@ -43,32 +43,37 @@ struct StateJacobianAD <: AbstractJacobianAD
         map = T{Int64}(vcat(pq, mappq, mappv))
         nmap = size(map,1)
 
+        function residualJacobian(V, Ybus, pv, pq)
+            n = size(V, 1)
+            Ibus = Ybus*V
+            diagV       = sparse(1:n, 1:n, V, n, n)
+            diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
+            diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
+
+            dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
+            dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
+
+            j11 = real(dSbus_dVm[[pv; pq], pq])
+            j12 = real(dSbus_dVa[[pv; pq], [pq; pv]])
+            j21 = imag(dSbus_dVm[pq, pq])
+            j22 = imag(dSbus_dVa[pq, [pq; pv]])
+
+            J = [j11 j12; j21 j22]
+        end
+
+
         # Need a host arrays for the sparsity detection below
         spmap = Vector(map)
         hybus_re = Spmat{Vector}(ybus_re)
         hybus_im = Spmat{Vector}(ybus_im)
-        hpv = Vector(pv)
-        hpq = Vector(pq)
-        hpinj = Vector(pinj)
-        hqinj = Vector(qinj)
-        # Get the sparsity pattern
-        function sparsity_residual(output,input)
-            x = zeros(eltype(input), nv_m + nv_a)
-            x[spmap] .= input
-            residualFunction(
-                output,
-                x[1:nv_m],
-                x[nv_m+1:nv_m+nv_a],
-                hybus_re,
-                hybus_im,
-                hpinj, hqinj,
-                hpv, hpq, nbus
-            )
-        end
-        input = rand(nmap)
-        output = zeros(Float64, length(F))
-        sparsity_pattern = SparsityDetection.jacobian_sparsity(sparsity_residual, output, input, verbose=false)
-        J = Float64.(sparse(sparsity_pattern))
+        n = nv_a
+        Yre=SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
+        Yim=SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
+        Y = Yre .+ 1im .* Yim
+        Vre = rand(n)
+        Vim = rand(n)
+        V = Vre .+ 1im .* Vim
+        J = residualJacobian(V, Y, pv, pq)
         coloring = T{Int64}(matrix_colors(J))
         ncolor = size(unique(coloring),1)
         println("Number of Jacobian colors: ", ncolor)
