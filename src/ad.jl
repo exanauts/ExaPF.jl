@@ -76,8 +76,8 @@ struct StateJacobianAD <: AbstractJacobianAD
         J = residualJacobian(V, Y, pv, pq)
         coloring = T{Int64}(matrix_colors(J))
         ncolor = size(unique(coloring),1)
-        println("Number of Jacobian colors: ", ncolor)
-        println("Creating JacobianAD...")
+        #println("Number of Jacobian colors: ", ncolor)
+        #println("Creating JacobianAD...")
         if F isa CuArray
             J = CuSparseMatrixCSR(J)
         end
@@ -169,8 +169,8 @@ struct DesignJacobianAD <: AbstractJacobianAD
         J = Float64.(sparse(sparsity_pattern))
         coloring = T{Int64}(matrix_colors(J))
         ncolor = size(unique(coloring),1)
-        println("Number of Jacobian colors: ", ncolor)
-        println("Creating JacobianAD...")
+        #println("Number of Jacobian colors: ", ncolor)
+        #println("Creating JacobianAD...")
         if F isa CuArray
             J = CuSparseMatrixCSR(J)
         end

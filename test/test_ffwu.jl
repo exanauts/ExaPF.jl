@@ -1,9 +1,11 @@
-# Verify solutions against matpower results
+# Implementation of ideas found in F.F. Wu's "Two stage" paper.
 using Test
 using ExaPF
 using FiniteDiff
 using ForwardDiff
 using LinearAlgebra
+using Printf
+using UnicodePlots
 
 # Include the linesearch here for now
 import ExaPF: ParseMAT, PowerSystem, IndexSet
@@ -118,6 +120,28 @@ function alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
     return min(alpha_x, alpha_u)
 end
 
+# given limit alpha, compute costs along a direction.
+
+function cost_direction(pf, x, u, p, delta_u, alpha_max; points=10)
+
+    alphas = zeros(points)
+    costs = zeros(points)
+    k = 1
+
+    for a=range(0.0, stop=alpha_max, length=points)
+        u_prop = u + a*delta_u
+        xk, g, Jx, Ju, convergence = ExaPF.solve(pf, x, u_prop, p)
+        c = ExaPF.cost_function(pf, xk, u_prop, p; V=eltype(xk))
+
+        alphas[k] = a
+        costs[k] = c
+        k += 1
+    end
+    plt = lineplot(alphas, costs, title = "Cost along alpha", width=80);
+    println(plt)
+
+end
+
 
 @testset "Two-stage OPF" begin
     datafile = "test/case9.m"
@@ -146,7 +170,7 @@ end
 
     # reduced gradient method
     iterations = 0
-    iter_max = 100
+    iter_max = 3
     step = 0.0001
     norm_grad = 10000
     converged = false
@@ -183,8 +207,13 @@ end
 
         # line search
         delta_x = deltax_approx(delta_u, dGdx, dGdu)
-        #a_m = alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
-        #a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
+        a_m = alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
+        @printf("Maximal alpha: %f\n", a_m)
+        a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
+        @printf("Davidon alpha: %f\n", a_dav)
+
+        cost_direction(pf, xk, uk, p, delta_u, a_m; points=10)
+        
         # compute control step
         uk = uk + step*delta_u
         

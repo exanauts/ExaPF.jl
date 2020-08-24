@@ -500,7 +500,9 @@ function solve(pf::PowerSystem.PowerNetwork,
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
-    println("Target set to device $(device)")
+    if verbose
+        println("Target set to device $(device)")
+    end
     if isa(device, CPU)
         T = Vector
         M = SparseMatrixCSC
@@ -578,8 +580,9 @@ function solve(pf::PowerSystem.PowerNetwork,
 
     # check for convergence
     normF = norm(F, Inf)
-    @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
-
+    if verbose
+        @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
+    end
     if normF < tol
         converged = true
     end
@@ -638,17 +641,20 @@ function solve(pf::PowerSystem.PowerNetwork,
         end
 
         @timeit TIMER "Norm" normF = norm(F, Inf)
-        @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
-
+        if verbose
+            @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
+        end
         if normF < tol
             converged = true
         end
     end
 
+    if verbose
     if converged
         @printf("N-R converged in %d iterations.\n", iter)
     else
         @printf("N-R did not converge.\n")
+    end
     end
 
     xk = PowerSystem.get_x(pf, Vm, Va, pbus, qbus)
