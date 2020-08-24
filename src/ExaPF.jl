@@ -266,6 +266,8 @@ function get_constraints(pf::PowerSystem.PowerNetwork)
     u_max = fill(Inf, dimension_u)
     x_min = fill(-Inf, dimension_x)
     x_max = fill(Inf, dimension_x)
+    p_min = fill(-Inf, nref)
+    p_max = fill(Inf, nref)
 
     for i in 1:length(pf.pq)
         bus_idx = pf.pq[i]
@@ -294,14 +296,18 @@ function get_constraints(pf::PowerSystem.PowerNetwork)
     for i = 1:ngens
         genbus = b2i[gens[i, GEN_BUS]]
         bustype = bus[genbus, BUS_TYPE]
-        if bustype == 2
-            idx_pv = findall(pf.pv.==genbus)[1]
-            u_min[nref + idx_pv] = gens[i, PMIN]/baseMVA
-            u_max[nref + idx_pv] = gens[i, PMAX]/baseMVA
+        if bustype == PowerSystem.PV_BUS_TYPE
+            idx_pv = findfirst(pf.pv.==genbus)
+            u_min[nref + idx_pv] = gens[i, PMIN] / baseMVA
+            u_max[nref + idx_pv] = gens[i, PMAX] / baseMVA
+        elseif bustype == PowerSystem.REF_BUS_TYPE
+            idx = findfirst(pf.ref .== genbus)
+            p_min[idx] = gens[i, PMIN] / baseMVA
+            p_max[idx] = gens[i, PMAX] / baseMVA
         end
     end
 
-    return u_min, u_max, x_min, x_max
+    return u_min, u_max, x_min, x_max, p_min, p_max
 end
 
 function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::AbstractArray,

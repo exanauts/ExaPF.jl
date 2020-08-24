@@ -8,6 +8,21 @@ using Ipopt
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
+function gₚ(pf, x, u, p; V=Float64)
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+
+    Vm, Va, pbus, qbus = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p; V=V)
+    p_ref = zeros(V, nref)
+
+    ybus_re, ybus_im = ExaPF.Spmat{Vector}(pf.Ybus)
+    for (i, bus) in enumerate(pf.ref)
+        p_ref[i] = ExaPF.PowerSystem.get_power_injection(bus, Vm, Va, ybus_re, ybus_im)
+    end
+    return p_ref
+end
+
 # Build all the callbacks in a single closure.
 function build_callback(pf, x0, u, p)
     nref = length(pf.ref)
@@ -67,14 +82,18 @@ function build_callback(pf, x0, u, p)
     end
     function eval_g(u, g)
         (hash_u != hash(u)) && _update(u)
-        g .= xk[1:npq]
+        # Constraints on vmag_{pq}
+        g[1:npq] .= xk[1:npq]
+        # Constraint on p_{ref}
+        g[npq+1:npq+nref] .= gₚ(pf, xk, u, p)
         return nothing
     end
     function eval_jac_g(u::Vector{Float64}, mode, rows::Vector{Int32}, cols::Vector{Int32}, values::Vector{Float64})
         n = length(u)
+        m = npq + nref
         if mode == :Structure
             idx = 1
-            for c in 1:npq #number of constraints
+            for c in 1:m #number of constraints
                 for i in 1:n # number of variables
                     rows[idx] = c ; cols[idx] = i
                     idx += 1
@@ -84,17 +103,30 @@ function build_callback(pf, x0, u, p)
             (hash_u != hash(u)) && _update(u)
             nx = length(xk)
             n = length(u)
-            J = zeros(npq, n)
+            J = zeros(m, n)
             rhs = zeros(nx)
             λ = zeros(nx)
+            # Evaluate reduced Jacobian for bounds on vmag_{pq}
             for ix in 1:npq
                 rhs .= 0.0
                 rhs[ix] = 1.0
                 λ .= - ∇gₓ' \ rhs
                 J[ix, :] .= ∇gᵤ' * λ
             end
+            # Evaluate reduced Jacobian for bounds on p_{ref}
+            gg_x(x_) = gₚ(pf, x_, u, p; V=eltype(x_))
+            gg_u(u_) = gₚ(pf, xk, u_, p; V=eltype(u_))
+            jac_p_x = ForwardDiff.jacobian(gg_x, xk)
+            jac_p_u = ForwardDiff.jacobian(gg_u, u)
+            for ix in 1:nref
+                rhs = jac_p_x[ix, :]
+                λ .= - ∇gₓ' \ rhs
+                J[npq + ix, :] .= jac_p_u[ix, :] + ∇gᵤ' * λ
+            end
+
+            # Copy to Ipopt's Jacobian
             k = 1
-            for i in 1:npq
+            for i in 1:m
                 for j in 1:n
                     values[k] = J[i, j]
                     k += 1
@@ -153,9 +185,10 @@ end
 
 function run_reduced_ipopt(; hessian=false, cons=false)
     datafile = "test/case9.m"
-    # datafile = "test/case14.raw"
-    # datafile = "../pglib-opf/pglib_opf_case1354_pegase.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
 
     # retrieve initial state of network
     pbus = real.(pf.sbus)
@@ -177,7 +210,7 @@ function run_reduced_ipopt(; hessian=false, cons=false)
 
     v_min = 0.9
     v_max = 1.1
-    u_min, u_max, x_min, x_max = ExaPF.get_constraints(pf)
+    u_min, u_max, x_min, x_max, p_min, p_max = ExaPF.get_constraints(pf)
 
     # Set bounds on decision variable
     x_L = u_min
@@ -185,10 +218,10 @@ function run_reduced_ipopt(; hessian=false, cons=false)
 
     # add constraint on PQ's voltage magnitude
     if cons
-        m = npq
+        m = npq + nref
         jnnz = m * n
-        g_L = fill(v_min, m)
-        g_U = fill(v_max, m)
+        g_L = [fill(v_min, npq); p_min]
+        g_U = [fill(v_max, npq); p_max]
     else
         m = 0
         jnnz = 0
@@ -216,7 +249,7 @@ function run_reduced_ipopt(; hessian=false, cons=false)
                           obj_value::Float64, inf_pr::Float64, inf_du::Float64, mu::Float64,
                           d_norm::Float64, regularization_size::Float64, alpha_du::Float64, alpha_pr::Float64,
                           ls_trials::Int)
-        return iter_count < 100  # Interrupts after one iteration.
+        return iter_count < 200  # Interrupts after one iteration.
     end
 
     # I am too lazy to compute second order information
@@ -225,18 +258,15 @@ function run_reduced_ipopt(; hessian=false, cons=false)
         addOption(prob, "limited_memory_initialization", "scalar1")
         # addOption(prob, "limited_memory_update_type", "sr1")
     end
-    # I am an agressive guy (and at some point computing more trial steps
-    # deteriorate the convergence)
     addOption(prob, "accept_after_max_steps", 10)
-    # The derivative check is failing... so deactivate it
-    addOption(prob, "derivative_test", "first-order")
+    # addOption(prob, "derivative_test", "first-order")
     Ipopt.setIntermediateCallback(prob, intermediate)
 
-    # println(xk)
     Ipopt.solveProblem(prob)
     u = prob.x
     x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=50, tol=1e-14)
     ExaPF.PowerSystem.print_state(pf, x, u, p)
+    println(p_max)
     return prob
 end
 
