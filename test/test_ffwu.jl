@@ -9,6 +9,30 @@ using LinearAlgebra
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 
+function davidon_ls(pf, xk, uk, p, delta_x, delta_u, alpha_m)
+
+    F0 = ExaPF.cost_function(pf, xk, uk, p)
+    FM = ExaPF.cost_function(pf, xk + alpha_m*delta_x, uk + alpha_m*delta_u, p)
+    
+    function cost_a(a)
+        xd = xk + a*delta_x
+        ud = uk + a*delta_u
+        return ExaPF.cost_function(pf, xd, ud, p; V=eltype(xk))
+    end
+
+    F0p = FiniteDiff.finite_difference_derivative(cost_a, 0.0)
+    FMp = FiniteDiff.finite_difference_derivative(cost_a, alpha_m)
+
+    v = (3.0/alpha_m)*(F0 - FM) + F0p + FMp
+    w = sqrt(v^2 - F0p*FMp)
+
+    scale = (FMp + w - v)/(FMp - F0p + 2*w)
+    alpha = alpha_m - scale*alpha_m
+
+    return alpha
+end
+
+
 function deltax_approx(delta_u, dGdx, dGdu)
     b = -dGdu*delta_u
     delta_x = dGdx\b
@@ -50,8 +74,44 @@ function check_convergence(rk, u, u_min, u_max; eps=1e-5)
     return true
 end
 
+function alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
 
-@testset "RGM Optimal Power flow 9 bus case" begin
+    x_dim = length(delta_x)
+    u_dim = length(delta_u)
+
+    alpha_x = 1e10
+    alpha_u = 1e10
+
+    for i=1:u_dim
+        if abs(delta_u[i]) > 0.0
+            am = (u_max[i] - uk[i])/delta_u[i]
+            al = (u_min[i] - uk[i])/delta_u[i]
+            # alpha needs to be positive
+            a_prop = max(am, al)
+            # need to find alpha that satisfies all constraints
+            alpha_u = min(alpha_u, a_prop)
+        end
+    end
+    
+    for i=1:x_dim
+        if abs(delta_x[i]) > 0.0 && (x_max[i] > x_min[i])
+            am = (x_max[i] - xk[i])/delta_x[i]
+            al = (x_min[i] - xk[i])/delta_x[i]
+            # alpha needs to be positive
+            a_prop = max(am, al)
+            if a_prop < 0.0
+                println("Alpha_x negative!")
+            end
+            # need to find alpha that satisfies all constraints
+            alpha_x = min(alpha_x, a_prop)
+        end
+    end
+
+    return min(alpha_x, alpha_u)
+end
+
+
+@testset "Two-stage OPF" begin
     datafile = "test/case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
@@ -115,13 +175,16 @@ end
 
         # line search
         delta_x = deltax_approx(delta_u, dGdx, dGdu)
+        a_m = alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
+        a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
 
         # compute control step
-        uk = uk + step*delta_u
-        #ExaPF.project_constraints!(uk, grad, u_min, u_max)
+        uk = uk + a_dav*delta_u
+        
         println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
 
+        println(grad)
         iter += 1
     end
     ExaPF.PowerSystem.print_state(pf, xk, uk, p)
