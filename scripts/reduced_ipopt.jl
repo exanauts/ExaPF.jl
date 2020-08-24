@@ -18,17 +18,21 @@ function build_callback(pf, x0, u, p)
     ∇gₓ = Jx(pf, xk, u, p)
     ∇gᵤ = Ju(pf, xk, u, p)
     ∇fₓ, ∇fᵤ = ExaPF.cost_gradients(pf, xk, u, p)
-    λk = -(∇gₓ\∇fₓ)
+    λk = -(∇gₓ'\∇fₓ)
     # Store initial hash.
     hash_u = hash(u)
     function _update(u)
         # It looks like the tolerance of the Newton algorithm
         # could impact the convergence.
-        x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=200, tol=1e-14)
+        x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=20, tol=1e-10)
         dGdx = Jx(pf, x, u, p)
         dGdu = Ju(pf, x, u, p)
         # I like to live dangerously
-        !conv.has_converged && error("Fail to converge")
+        if !conv.has_converged
+            println(u)
+            println(conv.norm_residuals)
+            error("Fail to converge")
+        end
         # Copy in closure's arrays
         copy!(∇gₓ, dGdx)
         copy!(∇gᵤ, dGdu)
@@ -165,28 +169,19 @@ function run_reduced_ipopt(; hessian=false, cons=false)
 
     xk = copy(x)
     uk = copy(u)
+    n = length(uk)
+    uk .= max.(uk, 0.0)
 
     # Build callbacks in closure
     eval_f, eval_grad_f, eval_g, eval_jac_g, eval_hh = build_callback(pf, xk, uk, p)
 
     v_min = 0.9
     v_max = 1.1
-    n = length(uk)
-    nref = length(pf.ref)
-    npv = length(pf.pv)
-    npq = length(pf.pq)
+    u_min, u_max, x_min, x_max = ExaPF.get_constraints(pf)
+
     # Set bounds on decision variable
-    x_L = zeros(n)
-    x_U = zeros(n)
-    # ... wrt. reference's voltages
-    x_L[1:nref] .= v_min
-    x_U[1:nref] .= v_max
-    # ... wrt. active power in PV buses
-    x_L[nref + 1:nref + npv] .= 0.0
-    x_U[nref + 1:nref + npv] .= 2.5
-    # ... wrt. voltages in PV buses
-    x_L[nref + npv + 1:nref + 2*npv] .= v_min
-    x_U[nref + npv + 1:nref + 2*npv] .= v_max
+    x_L = u_min
+    x_U = u_max
 
     # add constraint on PQ's voltage magnitude
     if cons
@@ -213,6 +208,7 @@ function run_reduced_ipopt(; hessian=false, cons=false)
     prob = Ipopt.createProblem(n, x_L, x_U, m, g_L, g_U, jnnz, hnnz,
                          eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
 
+    # prob.x = (u_min .+ u_max) ./ 2.0
     prob.x = uk
 
     # This tests callbacks.

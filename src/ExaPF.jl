@@ -240,7 +240,6 @@ end
 
 Given PowerNetwork object, returns vectors xmin, xmax, umin, umax of the OPF box constraints.
 
-If xmin[i] > xmax[i] we assume there's NO limit.
 """
 function get_constraints(pf::PowerSystem.PowerNetwork)
 
@@ -263,10 +262,10 @@ function get_constraints(pf::PowerSystem.PowerNetwork)
     dimension_u = 2*npv + nref
     dimension_x = 2*npq + npv
 
-    u_min = ones(dimension_u)
-    u_max = -ones(dimension_u)
-    x_min = ones(dimension_x)
-    x_max = -ones(dimension_x)
+    u_min = fill(-Inf, dimension_u)
+    u_max = fill(Inf, dimension_u)
+    x_min = fill(-Inf, dimension_x)
+    x_max = fill(Inf, dimension_x)
 
     for i in 1:length(pf.pq)
         bus_idx = pf.pq[i]
