@@ -42,7 +42,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
              0.033608106889679565, 0.010848015284769322, 0.06630715934781146, 
              -0.07592061900861094, 0.16875136481876485, 0.0832709533581424]
     
-    @test isapprox(x_sol, xk)
+    @test isapprox(x_sol, xk, atol=1e-7)
 
     c = ExaPF.cost_function(pf, x, u, p)
     dCdx, dCdu = ExaPF.cost_gradients(pf, x, u, p)
