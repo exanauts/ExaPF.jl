@@ -29,7 +29,7 @@ function build_callback(pf, x0, u, p)
     npv = length(pf.pv)
     npq = length(pf.pq)
     # Compute initial point.
-    xk, g, Jx, Ju, _ = ExaPF.solve(pf, x0, u, p)
+    xk, g, Jx, Ju, conv, resx! = ExaPF.solve(pf, x0, u, p, tol=1e-13)
     ∇gₓ = Jx(pf, xk, u, p)
     ∇gᵤ = Ju(pf, xk, u, p)
     ∇fₓ, ∇fᵤ = ExaPF.cost_gradients(pf, xk, u, p)
@@ -39,7 +39,7 @@ function build_callback(pf, x0, u, p)
     function _update(u)
         # It looks like the tolerance of the Newton algorithm
         # could impact the convergence.
-        x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=20, tol=1e-10)
+        x, g, Jx, Ju, conv, resx! = ExaPF.solve(pf, xk, u, p, maxiter=50, tol=2e-12)
         dGdx = Jx(pf, x, u, p)
         dGdu = Ju(pf, x, u, p)
         # I like to live dangerously
@@ -150,11 +150,11 @@ function build_callback(pf, x0, u, p)
             end
         else
             (hash_u != hash(u)) && _update(u)
-            # ExaPF.PowerSystem.print_state(pf, previous_x, u, p)
+            ## Hessian of cost function
             cost_x = x_ -> ExaPF.cost_function(pf, x_, u, p; V=eltype(x_))
             cost_u = u_ -> ExaPF.cost_function(pf, xk, u_, p; V=eltype(u_))
             # Sensitivity matrix
-            S = - inv(Array(∇gₓ)) * gdGdu
+            S = - inv(Array(∇gₓ)) * ∇gᵤ
             # ∂u²
             H_uu = zeros(n, n)
             ForwardDiff.hessian!(H_uu, cost_u, u)
@@ -167,9 +167,32 @@ function build_callback(pf, x0, u, p)
                 cost_x = x_ -> ExaPF.cost_function(pf, x_, u, p; V=eltype(x_))
                 return ForwardDiff.gradient(cost_x, x)
             end
+            #TODO
             H_xu = FiniteDiff.finite_difference_jacobian(u_ -> cross_f_xu(xk, u_), u)
 
+            # Hessian of the equality constraint
+            # Evaluate constraints
+            vecx = [xk; u]
+            fjac = vecx -> ForwardDiff.jacobian(resx!, vecx)
+            jac = fjac(vecx)
+            jacx = sparse(jac[:,1:nx])
+            jacu = sparse(jac[:,nx+1:end])
+            hes = ForwardDiff.jacobian(fjac, vecx)
+            # I am not sure about the reshape.
+            # It could be that length(xk) goes at the end. This tensor stuff is a brain twister.
+            hes = reshape(hes, (nx, nx + n, nx + n))
+            ghesxx = hes[:, 1:nx, 1:nx]
+            ghesxu = hes[:, 1:nx, nx+1:end]
+            ghesuu = hes[:, nx+1:end, nx+1:end]
+            for i in 1:nx
+                H_uu .+= λk[i] * ghesuu[i, :, :]
+                H_xx .+= λk[i] * ghesxx[i, :, :]
+                H_xu .+= λk[i] * ghesxu[i, :, :]
+            end
+
+            # Global Hessian
             H = H_uu + S'*H_xx*S + S'*H_xu + H_xu' * S
+            H = obj_factor * (H + H') / 2.0
             index = 0
             for i in 1:n
                 for j in i:n
@@ -206,7 +229,7 @@ function run_reduced_ipopt(; hessian=false, cons=false)
     uk .= max.(uk, 0.0)
 
     # Build callbacks in closure
-    eval_f, eval_grad_f, eval_g, eval_jac_g, eval_hh = build_callback(pf, xk, uk, p)
+    eval_f, eval_grad_f, eval_gg, eval_jac_gg, eval_hh = build_callback(pf, xk, uk, p)
 
     v_min = 0.9
     v_max = 1.1
@@ -222,11 +245,15 @@ function run_reduced_ipopt(; hessian=false, cons=false)
         jnnz = m * n
         g_L = [fill(v_min, npq); p_min]
         g_U = [fill(v_max, npq); p_max]
+        eval_g = eval_gg
+        eval_jac_gg = eval_jac_g
     else
         m = 0
         jnnz = 0
         g_L = Float64[]
         g_U = Float64[]
+        eval_g(u, g) = nothing
+        eval_jac_g(u::Vector{Float64}, mode, rows::Vector{Int32}, cols::Vector{Int32}, values::Vector{Float64}) = nothing
     end
 
     # Number of nonzeros in upper triangular Hessian
@@ -239,7 +266,7 @@ function run_reduced_ipopt(; hessian=false, cons=false)
     end
 
     prob = Ipopt.createProblem(n, x_L, x_U, m, g_L, g_U, jnnz, hnnz,
-                         eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
+                               eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
 
     # prob.x = (u_min .+ u_max) ./ 2.0
     prob.x = uk
@@ -249,26 +276,27 @@ function run_reduced_ipopt(; hessian=false, cons=false)
                           obj_value::Float64, inf_pr::Float64, inf_du::Float64, mu::Float64,
                           d_norm::Float64, regularization_size::Float64, alpha_du::Float64, alpha_pr::Float64,
                           ls_trials::Int)
-        return iter_count < 200  # Interrupts after one iteration.
+        return iter_count < 50  # Interrupts after one iteration.
     end
 
     # I am too lazy to compute second order information
     if !hessian
         addOption(prob, "hessian_approximation", "limited-memory")
         addOption(prob, "limited_memory_initialization", "scalar1")
+        # addOption(prob, "limited_memory_max_history", 50)
         # addOption(prob, "limited_memory_update_type", "sr1")
     end
-    addOption(prob, "accept_after_max_steps", 10)
-    # addOption(prob, "derivative_test", "first-order")
+    # addOption(prob, "accept_after_max_steps", 10)
+    addOption(prob, "tol", 1e-2)
+    # addOption(prob, "derivative_test", "second-order")
     Ipopt.setIntermediateCallback(prob, intermediate)
 
     Ipopt.solveProblem(prob)
     u = prob.x
     x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=50, tol=1e-14)
     ExaPF.PowerSystem.print_state(pf, x, u, p)
-    println(p_max)
     return prob
 end
 
-prob = run_reduced_ipopt(hessian=false, cons=true)
+prob = run_reduced_ipopt(hessian=true, cons=false)
 println(prob.x)
