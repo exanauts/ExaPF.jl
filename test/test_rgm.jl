@@ -11,7 +11,7 @@ include("../src/algorithms/linesearches.jl")
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "RGM Optimal Power flow 9 bus case" begin
-    datafile = "case9.m"
+    datafile = joinpath(dirname(@__FILE__), "case9.m")
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
