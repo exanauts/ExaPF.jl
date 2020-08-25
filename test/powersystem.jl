@@ -59,7 +59,7 @@ import ExaPF: ParsePSSE, PowerSystem
 
     ybus_re, ybus_im = ExaPF.Spmat{T}(Ybus)
     SBASE = data["baseMVA"][1]
-    Sbus = PowerSystem.assembleSbus(gen, bus, SBASE, bus_to_indexes)
+    Sbus, Sload = PowerSystem.assembleSbus(gen, bus, SBASE, bus_to_indexes)
     pbus = real(Sbus)
     qbus = imag(Sbus)
 

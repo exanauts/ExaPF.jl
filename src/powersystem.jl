@@ -35,6 +35,7 @@ struct PowerNetwork
     pq::Array{Int64}
 
     sbus::Array{Complex{Float64}}
+    sload::Array{Complex{Float64}}
 
     function PowerNetwork(datafile::String, data_format::Int64=0)
 
@@ -71,9 +72,9 @@ struct PowerNetwork
         # bus type indexing
         ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
 
-        sbus = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
+        sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
 
-        new(vbus, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus)
+        new(vbus, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
     end
 
 end
@@ -184,13 +185,15 @@ function get_u(
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
+    
+    pload = real.(pf.sload)
 
     # build vector u
     dimension = 2*npv + nref
     u = zeros(dimension)
 
     u[1:nref] = vmag[pf.ref]
-    u[nref + 1:nref + npv] = pbus[pf.pv]
+    u[nref + 1:nref + npv] = pbus[pf.pv] - pload[pf.pv]
     u[nref + npv + 1:nref + 2*npv] = vmag[pf.pv]
 
     return u
@@ -305,13 +308,16 @@ function retrieve_physics(pf::PowerNetwork, x, u, p; V=Float64)
     vang = zeros(V, nbus)
     pinj = zeros(V, nbus)
     qinj = zeros(V, nbus)
+    
+    pload = real.(pf.sload)
+    qload = imag.(pf.sload)
 
     vmag[pf.pq] = x[1:npq]
     vang[pf.pq] = x[npq + 1:2*npq]
     vang[pf.pv] = x[2*npq + 1:2*npq + npv]
 
     vmag[pf.ref] = u[1:nref]
-    pinj[pf.pv] = u[nref + 1:nref + npv]
+    pinj[pf.pv] = u[nref + 1:nref + npv] + pload[pf.pv]
     vmag[pf.pv] = u[nref + npv + 1:nref + 2*npv]
 
     vang[pf.ref] = p[1:nref]
@@ -395,6 +401,7 @@ function assembleSbus(gen, bus, baseMVA, bus_to_indexes)
     ngen = size(gen, 1)
     nbus = size(bus, 1)
     sbus = zeros(Complex{Float64}, nbus)
+    sload = zeros(Complex{Float64}, nbus)
 
     # retrieve indeces
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -414,9 +421,10 @@ function assembleSbus(gen, bus, baseMVA, bus_to_indexes)
     for i in 1:nbus
         id_bus = bus_to_indexes[bus[i, BUS_I]]
         sbus[id_bus] -= (bus[i, PD] + 1im*bus[i, QD])/baseMVA
+        sload[id_bus] -= (bus[i, PD] + 1im*bus[i, QD])/baseMVA
     end
 
-    return sbus
+    return sbus, sload
 end
 
 # Create an admittance matrix. The implementation is a modification of
