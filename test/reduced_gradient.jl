@@ -9,7 +9,7 @@ using SparseArrays
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "RGM Optimal Power flow 9 bus case" begin
-    datafile = "test/case9.m"
+    datafile = "case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
     # retrieve initial state of network
     pbus = real.(pf.sbus)
@@ -85,7 +85,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     g_u = u_ -> g2(pf, xk, u_, p)
     ∇gᵤ_fd = FiniteDiff.finite_difference_jacobian(g_u, uk)
     # However, it appears that the Jacobian wrt u is correct
-    @test isapprox(∇gᵤ_fd, Array(∇gᵤ), rtol=1e-3)
+    @test isapprox(∇gᵤ_fd, Array(∇gᵤ))
     @info("M: " ,Array(∇gᵤ))
     @info("M: " ,∇gᵤ_fd)
 

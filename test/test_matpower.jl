@@ -5,7 +5,7 @@ using ExaPF
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "Power flow 9 bus case" begin
-    datafile = "test/case9.m"
+    datafile = "case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
@@ -49,7 +49,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 end
 
 @testset "Power flow 14 bus case" begin
-    datafile = "test/case14.m"
+    datafile = "case14.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
@@ -75,7 +75,7 @@ end
 end
 
 @testset "Power flow 30 bus case" begin
-    datafile = "test/case30.m"
+    datafile = "case30.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
@@ -92,7 +92,7 @@ end
     xk, g, Jx, Ju, conv, f = ExaPF.solve(pf, x, u, p)
     
     @test conv.n_iterations == 3
-    @test isapprox(conv.norm_residuals, 9.56998e-10, rtol=1e-6)
+    @test isapprox(conv.norm_residuals, 9.56998e-10, rtol=1e-4)
     
     vmag, vang, pinj, qinj = PowerSystem.retrieve_physics(pf, xk, u, p)
 
@@ -102,7 +102,7 @@ end
 end
 
 @testset "Power flow 300 bus case" begin
-    datafile = "test/case300.m"
+    datafile = "case300.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network

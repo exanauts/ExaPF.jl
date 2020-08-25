@@ -120,7 +120,7 @@ end
 
 
 @testset "Two-stage OPF" begin
-    datafile = "test/case9.m"
+    datafile = "case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
