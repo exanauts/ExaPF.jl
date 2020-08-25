@@ -42,6 +42,9 @@ using .PowerSystem
 
 const TIMER = TimerOutput()
 
+const VERBOSE_LEVEL_HIGH = 1
+const VERBOSE_LEVEL_MEDIUM = 2
+const VERBOSE_LEVEL_LOW = 3
 
 struct ConvergenceStatus
     has_converged::Bool
@@ -381,19 +384,19 @@ function cost_function(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstra
     end
 
     # Dommel an Tinney recommend to increase S every iteration
-	s = 0.0
-	for i = 1:nbus
-		bustype = bus[i, BUS_TYPE]
-		if bustype == 1
-			vm_max = bus[i, VMAX]
-			vm_min = bus[i, VMIN]
-			if vmag[i] > vm_max
-				cost += s*(vmag[i] - vm_max)^2
-			elseif vmag[i] < vm_min
+    s = 0.0
+    for i = 1:nbus
+        bustype = bus[i, BUS_TYPE]
+        if bustype == 1
+            vm_max = bus[i, VMAX]
+            vm_min = bus[i, VMIN]
+            if vmag[i] > vm_max
+                cost += s*(vmag[i] - vm_max)^2
+            elseif vmag[i] < vm_min
                 cost += s*(vm_min - vmag[i])^2
-			end
-		end
-	end
+            end
+        end
+    end
 
     return cost
 end
@@ -486,7 +489,8 @@ function cost_gradients(pf::PowerSystem.PowerNetwork, x::AbstractArray, u::Abstr
     return dCdx, dCdu
 end
 
-function solve(pf::PowerSystem.PowerNetwork,
+function solve(
+    pf::PowerSystem.PowerNetwork,
     x::AbstractArray,
     u::AbstractArray,
     p::AbstractArray;
@@ -495,12 +499,15 @@ function solve(pf::PowerSystem.PowerNetwork,
     tol=1e-7,
     maxiter=20,
     device=CPU(),
-    verbose=false
+    verbose_level=0,
 )
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
-    println("Target set to device $(device)")
+    if verbose_level >= VERBOSE_LEVEL_LOW
+        println("Target set to device $(device)")
+    end
+
     if isa(device, CPU)
         T = Vector
         M = SparseMatrixCSC
@@ -565,20 +572,33 @@ function solve(pf::PowerSystem.PowerNetwork,
                                          ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
     designJacobianAD = AD.DesignJacobianAD(residualFunction_polar_sparsity!, F, Vm, Va,
                                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
+    if verbose_level >= VERBOSE_LEVEL_MEDIUM
+        print("State Jacobian  --- ")
+        println(stateJacobianAD)
+        print("Design Jacobian --- ")
+        println(designJacobianAD)
+    end
+
     J = stateJacobianAD.J
     preconditioner = Precondition.NoPreconditioner()
     if solver != "default"
         nblock = size(J,1) / npartitions
-        println("Blocks: $npartitions, Blocksize: n = ", nblock,
-                " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
-        println("Partitioning...")
+        if verbose_level >= VERBOSE_LEVEL_MEDIUM
+            println("Blocks: $npartitions, Blocksize: n = ", nblock,
+                    " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
+            println("Partitioning...")
+        end
         preconditioner = Precondition.Preconditioner(J, npartitions, device)
-        println("$npartitions partitions created")
+        if verbose_level >= VERBOSE_LEVEL_MEDIUM
+            println("$npartitions partitions created")
+        end
     end
 
     # check for convergence
     normF = norm(F, Inf)
-    @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
+    if verbose_level >= VERBOSE_LEVEL_HIGH
+        @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
+    end
 
     if normF < tol
         converged = true
@@ -638,28 +658,33 @@ function solve(pf::PowerSystem.PowerNetwork,
         end
 
         @timeit TIMER "Norm" normF = norm(F, Inf)
-        @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
+        if verbose_level >= VERBOSE_LEVEL_HIGH
+            @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
+        end
 
         if normF < tol
             converged = true
         end
     end
 
-    if converged
-        @printf("N-R converged in %d iterations.\n", iter)
-    else
-        @printf("N-R did not converge.\n")
+    if verbose_level >= VERBOSE_LEVEL_HIGH
+        if converged
+            @printf("N-R converged in %d iterations.\n", iter)
+        else
+            @printf("N-R did not converge.\n")
+        end
     end
 
     xk = PowerSystem.get_x(pf, Vm, Va, pbus, qbus)
 
     # Timer outputs display
-    if verbose
+    if verbose_level >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
-        println("") #this really bugs me
+        println("")
     end
     reset_timer!(TIMER)
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
+    # Build closures
     function Ju(pf, x, u, p)
         Vm, Va, pbus, qbus = PowerSystem.retrieve_physics(pf, x, u, p)
         AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,

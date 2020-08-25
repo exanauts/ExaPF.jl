@@ -10,6 +10,8 @@ using SparsityDetection
 using SparseDiffTools
 using ..ExaPF: Spmat
 
+import Base: show
+
 abstract type AbstractJacobianAD end
 
 struct StateJacobianAD <: AbstractJacobianAD
@@ -42,7 +44,7 @@ struct StateJacobianAD <: AbstractJacobianAD
         mappq = [i + nv_m for i in pq]
         map = T{Int64}(vcat(pq, mappq, mappv))
         nmap = size(map,1)
-        
+
         # Used for sparsity detection with randomized inputs
         function residualJacobian(V, Ybus, pv, pq)
             n = size(V, 1)
@@ -77,8 +79,6 @@ struct StateJacobianAD <: AbstractJacobianAD
         J = residualJacobian(V, Y, pv, pq)
         coloring = T{Int64}(matrix_colors(J))
         ncolor = size(unique(coloring),1)
-        println("Number of Jacobian colors: ", ncolor)
-        println("Creating JacobianAD...")
         if F isa CuArray
             J = CuSparseMatrixCSR(J)
         end
@@ -187,8 +187,6 @@ struct DesignJacobianAD <: AbstractJacobianAD
         J = residualJacobian(V, Y, pinj, qinj, ref, pv, pq)
         coloring = T{Int64}(matrix_colors(J))
         ncolor = size(unique(coloring),1)
-        println("Number of Jacobian colors: ", ncolor)
-        println("Creating JacobianAD...")
         if F isa CuArray
             J = CuSparseMatrixCSR(J)
         end
@@ -445,5 +443,9 @@ function designJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     end
 end
 
+function Base.show(io::IO, ad::AbstractJacobianAD)
+    ncolor = size(unique(ad.coloring), 1)
+    print(io, "Number of Jacobian colors: ", ncolor)
+end
 
 end
