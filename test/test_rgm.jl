@@ -11,7 +11,7 @@ include("../src/algorithms/linesearches.jl")
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "RGM Optimal Power flow 9 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "case9.m")
+    datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
@@ -64,7 +64,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     iter = 1
     while norm_grad > norm_tol && iter < iter_max
         println("Iteration: ", iter)
-        
+
         # solve power flow and compute gradients
         xk, g, Jx, Ju, convergence = ExaPF.solve(pf, xk, uk, p)
         dGdx = Jx(pf, xk, uk, p)

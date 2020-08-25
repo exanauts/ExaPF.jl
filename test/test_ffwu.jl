@@ -8,12 +8,11 @@ using LinearAlgebra
 # Include the linesearch here for now
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
-
 function davidon_ls(pf, xk, uk, p, delta_x, delta_u, alpha_m)
 
     F0 = ExaPF.cost_function(pf, xk, uk, p)
     FM = ExaPF.cost_function(pf, xk + alpha_m*delta_x, uk + alpha_m*delta_u, p)
-    
+
     function cost_a(a)
         xd = xk + a*delta_x
         ud = uk + a*delta_u
@@ -32,7 +31,6 @@ function davidon_ls(pf, xk, uk, p, delta_x, delta_u, alpha_m)
     return alpha
 end
 
-
 function deltax_approx(delta_u, dGdx, dGdu)
     b = -dGdu*delta_u
     delta_x = dGdx\b
@@ -46,7 +44,7 @@ function descent_direction(pf, rk, u, u_min, u_max)
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
-    
+
     for i=1:dim
         if u[i] < u_max[i] && u[i] > u_min[i]
             delta_u[i] = -rk[i]
@@ -67,7 +65,7 @@ function descent_direction(pf, rk, u, u_min, u_max)
 end
 
 function check_convergence(rk, u, u_min, u_max; eps=1e-5)
-    
+
     dim = length(rk)
 
     for i=1:dim
@@ -101,7 +99,7 @@ function alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
             alpha_u = min(alpha_u, a_prop)
         end
     end
-    
+
     for i=1:x_dim
         if abs(delta_x[i]) > 0.0 && (x_max[i] > x_min[i])
             am = (x_max[i] - xk[i])/delta_x[i]
@@ -118,9 +116,8 @@ function alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
     return min(alpha_x, alpha_u)
 end
 
-
 @testset "Two-stage OPF" begin
-    datafile = joinpath(dirname(@__FILE__), "case9.m")
+    datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
@@ -166,15 +163,15 @@ end
         # evaluate cost
         c = ExaPF.cost_function(pf, xk, uk, p; V=eltype(xk))
         dCdx, dCdu = ExaPF.cost_gradients(pf, xk, uk, p)
-        
+
         # lamba calculation
         lambda = -(dGdx'\dCdx)
-        
+
         # Compute gradient
         grad = dCdu + (dGdu')*lambda
         println("Cost: ", c)
         println("Norm: ", norm(grad))
- 
+
         # check convergence
         converged = check_convergence(grad, uk, u_min, u_max)
 
@@ -187,7 +184,7 @@ end
         #a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
         # compute control step
         uk = uk + step*delta_u
-        
+
         println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
 
@@ -195,6 +192,5 @@ end
         iter += 1
     end
     ExaPF.PowerSystem.print_state(pf, xk, uk, p)
- 
-
+    return
 end
