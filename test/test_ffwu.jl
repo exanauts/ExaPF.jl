@@ -27,10 +27,6 @@ function davidon_ls(pf, xk, uk, p, delta_x, delta_u, alpha_m)
 
     v = (3.0/alpha_m)*(F0 - FM) + F0p + FMp
     
-    if (v^2 - F0p*FMp) < 0.0
-        return 0.5*alpha_m
-    end
-    
     w = sqrt(v^2 - F0p*FMp)
 
     scale = (FMp + w - v)/(FMp - F0p + 2*w)
@@ -46,7 +42,7 @@ function deltax_approx(delta_u, dGdx, dGdu)
     return delta_x
 end
 
-function descent_direction(pf, rk, u, u_min, u_max)
+function descent_direction(pf, rk, u, u_min, u_max; damping=false)
 
     dim = length(u)
     delta_u = zeros(dim)
@@ -65,9 +61,27 @@ function descent_direction(pf, rk, u, u_min, u_max)
     end
 
     # u = [VMAG^{REF}, P^{PV}, VMAG^{PV}]
-    scale = 3.0
+    
+    # scale ratio
+    scale = 2.0
     for i=1:npv
         delta_u[nref + i] = scale*delta_u[nref + i]
+    end
+
+    # damping factor
+    if damping
+    for i=1:npv
+        idx_u = nref + npv + i
+        if u[idx_u] < u_max[idx_u] && u[idx_u] > u_min[idx_u]
+            if rk[idx_u] < 0.0
+                damp = min((u_max[idx_u] - u[idx_u]), 1.0)
+                delta_u[idx_u] = damp*delta_u[idx_u]
+            elseif rk[idx_u] > 0.0
+                damp = min((u[idx_u] - u_min[idx_u]), 1.0)
+                delta_u[idx_u] = damp*delta_u[idx_u]
+            end
+        end
+    end
     end
 
     return delta_u
@@ -152,7 +166,7 @@ end
 
 
 @testset "Two-stage OPF" begin
-    datafile = "test/case30.m"
+    datafile = "test/case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
@@ -178,8 +192,8 @@ end
 
     # reduced gradient method
     iterations = 0
-    iter_max = 20
-    step = 0.00005
+    iter_max = 100
+    step = 0.0001
     norm_grad = 10000
     converged = false
     norm_tol = 1e-5
@@ -218,15 +232,15 @@ end
         delta_x = deltax_approx(delta_u, dGdx, dGdu)
         a_m = alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
         @printf("Maximal alpha: %f\n", a_m)
-        a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
-        @printf("Davidon alpha: %f\n", a_dav)
+        #a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
 
-        #cost_direction(pf, xk, uk, p, delta_u, a_m, a_dav; points=20)
-        
+        #@printf("Davidon alpha: %f\n", a_dav)
+        #cost_direction(pf, xk, uk, p, delta_u, a_m, a_dav; points=10)
         # compute control step
-        uk = uk + a_dav*delta_u
+        println("Delta_u norm: ", norm(delta_u))
+        println(delta_u)
+        uk = uk + step*delta_u
         
-        println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
 
         iter += 1
