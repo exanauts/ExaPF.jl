@@ -5,17 +5,16 @@ using FiniteDiff
 using ForwardDiff
 using LinearAlgebra
 using Printf
-using UnicodePlots
+#using UnicodePlots
 
 # Include the linesearch here for now
 import ExaPF: ParseMAT, PowerSystem, IndexSet
-
 
 function davidon_ls(pf, xk, uk, p, delta_x, delta_u, alpha_m)
 
     F0 = ExaPF.cost_function(pf, xk, uk, p)
     FM = ExaPF.cost_function(pf, xk + alpha_m*delta_x, uk + alpha_m*delta_u, p)
-    
+
     function cost_a(a)
         xd = xk + a*delta_x
         ud = uk + a*delta_u
@@ -35,7 +34,6 @@ function davidon_ls(pf, xk, uk, p, delta_x, delta_u, alpha_m)
     return alpha
 end
 
-
 function deltax_approx(delta_u, dGdx, dGdu)
     b = -dGdu*delta_u
     delta_x = dGdx\b
@@ -49,7 +47,7 @@ function descent_direction(pf, rk, u, u_min, u_max; damping=false)
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
-    
+
     for i=1:dim
         if u[i] < u_max[i] && u[i] > u_min[i]
             delta_u[i] = -rk[i]
@@ -88,7 +86,6 @@ function descent_direction(pf, rk, u, u_min, u_max; damping=false)
 end
 
 function check_convergence(rk, u, u_min, u_max; eps=1e-4)
-    
     dim = length(rk)
 
     for i=1:dim
@@ -122,7 +119,7 @@ function alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
             alpha_u = min(alpha_u, a_prop)
         end
     end
-    
+
     for i=1:x_dim
         if abs(delta_x[i]) > 0.0 && (x_max[i] > x_min[i])
             am = (x_max[i] - xk[i])/delta_x[i]
@@ -156,17 +153,16 @@ function cost_direction(pf, x, u, p, delta_u, alpha_max, alpha_dav; points=10)
         costs[k] = c
         k += 1
     end
-    plt = lineplot(alphas, costs, title = "Cost along alpha", width=80);
+    #plt = lineplot(alphas, costs, title = "Cost along alpha", width=80);
     # plot a vertical line for Davidon's alpha
     alpha_dav_vert = alpha_dav*ones(points)
-    scatterplot!(plt, alpha_dav_vert, costs)
-    println(plt)
+    #scatterplot!(plt, alpha_dav_vert, costs)
+    #println(plt)
 
 end
 
-
 @testset "Two-stage OPF" begin
-    datafile = "test/case9.m"
+    datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
@@ -213,15 +209,15 @@ end
         c = ExaPF.cost_function(pf, xk, uk, p; V=eltype(xk))
         cost_history[iter] = c
         dCdx, dCdu = ExaPF.cost_gradients(pf, xk, uk, p)
-        
+
         # lamba calculation
         lambda = -(dGdx'\dCdx)
-        
+
         # Compute gradient
         grad = dCdu + (dGdu')*lambda
         println("Cost: ", c)
         println("Norm: ", norm(grad))
- 
+
         # check convergence
         converged = check_convergence(grad, uk, u_min, u_max)
 
@@ -240,13 +236,15 @@ end
         println("Delta_u norm: ", norm(delta_u))
         println(delta_u)
         uk = uk + step*delta_u
-        
+
+        println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
 
         iter += 1
     end
     ExaPF.PowerSystem.print_state(pf, xk, uk, p)
-    plt = lineplot(cost_history[1:iter - 1], title = "Cost history", width=80);
-    println(plt)
+    #plt = lineplot(cost_history[1:iter - 1], title = "Cost history", width=80);
+    #println(plt)
 
+    return
 end
