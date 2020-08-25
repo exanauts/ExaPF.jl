@@ -26,6 +26,11 @@ function davidon_ls(pf, xk, uk, p, delta_x, delta_u, alpha_m)
     FMp = FiniteDiff.finite_difference_derivative(cost_a, alpha_m)
 
     v = (3.0/alpha_m)*(F0 - FM) + F0p + FMp
+    
+    if (v^2 - F0p*FMp) < 0.0
+        return 0.5*alpha_m
+    end
+    
     w = sqrt(v^2 - F0p*FMp)
 
     scale = (FMp + w - v)/(FMp - F0p + 2*w)
@@ -60,7 +65,7 @@ function descent_direction(pf, rk, u, u_min, u_max)
     end
 
     # u = [VMAG^{REF}, P^{PV}, VMAG^{PV}]
-    scale = 2.0
+    scale = 3.0
     for i=1:npv
         delta_u[nref + i] = scale*delta_u[nref + i]
     end
@@ -68,7 +73,7 @@ function descent_direction(pf, rk, u, u_min, u_max)
     return delta_u
 end
 
-function check_convergence(rk, u, u_min, u_max; eps=1e-5)
+function check_convergence(rk, u, u_min, u_max; eps=1e-4)
     
     dim = length(rk)
 
@@ -110,19 +115,19 @@ function alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
             al = (x_min[i] - xk[i])/delta_x[i]
             # alpha needs to be positive
             a_prop = max(am, al)
-            if a_prop < 0.0
-                println("Alpha_x negative!")
-            end
             # need to find alpha that satisfies all constraints
             alpha_x = min(alpha_x, a_prop)
         end
+    end
+    if alpha_x < 0.0
+        return alpha_u
     end
     return min(alpha_x, alpha_u)
 end
 
 # given limit alpha, compute costs along a direction.
 
-function cost_direction(pf, x, u, p, delta_u, alpha_max; points=10)
+function cost_direction(pf, x, u, p, delta_u, alpha_max, alpha_dav; points=10)
 
     alphas = zeros(points)
     costs = zeros(points)
@@ -138,13 +143,16 @@ function cost_direction(pf, x, u, p, delta_u, alpha_max; points=10)
         k += 1
     end
     plt = lineplot(alphas, costs, title = "Cost along alpha", width=80);
+    # plot a vertical line for Davidon's alpha
+    alpha_dav_vert = alpha_dav*ones(points)
+    scatterplot!(plt, alpha_dav_vert, costs)
     println(plt)
 
 end
 
 
 @testset "Two-stage OPF" begin
-    datafile = "test/case9.m"
+    datafile = "test/case30.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     # retrieve initial state of network
@@ -170,8 +178,8 @@ end
 
     # reduced gradient method
     iterations = 0
-    iter_max = 3
-    step = 0.0001
+    iter_max = 20
+    step = 0.00005
     norm_grad = 10000
     converged = false
     norm_tol = 1e-5
@@ -189,6 +197,7 @@ end
 
         # evaluate cost
         c = ExaPF.cost_function(pf, xk, uk, p; V=eltype(xk))
+        cost_history[iter] = c
         dCdx, dCdu = ExaPF.cost_gradients(pf, xk, uk, p)
         
         # lamba calculation
@@ -212,18 +221,18 @@ end
         a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
         @printf("Davidon alpha: %f\n", a_dav)
 
-        cost_direction(pf, xk, uk, p, delta_u, a_m; points=10)
+        #cost_direction(pf, xk, uk, p, delta_u, a_m, a_dav; points=20)
         
         # compute control step
-        uk = uk + step*delta_u
+        uk = uk + a_dav*delta_u
         
         println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
 
-        println(grad)
         iter += 1
     end
     ExaPF.PowerSystem.print_state(pf, xk, uk, p)
- 
+    plt = lineplot(cost_history[1:iter - 1], title = "Cost history", width=80);
+    println(plt)
 
 end
