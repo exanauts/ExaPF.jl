@@ -231,7 +231,7 @@ function project_constraints!(u::AbstractArray, grad::AbstractArray, u_min::Abst
             u[i] = u_max[i]
             grad[i] = 0.0
         elseif u[i] < u_min[i]
-            @printf("Projecting u[%d] = %f to u_max = %f.\n", i, u[i], u_min[i])
+            @printf("Projecting u[%d] = %f to u_min = %f.\n", i, u[i], u_min[i])
             u[i] = u_min[i]
             grad[i] = 0.0
         end
