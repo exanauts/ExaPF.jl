@@ -507,7 +507,6 @@ function solve(
     if verbose_level >= VERBOSE_LEVEL_LOW
         println("Target set to device $(device)")
     end
-
     if isa(device, CPU)
         T = Vector
         M = SparseMatrixCSC
@@ -599,7 +598,6 @@ function solve(
     if verbose_level >= VERBOSE_LEVEL_HIGH
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
     end
-
     if normF < tol
         converged = true
     end

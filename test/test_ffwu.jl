@@ -1,9 +1,11 @@
-# Verify solutions against matpower results
+# Implementation of ideas found in F.F. Wu's "Two stage" paper.
 using Test
 using ExaPF
 using FiniteDiff
 using ForwardDiff
 using LinearAlgebra
+using Printf
+#using UnicodePlots
 
 # Include the linesearch here for now
 import ExaPF: ParseMAT, PowerSystem, IndexSet
@@ -23,6 +25,7 @@ function davidon_ls(pf, xk, uk, p, delta_x, delta_u, alpha_m)
     FMp = FiniteDiff.finite_difference_derivative(cost_a, alpha_m)
 
     v = (3.0/alpha_m)*(F0 - FM) + F0p + FMp
+    
     w = sqrt(v^2 - F0p*FMp)
 
     scale = (FMp + w - v)/(FMp - F0p + 2*w)
@@ -37,7 +40,7 @@ function deltax_approx(delta_u, dGdx, dGdu)
     return delta_x
 end
 
-function descent_direction(pf, rk, u, u_min, u_max)
+function descent_direction(pf, rk, u, u_min, u_max; damping=false)
 
     dim = length(u)
     delta_u = zeros(dim)
@@ -56,16 +59,33 @@ function descent_direction(pf, rk, u, u_min, u_max)
     end
 
     # u = [VMAG^{REF}, P^{PV}, VMAG^{PV}]
+    
+    # scale ratio
     scale = 2.0
     for i=1:npv
         delta_u[nref + i] = scale*delta_u[nref + i]
     end
 
+    # damping factor
+    if damping
+    for i=1:npv
+        idx_u = nref + npv + i
+        if u[idx_u] < u_max[idx_u] && u[idx_u] > u_min[idx_u]
+            if rk[idx_u] < 0.0
+                damp = min((u_max[idx_u] - u[idx_u]), 1.0)
+                delta_u[idx_u] = damp*delta_u[idx_u]
+            elseif rk[idx_u] > 0.0
+                damp = min((u[idx_u] - u_min[idx_u]), 1.0)
+                delta_u[idx_u] = damp*delta_u[idx_u]
+            end
+        end
+    end
+    end
+
     return delta_u
 end
 
-function check_convergence(rk, u, u_min, u_max; eps=1e-5)
-
+function check_convergence(rk, u, u_min, u_max; eps=1e-4)
     dim = length(rk)
 
     for i=1:dim
@@ -106,14 +126,39 @@ function alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
             al = (x_min[i] - xk[i])/delta_x[i]
             # alpha needs to be positive
             a_prop = max(am, al)
-            if a_prop < 0.0
-                println("Alpha_x negative!")
-            end
             # need to find alpha that satisfies all constraints
             alpha_x = min(alpha_x, a_prop)
         end
     end
+    if alpha_x < 0.0
+        return alpha_u
+    end
     return min(alpha_x, alpha_u)
+end
+
+# given limit alpha, compute costs along a direction.
+
+function cost_direction(pf, x, u, p, delta_u, alpha_max, alpha_dav; points=10)
+
+    alphas = zeros(points)
+    costs = zeros(points)
+    k = 1
+
+    for a=range(0.0, stop=alpha_max, length=points)
+        u_prop = u + a*delta_u
+        xk, g, Jx, Ju, convergence = ExaPF.solve(pf, x, u_prop, p)
+        c = ExaPF.cost_function(pf, xk, u_prop, p; V=eltype(xk))
+
+        alphas[k] = a
+        costs[k] = c
+        k += 1
+    end
+    #plt = lineplot(alphas, costs, title = "Cost along alpha", width=80);
+    # plot a vertical line for Davidon's alpha
+    alpha_dav_vert = alpha_dav*ones(points)
+    #scatterplot!(plt, alpha_dav_vert, costs)
+    #println(plt)
+
 end
 
 @testset "Two-stage OPF" begin
@@ -162,6 +207,7 @@ end
 
         # evaluate cost
         c = ExaPF.cost_function(pf, xk, uk, p; V=eltype(xk))
+        cost_history[iter] = c
         dCdx, dCdu = ExaPF.cost_gradients(pf, xk, uk, p)
 
         # lamba calculation
@@ -180,17 +226,25 @@ end
 
         # line search
         delta_x = deltax_approx(delta_u, dGdx, dGdu)
-        #a_m = alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
+        a_m = alpha_max(xk, delta_x, uk, delta_u, x_min, x_max, u_min, u_max)
+        @printf("Maximal alpha: %f\n", a_m)
         #a_dav = davidon_ls(pf, xk, uk, p, delta_x, delta_u, a_m)
+
+        #@printf("Davidon alpha: %f\n", a_dav)
+        #cost_direction(pf, xk, uk, p, delta_u, a_m, a_dav; points=10)
         # compute control step
+        println("Delta_u norm: ", norm(delta_u))
+        println(delta_u)
         uk = uk + step*delta_u
 
         println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
 
-        println(grad)
         iter += 1
     end
     ExaPF.PowerSystem.print_state(pf, xk, uk, p)
+    #plt = lineplot(cost_history[1:iter - 1], title = "Cost history", width=80);
+    #println(plt)
+
     return
 end
