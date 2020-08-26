@@ -52,7 +52,6 @@ function mat_to_exapf(data_mat)
         bus_array[i, BUS_I] = busn
         bus_array[i, BUS_TYPE] = bus["bus_type"]
         bus_array[i, PD] = bus["pd"]
-        bus_array[i, PD] = bus["pd"]
         bus_array[i, QD] = bus["qd"]
         bus_array[i, GS] = bus["gs"]
         bus_array[i, BS] = bus["bs"]
@@ -67,18 +66,19 @@ function mat_to_exapf(data_mat)
     data["bus"] = bus_array
 
     # generators
-    GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
 
     ngen = length(data_mat["gen"])
     gen_array = Array{Any}(undef, ngen, 25)
-    
+
     for (i, gen) in enumerate(data_mat["gen"])
         gen_array[i, GEN_BUS] = gen["gen_bus"]
         gen_array[i, PG] = gen["pg"]
         gen_array[i, QG] = gen["qg"]
         gen_array[i, QMAX] = gen["qmax"]
+        gen_array[i, QMIN] = gen["qmin"]
         gen_array[i, VG] = gen["vg"]
         gen_array[i, MBASE] = gen["mbase"]
         gen_array[i, GEN_STATUS] = gen["gen_status"]
@@ -119,7 +119,7 @@ function mat_to_exapf(data_mat)
         #branch_array[i, QT] = branch["qt"]
     end
     data["branch"] = branch_array
-    
+
     MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
     ncost = length(data_mat["gencost"])
     cost_array = Array{Any}(undef, ncost, 5)

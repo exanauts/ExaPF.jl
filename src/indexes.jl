@@ -83,19 +83,19 @@ function idx_gen()
     MU_QMAX     = 24   # Kuhn-Tucker multiplier on upper Qg limit (u/MVAr)
     MU_QMIN     = 25   # Kuhn-Tucker multiplier on lower Qg limit (u/MVAr)
 
-    return GEN_BUS, PG, QG, QMAX, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    return GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN
 end
 
 function idx_cost()
-    MODEL       = 1    # cost model, 1 = piecewise linear, 2 = polynomial 
+    MODEL       = 1    # cost model, 1 = piecewise linear, 2 = polynomial
     STARTUP     = 2    # startup cost in US dollars
     SHUTDOWN    = 3    # shutdown cost in US dollars
     NCOST       = 4    # number breakpoints in piecewise linear cost function,
                        # or number of coefficients in polynomial cost function
     COST        = 5    # parameters defining total cost function begin in this col
-    
+
     return MODEL, STARTUP, SHUTDOWN, NCOST, COST
 end
 
