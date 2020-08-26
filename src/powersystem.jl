@@ -61,7 +61,7 @@ struct PowerNetwork
         ngen = size(gen, 1)
 
         # obtain V0 from raw data
-        vbus = Array{Complex{Float64}}(undef, nbus)
+        vbus = zeros(Complex{Float64}, nbus)
         for i in 1:nbus
             vbus[i] = bus[i, VM]*exp(1im * pi/180 * bus[i, VA])
         end
@@ -76,7 +76,6 @@ struct PowerNetwork
 
         new(vbus, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
     end
-
 end
 
 function Base.show(io::IO, pf::PowerNetwork)
@@ -98,7 +97,6 @@ function Base.show(io::IO, pf::PowerNetwork)
         @printf("\t%d \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
                 type, vmag, vang, pinj, qinj)
     end
-
 end
 
 function print_state(pf::PowerNetwork, x, u, p)
@@ -110,7 +108,7 @@ function print_state(pf::PowerNetwork, x, u, p)
     @printf("\t==============================================\n")
     @printf("\tBUS \t TYPE \t VMAG \t VANG \t P \t Q\n")
     @printf("\t==============================================\n")
-    
+
     vmag, vang, pinj, qinj = retrieve_physics(pf, x, u, p)
 
     for i=1:pf.nbus
@@ -118,7 +116,6 @@ function print_state(pf::PowerNetwork, x, u, p)
         @printf("\t%d \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
                 type, vmag[i], vang[i]*(180.0/pi), pinj[i], qinj[i])
     end
-
 end
 
 """
@@ -185,7 +182,7 @@ function get_u(
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
-    
+
     pload = real.(pf.sload)
 
     # build vector u
@@ -193,7 +190,9 @@ function get_u(
     u = zeros(dimension)
 
     u[1:nref] = vmag[pf.ref]
-    u[nref + 1:nref + npv] = pbus[pf.pv] - pload[pf.pv]
+    # u is equal to active power of generator (Pᵍ)
+    # As P = Pᵍ - Pˡ , we get
+    u[nref + 1:nref + npv] = pbus[pf.pv] + pload[pf.pv]
     u[nref + npv + 1:nref + 2*npv] = vmag[pf.pv]
 
     return u
@@ -255,14 +254,14 @@ function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
 end
 
 function get_power_injection_partials(fr, v_m, v_a, ybus_re, ybus_im)
-    
+
     nbus = length(v_m)
     dPdVm = zeros(nbus)
     dPdVa = zeros(nbus)
     for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
         to = ybus_re.rowval[c]
         aij = v_a[fr] - v_a[to]
-        
+
         if to != fr
             dPdVm[to] = v_m[fr]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
             dPdVa[to] = v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
@@ -303,12 +302,12 @@ function retrieve_physics(pf::PowerNetwork, x, u, p; V=Float64)
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
-    
+
     vmag = zeros(V, nbus)
     vang = zeros(V, nbus)
     pinj = zeros(V, nbus)
     qinj = zeros(V, nbus)
-    
+
     pload = real.(pf.sload)
     qload = imag.(pf.sload)
 
@@ -317,7 +316,8 @@ function retrieve_physics(pf::PowerNetwork, x, u, p; V=Float64)
     vang[pf.pv] = x[2*npq + 1:2*npq + npv]
 
     vmag[pf.ref] = u[1:nref]
-    pinj[pf.pv] = u[nref + 1:nref + npv] + pload[pf.pv]
+    # P at buses is equal to Pᵍ (power of generator) minus load Pˡ
+    pinj[pf.pv] = u[nref + 1:nref + npv] - pload[pf.pv]
     vmag[pf.pv] = u[nref + npv + 1:nref + 2*npv]
 
     vang[pf.ref] = p[1:nref]
@@ -373,17 +373,17 @@ function bustypeindex(bus, gen, bus_to_indexes)
     bustype = copy(bus[:, BUS_TYPE])
 
     for i in 1:size(bus, 1)
-        if (bustype[i] == 2) && (gencon[i] == 0)
-            bustype[i] = 1
-        elseif (bustype[i] == 1) && (gencon[i] > 0)
-            bustype[i] = 2
+        if (bustype[i] == PV_BUS_TYPE) && (gencon[i] == 0)
+            bustype[i] = PQ_BUS_TYPE
+        elseif (bustype[i] == PQ_BUS_TYPE) && (gencon[i] > 0)
+            bustype[i] = PV_BUS_TYPE
         end
     end
 
     # form vectors
-    ref = findall(x->x==3, bustype)
-    pv = findall(x->x==2, bustype)
-    pq = findall(x->x==1, bustype)
+    ref = findall(x -> x==REF_BUS_TYPE, bustype)
+    pv = findall(x -> x==PV_BUS_TYPE, bustype)
+    pq = findall(x -> x==PQ_BUS_TYPE, bustype)
 
     return ref, pv, pq, bustype
 end
@@ -420,8 +420,9 @@ function assembleSbus(gen, bus, baseMVA, bus_to_indexes)
 
     for i in 1:nbus
         id_bus = bus_to_indexes[bus[i, BUS_I]]
-        sbus[id_bus] -= (bus[i, PD] + 1im*bus[i, QD])/baseMVA
-        sload[id_bus] -= (bus[i, PD] + 1im*bus[i, QD])/baseMVA
+        load = (bus[i, PD] + 1im*bus[i, QD])/baseMVA
+        sbus[id_bus] -= load
+        sload[id_bus] = load
     end
 
     return sbus, sload
