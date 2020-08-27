@@ -25,7 +25,7 @@ function davidon_ls(pf, xk, uk, p, delta_x, delta_u, alpha_m)
     FMp = FiniteDiff.finite_difference_derivative(cost_a, alpha_m)
 
     v = (3.0/alpha_m)*(F0 - FM) + F0p + FMp
-    
+
     w = sqrt(v^2 - F0p*FMp)
 
     scale = (FMp + w - v)/(FMp - F0p + 2*w)
@@ -59,7 +59,7 @@ function descent_direction(pf, rk, u, u_min, u_max; damping=false)
     end
 
     # u = [VMAG^{REF}, P^{PV}, VMAG^{PV}]
-    
+
     # scale ratio
     scale = 2.0
     for i=1:npv
@@ -174,7 +174,7 @@ end
     x = ExaPF.PowerSystem.get_x(pf, vmag, vang, pbus, qbus)
     u = ExaPF.PowerSystem.get_u(pf, vmag, vang, pbus, qbus)
     p = ExaPF.PowerSystem.get_p(pf, vmag, vang, pbus, qbus)
-    u_min, u_max, x_min, x_max = ExaPF.get_constraints(pf)
+    u_min, u_max, x_min, x_max = ExaPF.get_bound_constraints(pf)
 
     # solve power flow
     xk, g, Jx, Ju, convergence = ExaPF.solve(pf, x, u, p)

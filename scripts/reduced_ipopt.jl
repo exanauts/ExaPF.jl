@@ -9,37 +9,6 @@ using Ipopt
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
-function get_qlim(pf::PowerSystem.PowerNetwork)
-    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
-    GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
-    QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
-    MU_QMIN = IndexSet.idx_gen()
-
-    nref = length(pf.ref)
-    npv = length(pf.pv)
-    npq = length(pf.pq)
-    b2i = pf.bus_to_indexes
-
-    gens = pf.data["gen"]
-    baseMVA = pf.data["baseMVA"][1]
-    bus = pf.data["bus"]
-    ngens = size(gens)[1]
-
-    q_min = fill(-Inf, npv)
-    q_max = fill(Inf, npv)
-
-    for i = 1:ngens
-        genbus = b2i[gens[i, GEN_BUS]]
-        bustype = bus[genbus, BUS_TYPE]
-        if bustype == PowerSystem.PV_BUS_TYPE
-            idx_pv = findfirst(pf.pv.==genbus)
-            q_min[idx_pv] = gens[i, QMIN] / baseMVA
-            q_max[idx_pv] = gens[i, QMAX] / baseMVA
-        end
-    end
-    return q_min, q_max
-end
 get_lines_limit(pf::PowerSystem.PowerNetwork) = pf.data["branch"][:, 6]
 
 function flow_limit(pf, x, u, p; T=Float64)
@@ -68,12 +37,12 @@ function gₚ(pf, x, u, p; V=Float64)
     npv = length(pf.pv)
     ybus_re, ybus_im = ExaPF.Spmat{Vector}(pf.Ybus)
 
-    Vm, Va, pbus, qbus = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p; V=V)
+    Vm, Va, pbus, qbus = PowerSystem.retrieve_physics(pf, x, u, p; V=V)
     p_ref = zeros(V, nref)
     q_pv = zeros(V, npv)
 
     for (i, bus) in enumerate(pf.ref)
-        p_ref[i] = ExaPF.PowerSystem.get_power_injection(bus, Vm, Va, ybus_re, ybus_im)
+        p_ref[i] = PowerSystem.get_power_injection(bus, Vm, Va, ybus_re, ybus_im)
     end
     for (i, bus) in enumerate(pf.pv)
         q_pv[i] = PowerSystem.get_react_injection(bus, Vm, Va, ybus_re, ybus_im)
@@ -288,8 +257,8 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
 
     v_min = 0.9
     v_max = 1.1
-    u_min, u_max, x_min, x_max, p_min, p_max = ExaPF.get_constraints(pf)
-    q_min, q_max = get_qlim(pf)
+    u_min, u_max, x_min, x_max, p_min, p_max = ExaPF.get_bound_constraints(pf)
+    q_min, q_max = ExaPF.get_bound_reactive_power(pf)
 
     # Set bounds on decision variable
     x_L = u_min
@@ -354,7 +323,7 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     return prob, pf
 end
 
-datafile = "test/data/case9.m"
+# datafile = "test/data/case9.m"
 # datafile = "../pglib-opf/pglib_opf_case30_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case57_ieee.m"
 datafile = "../pglib-opf/pglib_opf_case118_ieee.m"
