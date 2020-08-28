@@ -21,3 +21,13 @@ mutable struct Spmat{T}
         return new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(mat.nzval))
     end
 end
+
+# small utils function
+function polar!(Vm, Va, V, ::CPU)
+    Vm .= abs.(V)
+    Va .= angle.(V)
+end
+function polar!(Vm, Va, V, ::CUDADevice)
+    Vm .= CUDA.abs.(V)
+    Va .= CUDA.angle.(V)
+end
