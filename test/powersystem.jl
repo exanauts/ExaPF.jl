@@ -103,8 +103,8 @@ import ExaPF: ParsePSSE, PowerSystem
         J♯ = copy(J)
 
         # Then, create a JacobianAD object
-        jacobianAD = ExaPF.AD.StateJacobianAD(ExaPF.residualFunction_polar_sparsity!, F, Vm, Va,
-                                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
+        jacobianAD = ExaPF.AD.StateJacobianAD(F, Vm, Va,
+                                              ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
         # and compute Jacobian with ForwardDiff
         ExaPF.AD.residualJacobianAD!(
             jacobianAD, ExaPF.residualFunction_polar!, Vm, Va,

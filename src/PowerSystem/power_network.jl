@@ -1,15 +1,3 @@
-module PowerSystem
-
-using ..ExaPF: ParsePSSE, ParseMAT, IndexSet, Spmat
-
-import Base: show
-using Printf
-using SparseArrays
-
-const PQ_BUS_TYPE = 1
-const PV_BUS_TYPE = 2
-const REF_BUS_TYPE  = 3
-
 """
     PowerNetwork
 
@@ -20,7 +8,7 @@ The object is first created in main memory and then, if GPU computation is
 enabled, some of the contents will be moved to the device.
 
 """
-struct PowerNetwork
+struct PowerNetwork <: AbstractPowerSystem
     vbus::Array{Complex{Float64}}
     Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
     data::Dict{String,Array}
@@ -236,25 +224,23 @@ function get_p(
     return p
 end
 
+# Some utils function
 """
 get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
 
 Computes the power injection at node "fr".
 """
 function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
     P = 0.0
     for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
         to = ybus_re.rowval[c]
         aij = v_a[fr] - v_a[to]
         P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
     end
-
     return P
 end
 
 function get_power_injection_partials(fr, v_m, v_a, ybus_re, ybus_im)
-
     nbus = length(v_m)
     dPdVm = zeros(nbus)
     dPdVa = zeros(nbus)
@@ -280,14 +266,12 @@ get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
 Computes the reactive power injection at node "fr".
 """
 function get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
     Q = 0.0
     for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
         to = ybus_re.rowval[c]
         aij = v_a[fr] - v_a[to]
         Q += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
     end
-
     return Q
 end
 
@@ -341,171 +325,132 @@ function retrieve_physics(pf::PowerNetwork, x, u, p; V=Float64)
 end
 
 """
-    bustypeindex(bus, gen)
+    get_bound_constraints(pf)
 
-Returns vectors indexing buses by type: ref, pv, pq.
+Given PowerNetwork object, returns vectors xmin, xmax, umin, umax
+of the OPF box constraints.
 
 """
-function bustypeindex(bus, gen, bus_to_indexes)
-    # retrieve indeces
+function get_bound_constraints(pf::PowerNetwork)
+
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
-
     GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
 
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+    b2i = pf.bus_to_indexes
 
-    # form vector that lists the number of generators per bus.
-    # If a PV bus has 0 generators (e.g. due to contingency)
-    # then that bus turns to a PQ bus.
+    gens = pf.data["gen"]
+    baseMVA = pf.data["baseMVA"][1]
+    bus = pf.data["bus"]
+    ngens = size(gens)[1]
 
-    # Design note: this might be computed once and then modified for each contingency.
-    gencon = zeros(Int8, size(bus, 1))
+    dimension_u = 2*npv + nref
+    dimension_x = 2*npq + npv
 
-    for i in 1:size(gen, 1)
-        if gen[i, GEN_STATUS] == 1
-            id_bus = bus_to_indexes[gen[i, GEN_BUS]]
-            gencon[id_bus] += 1
+    u_min = fill(-Inf, dimension_u)
+    u_max = fill(Inf, dimension_u)
+    x_min = fill(-Inf, dimension_x)
+    x_max = fill(Inf, dimension_x)
+    p_min = fill(-Inf, nref)
+    p_max = fill(Inf, nref)
+
+    for i in 1:length(pf.pq)
+        bus_idx = pf.pq[i]
+        vm_max = bus[bus_idx, VMAX]
+        vm_min = bus[bus_idx, VMIN]
+        x_min[i] = vm_min
+        x_max[i] = vm_max
+    end
+
+    for i in 1:length(pf.pv)
+        bus_idx = pf.pv[i]
+        vm_max = bus[bus_idx, VMAX]
+        vm_min = bus[bus_idx, VMIN]
+        u_min[nref + npv + i] = vm_min
+        u_max[nref + npv + i] = vm_max
+    end
+
+    for i in 1:length(pf.ref)
+        bus_idx = pf.ref[i]
+        vm_max = bus[bus_idx, VMAX]
+        vm_min = bus[bus_idx, VMIN]
+        u_min[i] = vm_min
+        u_max[i] = vm_max
+    end
+
+    for i = 1:ngens
+        genbus = b2i[gens[i, GEN_BUS]]
+        bustype = bus[genbus, BUS_TYPE]
+        if bustype == PV_BUS_TYPE
+            idx_pv = findfirst(pf.pv.==genbus)
+            u_min[nref + idx_pv] = gens[i, PMIN] / baseMVA
+            u_max[nref + idx_pv] = gens[i, PMAX] / baseMVA
+        elseif bustype == REF_BUS_TYPE
+            idx = findfirst(pf.ref .== genbus)
+            p_min[idx] = gens[i, PMIN] / baseMVA
+            p_max[idx] = gens[i, PMAX] / baseMVA
         end
     end
 
-    bustype = copy(bus[:, BUS_TYPE])
-
-    for i in 1:size(bus, 1)
-        if (bustype[i] == PV_BUS_TYPE) && (gencon[i] == 0)
-            bustype[i] = PQ_BUS_TYPE
-        elseif (bustype[i] == PQ_BUS_TYPE) && (gencon[i] > 0)
-            bustype[i] = PV_BUS_TYPE
-        end
-    end
-
-    # form vectors
-    ref = findall(x -> x==REF_BUS_TYPE, bustype)
-    pv = findall(x -> x==PV_BUS_TYPE, bustype)
-    pq = findall(x -> x==PQ_BUS_TYPE, bustype)
-
-    return ref, pv, pq, bustype
+    return u_min, u_max, x_min, x_max, p_min, p_max
 end
 
 """
-    assembleSbus(gen, load, SBASE, nbus)
+    get_bound_reactive_power(pf)
 
-Assembles vector of constant power injections (generator - load). Since
-we do not have voltage-dependent loads, this vector only needs to be
-assembled once at the beginning of the power flow routine.
+Given PowerNetwork object, return bounds on reactive power
+of the PV buses.
+
+Matpower specifies bounds on the reactive power of the generator:
+
+    Q_min <= Qᵍ <= Q_max
+
+ExaPF uses internally the reactive power at the buses, which for PV buses
+writes out
+
+    Q = Qᵍ - Qˡ
+
+with Qˡ the (constant) reactive load.
+This function corrects the bounds to take into account the reactive load:
+
+    Q_min - Qˡ <= Q <= Q_max - Qˡ
 
 """
-function assembleSbus(gen, bus, baseMVA, bus_to_indexes)
-
-    ngen = size(gen, 1)
-    nbus = size(bus, 1)
-    sbus = zeros(Complex{Float64}, nbus)
-    sload = zeros(Complex{Float64}, nbus)
-
-    # retrieve indeces
+function get_bound_reactive_power(pf::PowerNetwork)
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
-
     GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
 
-    for i in 1:ngen
-        if gen[i, GEN_STATUS] == 1
-            id_bus = bus_to_indexes[gen[i, GEN_BUS]]
-            sbus[id_bus] += (gen[i, PG] + 1im*gen[i, QG])/baseMVA
+    nref = length(pf.ref)
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+
+    gens = pf.data["gen"]
+    baseMVA = pf.data["baseMVA"][1]
+    bus = pf.data["bus"]
+    ngens = size(gens)[1]
+    # Reactive load
+    qload = imag.(pf.sload)
+
+    q_min = fill(-Inf, npv)
+    q_max = fill(Inf, npv)
+
+    for i = 1:ngens
+        genbus = pf.bus_to_indexes[gens[i, GEN_BUS]]
+        bustype = bus[genbus, BUS_TYPE]
+        if bustype == PV_BUS_TYPE
+            idx_pv = findfirst(pf.pv.==genbus)
+            q_min[idx_pv] = gens[i, QMIN] / baseMVA - qload[idx_pv]
+            q_max[idx_pv] = gens[i, QMAX] / baseMVA - qload[idx_pv]
         end
     end
-
-    for i in 1:nbus
-        id_bus = bus_to_indexes[bus[i, BUS_I]]
-        load = (bus[i, PD] + 1im*bus[i, QD])/baseMVA
-        sbus[id_bus] -= load
-        sload[id_bus] = load
-    end
-
-    return sbus, sload
-end
-
-# Create an admittance matrix. The implementation is a modification of
-# MATPOWER's makeYbus. We attach the original MATPOWER's license in makeYbus.m:
-#
-# MATPOWER
-# Copyright (c) 1996-2016, Power Systems Engineering Research Center (PSERC)
-# by Ray Zimmerman, PSERC Cornell
-#
-# Covered by the 3-clause BSD License.
-#
-# This function returns the following:
-#
-#  Ybus : nb  x nb admittance
-#  Yf_br: nbr x nb from-bus admittance of non-transformer branches
-#  Yt_br: nbr x nb to-bus admittance of non-transformer branches
-#  Yf_tr: ntr x nb from-bus admittance of transformer branches
-#  Yt_tr: ntr x nb to-bus admittance of transformer branches
-#
-# where nb is the number of buses, nbr is the number of non-transformer
-# branches, and ntr is the number of transformer branches.
-function makeYbus(data, bus_to_indexes)
-    baseMVA = data["baseMVA"]
-    bus     = data["bus"]
-    branch  = data["branch"]
-    F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C, TAP, SHIFT, BR_STATUS,
-    ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IndexSet.idx_branch()
-    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
-
-    # constants
-    nb = size(bus, 1)          # number of buses
-    nl = size(branch, 1)       # number of lines
-
-    # define named indices into bus, branch matrices
-
-    # for each branch, compute the elements of the branch admittance matrix where
-    #
-    #      | If |   | Yff  Yft |   | Vf |
-    #      |    | = |          | * |    |
-    #      | It |   | Ytf  Ytt |   | Vt |
-    #
-    stat = branch[:, BR_STATUS]                     # ones at in-service branches
-    Ys = stat ./ (branch[:, BR_R] + 1im * branch[:, BR_X])  # series admittance
-    Bc = stat .* branch[:, BR_B]                           # line charging susceptance
-    tap = ones(nl)                               # default tap ratio = 1
-    i = findall(branch[:, TAP] .!= 0)              # indices of non-zero tap ratios
-    tap[i] = branch[i, TAP]                         # assign non-zero tap ratios
-    tap = tap .* exp.(1im*pi/180 * branch[:, SHIFT]) # add phase shifters
-    Ytt = Ys + 1im*Bc/2
-    Yff = Ytt ./ (tap .* conj(tap))
-    Yft = - Ys ./ conj(tap)
-    Ytf = - Ys ./ tap
-
-    # compute shunt admittance
-    # if Psh is the real power consumed by the shunt at V = 1.0 p.u.
-    # and Qsh is the reactive power injected by the shunt at V = 1.0 p.u.
-    # then Psh - j Qsh = V * conj(Ysh * V) = conj(Ysh) = Gs - j Bs,
-    # i.e. Ysh = Psh + j Qsh, so ...
-    Ysh = (bus[:, GS] + 1im * bus[:, BS]) / baseMVA[1] # vector of shunt admittances
-
-    # build connection matrices
-    f = [bus_to_indexes[e] for e in branch[:, F_BUS]] # list of "from" buses
-    t = [bus_to_indexes[e] for e in branch[:, T_BUS]] # list of "to" buses
-
-    Cf = sparse(1:nl, f, ones(nl), nl, nb)       # connection matrix for line & from buses
-    Ct = sparse(1:nl, t, ones(nl), nl, nb)       # connection matrix for line & to buses
-
-    # build Yf and Yt such that Yf * V is the vector of complex branch currents injected
-    # at each branch's "from" bus, and Yt is the same for the "to" bus end
-    i = [1:nl; 1:nl]
-    Yf = sparse(i, [f; t], [Yff; Yft], nl, nb)
-    Yt = sparse(i, [f; t], [Ytf; Ytt], nl, nb)
-
-    # build Ybus
-    Ybus = Cf' * Yf + Ct' * Yt + sparse(1:nb, 1:nb, Ysh, nb, nb)
-
-    return Ybus
-
-end
-
+    return q_min, q_max
 end
 

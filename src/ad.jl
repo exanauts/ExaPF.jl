@@ -25,7 +25,7 @@ struct StateJacobianAD <: AbstractJacobianAD
     varx
     t1svarx
     map
-    function StateJacobianAD(residualFunction, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    function StateJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
         if F isa Array
@@ -120,7 +120,7 @@ struct DesignJacobianAD <: AbstractJacobianAD
     t1svarx
     map
     # function DesignJacobianAD(J, coloring, F, v_m, v_a, pbus, pv, pq, ref)
-    function DesignJacobianAD(residualFunction, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    function DesignJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
         npbus = size(pinj, 1)

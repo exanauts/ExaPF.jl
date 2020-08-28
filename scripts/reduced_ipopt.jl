@@ -9,7 +9,7 @@ using Ipopt
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
-get_lines_limit(pf::PowerSystem.PowerNetwork) = pf.data["branch"][:, 6]
+get_lines_limit(pf::PowerSystem.PowerNetwork) = (pf.data["branch"][:, 6] / pf.data["baseMVA"][1]).^2
 
 function flow_limit(pf, x, u, p; T=Float64)
     nref = length(pf.ref)
@@ -20,16 +20,15 @@ function flow_limit(pf, x, u, p; T=Float64)
     nlines = size(branches, 1)
     cons_fr = zeros(T, nlines)
     cons_to = zeros(T, nlines)
-    Vm, Va, pbus, qbus = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p; V=V)
+    Vm, Va, pbus, qbus = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p; V=T)
 
     for i in 1:nlines
-        bus_fr = Int(branches[i, 1])
+        bus_fr = b2i[Int(branches[i, 1])]
         cons_fr[i] = pbus[bus_fr]^2 + qbus[bus_fr]^2
-        bus_to = Int(branches[i, 2])
+        bus_to = b2i[Int(branches[i, 2])]
         cons_to[i] = pbus[bus_to]^2 + qbus[bus_to]^2
     end
-
-    return [cons_from; cons_to]
+    return [cons_fr; cons_to]
 end
 
 function gₚ(pf, x, u, p; V=Float64)
@@ -55,6 +54,7 @@ function build_callback(pf, x0, u, p)
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
+    nlines = size(pf.data["branch"], 1)
     # Compute initial point.
     xk, g, Jx, Ju, conv, resx! = ExaPF.solve(pf, x0, u, p, tol=1e-13)
     ∇gₓ = Jx(pf, xk, u, p)
@@ -111,11 +111,12 @@ function build_callback(pf, x0, u, p)
         g[1:npq] .= xk[1:npq]
         # Constraint on p_{ref}
         g[npq+1:npq+nref+npv] .= gₚ(pf, xk, u, p)
+        g[npq+nref+npv+1:end] .= flow_limit(pf, xk, u, p)
         return nothing
     end
     function eval_jac_g(u::Vector{Float64}, mode, rows::Vector{Int32}, cols::Vector{Int32}, values::Vector{Float64})
         n = length(u)
-        m = npq + nref + npv
+        m = npq + nref + npv + 2 * nlines
         if mode == :Structure
             idx = 1
             for c in 1:m #number of constraints
@@ -148,7 +149,19 @@ function build_callback(pf, x0, u, p)
                 λ .= - ∇gₓ' \ rhs
                 J[npq + ix, :] .= jac_p_u[ix, :] + ∇gᵤ' * λ
             end
+            # Evaluate reduced Jacobian for flow limits
+            hh_x(x_) = flow_limit(pf, x_, u, p; T=eltype(x_))
+            hh_u(u_) = flow_limit(pf, xk, u_, p; T=eltype(u_))
+            jac_h_x = ForwardDiff.jacobian(hh_x, xk)
+            jac_h_u = ForwardDiff.jacobian(hh_u, u)
+            _shift = npq + nref + npv
+            for ix in 1:2*nlines
+                rhs = jac_h_x[ix, :]
+                λ .= - ∇gₓ' \ rhs
+                J[_shift + ix, :] .= jac_h_u[ix, :] + ∇gᵤ' * λ
+            end
 
+            @info("jac: ", J)
             # Copy to Ipopt's Jacobian
             k = 1
             for i in 1:m
@@ -237,6 +250,7 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
+    nlines = size(pf.data["branch"], 1)
 
     # retrieve initial state of network
     pbus = real.(pf.sbus)
@@ -255,8 +269,6 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     # Build callbacks in closure
     eval_f, eval_grad_f, eval_gg, eval_jac_gg, eval_hh = build_callback(pf, xk, uk, p)
 
-    v_min = 0.9
-    v_max = 1.1
     u_min, u_max, x_min, x_max, p_min, p_max = ExaPF.get_bound_constraints(pf)
     q_min, q_max = ExaPF.get_bound_reactive_power(pf)
 
@@ -264,12 +276,14 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     x_L = u_min
     x_U = u_max
 
+    F_max = get_lines_limit(pf)
     # add constraint on PQ's voltage magnitude
     if cons
-        m = npq + nref + npv
+        m = npq + nref + npv + 2 * nlines
         jnnz = m * n
-        g_L = [x_min[1:npq]; p_min; q_min]
-        g_U = [x_max[1:npq]; p_max; q_max]
+        zl = zeros(nlines)
+        g_L = [x_min[1:npq]; p_min; q_min; zl; zl]
+        g_U = [x_max[1:npq]; p_max; q_max; F_max; F_max]
         eval_g = eval_gg
         eval_jac_g = eval_jac_gg
     else
@@ -301,7 +315,7 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
                           obj_value::Float64, inf_pr::Float64, inf_du::Float64, mu::Float64,
                           d_norm::Float64, regularization_size::Float64, alpha_du::Float64, alpha_pr::Float64,
                           ls_trials::Int)
-        return iter_count < 500  # Interrupts after one iteration.
+        return iter_count < 200  # Interrupts after one iteration.
     end
 
     # I am too lazy to compute second order information
@@ -313,25 +327,29 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     end
     # addOption(prob, "accept_after_max_steps", 10)
     addOption(prob, "tol", 1e-2)
-    # addOption(prob, "derivative_test", "first-order")
+    addOption(prob, "derivative_test", "first-order")
     Ipopt.setIntermediateCallback(prob, intermediate)
 
     Ipopt.solveProblem(prob)
     u = prob.x
     x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=50, tol=1e-14)
-    # ExaPF.PowerSystem.print_state(pf, x, u, p)
+    ExaPF.PowerSystem.print_state(pf, x, u, p)
+    res = flow_limit(pf, x, u, p) .- [F_max; F_max]
+    println(res)
+    @info("l", maximum(res))
+    println(findall(x -> x > 0, res))
     return prob, pf
 end
 
-# datafile = "test/data/case9.m"
+datafile = "test/data/case9.m"
 # datafile = "../pglib-opf/pglib_opf_case30_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case57_ieee.m"
-datafile = "../pglib-opf/pglib_opf_case118_ieee.m"
+# datafile = "../pglib-opf/pglib_opf_case118_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case300_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case1354_pegase.m"
 # datafile = "../pglib-opf/pglib_opf_case1888_rte.m"
 # datafile = "../pglib-opf/pglib_opf_case200_activ.m"
 # datafile = "../pglib-opf/pglib_opf_case500_goc.m"
-prob, pf = run_reduced_ipopt(datafile; hessian=false, cons=true)
+prob, pf = run_reduced_ipopt(datafile; hessian=true, cons=false)
 prob.status
 

@@ -1,3 +1,10 @@
+struct ConvergenceStatus
+    has_converged::Bool
+    n_iterations::Int
+    norm_residuals::Float64
+    n_linear_solves::Int
+end
+
 mutable struct Spmat{T}
     colptr
     rowval

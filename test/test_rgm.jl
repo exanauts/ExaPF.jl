@@ -23,7 +23,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     x = ExaPF.PowerSystem.get_x(pf, vmag, vang, pbus, qbus)
     u = ExaPF.PowerSystem.get_u(pf, vmag, vang, pbus, qbus)
     p = ExaPF.PowerSystem.get_p(pf, vmag, vang, pbus, qbus)
-    u_min, u_max, x_min, x_max = ExaPF.get_bound_constraints(pf)
+    u_min, u_max, x_min, x_max = ExaPF.PowerSystem.get_bound_constraints(pf)
 
     # solve power flow
     xk, g, Jx, Ju, convergence = ExaPF.solve(pf, x, u, p)
