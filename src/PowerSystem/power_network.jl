@@ -454,3 +454,59 @@ function get_bound_reactive_power(pf::PowerNetwork)
     return q_min, q_max
 end
 
+"""
+    get_costs_coefficients(pf::PowerNetwork)
+
+Return coefficients for costs function
+
+TODO: how to deal with piecewise polynomial function?
+"""
+function get_costs_coefficients(pf::PowerNetwork)
+    # indexes
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
+    GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
+    MU_QMIN = IndexSet.idx_gen()
+    MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
+
+
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
+    b2i = pf.bus_to_indexes
+
+    # Matpower assumes gens are ordered. Generator in row i has its cost on row i
+    # of the cost table.
+    gens = pf.data["gen"]
+    baseMVA = pf.data["baseMVA"][1]
+    bus = pf.data["bus"]
+    cost_data = pf.data["cost"]
+    ngens = size(gens)[1]
+    nbus = size(bus)[1]
+
+    # initialize cost
+    # store coefficients in a Float64 array, with 4 columns:
+    # - 1st column: bus type
+    # - 2nd column: constant coefficient c0
+    # - 3rd column: coefficient c1
+    # - 4th column: coefficient c2
+    coefficients = zeros(ngens, 4)
+    # iterate generators and check if pv or ref.
+    for i = 1:ngens
+        # only 2nd degree polynomial implemented for now.
+        @assert cost_data[i, MODEL] == 2
+        @assert cost_data[i, NCOST] == 3
+        genbus = b2i[gens[i, GEN_BUS]]
+        bustype = bus[genbus, BUS_TYPE]
+
+        # polynomial coefficients
+        # TODO: currently scale by baseMVA. Is it a good idea?
+        c0 = cost_data[i, COST][3]
+        c1 = cost_data[i, COST][2] * baseMVA
+        c2 = cost_data[i, COST][1] * baseMVA^2
+        coefficients[i, :] .= (bustype, c0, c1, c2)
+    end
+    return coefficients
+end
+

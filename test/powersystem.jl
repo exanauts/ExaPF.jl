@@ -112,3 +112,28 @@ import ExaPF: ParsePSSE, PowerSystem
         @test jacobianAD.J ≈ J♯
     end
 end
+
+@testset "PowerSystem object" begin
+    psse_datafile = "case14.raw"
+    matpower_datafile = "case9.m"
+
+    # Test constructor
+    @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
+        datafile = joinpath(dirname(@__FILE__), "data", name)
+        switch = endswith(name, ".m") ? 1 : 0
+        pf = PowerSystem.PowerNetwork(datafile, switch)
+        @test isa(pf, PowerSystem.PowerNetwork)
+    end
+
+    # From now on, test with "case9.m"
+    datafile = joinpath(dirname(@__FILE__), "data", matpower_datafile)
+    pf = PowerSystem.PowerNetwork(datafile, 1)
+    @testset "Computing bounds" begin
+        u_min, u_max, x_min, x_max, p_min, p_max = PowerSystem.get_bound_constraints(pf)
+    end
+    @testset "Computing cost coefficients" begin
+        coefs = PowerSystem.get_costs_coefficients(pf)
+        @test size(coefs) == (3, 4)
+        @test isequal(coefs[:, 1], [3.0, 2.0, 2.0])
+    end
+end
