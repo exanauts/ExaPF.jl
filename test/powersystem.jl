@@ -136,4 +136,14 @@ end
         @test size(coefs) == (3, 4)
         @test isequal(coefs[:, 1], [3.0, 2.0, 2.0])
     end
+    @testset "Getters" for Attr in [
+        PowerSystem.NumberOfBuses,
+        PowerSystem.NumberOfPVBuses,
+        PowerSystem.NumberOfPQBuses,
+        PowerSystem.NumberOfSlackBuses,
+        PowerSystem.NumberOfLines,
+        PowerSystem.NumberOfGenerators,
+    ]
+        res = PowerSystem.get(pf, Attr())
+    end
 end

@@ -66,6 +66,13 @@ struct PowerNetwork <: AbstractPowerSystem
     end
 end
 
+get(pf::PowerNetwork, ::NumberOfBuses) = pf.nbus
+get(pf::PowerNetwork, ::NumberOfLines) = size(pf.data["branch"], 1)
+get(pf::PowerNetwork, ::NumberOfGenerators) = pf.ngen
+get(pf::PowerNetwork, ::NumberOfPVBuses) = length(pf.pv)
+get(pf::PowerNetwork, ::NumberOfPQBuses) = length(pf.pq)
+get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
+
 function Base.show(io::IO, pf::PowerNetwork)
     println("Power Network characteristics:")
     @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),
@@ -400,6 +407,14 @@ function get_bound_constraints(pf::PowerNetwork)
     return u_min, u_max, x_min, x_max, p_min, p_max
 end
 
+function bounds(pf::PowerNetwork, ::Generator, ::ActivePower)
+    gens = pf.data["gen"]
+    baseMVA = pf.data["baseMVA"][1]
+    # TODO: I think this is wrong
+    return  gens[i, PMIN] ./ baseMVA, gens[i, PMAX] ./ baseMVA
+end
+
+
 """
     get_bound_reactive_power(pf)
 
@@ -421,7 +436,7 @@ This function corrects the bounds to take into account the reactive load:
     Q_min - Qˡ <= Q <= Q_max - Qˡ
 
 """
-function get_bound_reactive_power(pf::PowerNetwork)
+function bounds(pf::PowerNetwork, ::Buses, ::ReactivePower)
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
     GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
