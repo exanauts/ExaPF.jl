@@ -48,10 +48,21 @@ import ExaPF: PowerSystem, AD, Precondition, Iterative
         xₖ, _ = @time powerflow(polar, jx, x0, u0, p, verbose_level=0, tol=tolerance)
 
         # Test callbacks
+        ## Power Balance
         g = ExaPF.power_balance(polar, xₖ, u0, p)
+        @test isa(g, M)
+        # As we run powerflow before, the balance should be below tolerance
+        @test norm(g, Inf) < tolerance
+        ## Cost Production
         c = ExaPF.cost_production(polar, xₖ, u0, p)
         @test isa(c, Real)
-        @test norm(g, Inf) < tolerance
+        ## Inequality constraint
+        for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
+            m = ExaPF.size_constraint(polar, cons)
+            g = M{Float64, 1}(undef, m) # TODO: this signature is not great
+            fill!(g, 0)
+            cons(polar, g, xₖ, u0, p)
+        end
     end
 
     @testset "Test AD on CPU" begin

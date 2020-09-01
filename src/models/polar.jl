@@ -72,7 +72,7 @@ function get(
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     # build vector x
-    dimension = 2*npq + npv
+    dimension = get(polar, NumberOfState())
     x = VT(undef, dimension)
     x[1:npq] = vmag[polar.network.pq]
     x[npq + 1:2*npq] = vang[polar.network.pq]
@@ -94,7 +94,7 @@ function get(
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     pload = polar.active_load
     # build vector u
-    dimension = 2*npv + nref
+    dimension = get(polar, NumberOfControl())
     u = VT(undef, dimension)
     u[1:nref] = vmag[polar.network.ref]
     # u is equal to active power of generator (Pᵍ)
@@ -205,12 +205,12 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u
 end
 
 function bounds(polar::PolarForm{T, VT, AT}, ::State) where {T, VT, AT}
-    return polar.x_min, polar.x_max
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    return polar.x_min[1:npq], polar.x_max[1:npq]
 end
 function bounds(polar::PolarForm{T, VT, AT}, ::Control) where {T, VT, AT}
     return polar.u_min, polar.u_max
 end
-
 
 function get_network_state(polar::PolarForm{T, VT, AT}, x, u, p; V=Float64) where {T, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
@@ -247,18 +247,6 @@ function get_network_state(polar::PolarForm{T, VT, AT}, x, u, p; V=Float64) wher
     end
 
     return vmag, vang, pinj, qinj
-end
-
-function cost_production(polar::PolarForm, x, u, p; V=Float64)
-    # indexes
-    # for now, let's just return the sum of all generator power
-    power_generations = get(polar, PS.Generator(), PS.ActivePower(), x, u, p; V=V)
-    c0 = polar.costs_coefficients[:, 2]
-    c1 = polar.costs_coefficients[:, 3]
-    c2 = polar.costs_coefficients[:, 4]
-    # Return quadratic cost
-    cost = sum(c0 .+ c1 .* power_generations + c2 .* power_generations.^2)
-    return cost
 end
 
 function power_balance(polar::PolarForm, x, u, p; V=Float64)
@@ -461,3 +449,61 @@ function powerflow(
     return xk, conv
 end
 
+# Cost function
+function cost_production(polar::PolarForm, x, u, p; V=Float64)
+    # indexes
+    # for now, let's just return the sum of all generator power
+    power_generations = get(polar, PS.Generator(), PS.ActivePower(), x, u, p; V=V)
+    c0 = polar.costs_coefficients[:, 2]
+    c1 = polar.costs_coefficients[:, 3]
+    c2 = polar.costs_coefficients[:, 4]
+    # Return quadratic cost
+    cost = sum(c0 .+ c1 .* power_generations + c2 .* power_generations.^2)
+    return cost
+end
+
+# Generic inequality constraints
+# We add constraint only on vmag_pq
+function state_constraint(polar::PolarForm, g, x, u, p; V=Float64)
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    g .= x[1:npq]
+    return
+end
+size_constraint(polar::PolarForm{T, VT, AT}, ::typeof(state_constraint)) where {T, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())
+bounds(polar::PolarForm, ::typeof(state_constraint)) = bounds(polar, State())
+
+function power_constraints(polar::PolarForm, g, x, u, p; V=Float64)
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+    Vm, Va, pbus, qbus = get_network_state(polar, x, u, p; V=V)
+    ref = convert(polar.AT{Int, 1}, polar.network.ref)
+    pv = convert(polar.AT{Int, 1}, polar.network.pv)
+
+    cnt = 1
+    # Constraint on P_ref (generator) (P_inj = P_g - P_load)
+    for (i, bus) in enumerate(ref)
+        g[cnt] = PS.get_power_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.active_load[bus]
+        cnt += 1
+    end
+    # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
+    for (i, bus) in enumerate(ref)
+        g[cnt] = PS.get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
+        cnt += 1
+    end
+    # Constraint on Q_pv (generator) (Q_inj = Q_g - Q_load)
+    for (i, bus) in enumerate(pv)
+        g[cnt] = PowerSystem.get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
+        cnt += 1
+    end
+    return
+end
+function size_constraint(polar::PolarForm{T, VT, AT}, ::typeof(power_constraints)) where {T, VT, AT}
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+    return 2*nref + npv
+end
+function bounds(polar::PolarForm, ::typeof(power_constraints))
+    return
+end

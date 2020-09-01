@@ -1,7 +1,6 @@
 export PolarForm, get, bounds, powerflow
 export State, Control, Parameters, NumberOfState, NumberOfControl
 
-const PS = PowerSystem
 
 abstract type AbstractFormulation end
 
@@ -27,5 +26,10 @@ function initial end
 
 function powerflow end
 
-#
+# Generic constraints
+function state_constraints end
+function power_constraints end
+function thermal_limit_constraints end
+
+# Polar formulation
 include("polar.jl")
