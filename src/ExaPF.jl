@@ -40,6 +40,8 @@ using .ParsePSSE
 include("PowerSystem/PowerSystem.jl")
 using .PowerSystem
 include("formulations.jl")
+# Modeling
+include("models/models.jl")
 
 const TIMER = TimerOutput()
 

@@ -13,7 +13,6 @@ using Test
 using TimerOutputs
 using ExaPF
 import ExaPF: PowerSystem, AD, Precondition, Iterative
-include("../src/models/models.jl")
 
 @testset "Formulation" begin
     datafile = "test/data/case9.m"
@@ -26,13 +25,14 @@ include("../src/models/models.jl")
         b = bounds(polar, State())
         b = bounds(polar, Control())
 
-        nᵤ = get(polar, NumberOfControl())
-        nₓ = get(polar, NumberOfState())
+        # Test getters
+        nᵤ = ExaPF.get(polar, NumberOfControl())
+        nₓ = ExaPF.get(polar, NumberOfState())
 
         # Get initial position
-        x0 = initial(polar, State())
-        u0 = initial(polar, Control())
-        p = initial(polar, Parameters())
+        x0 = ExaPF.initial(polar, State())
+        u0 = ExaPF.initial(polar, Control())
+        p = ExaPF.initial(polar, Parameters())
 
         @test length(u0) == nᵤ
         @test length(x0) == nₓ
@@ -41,15 +41,15 @@ include("../src/models/models.jl")
         end
 
         # Init AD factory
-        jx, ju = init_ad_factory(polar, x0, u0, p)
+        jx, ju = ExaPF.init_ad_factory(polar, x0, u0, p)
 
         # Test powerflow
         @time powerflow(polar, jx, x0, u0, p)
         xₖ, _ = @time powerflow(polar, jx, x0, u0, p, verbose_level=0, tol=tolerance)
 
         # Test callbacks
-        g = power_balance(polar, xₖ, u0, p)
-        c = cost_production(polar, xₖ, u0, p)
+        g = ExaPF.power_balance(polar, xₖ, u0, p)
+        c = ExaPF.cost_production(polar, xₖ, u0, p)
         @test isa(c, Real)
         @test norm(g, Inf) < tolerance
     end
@@ -57,29 +57,29 @@ include("../src/models/models.jl")
     @testset "Test AD on CPU" begin
         polar = PolarForm(pf, CPU())
 
-        x0 = initial(polar, State())
-        u0 = initial(polar, Control())
-        p = initial(polar, Parameters())
+        x0 = ExaPF.initial(polar, State())
+        u0 = ExaPF.initial(polar, Control())
+        p = ExaPF.initial(polar, Parameters())
 
-        jx, ju = init_ad_factory(polar, x0, u0, p)
+        jx, ju = ExaPF.init_ad_factory(polar, x0, u0, p)
 
         # solve power flow
         xk, conv = powerflow(polar, jx, x0, u0, p, tol=1e-12)
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
-        ∇gᵤ = jacobian(polar, ju, xk, u0, p)
+        ∇gᵤ = ExaPF.jacobian(polar, ju, xk, u0, p)
         # Test Jacobian wrt x
-        ∇gᵥ = jacobian(polar, jx, xk, u0, p)
+        ∇gᵥ = ExaPF.jacobian(polar, jx, xk, u0, p)
         @test isapprox(∇gₓ, ∇gᵥ)
 
         function residualFunction_x!(vecx)
-            nx = get(polar, NumberOfState())
-            nu = get(polar, NumberOfControl())
+            nx = ExaPF.get(polar, NumberOfState())
+            nu = ExaPF.get(polar, NumberOfControl())
             x_ = Vector{eltype(vecx)}(undef, nx)
             u_ = Vector{eltype(vecx)}(undef, nu)
             x_ .= vecx[1:length(x)]
             u_ .= vecx[length(x)+1:end]
-            g = power_balance(polar, x_, u_, p; V=eltype(x_))
+            g = ExaPF.power_balance(polar, x_, u_, p; V=eltype(x_))
             return g
         end
 
@@ -94,14 +94,15 @@ include("../src/models/models.jl")
         # @info("j", Array(∇gᵤ))
         # @info("j", Array(jacu))
         @test isapprox(∇gₓ, jacx, rtol=1e-5)
+        # TODO:: test is currently broken
         @test_broken isapprox(∇gᵤ, jacu, rtol=1e-5)
 
         # Test gradients
         @testset "Reduced gradient" begin
             # We need uk here for the closure
             uk = copy(u)
-            cost_x = x_ -> cost_production(polar, x_, uk, p; V=eltype(x_))
-            cost_u = u_ -> cost_production(polar, xk, u_, p; V=eltype(u_))
+            cost_x = x_ -> ExaPF.cost_production(polar, x_, uk, p; V=eltype(x_))
+            cost_u = u_ -> ExaPF.cost_production(polar, xk, u_, p; V=eltype(u_))
             ∇fₓ = ForwardDiff.gradient(cost_x, xk)
             ∇fᵤ = ForwardDiff.gradient(cost_u, uk)
 
@@ -118,7 +119,7 @@ include("../src/models/models.jl")
             function reduced_cost(u_)
                 # Ensure we remain in the manifold
                 x_, convergence = powerflow(polar, jx, xk, u_, p, tol=1e-14)
-                return cost_production(polar, x_, u_, p)
+                return ExaPF.cost_production(polar, x_, u_, p)
             end
 
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, uk)

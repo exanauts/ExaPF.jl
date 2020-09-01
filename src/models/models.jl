@@ -1,4 +1,7 @@
+export PolarForm, get, bounds, powerflow
+export State, Control, Parameters, NumberOfState, NumberOfControl
 
+const PS = PowerSystem
 
 abstract type AbstractFormulation end
 
@@ -13,6 +16,7 @@ struct Control <: AbstractVariable end
 struct Parameters <: AbstractVariable end
 
 # Templates
+# TODO: add documentation
 function get end
 
 function bounds end

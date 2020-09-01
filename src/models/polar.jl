@@ -1,7 +1,5 @@
-
-const PS = PowerSystem
-TIMER=  TimerOutput()
-
+# Polar formulation
+#
 struct PolarForm{T, VT, AT} <: AbstractFormulation where {T, VT, AT}
     network::PS.PowerNetwork
     device::Device
@@ -15,8 +13,8 @@ struct PolarForm{T, VT, AT} <: AbstractFormulation where {T, VT, AT}
     active_load::VT
     reactive_load::VT
     # struct
-    ybus_re::ExaPF.Spmat
-    ybus_im::ExaPF.Spmat
+    ybus_re::Spmat
+    ybus_im::Spmat
     AT::Type
 end
 
@@ -30,7 +28,7 @@ function PolarForm(pf::PS.PowerNetwork, device)
         M = CuSparseMatrixCSR
         AT = CuArray
     end
-    ybus_re, ybus_im = ExaPF.Spmat{VT}(pf.Ybus)
+    ybus_re, ybus_im = Spmat{VT}(pf.Ybus)
     coefs = PS.get_costs_coefficients(pf) |> AT
     u_min, u_max, x_min, x_max, p_min, p_max = PS.get_bound_constraints(pf)
     pload , qload = real.(pf.sload), imag.(pf.sload)
@@ -206,10 +204,10 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u
     return pg
 end
 
-function bounds(polar::PolarForm, ::State)
+function bounds(polar::PolarForm{T, VT, AT}, ::State) where {T, VT, AT}
     return polar.x_min, polar.x_max
 end
-function bounds(polar::PolarForm, ::Control)
+function bounds(polar::PolarForm{T, VT, AT}, ::Control) where {T, VT, AT}
     return polar.u_min, polar.u_max
 end
 
@@ -276,7 +274,7 @@ function power_balance(polar::PolarForm, x, u, p; V=Float64)
     Vm, Va, pbus, qbus = get_network_state(polar, x, u, p; V=V)
     F = similar(x)
     fill!(F, 0.0)
-    ExaPF.residualFunction_polar!(F, Vm, Va,
+    residualFunction_polar!(F, Vm, Va,
                                   polar.ybus_re,
                                   polar.ybus_im,
                                   pbus, qbus, pv, pq, nbus)
@@ -315,7 +313,7 @@ function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, x, u, p)
     pq = convert(polar.AT{Int, 1}, polar.network.pq)
     # Network state
     Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
-    AD.residualJacobianAD!(jac, ExaPF.residualFunction_polar!, Vm, Va,
+    AD.residualJacobianAD!(jac, residualFunction_polar!, Vm, Va,
                            polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     return jac.J
 end
@@ -369,13 +367,13 @@ function powerflow(
     fill!(dx, zero(T))
 
     # Evaluate residual function
-    ExaPF.residualFunction_polar!(F, Vm, Va,
+    residualFunction_polar!(F, Vm, Va,
                                   polar.ybus_re, polar.ybus_im,
                                   pbus, qbus, pv, pq, nbus)
 
     # check for convergence
     normF = norm(F, Inf)
-    if verbose_level >= ExaPF.VERBOSE_LEVEL_HIGH
+    if verbose_level >= VERBOSE_LEVEL_HIGH
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
     end
     if normF < tol
@@ -395,7 +393,7 @@ function powerflow(
         iter += 1
 
         @timeit TIMER "Jacobian" begin
-            AD.residualJacobianAD!(jacobian, ExaPF.residualFunction_polar!, Vm, Va,
+            AD.residualJacobianAD!(jacobian, residualFunction_polar!, Vm, Va,
                                    polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
         J = jacobian.J
@@ -423,18 +421,18 @@ function powerflow(
         @timeit TIMER "Exponential" V .= Vm .* exp.(1im .* Va)
 
         @timeit TIMER "Angle and magnitude" begin
-            ExaPF.polar!(Vm, Va, V, polar.device)
+            polar!(Vm, Va, V, polar.device)
         end
 
         F .= 0.0
         @timeit TIMER "Residual function" begin
-            ExaPF.residualFunction_polar!(F, Vm, Va,
+            residualFunction_polar!(F, Vm, Va,
                 polar.ybus_re, polar.ybus_im,
                 pbus, qbus, pv, pq, nbus)
         end
 
         @timeit TIMER "Norm" normF = norm(F, Inf)
-        if verbose_level >= ExaPF.VERBOSE_LEVEL_HIGH
+        if verbose_level >= VERBOSE_LEVEL_HIGH
             @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
         end
 
@@ -443,7 +441,7 @@ function powerflow(
         end
     end
 
-    if verbose_level >= ExaPF.VERBOSE_LEVEL_HIGH
+    if verbose_level >= VERBOSE_LEVEL_HIGH
         if converged
             @printf("N-R converged in %d iterations.\n", iter)
         else
@@ -454,12 +452,12 @@ function powerflow(
     xk = get(polar, State(), Vm, Va, pbus, qbus)
 
     # Timer outputs display
-    if verbose_level >= ExaPF.VERBOSE_LEVEL_MEDIUM
+    if verbose_level >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
         println("")
     end
     reset_timer!(TIMER)
-    conv = ExaPF.ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
+    conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
     return xk, conv
 end
 
