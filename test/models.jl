@@ -35,5 +35,27 @@ Random.seed!(27)
     @test length(x0) == nₓ
 
     @time powerflow(polar, x0, u0, p)
-    @time powerflow(polar, x0, u0, p)
+    @time powerflow(polar, x0, u0, p, verbose_level=0)
+end
+@testset "Formulation" begin
+    datafile = "test/data/case9.m"
+    pf = PowerSystem.PowerNetwork(datafile, 1)
+    polar = PolarForm(pf, CUDADevice())
+    nᵤ = get(polar, NumberOfControl())
+    nₓ = get(polar, NumberOfState())
+
+    x0 = initial(polar, State())
+    u0 = initial(polar, Control())
+    p = initial(polar, Parameters())
+
+    @test length(u0) == nᵤ
+    @test length(x0) == nₓ
+    @test isa(u0, CuArray)
+    @test isa(x0, CuArray)
+    println(x0)
+    println(u0)
+    @time powerflow(polar, x0, u0, p, verbose_level=1)
+    println(x0)
+    println(u0)
+    @time powerflow(polar, x0, u0, p, verbose_level=1)
 end

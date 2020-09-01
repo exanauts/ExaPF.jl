@@ -1,5 +1,6 @@
 
 const PS = PowerSystem
+TIMER=  TimerOutput()
 
 struct PolarForm{T, VT, AT} <: AbstractFormulation where {T, VT, AT}
     network::PS.PowerNetwork
@@ -16,18 +17,29 @@ struct PolarForm{T, VT, AT} <: AbstractFormulation where {T, VT, AT}
     # struct
     ybus_re::ExaPF.Spmat
     ybus_im::ExaPF.Spmat
+    AT::Type
 end
 
 function PolarForm(pf::PS.PowerNetwork, device)
-    ybus_re, ybus_im = ExaPF.Spmat{Vector}(pf.Ybus)
-    coefs = PS.get_costs_coefficients(pf)
+    if isa(device, CPU)
+        VT = Vector
+        M = SparseMatrixCSC
+        AT = Array
+    elseif isa(device, CUDADevice)
+        VT = CuVector
+        M = CuSparseMatrixCSR
+        AT = CuArray
+    end
+    ybus_re, ybus_im = ExaPF.Spmat{VT}(pf.Ybus)
+    coefs = PS.get_costs_coefficients(pf) |> AT
     u_min, u_max, x_min, x_max, p_min, p_max = PS.get_bound_constraints(pf)
     pload , qload = real.(pf.sload), imag.(pf.sload)
-    return PolarForm{Float64, typeof(x_min), typeof(coefs)}(
+    return PolarForm{Float64, VT{Float64}, AT{Float64,  2}}(
         pf, device,
         x_min, x_max, u_min, u_max,
         coefs, pload, qload,
         ybus_re, ybus_im,
+        AT,
     )
 end
 
@@ -120,7 +132,7 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.VoltageMagnitude, x, 
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    vmag = zeros(V, nbus)
+    vmag = VT(undef, nbus)
     vmag[polar.network.pq] = x[1:npq]
     vmag[polar.network.ref] = u[1:nref]
     vmag[polar.network.pv] = u[nref + npv + 1:nref + 2*npv]
@@ -131,7 +143,7 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.VoltageAngle, x, u, p
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    vang = zeros(V, nbus)
+    vang = VT(undef, nbus)
     vang[polar.network.pq] = x[npq + 1:2*npq]
     vang[polar.network.pv] = x[2*npq + 1:2*npq + npv]
     vang[polar.network.ref] = p[1:nref]
@@ -144,7 +156,7 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.ActivePower, x, u, p;
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     vmag = get(polar, PS.Buses(), PS.VoltageMagnitude(), x, u, p)
     vang = get(polar, PS.Buses(), PS.VoltageAngle(), x, u, p)
-    pinj = zeros(V, nbus)
+    pinj = VT(undef, nbus)
     pinj[polar.network.pv] = u[nref + 1:nref + npv] - polar.active_load[polar.network.pv]
     pinj[polar.network.pq] = p[nref + 1:nref + npq]
     for bus in polar.network.ref
@@ -159,7 +171,7 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.ReactivePower, x, u, 
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     vmag = get(polar, PS.Buses(), PS.VoltageMagnitude(), x, u, p)
     vang = get(polar, PS.Buses(), PS.VoltageAngle(), x, u, p)
-    qinj = zeros(V, nbus)
+    qinj = VT(undef, nbus)
     qinj[polar.network.pq] = p[nref + npq + 1:nref + 2*npq]
     for bus in [polar.network.ref; polar.network.pv]
         qinj[bus] = PS.get_react_injection(bus, vmag, vang, polar.ybus_re, polar.ybus_im)
@@ -170,7 +182,7 @@ end
 # Bridge with generators' attributes
 function get(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u, p; V=eltype(x)) where {T, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
-    pinj = zeros(V, nbus)
+    pinj = VT(undef, nbus)
     pinj[polar.network.pv] = u[nref + 1:nref + npv]
     pinj[polar.network.pq] = p[nref + 1:nref + npq]
     for bus in polar.network.ref
@@ -207,22 +219,22 @@ function get_network_state(polar::PolarForm{T, VT, AT}, x, u, p; V=Float64) wher
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     pf = polar.network
 
-    vmag = zeros(V, nbus)
-    vang = zeros(V, nbus)
-    pinj = zeros(V, nbus)
-    qinj = zeros(V, nbus)
+    vmag = VT(undef, nbus)
+    vang = VT(undef, nbus)
+    pinj = VT(undef, nbus)
+    qinj = VT(undef, nbus)
 
-    vmag[pf.pq] = x[1:npq]
-    vang[pf.pq] = x[npq + 1:2*npq]
-    vang[pf.pv] = x[2*npq + 1:2*npq + npv]
+    vmag[pf.pq] .= x[1:npq]
+    vang[pf.pq] .= x[npq + 1:2*npq]
+    vang[pf.pv] .= x[2*npq + 1:2*npq + npv]
 
-    vmag[pf.ref] = u[1:nref]
-    pinj[pf.pv] = u[nref + 1:nref + npv] - polar.active_load[pf.pv]
-    vmag[pf.pv] = u[nref + npv + 1:nref + 2*npv]
+    vmag[pf.ref] .= u[1:nref]
+    pinj[pf.pv] .= u[nref + 1:nref + npv] - polar.active_load[pf.pv]
+    vmag[pf.pv] .= u[nref + npv + 1:nref + 2*npv]
 
-    vang[pf.ref] = p[1:nref]
-    pinj[pf.pq] = p[nref + 1:nref + npq]
-    qinj[pf.pq] = p[nref + npq + 1:nref + 2*npq]
+    vang[pf.ref] .= p[1:nref]
+    pinj[pf.pq] .= p[nref + 1:nref + npq]
+    qinj[pf.pq] .= p[nref + npq + 1:nref + 2*npq]
 
     for bus in pf.ref
         pinj[bus] = PS.get_power_injection(bus, vmag, vang, polar.ybus_re, polar.ybus_im)
@@ -251,24 +263,24 @@ function powerflow(
     @timeit TIMER "Init" begin
         Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
     end
-    V = copy(polar.network.vbus)
+    V = convert(polar.AT{Complex{T}, 1}, polar.network.vbus)
 
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     n_states = get(polar, NumberOfState())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
 
-    ref = polar.network.ref
     # TODO: avoid moving pv and pq each time we are calling powerflow
-    pv = polar.network.pv |> Array{Int}
-    pq = polar.network.pq |> Array{Int}
+    ref = convert(polar.AT{Int, 1}, polar.network.ref)
+    pv = convert(polar.AT{Int, 1}, polar.network.pv)
+    pq = convert(polar.AT{Int, 1}, polar.network.pq)
 
     # iteration variables
     iter = 0
     converged = false
 
     # indices
-    npv = size(pv, 1);
-    npq = size(pq, 1);
     j1 = 1
     j2 = npq
     j3 = j2 + 1
@@ -279,6 +291,8 @@ function powerflow(
     # form residual function directly on target device
     F = VT(undef, n_states)
     dx = similar(F)
+    fill!(F, zero(T))
+    fill!(dx, zero(T))
 
     # Evaluate residual function
     ExaPF.residualFunction_polar!(F, Vm, Va,
