@@ -31,14 +31,13 @@ function ReducedSpaceEvaluator(model, x, u, p; ε_tol=1e-12)
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
     return ReducedSpaceEvaluator(model, x, p, x_min, x_max, u_min, u_max,
-                                 stateJacobianAD, designJacobianAD, ε_tol)
+                                 ad, ε_tol)
 end
 
-n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u)
+n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 # n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.u)
 
 function update!(nlp::ReducedSpaceEvaluator, u)
-    copy!(nlp.u, u)
     x₀ = nlp.x
     jac_x = nlp.ad.Jgₓ
     # Get corresponding point on the manifold
