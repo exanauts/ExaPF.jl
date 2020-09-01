@@ -73,6 +73,18 @@ get(pf::PowerNetwork, ::NumberOfPVBuses) = length(pf.pv)
 get(pf::PowerNetwork, ::NumberOfPQBuses) = length(pf.pq)
 get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
 
+function get(pf::PowerNetwork, ::GeneratorIndexes)
+    GEN_BUS = IndexSet.idx_gen()[1]
+    gens = pf.data["gen"]
+    bus = pf.data["bus"]
+    ngens = size(gens)[1]
+    indexing = zeros(Int, ngens)
+    for i in 1:ngens
+        indexing[i] = pf.bus_to_indexes[gens[i, GEN_BUS]]
+    end
+    return indexing
+end
+
 function Base.show(io::IO, pf::PowerNetwork)
     println("Power Network characteristics:")
     @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),
