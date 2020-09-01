@@ -248,13 +248,38 @@ function get_network_state(polar::PolarForm{T, VT, AT}, x, u, p; V=Float64) wher
     return vmag, vang, pinj, qinj
 end
 
+# TODO: find better naming
+function init_ad_factory(polar::PolarForm{T, VT, AT}, x, u, p) where {T, VT, AT}
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    n_states = get(polar, NumberOfState())
+    # Indexing
+    ref = convert(polar.AT{Int, 1}, polar.network.ref)
+    pv = convert(polar.AT{Int, 1}, polar.network.pv)
+    pq = convert(polar.AT{Int, 1}, polar.network.pq)
+    # Network states
+    Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
+    F = VT(undef, n_states)
+    fill!(F, zero(T))
+    # Build the AD Jacobian structure
+    stateJacobianAD = AD.StateJacobianAD(F, Vm, Va,
+                                         polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus)
+    designJacobianAD = AD.DesignJacobianAD(F, Vm, Va,
+                                           polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus)
+    return stateJacobianAD, designJacobianAD
+end
+
 function powerflow(
     polar::PolarForm{T, VT, AT},
+    jacobian::AD.StateJacobianAD,
     x::VT,
     u::VT,
     p::VT;
     npartitions=2,
     solver="default",
+    preconditioner=Precondition.NoPreconditioner(),
     tol=1e-7,
     maxiter=20,
     verbose_level=0,
@@ -267,9 +292,9 @@ function powerflow(
 
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
-    n_states = get(polar, NumberOfState())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    n_states = get(polar, NumberOfState())
 
     # TODO: avoid moving pv and pq each time we are calling powerflow
     ref = convert(polar.AT{Int, 1}, polar.network.ref)
@@ -296,34 +321,8 @@ function powerflow(
 
     # Evaluate residual function
     ExaPF.residualFunction_polar!(F, Vm, Va,
-                            polar.ybus_re, polar.ybus_im,
-                            pbus, qbus, pv, pq, nbus)
-    # Build the AD Jacobian structure
-    stateJacobianAD = AD.StateJacobianAD(F, Vm, Va,
-                                         polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus)
-    designJacobianAD = AD.DesignJacobianAD(F, Vm, Va,
-                                           polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus)
-    if verbose_level >= ExaPF.VERBOSE_LEVEL_MEDIUM
-        print("State Jacobian  --- ")
-        println(stateJacobianAD)
-        print("Design Jacobian --- ")
-        println(designJacobianAD)
-    end
-
-    J = stateJacobianAD.J
-    preconditioner = Precondition.NoPreconditioner()
-    if solver != "default"
-        nblock = size(J,1) / npartitions
-        if verbose_level >= ExaPF.VERBOSE_LEVEL_MEDIUM
-            println("Blocks: $npartitions, Blocksize: n = ", nblock,
-                    " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
-            println("Partitioning...")
-        end
-        preconditioner = Precondition.Preconditioner(J, npartitions, device)
-        if verbose_level >= ExaPF.VERBOSE_LEVEL_MEDIUM
-            println("$npartitions partitions created")
-        end
-    end
+                                  polar.ybus_re, polar.ybus_im,
+                                  pbus, qbus, pv, pq, nbus)
 
     # check for convergence
     normF = norm(F, Inf)
@@ -347,10 +346,10 @@ function powerflow(
         iter += 1
 
         @timeit TIMER "Jacobian" begin
-            AD.residualJacobianAD!(stateJacobianAD, ExaPF.residualFunction_polar!, Vm, Va,
+            AD.residualJacobianAD!(jacobian, ExaPF.residualFunction_polar!, Vm, Va,
                                    polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
-        J = stateJacobianAD.J
+        J = jacobian.J
 
         # Find descent direction
         n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)

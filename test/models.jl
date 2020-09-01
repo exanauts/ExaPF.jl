@@ -11,10 +11,6 @@ using ExaPF
 import ExaPF: PowerSystem, AD, Precondition, Iterative
 include("../src/models/models.jl")
 
-# TODO: for some reason, convergence is non-deterministic if we do not
-# fix a seed
-Random.seed!(27)
-
 @testset "Formulation" begin
     datafile = "test/data/case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
@@ -34,8 +30,9 @@ Random.seed!(27)
     @test length(u0) == nᵤ
     @test length(x0) == nₓ
 
-    @time powerflow(polar, x0, u0, p)
-    @time powerflow(polar, x0, u0, p, verbose_level=0)
+    jx, ju = init_ad_factory(polar, x0, u0, p)
+    @time powerflow(polar, jx, x0, u0, p)
+    @time powerflow(polar, jx, x0, u0, p, verbose_level=0)
 end
 @testset "Formulation" begin
     datafile = "test/data/case9.m"
@@ -52,10 +49,7 @@ end
     @test length(x0) == nₓ
     @test isa(u0, CuArray)
     @test isa(x0, CuArray)
-    println(x0)
-    println(u0)
-    @time powerflow(polar, x0, u0, p, verbose_level=1)
-    println(x0)
-    println(u0)
-    @time powerflow(polar, x0, u0, p, verbose_level=1)
+    jx, ju = init_ad_factory(polar, x0, u0, p)
+    @time powerflow(polar, jx, x0, u0, p, verbose_level=0)
+    @time powerflow(polar, jx ,x0, u0, p, verbose_level=0)
 end
