@@ -39,9 +39,13 @@ include("parsers/parse_psse.jl")
 using .ParsePSSE
 include("PowerSystem/PowerSystem.jl")
 using .PowerSystem
+
+const PS = PowerSystem
+
 include("formulations.jl")
 # Modeling
 include("models/models.jl")
+include("evaluators.jl")
 
 const TIMER = TimerOutput()
 
