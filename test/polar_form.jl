@@ -44,7 +44,6 @@ import ExaPF: PowerSystem, AD, Precondition, Iterative
         jx, ju = ExaPF.init_ad_factory(polar, x0, u0, p)
 
         # Test powerflow
-        @time powerflow(polar, jx, x0, u0, p)
         xₖ, _ = @time powerflow(polar, jx, x0, u0, p, verbose_level=0, tol=tolerance)
 
         # Test callbacks
@@ -54,7 +53,7 @@ import ExaPF: PowerSystem, AD, Precondition, Iterative
         # As we run powerflow before, the balance should be below tolerance
         @test norm(g, Inf) < tolerance
         ## Cost Production
-        c = ExaPF.cost_production(polar, xₖ, u0, p)
+        c = @time ExaPF.cost_production(polar, xₖ, u0, p)
         @test isa(c, Real)
         ## Inequality constraint
         for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
@@ -102,11 +101,8 @@ import ExaPF: PowerSystem, AD, Precondition, Iterative
         jac = fjac(vecx)
         jacx = sparse(jac[:,1:length(x)])
         jacu = sparse(jac[:,length(x)+1:end])
-        # @info("j", Array(∇gᵤ))
-        # @info("j", Array(jacu))
         @test isapprox(∇gₓ, jacx, rtol=1e-5)
-        # TODO:: test is currently broken
-        @test_broken isapprox(∇gᵤ, jacu, rtol=1e-5)
+        @test isapprox(∇gᵤ, jacu, rtol=1e-5)
 
         # Test gradients
         @testset "Reduced gradient" begin
@@ -120,9 +116,9 @@ import ExaPF: PowerSystem, AD, Precondition, Iterative
             ## ADJOINT
             # lamba calculation
             λk  = -(∇gₓ') \ ∇fₓ
-            grad_adjoint = ∇fᵤ + jacu' * λk
+            grad_adjoint = ∇fᵤ + ∇gᵤ' * λk
             # ## DIRECT
-            S = - inv(Array(∇gₓ)) * jacu
+            S = - inv(Array(∇gₓ)) * ∇gᵤ
             grad_direct = ∇fᵤ + S' * ∇fₓ
             @test isapprox(grad_adjoint, grad_direct)
 

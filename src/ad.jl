@@ -265,7 +265,7 @@ function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
     end
 end
 
-function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
+function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v_m, v_a,
                              ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, timer = nothing)
     device = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? CPU() : CUDADevice()
     @timeit timer "Before" begin
@@ -354,7 +354,7 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     end
 end
 
-function designJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
+function residualJacobianAD!(arrays::DesignJacobianAD, residualFunction_polar!, v_m, v_a,
                              ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, timer = nothing)
     device = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? CPU() : CUDADevice()
 

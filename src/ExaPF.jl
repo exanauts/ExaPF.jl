@@ -250,7 +250,7 @@ function solve(
     # Build closures
     function Ju(pf, x, u, p)
         Vm, Va, pbus, qbus = PowerSystem.retrieve_physics(pf, x, u, p)
-        AD.designJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
+        AD.residualJacobianAD!(designJacobianAD, residualFunction_polar!, Vm, Va,
                                 ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         return designJacobianAD.J
     end
