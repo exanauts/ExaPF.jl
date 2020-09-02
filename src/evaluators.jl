@@ -37,8 +37,9 @@ function ReducedSpaceEvaluator(model, x, u, p;
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
 
-    g_min = zeros(eltype(x), 0)
-    g_max = zeros(eltype(x), 0)
+    MT = model.AT
+    g_min = MT{eltype(x), 1}()
+    g_max = MT{eltype(x), 1}()
     for cons in constraints
         cb, cu = bounds(model, cons)
         append!(g_min, cb)
@@ -67,6 +68,15 @@ function objective(nlp::ReducedSpaceEvaluator, u)
     return cost
 end
 
+# Private function to compute adjoint (should be inlined)
+_adjoint(J, y) = - J' \ y
+function _adjoint(J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
+    # TODO: we SHOULD find a most efficient implementation
+    Jt = CuArray(J') |> sparse
+    λk = similar(y)
+    return CUSOLVER.csrlsvqr!(Jt, -y, λk, 1e-8, one(Cint), 'O')
+end
+
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     xₖ = nlp.x
     # TODO: could we move this in the AD factory?
@@ -80,7 +90,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     ∇fₓ = fdCdx(xₖ)
     ∇fᵤ = fdCdu(u)
     # Update adjoint
-    λₖ = -(∇gₓ'\∇fₓ)
+    λₖ = _adjoint(∇gₓ, ∇fₓ)
     # compute reduced gradient
     g .= ∇fᵤ + (∇gᵤ')*λₖ
     return nothing
@@ -119,19 +129,20 @@ function jacobian!(nlp::ReducedSpaceEvaluator, u)
     nₓ = length(xₖ)
     m = n_constraints(nlp)
     n = length(u)
-    J = zeros(m, n)
-    λ = zeros(nₓ)
+    MT = nlp.model.AT
+    J = MT{eltype(u), 2}(undef, m, n)
     cnt = 1
     for cons in nlp.constraints
         mc_ = size_constraint(nlp.model, cons)
-        g = zeros(mc_)
+        g = MT{eltype(u), 1}(undef, mc_)
+        fill!(g, 0)
         cons_x(g, x_) = cons(nlp.model, g, x_, u, nlp.p; V=eltype(x_))
         cons_u(g, u_) = cons(nlp.model, g, xₖ, u_, nlp.p; V=eltype(u_))
         Jₓ = ForwardDiff.jacobian(cons_x, g, xₖ)
         Jᵤ = ForwardDiff.jacobian(cons_u, g, u)
         for ix in 1:mc_
             rhs = Jₓ[ix, :]
-            λ .= - ∇gₓ' \ rhs
+            λ = _adjoint(∇gₓ, rhs)
             J[cnt, :] .= Jᵤ[ix, :] + ∇gᵤ' * λ
             cnt += 1
         end

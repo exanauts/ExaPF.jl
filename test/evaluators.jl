@@ -1,5 +1,5 @@
 
-@testset "ReducedSpaceEvaluator $device" for device in [CPU()]
+@testset "ReducedSpaceEvaluator $device" for device in [CPU(), CUDADevice()]
     println("Device: $device")
     datafile = "test/data/case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
@@ -40,7 +40,8 @@
     g = zeros(m)
     print("Constrt \t")
     @time ExaPF.constraint!(nlp, g, u)
+    ## Evaluation of the Jacobian
     print("Jacobian\t")
     J = @time ExaPF.jacobian!(nlp, u)
-    ## Evaluation of the Jacobian
+    # @info("j", J)
 end
