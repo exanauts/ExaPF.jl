@@ -21,21 +21,37 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     u_min::AbstractVector{T}
     u_max::AbstractVector{T}
 
+    constraints::Array{Function, 1}
+    g_min::AbstractVector{T}
+    g_max::AbstractVector{T}
+
     ad::ADFactory
     ε_tol::Float64
 end
 
-function ReducedSpaceEvaluator(model, x, u, p; ε_tol=1e-12)
+function ReducedSpaceEvaluator(model, x, u, p;
+                               constraints=Function[state_constraint],
+                               ε_tol=1e-12)
     jx, ju = init_ad_factory(model, x, u, p)
     ad = ADFactory(jx, ju)
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
+
+    g_min = zeros(eltype(x), 0)
+    g_max = zeros(eltype(x), 0)
+    for cons in constraints
+        cb, cu = bounds(model, cons)
+        append!(g_min, cb)
+        append!(g_max, cu)
+    end
+
     return ReducedSpaceEvaluator(model, x, p, x_min, x_max, u_min, u_max,
+                                 constraints, g_min, g_max,
                                  ad, ε_tol)
 end
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
-# n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.u)
+n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
 function update!(nlp::ReducedSpaceEvaluator, u)
     x₀ = nlp.x
@@ -70,7 +86,18 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     return nothing
 end
 
-function constraint!(nlp::ReducedSpaceEvaluator, cons, u)
+function constraint!(nlp::ReducedSpaceEvaluator, g, u)
+    xₖ = nlp.x
+    # First: state constraint
+    mf = 1
+    mt = 0
+    for cons in nlp.constraints
+        m_ = size_constraint(nlp.model, cons)
+        mt += m_
+        cons_ = @view(g[mf:mt])
+        cons(nlp.model, cons_, xₖ, u, nlp.p)
+        mf += m_
+    end
 end
 
 #TODO: return sparsity pattern there, currently return dense pattern
@@ -85,38 +112,29 @@ function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     end
 end
 
-function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
-    nx = length(xk)
+function jacobian!(nlp::ReducedSpaceEvaluator, u)
+    xₖ = nlp.x
+    ∇gₓ = nlp.ad.Jgₓ.J
+    ∇gᵤ = nlp.ad.Jgᵤ.J
+    nₓ = length(xₖ)
+    m = n_constraints(nlp)
     n = length(u)
     J = zeros(m, n)
-    rhs = zeros(nx)
-    λ = zeros(nx)
-    # Evaluate reduced Jacobian for bounds on vmag_{pq}
-    for ix in 1:npq
-        rhs .= 0.0
-        rhs[ix] = 1.0
-        λ .= - ∇gₓ' \ rhs
-        J[ix, :] .= ∇gᵤ' * λ
+    λ = zeros(nₓ)
+    cnt = 1
+    for cons in nlp.constraints
+        mc_ = size_constraint(nlp.model, cons)
+        g = zeros(mc_)
+        cons_x(g, x_) = cons(nlp.model, g, x_, u, nlp.p; V=eltype(x_))
+        cons_u(g, u_) = cons(nlp.model, g, xₖ, u_, nlp.p; V=eltype(u_))
+        Jₓ = ForwardDiff.jacobian(cons_x, g, xₖ)
+        Jᵤ = ForwardDiff.jacobian(cons_u, g, u)
+        for ix in 1:mc_
+            rhs = Jₓ[ix, :]
+            λ .= - ∇gₓ' \ rhs
+            J[cnt, :] .= Jᵤ[ix, :] + ∇gᵤ' * λ
+            cnt += 1
+        end
     end
-    # Evaluate reduced Jacobian for bounds on p_{ref}
-    gg_x(x_) = gₚ(model, x_, u, p; V=eltype(x_))
-    gg_u(u_) = gₚ(model, xk, u_, p; V=eltype(u_))
-    jac_p_x = ForwardDiff.jacobian(gg_x, xk)
-    jac_p_u = ForwardDiff.jacobian(gg_u, u)
-    for ix in 1:(nref + npv)
-        rhs = jac_p_x[ix, :]
-        λ .= - ∇gₓ' \ rhs
-        J[npq + ix, :] .= jac_p_u[ix, :] + ∇gᵤ' * λ
-    end
-    # Evaluate reduced Jacobian for flow limits
-    hh_x(x_) = flow_limit(model, x_, u, p; T=eltype(x_))
-    hh_u(u_) = flow_limit(model, xk, u_, p; T=eltype(u_))
-    jac_h_x = ForwardDiff.jacobian(hh_x, xk)
-    jac_h_u = ForwardDiff.jacobian(hh_u, u)
-    _shift = npq + nref + npv
-    for ix in 1:2*nlines
-        rhs = jac_h_x[ix, :]
-        λ .= - ∇gₓ' \ rhs
-        J[_shift + ix, :] .= jac_h_u[ix, :] + ∇gᵤ' * λ
-    end
+    return J
 end

@@ -1,14 +1,16 @@
 
-@testset "ReducedSpaceEvaluator" begin
+@testset "ReducedSpaceEvaluator $device" for device in [CPU()]
+    println("Device: $device")
     datafile = "test/data/case9.m"
     pf = PowerSystem.PowerNetwork(datafile, 1)
-    polar = PolarForm(pf, CPU())
+    polar = PolarForm(pf, device)
     x0 = ExaPF.initial(polar, State())
     u0 = ExaPF.initial(polar, Control())
     p = ExaPF.initial(polar, Parameters())
 
-    constraints = [ExaPF.state_constraint, ExaPF.power_constraints]
-    nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+    constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
+    print("Constructor\t")
+    nlp = @time ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
 
     # Test consistence
     n = ExaPF.n_variables(nlp)
@@ -21,17 +23,24 @@
 
     u = u0
     # Update nlp to stay on manifold
-    ExaPF.update!(nlp, u)
+    print("Update   \t")
+    @time ExaPF.update!(nlp, u)
     # Compute objective
-    c = ExaPF.objective(nlp, u)
+    print("Objective\t")
+    c = @time ExaPF.objective(nlp, u)
     @test isa(c, Real)
     # Compute gradient of objective
     g = similar(u)
     fill!(g, 0)
-    ExaPF.gradient!(nlp, g, u)
+    print("Gradient \t")
+    @time ExaPF.gradient!(nlp, g, u)
 
     # Constraint
     ## Evaluation of the constraints
     g = zeros(m)
-    ExaPF.constraint!(nlp, g, u)
+    print("Constrt \t")
+    @time ExaPF.constraint!(nlp, g, u)
+    print("Jacobian\t")
+    J = @time ExaPF.jacobian!(nlp, u)
+    ## Evaluation of the Jacobian
 end
