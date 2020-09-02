@@ -478,6 +478,8 @@ end
 size_constraint(polar::PolarForm{T, VT, AT}, ::typeof(state_constraint)) where {T, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())
 bounds(polar::PolarForm, ::typeof(state_constraint)) = bounds(polar, State())
 
+# Here, the power constraints are ordered as:
+# g = [P_ref; Q_ref; Q_pv]
 function power_constraints(polar::PolarForm, g, x, u, p; V=Float64)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -510,6 +512,46 @@ function size_constraint(polar::PolarForm{T, VT, AT}, ::typeof(power_constraints
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     return 2*nref + npv
 end
-function bounds(polar::PolarForm, ::typeof(power_constraints))
-    return
+function bounds(polar::PolarForm{T, VT, AT}, ::typeof(power_constraints)) where {T, VT, AT}
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+
+    # Get all bounds (lengths of p_min, p_max, q_min, q_max equal to ngen)
+    p_min, p_max = PS.bounds(polar.network, PS.Generator(), PS.ActivePower())
+    q_min, q_max = PS.bounds(polar.network, PS.Generator(), PS.ReactivePower())
+
+    index_gen = PS.get(polar.network, PS.GeneratorIndexes())
+    index_pv = polar.network.pv
+    index_ref = polar.network.ref
+
+    MT = polar.AT
+    pq_min = MT{T, 1}(undef, 2*nref + npv)
+    pq_max = MT{T, 1}(undef, 2*nref + npv)
+    # TODO: check the complexity of this for loop
+    # Remind that the ordering is
+    # g = [P_ref; Q_ref; Q_pv]
+    for i in 1:ngen
+        bus = index_gen[i]
+        # First, try to find if index bus is a slack bus
+        # (most efficient to test index_ref first, as most of the time
+        #  index_ref has length equal to 1)
+        i_ref = findfirst(isequal(bus), index_ref)
+        if !isnothing(i_ref)
+            # fill P_ref
+            pq_min[i_ref] = p_min[i]
+            pq_max[i_ref] = p_max[i]
+            # fill Q_ref
+            pq_min[i_ref + nref] = q_min[i]
+            pq_max[i_ref + nref] = q_max[i]
+        else # is a PV bus
+            i_pv = findfirst(isequal(bus), index_pv)
+            # fill Q_pv
+            pq_min[i_pv + 2*nref] = q_min[i]
+            pq_max[i_pv + 2*nref] = q_max[i]
+        end
+    end
+    return pq_min, pq_max
 end

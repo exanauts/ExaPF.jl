@@ -58,9 +58,19 @@ import ExaPF: PowerSystem, AD, Precondition, Iterative
         ## Inequality constraint
         for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
             m = ExaPF.size_constraint(polar, cons)
+            @test isa(m, Int)
             g = M{Float64, 1}(undef, m) # TODO: this signature is not great
             fill!(g, 0)
             cons(polar, g, xₖ, u0, p)
+
+            g_min, g_max = ExaPF.bounds(polar, cons)
+            @test length(g_min) == m
+            @test length(g_max) == m
+            # Are we on the correct device?
+            @test isa(g_min, M)
+            @test isa(g_max, M)
+            # Test constraints are consistent
+            @test isless(g_min, g_max)
         end
     end
 

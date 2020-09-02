@@ -419,65 +419,39 @@ function get_bound_constraints(pf::PowerNetwork)
     return u_min, u_max, x_min, x_max, p_min, p_max
 end
 
-function bounds(pf::PowerNetwork, ::Generator, ::ActivePower)
-    gens = pf.data["gen"]
-    baseMVA = pf.data["baseMVA"][1]
-    # TODO: I think this is wrong
-    return  gens[i, PMIN] ./ baseMVA, gens[i, PMAX] ./ baseMVA
-end
-
-
-"""
-    get_bound_reactive_power(pf)
-
-Given PowerNetwork object, return bounds on reactive power
-of the PV buses.
-
-Matpower specifies bounds on the reactive power of the generator:
-
-    Q_min <= Qᵍ <= Q_max
-
-ExaPF uses internally the reactive power at the buses, which for PV buses
-writes out
-
-    Q = Qᵍ - Qˡ
-
-with Qˡ the (constant) reactive load.
-This function corrects the bounds to take into account the reactive load:
-
-    Q_min - Qˡ <= Q <= Q_max - Qˡ
-
-"""
-function bounds(pf::PowerNetwork, ::Buses, ::ReactivePower)
+function bounds(pf::PowerNetwork, ::Buses, ::VoltageMagnitude)
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
+
+    bus = pf.data["bus"]
+    v_min = convert.(Float64, bus[:, VMIN])
+    v_max = convert.(Float64, bus[:, VMAX])
+    return v_min, v_max
+end
+
+function bounds(pf::PowerNetwork, ::Generator, ::ActivePower)
     GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
 
-    nref = length(pf.ref)
-    npv = length(pf.pv)
-    npq = length(pf.pq)
+    gens = pf.data["gen"]
+    baseMVA = pf.data["baseMVA"][1]
+
+    p_min = convert.(Float64, gens[:, PMIN] / baseMVA)
+    p_max = convert.(Float64, gens[:, PMAX] / baseMVA)
+    return p_min, p_max
+end
+
+function bounds(pf::PowerNetwork, ::Generator, ::ReactivePower)
+    GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
+    QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
+    MU_QMIN = IndexSet.idx_gen()
 
     gens = pf.data["gen"]
     baseMVA = pf.data["baseMVA"][1]
-    bus = pf.data["bus"]
-    ngens = size(gens)[1]
-    # Reactive load
-    qload = imag.(pf.sload)
 
-    q_min = fill(-Inf, npv)
-    q_max = fill(Inf, npv)
-
-    for i = 1:ngens
-        genbus = pf.bus_to_indexes[gens[i, GEN_BUS]]
-        bustype = bus[genbus, BUS_TYPE]
-        if bustype == PV_BUS_TYPE
-            idx_pv = findfirst(pf.pv.==genbus)
-            q_min[idx_pv] = gens[i, QMIN] / baseMVA - qload[idx_pv]
-            q_max[idx_pv] = gens[i, QMAX] / baseMVA - qload[idx_pv]
-        end
-    end
+    q_min = convert.(Float64, gens[:, QMIN] / baseMVA)
+    q_max = convert.(Float64, gens[:, QMAX] / baseMVA)
     return q_min, q_max
 end
 
@@ -496,7 +470,6 @@ function get_costs_coefficients(pf::PowerNetwork)
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
     MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
-
 
     ref = pf.ref
     pv = pf.pv

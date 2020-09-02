@@ -53,13 +53,6 @@ struct VoltageAngle <: AbstractValues end
 struct ActivePower <: AbstractValues end
 struct ReactivePower <: AbstractValues end
 
-struct NetworkState{VT<:AbstractVector}
-    vmag::VT
-    vang::VT
-    pbus::VT
-    qbus::VT
-end
-
 abstract type AbstractPowerSystem end
 # Templating
 function get(::AbstractPowerSystem, ::AbstractNetworkAttribute) end
