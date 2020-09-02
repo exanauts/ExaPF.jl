@@ -188,19 +188,27 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
 
     index_gen = PS.get(polar.network, PS.GeneratorIndexes())
-    index_gen_pv = intersect(index_gen, polar.network.pv)
-    index_gen_ref = intersect(index_gen, polar.network.ref)
+    index_pv = polar.network.pv
+    index_ref = polar.network.ref
+
+    # Get voltages.
+    vmag = get(polar, PS.Buses(), PS.VoltageMagnitude(), x, u, p; V=V)
+    vang = get(polar, PS.Buses(), PS.VoltageAngle(), x, u, p; V=V)
 
     MT = polar.AT
     pg = MT{V, 1}(undef, ngen)
-    pg[index_gen_pv] .= u[nref + 1:nref + npv]
-
-    vmag = get(polar, PS.Buses(), PS.VoltageMagnitude(), x, u, p; V=V)
-    vang = get(polar, PS.Buses(), PS.VoltageAngle(), x, u, p; V=V)
-    for bus in index_gen_ref
-        inj = PS.get_power_injection(bus, vmag, vang, polar.ybus_re, polar.ybus_im)
-        pg[bus] = inj + polar.active_load[bus]
+    # TODO: check the complexity of this for loop
+    for i in 1:ngen
+        bus = index_gen[i]
+        if bus in index_ref
+            inj = PS.get_power_injection(bus, vmag, vang, polar.ybus_re, polar.ybus_im)
+            pg[i] = inj + polar.active_load[bus]
+        else
+            ipv = findfirst(isequal(bus), index_pv)
+            pg[i] = u[nref + ipv]
+        end
     end
+
     return pg
 end
 
@@ -263,9 +271,8 @@ function power_balance(polar::PolarForm, x, u, p; V=Float64)
     F = similar(x)
     fill!(F, 0.0)
     residualFunction_polar!(F, Vm, Va,
-                                  polar.ybus_re,
-                                  polar.ybus_im,
-                                  pbus, qbus, pv, pq, nbus)
+                            polar.ybus_re, polar.ybus_im,
+                            pbus, qbus, pv, pq, nbus)
     return F
 end
 
@@ -451,8 +458,7 @@ end
 
 # Cost function
 function cost_production(polar::PolarForm, x, u, p; V=Float64)
-    # indexes
-    # for now, let's just return the sum of all generator power
+    # TODO: this getter is particularly inefficient on GPU
     power_generations = get(polar, PS.Generator(), PS.ActivePower(), x, u, p; V=V)
     c0 = polar.costs_coefficients[:, 2]
     c1 = polar.costs_coefficients[:, 3]

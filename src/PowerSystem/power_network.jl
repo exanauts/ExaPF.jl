@@ -76,9 +76,9 @@ get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
 function get(pf::PowerNetwork, ::GeneratorIndexes)
     GEN_BUS = IndexSet.idx_gen()[1]
     gens = pf.data["gen"]
-    bus = pf.data["bus"]
     ngens = size(gens)[1]
     indexing = zeros(Int, ngens)
+    # Here, we keep the same ordering as specified in Matpower.
     for i in 1:ngens
         indexing[i] = pf.bus_to_indexes[gens[i, GEN_BUS]]
     end
