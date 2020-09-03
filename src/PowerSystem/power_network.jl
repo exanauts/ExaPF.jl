@@ -9,21 +9,21 @@ enabled, some of the contents will be moved to the device.
 
 """
 struct PowerNetwork <: AbstractPowerSystem
-    vbus::Array{Complex{Float64}}
+    vbus::Vector{Complex{Float64}}
     Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
     data::Dict{String,Array}
 
     nbus::Int64
     ngen::Int64
 
-    bustype::Array{Int64}
+    bustype::Vector{Int64}
     bus_to_indexes::Dict{Int, Int}
-    ref::Array{Int64}
-    pv::Array{Int64}
-    pq::Array{Int64}
+    ref::Vector{Int64}
+    pv::Vector{Int64}
+    pq::Vector{Int64}
 
-    sbus::Array{Complex{Float64}}
-    sload::Array{Complex{Float64}}
+    sbus::Vector{Complex{Float64}}
+    sload::Vector{Complex{Float64}}
 
     function PowerNetwork(datafile::String, data_format::Int64=0)
 
