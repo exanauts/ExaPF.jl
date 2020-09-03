@@ -61,7 +61,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     @test isapprox(∇fᵤ, dCdu_ad)
 
     # residual function
-    ybus_re, ybus_im = ExaPF.Spmat{Vector}(pf.Ybus)
+    ybus_re, ybus_im = ExaPF.Spmat{Vector{Int}, Vector{Float64}}(pf.Ybus)
     function g2(pf, x, u, p)
         eval_g = similar(x)
         nbus = length(pbus)

@@ -251,7 +251,7 @@ Computes the power injection at node "fr".
 """
 function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
     P = 0.0
-    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
         to = ybus_re.rowval[c]
         aij = v_a[fr] - v_a[to]
         P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
@@ -263,7 +263,7 @@ function get_power_injection_partials(fr, v_m, v_a, ybus_re, ybus_im)
     nbus = length(v_m)
     dPdVm = zeros(nbus)
     dPdVa = zeros(nbus)
-    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
         to = ybus_re.rowval[c]
         aij = v_a[fr] - v_a[to]
 
@@ -284,9 +284,9 @@ get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
 
 Computes the reactive power injection at node "fr".
 """
-function get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
-    Q = 0.0
-    for (j,c) in enumerate(ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1)
+function get_react_injection(fr::Int, v_m, v_a, ybus_re::Spmat{VI,VT}, ybus_im::Spmat{VI,VT}) where {VT <: AbstractVector, VI<:AbstractVector}
+    Q = zero(eltype(v_m))
+    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
         to = ybus_re.rowval[c]
         aij = v_a[fr] - v_a[to]
         Q += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
@@ -329,7 +329,7 @@ function retrieve_physics(pf::PowerNetwork, x, u, p; V=Float64)
 
     # (p, q) for ref and (q) for pv is obtained as a function
     # of the rest of variables
-    ybus_re, ybus_im = Spmat{Vector}(pf.Ybus)
+    ybus_re, ybus_im = Spmat{Vector{Int}, Vector{Float64}}(pf.Ybus)
 
     for bus in pf.ref
         pinj[bus] = get_power_injection(bus, vmag, vang, ybus_re, ybus_im)

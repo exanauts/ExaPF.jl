@@ -5,20 +5,20 @@ struct ConvergenceStatus
     n_linear_solves::Int
 end
 
-mutable struct Spmat{T}
-    colptr
-    rowval
-    nzval
+mutable struct Spmat{VTI<:AbstractVector, VTF<:AbstractVector}
+    colptr::VTI
+    rowval::VTI
+    nzval::VTF
 
     # create 2 Spmats from complex matrix
-    function Spmat{T}(mat::SparseMatrixCSC{Complex{Float64}, Int}) where T
-        matreal = new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(real.(mat.nzval)))
-        matimag = new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(imag.(mat.nzval)))
+    function Spmat{VTI, VTF}(mat::SparseMatrixCSC{Complex{Float64}, Int}) where {VTI, VTF}
+        matreal = new(VTI(mat.colptr), VTI(mat.rowval), VTF(real.(mat.nzval)))
+        matimag = new(VTI(mat.colptr), VTI(mat.rowval), VTF(imag.(mat.nzval)))
         return matreal, matimag
     end
     # copy constructor
-    function Spmat{T}(mat) where T
-        return new(T{Int64}(mat.colptr), T{Int64}(mat.rowval), T{Float64}(mat.nzval))
+    function Spmat{VTI, VTF}(mat) where {VTI, VTF}
+        return new(VTI(mat.colptr), VTI(mat.rowval), VTF(mat.nzval))
     end
 end
 

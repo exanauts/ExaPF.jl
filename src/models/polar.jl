@@ -28,7 +28,7 @@ function PolarForm(pf::PS.PowerNetwork, device)
         M = CuSparseMatrixCSR
         AT = CuArray
     end
-    ybus_re, ybus_im = Spmat{VT}(pf.Ybus)
+    ybus_re, ybus_im = Spmat{VT{Int}, VT{Float64}}(pf.Ybus)
     coefs = PS.get_costs_coefficients(pf) |> AT
     u_min, u_max, x_min, x_max, p_min, p_max = PS.get_bound_constraints(pf)
     pload , qload = real.(pf.sload), imag.(pf.sload)
@@ -491,18 +491,18 @@ function power_constraints(polar::PolarForm, g, x, u, p; V=Float64)
 
     cnt = 1
     # Constraint on P_ref (generator) (P_inj = P_g - P_load)
-    for (i, bus) in enumerate(ref)
+    for bus in ref
         g[cnt] = PS.get_power_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.active_load[bus]
         cnt += 1
     end
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
-    for (i, bus) in enumerate(ref)
+    for bus in ref
         g[cnt] = PS.get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
         cnt += 1
     end
     # Constraint on Q_pv (generator) (Q_inj = Q_g - Q_load)
-    for (i, bus) in enumerate(pv)
-        g[cnt] = PowerSystem.get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
+    for bus in pv
+        g[cnt] = PS.get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
         cnt += 1
     end
     return

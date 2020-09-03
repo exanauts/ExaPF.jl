@@ -124,7 +124,7 @@ function cost_function(
     pq = pf.pq
     b2i = pf.bus_to_indexes
 
-    ybus_re, ybus_im = Spmat{T}(pf.Ybus)
+    ybus_re, ybus_im = Spmat{T{Int}, T{Float64}}(pf.Ybus)
 
     # matpower assumes gens are ordered. Genrator in row i has its cost on row i
     # of the cost table.
@@ -220,7 +220,7 @@ function cost_gradients(
     npv = length(pv)
     npq = length(pq)
 
-    ybus_re, ybus_im = Spmat{T}(pf.Ybus)
+    ybus_re, ybus_im = Spmat{T{Int}, T{Float64}}(pf.Ybus)
 
     # matpower assumes gens are ordered. Genrator in row i has its cost on row i
     # of the cost table.

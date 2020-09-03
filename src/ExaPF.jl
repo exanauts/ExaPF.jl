@@ -100,7 +100,7 @@ function solve(
     iter = 0
     converged = false
 
-    ybus_re, ybus_im = Spmat{T}(Ybus)
+    ybus_re, ybus_im = Spmat{T{Int}, T{Float64}}(Ybus)
 
     nbus = pf.nbus
     ngen = pf.ngen
