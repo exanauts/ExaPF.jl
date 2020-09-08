@@ -25,7 +25,7 @@ struct StateJacobianAD <: AbstractJacobianAD
     varx
     t1svarx
     map
-    function StateJacobianAD(residualFunction, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    function StateJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
         if F isa Array
@@ -66,8 +66,8 @@ struct StateJacobianAD <: AbstractJacobianAD
 
         # Need a host arrays for the sparsity detection below
         spmap = Vector(map)
-        hybus_re = Spmat{Vector}(ybus_re)
-        hybus_im = Spmat{Vector}(ybus_im)
+        hybus_re = Spmat{Vector{Int}, Vector{Float64}}(ybus_re)
+        hybus_im = Spmat{Vector{Int}, Vector{Float64}}(ybus_im)
         n = nv_a
         Yre=SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
         Yim=SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
@@ -120,7 +120,7 @@ struct DesignJacobianAD <: AbstractJacobianAD
     t1svarx
     map
     # function DesignJacobianAD(J, coloring, F, v_m, v_a, pbus, pv, pq, ref)
-    function DesignJacobianAD(residualFunction, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    function DesignJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
         npbus = size(pinj, 1)
@@ -174,8 +174,8 @@ struct DesignJacobianAD <: AbstractJacobianAD
 
         # Need a host arrays for the sparsity detection below
         spmap = Vector(map)
-        hybus_re = Spmat{Vector}(ybus_re)
-        hybus_im = Spmat{Vector}(ybus_im)
+        hybus_re = Spmat{Vector{Int}, Vector{Float64}}(ybus_re)
+        hybus_im = Spmat{Vector{Int}, Vector{Float64}}(ybus_im)
         n = nv_a
         Yre=SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
         Yim=SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
@@ -265,7 +265,7 @@ function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
     end
 end
 
-function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
+function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v_m, v_a,
                              ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, timer = nothing)
     device = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? CPU() : CUDADevice()
     @timeit timer "Before" begin
@@ -333,9 +333,9 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     @timeit timer "Uncompress" begin
         # Uncompress matrix. Sparse matrix elements have different names with CUDA
         if arrays.J isa SparseArrays.SparseMatrixCSC
-            for i in 1:nmap
+            @inbounds for i in 1:nmap
                 for j in arrays.J.colptr[i]:arrays.J.colptr[i+1]-1
-                    arrays.J.nzval[j] = arrays.compressedJ[arrays.coloring[i],arrays.J.rowval[j]]
+                    @inbounds arrays.J.nzval[j] = arrays.compressedJ[arrays.coloring[i],arrays.J.rowval[j]]
                 end
             end
         end
@@ -354,7 +354,7 @@ function residualJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
     end
 end
 
-function designJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
+function residualJacobianAD!(arrays::DesignJacobianAD, residualFunction_polar!, v_m, v_a,
                              ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, timer = nothing)
     device = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? CPU() : CUDADevice()
 
@@ -424,7 +424,7 @@ function designJacobianAD!(arrays, residualFunction_polar!, v_m, v_a,
         if arrays.J isa SparseArrays.SparseMatrixCSC
             for i in 1:nmap
                 for j in arrays.J.colptr[i]:arrays.J.colptr[i+1]-1
-                    arrays.J.nzval[j] = arrays.compressedJ[arrays.coloring[i],arrays.J.rowval[j]]
+                    @inbounds arrays.J.nzval[j] = arrays.compressedJ[arrays.coloring[i],arrays.J.rowval[j]]
                 end
             end
         end

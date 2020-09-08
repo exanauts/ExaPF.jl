@@ -6,6 +6,8 @@ using TimerOutputs
 
 import ExaPF: ParsePSSE, PowerSystem
 
+const PS = PowerSystem
+
 @testset "Powerflow residuals and Jacobian" begin
     local_case = "case14.raw"
     # read data
@@ -48,7 +50,7 @@ import ExaPF: ParsePSSE, PowerSystem
     ]
 
     # form Y matrix
-    Ybus = PowerSystem.makeYbus(data, bus_to_indexes);
+    Ybus = PS.makeYbus(data, bus_to_indexes);
 
     Vm = abs.(V)
     Va = angle.(V)
@@ -57,9 +59,9 @@ import ExaPF: ParsePSSE, PowerSystem
     nbus = size(bus, 1)
     ngen = size(gen, 1)
 
-    ybus_re, ybus_im = ExaPF.Spmat{T}(Ybus)
+    ybus_re, ybus_im = ExaPF.Spmat{T{Int}, T{Float64}}(Ybus)
     SBASE = data["baseMVA"][1]
-    Sbus, Sload = PowerSystem.assembleSbus(gen, bus, SBASE, bus_to_indexes)
+    Sbus, Sload = PS.assembleSbus(gen, bus, SBASE, bus_to_indexes)
     pbus = real(Sbus)
     qbus = imag(Sbus)
 
@@ -81,7 +83,7 @@ import ExaPF: ParsePSSE, PowerSystem
         -0.13051302125309594 - 0.04527619677595794im
     ]
 
-    ref, pv, pq = PowerSystem.bustypeindex(bus, gen, bus_to_indexes)
+    ref, pv, pq = PS.bustypeindex(bus, gen, bus_to_indexes)
     npv = size(pv, 1)
     npq = size(pq, 1)
 
@@ -103,12 +105,78 @@ import ExaPF: ParsePSSE, PowerSystem
         J♯ = copy(J)
 
         # Then, create a JacobianAD object
-        jacobianAD = ExaPF.AD.StateJacobianAD(ExaPF.residualFunction_polar_sparsity!, F, Vm, Va,
-                                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
+        jacobianAD = ExaPF.AD.StateJacobianAD(F, Vm, Va,
+                                              ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
         # and compute Jacobian with ForwardDiff
         ExaPF.AD.residualJacobianAD!(
             jacobianAD, ExaPF.residualFunction_polar!, Vm, Va,
             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
         @test jacobianAD.J ≈ J♯
+    end
+    @testset "Computing react and active flows" begin
+        fr = 1
+        q = PS.get_react_injection(fr, Vm, Va, ybus_re, ybus_im)
+        @test isa(q, Real)
+        p = PS.get_power_injection(fr, Vm, Va, ybus_re, ybus_im)
+        @test isa(p, Real)
+    end
+end
+
+@testset "PowerNetwork object" begin
+    psse_datafile = "case14.raw"
+    matpower_datafile = "case9.m"
+
+    # Test constructor
+    @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
+        datafile = joinpath(dirname(@__FILE__), "data", name)
+        switch = endswith(name, ".m") ? 1 : 0
+        pf = PS.PowerNetwork(datafile, switch)
+        @test isa(pf, PS.PowerNetwork)
+    end
+
+    # From now on, test with "case9.m"
+    datafile = joinpath(dirname(@__FILE__), "data", matpower_datafile)
+    pf = PS.PowerNetwork(datafile, 1)
+
+    @testset "Computing bounds" begin
+        u_min, u_max, x_min, x_max, p_min, p_max = PS.get_bound_constraints(pf)
+    end
+
+    @testset "Computing cost coefficients" begin
+        coefs = PS.get_costs_coefficients(pf)
+        @test size(coefs) == (3, 4)
+        @test isequal(coefs[:, 1], [3.0, 2.0, 2.0])
+    end
+
+    @testset "Getters" for Attr in [
+        PS.NumberOfBuses,
+        PS.NumberOfPVBuses,
+        PS.NumberOfPQBuses,
+        PS.NumberOfSlackBuses,
+        PS.NumberOfLines,
+        PS.NumberOfGenerators,
+    ]
+        res = PS.get(pf, Attr())
+        @test isa(res, Int)
+    end
+
+    @testset "Indexing" begin
+        idx = PS.get(pf, PS.GeneratorIndexes())
+        @test isequal(idx, [1, 2, 3])
+    end
+
+    @testset "Bounds" begin
+        n_bus = PS.get(pf, PS.NumberOfBuses())
+        v_min, v_max = PS.bounds(pf, PS.Buses(), PS.VoltageMagnitude())
+        @test length(v_min) == n_bus
+        @test length(v_max) == n_bus
+
+        n_gen = PS.get(pf, PS.NumberOfGenerators())
+        p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
+        @test length(p_min) == n_gen
+        @test length(p_max) == n_gen
+        q_min, q_max = PS.bounds(pf, PS.Generator(), PS.ReactivePower())
+        @test length(q_min) == n_gen
+        @test length(q_max) == n_gen
     end
 end
