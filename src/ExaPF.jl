@@ -49,9 +49,10 @@ include("evaluators.jl")
 
 const TIMER = TimerOutput()
 
-const VERBOSE_LEVEL_HIGH = 1
+const VERBOSE_LEVEL_HIGH = 3
 const VERBOSE_LEVEL_MEDIUM = 2
-const VERBOSE_LEVEL_LOW = 3
+const VERBOSE_LEVEL_LOW = 1
+const VERBOSE_LEVEL_NONE = 0
 
 
 function solve(
