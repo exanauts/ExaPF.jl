@@ -7,6 +7,37 @@ using Random
 using SparseArrays
 using Test
 using TimerOutputs
+using Krylov
+
+@testset "Iterative linear solvers with custom block Jacobi" begin
+    to = TimerOutputs.TimerOutput()
+    # Square and preconditioned problems.
+    function square_preconditioned(n :: Int=10)
+        A   = ones(n, n) + (n-1) * Matrix(I, n, n)
+        b   = 10.0 * [1:n;]
+        M⁻¹ = 1/n * Matrix(I, n, n)
+        return A, b, M⁻¹
+    end
+    A, b, N = square_preconditioned(100)
+    x = similar(b); r = similar(b)
+    spA = sparse(A)
+    nblocks = 2
+    precond = ExaPF.Precondition.Preconditioner(spA, nblocks, CPU())
+    ExaPF.Precondition.update(spA, precond, to)
+    @testset "BICGSTAB" begin
+        P = precond.P
+        x, n_iters = ExaPF.bicgstab(spA, b, P, x, to)
+        r = b - spA * x
+        resid = norm(r) / norm(b)
+        @test(resid ≤ 1e-6)
+    end
+    @testset "($algo)" for algo in ExaPF.list_solvers(CPU())
+        ExaPF.Iterative.ldiv!(x, spA, b, algo, precond, to)
+        r = b - spA * x
+        resid = norm(r) / norm(b)
+        @test(resid ≤ 1e-6)
+    end
+end
 
 @testset "Wrapping of iterative solvers" begin
     nblocks = 2
