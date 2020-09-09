@@ -4,8 +4,15 @@
 This structure contains constant parameters that define the topology and
 physics of the power network.
 
-The object is first created in main memory and then, if GPU computation is
-enabled, some of the contents will be moved to the device.
+The object `PowerNetwork` uses its own contiguous indexing for the buses.
+The indexing is independent from those specified in the Matpower or the
+PSSE input file. However, a correspondence between the two indexing
+(Input indexing *to* `PowerNetwork` indexing) is stored inside the
+attribute `bus_to_indexes`.
+
+## Note
+The object `PowerNetwork` is created in the main memory.
+Use a `AbstractFormulation` object to move data to the target device.
 
 """
 struct PowerNetwork <: AbstractPowerSystem
@@ -66,6 +73,8 @@ struct PowerNetwork <: AbstractPowerSystem
     end
 end
 
+# Getters
+## Network attributes
 get(pf::PowerNetwork, ::NumberOfBuses) = pf.nbus
 get(pf::PowerNetwork, ::NumberOfLines) = size(pf.data["branch"], 1)
 get(pf::PowerNetwork, ::NumberOfGenerators) = pf.ngen
@@ -73,10 +82,12 @@ get(pf::PowerNetwork, ::NumberOfPVBuses) = length(pf.pv)
 get(pf::PowerNetwork, ::NumberOfPQBuses) = length(pf.pq)
 get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
 
+## Indexing
 function get(pf::PowerNetwork, ::GeneratorIndexes)
     GEN_BUS = IndexSet.idx_gen()[1]
     gens = pf.data["gen"]
-    ngens = size(gens)[1]
+    ngens = size(gens, 1)
+    # Create array on host memory
     indexing = zeros(Int, ngens)
     # Here, we keep the same ordering as specified in Matpower.
     for i in 1:ngens
@@ -84,7 +95,12 @@ function get(pf::PowerNetwork, ::GeneratorIndexes)
     end
     return indexing
 end
+get(pf::PowerNetwork, ::PVIndexes) = pf.pv
+get(pf::PowerNetwork, ::PQIndexes) = pf.pq
+get(pf::PowerNetwork, ::SlackIndexes) = pf.ref
 
+
+# Pretty printing
 function Base.show(io::IO, pf::PowerNetwork)
     println("Power Network characteristics:")
     @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),

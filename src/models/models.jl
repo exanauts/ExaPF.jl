@@ -181,5 +181,6 @@ The result is stored inplace, inside the vector `g`.
 """
 function thermal_limit_constraints end
 
+include("caches.jl")
 # Polar formulation
 include("polar.jl")
