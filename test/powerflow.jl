@@ -53,8 +53,7 @@ import ExaPF: PowerSystem
     end
 end
 
-# @testset "Powerflow solver" begin
-function main()
+@testset "Powerflow solver" begin
     datafile = joinpath(dirname(@__FILE__), "data", "case14.raw")
     # Parameters
     npartitions = 8
