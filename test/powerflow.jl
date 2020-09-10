@@ -3,7 +3,9 @@ using ExaPF
 using KernelAbstractions
 using Test
 
-@testset "Powerflow solver" begin
+import ExaPF: PowerSystem
+
+@testset "Powerflow solver DEPRECATED API" begin
     datafile = joinpath(dirname(@__FILE__), "data", "case14.raw")
     # Parameters
     nblocks = 8
@@ -44,6 +46,52 @@ using Test
                                                 solver=precond,
                                                 device=target,
                                                 tol=tolerance)
+            @test convergence.has_converged
+            @test convergence.norm_residuals < tolerance
+            @test convergence.n_iterations == 2
+        end
+    end
+end
+
+@testset "Powerflow solver" begin
+    datafile = joinpath(dirname(@__FILE__), "data", "case14.raw")
+    # Parameters
+    npartitions = 8
+    tolerance = 1e-6
+
+    # Create a powersystem object:
+    @testset "[CPU] Powerflow solver $precond" for precond in ["default"]
+        pf = PowerSystem.PowerNetwork(datafile)
+        polar = PolarForm(pf, CPU(); nocost=true)
+
+        # Retrieve initial state of network
+        xk = ExaPF.initial(polar, State())
+        uk = ExaPF.initial(polar, Control())
+        p = ExaPF.initial(polar, Parameters())
+
+        # BROKEN: Disable iterative solvers for the time being
+        # @testset "[CPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(target)
+        nlp = @time ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; 
+                                                ε_tol = tolerance, solver="$precond", npartitions=npartitions)
+        convergence = ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
+        @test convergence.has_converged
+        @test convergence.norm_residuals < tolerance
+        @test convergence.n_iterations == 2
+    end
+
+    if has_cuda_gpu()
+        @testset "[GPU] Powerflow solver $precond" for precond in ["default"]
+            pf = PowerSystem.PowerNetwork(datafile)
+            polar = PolarForm(pf, CUDADevice(); nocost=true)
+
+            # Retrieve initial state of network
+            xk = ExaPF.initial(polar, State())
+            uk = ExaPF.initial(polar, Control())
+            p = ExaPF.initial(polar, Parameters())
+
+            nlp = @time ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; 
+                                                    ε_tol = tolerance, solver="$precond", npartitions=npartitions)
+            convergence = ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
             @test convergence.has_converged
             @test convergence.norm_residuals < tolerance
             @test convergence.n_iterations == 2

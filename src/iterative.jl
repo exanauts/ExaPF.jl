@@ -119,24 +119,25 @@ function ldiv!(
     J::SparseArrays.SparseMatrixCSC,
     F::AbstractVector,
     solver::String,
-    preconditioner,
+    preconditioner=nothing,
     timer::TimerOutputs.TimerOutput=nothing,
 )
-    if solver == "bicgstab_ref"
+    if preconditioner != nothing && solver != "default"
         @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-        @timeit timer "CPU-BICGSTAB" (dx[:], history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
-        n_iters = history.iters
-    elseif solver == "bicgstab"
-        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-        @timeit timer "GPU-BICGSTAB" dx[:], n_iters = bicgstab(J, F, P, dx, timer, maxiter=10000)
-    elseif solver == "gmres"
-        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-        @timeit timer "CPU-GMRES" (dx[:], history) = IterativeSolvers.gmres(P*J, P*F, restart=4, log=true)
-        n_iters = history.iters
-    elseif solver == "dqgmres"
-        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-        @timeit timer "GPU-DQGMRES" (dx[:], status) = Krylov.dqgmres(J, F, M=P, memory=4)
-        n_iters = length(status.residuals)
+        if solver == "bicgstab_ref"
+            @timeit timer "CPU-BICGSTAB" (dx[:], history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
+            n_iters = history.iters
+        elseif solver == "bicgstab"
+            @timeit timer "GPU-BICGSTAB" dx[:], n_iters = bicgstab(J, F, P, dx, timer, maxiter=10000)
+        elseif solver == "gmres"
+            @timeit timer "CPU-GMRES" (dx[:], history) = IterativeSolvers.gmres(P*J, P*F, restart=4, log=true)
+            n_iters = history.iters
+        elseif solver == "dqgmres"
+            @timeit timer "GPU-DQGMRES" (dx[:], status) = Krylov.dqgmres(J, F, M=P, memory=4)
+            n_iters = length(status.residuals)
+        else
+            error("Unknown linear solver")
+        end
     else
         @timeit timer "CPU-Default sparse solver" dx .= J\F
         n_iters = 0

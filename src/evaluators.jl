@@ -26,13 +26,25 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     g_max::AbstractVector{T}
 
     ad::ADFactory
+    precond::Union{Precondition.Preconditioner, Precondition.NoPreconditioner}
+    solver::String
     ε_tol::Float64
 end
 
 function ReducedSpaceEvaluator(model, x, u, p;
                                constraints=Function[state_constraint],
-                               ε_tol=1e-12)
+                               ε_tol=1e-12, solver="default", npartitions=2)
     jx, ju = init_ad_factory(model, x, u, p)
+    J = jx.J
+    precond = Precondition.NoPreconditioner()
+    if solver != "default"
+        nblock = size(J,1) / npartitions
+        println("Blocks: $npartitions, Blocksize: n = ", nblock,
+                " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
+        println("Partitioning...")
+        precond = Precondition.Preconditioner(J, npartitions, device)
+        println("$npartitions partitions created")
+    end
     ad = ADFactory(jx, ju)
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
@@ -48,18 +60,20 @@ function ReducedSpaceEvaluator(model, x, u, p;
 
     return ReducedSpaceEvaluator(model, x, p, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
-                                 ad, ε_tol)
+                                 ad, precond, solver, ε_tol)
 end
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
-function update!(nlp::ReducedSpaceEvaluator, u)
+function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x
     jac_x = nlp.ad.Jgₓ
     # Get corresponding point on the manifold
-    xk, conv = powerflow(nlp.model, jac_x, x₀, u, nlp.p, tol=nlp.ε_tol)
+    xk, conv = powerflow(nlp.model, jac_x, x₀, u, nlp.p, tol=nlp.ε_tol; 
+                         solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
     copy!(nlp.x, xk)
+    return conv
 end
 
 function objective(nlp::ReducedSpaceEvaluator, u)
