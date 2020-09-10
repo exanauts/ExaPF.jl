@@ -1,6 +1,7 @@
 export PolarForm, get, bounds, powerflow
 export State, Control, Parameters, NumberOfState, NumberOfControl
 
+import Base: copyto!
 
 """
     AbstractFormulation
