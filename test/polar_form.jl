@@ -84,7 +84,7 @@ const PS = PowerSystem
             network = ExaPF.NetworkState(nbus, ngen, device)
             # network is a buffer instantiated on the target device
             @test isa(network.vmag, M)
-            ExaPF.copyto!(network, x0, u0, p, polar)
+            ExaPF.load!(network, x0, u0, p, polar)
         end
     end
 

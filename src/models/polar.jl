@@ -277,7 +277,7 @@ function get_network_state(polar::PolarForm{T, IT, VT, AT}, x, u, p; V=Float64) 
     return vmag, vang, pinj, qinj
 end
 
-function copyto!(network::NetworkState, x, u, p, polar::PolarForm{T, IT, VT, AT}) where {T, IT, VT, AT}
+function load!(network::NetworkState, x, u, p, polar::PolarForm{T, IT, VT, AT}) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
