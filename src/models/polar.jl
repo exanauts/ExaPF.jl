@@ -330,7 +330,6 @@ function powerflow(
     @timeit TIMER "Init" begin
         Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
     end
-    V = convert(polar.AT{Complex{T}, 1}, polar.network.vbus)
 
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
@@ -363,8 +362,8 @@ function powerflow(
 
     # Evaluate residual function
     residualFunction_polar!(F, Vm, Va,
-                                  polar.ybus_re, polar.ybus_im,
-                                  pbus, qbus, pv, pq, nbus)
+                            polar.ybus_re, polar.ybus_im,
+                            pbus, qbus, pv, pq, nbus)
 
     # check for convergence
     normF = norm(F, Inf)
@@ -413,13 +412,7 @@ function powerflow(
             end
         end
 
-        @timeit TIMER "Exponential" V .= Vm .* exp.(1im .* Va)
-
-        @timeit TIMER "Angle and magnitude" begin
-            polar!(Vm, Va, V, polar.device)
-        end
-
-        F .= 0.0
+        fill!(F, zero(T))
         @timeit TIMER "Residual function" begin
             residualFunction_polar!(F, Vm, Va,
                 polar.ybus_re, polar.ybus_im,
