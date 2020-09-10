@@ -26,7 +26,7 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     g_max::AbstractVector{T}
 
     ad::ADFactory
-    precond::Union{Precondition.Preconditioner, Precondition.NoPreconditioner}
+    precond::Precondition.AbstractPreconditioner
     solver::String
     ε_tol::Float64
 end
@@ -70,7 +70,7 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x
     jac_x = nlp.ad.Jgₓ
     # Get corresponding point on the manifold
-    xk, conv = powerflow(nlp.model, jac_x, x₀, u, nlp.p, tol=nlp.ε_tol; 
+    xk, conv = powerflow(nlp.model, jac_x, x₀, u, nlp.p, tol=nlp.ε_tol;
                          solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
     copy!(nlp.x, xk)
     return conv

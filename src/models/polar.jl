@@ -8,7 +8,7 @@ struct PolarForm{T, VT, AT} <: AbstractFormulation where {T, VT, AT}
     u_min::VT
     u_max::VT
     # costs
-    costs_coefficients::Union{AT, Nothing}
+    costs_coefficients::AT
     # Constants
     active_load::VT
     reactive_load::VT
@@ -29,7 +29,7 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
         AT = CuArray
     end
     ybus_re, ybus_im = Spmat{VT{Int}, VT{Float64}}(pf.Ybus)
-    nocost ? coefs = nothing : coefs = PS.get_costs_coefficients(pf) |> AT
+    coefs = PS.get_costs_coefficients(pf) |> AT
     u_min, u_max, x_min, x_max, p_min, p_max = PS.get_bound_constraints(pf)
     pload , qload = real.(pf.sload), imag.(pf.sload)
     return PolarForm{Float64, VT{Float64}, AT{Float64,  2}}(

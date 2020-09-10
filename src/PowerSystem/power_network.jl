@@ -481,7 +481,6 @@ function get_costs_coefficients(pf::PowerNetwork)
     gens = pf.data["gen"]
     baseMVA = pf.data["baseMVA"][1]
     bus = pf.data["bus"]
-    cost_data = pf.data["cost"]
     ngens = size(gens)[1]
     nbus = size(bus)[1]
 
@@ -492,6 +491,13 @@ function get_costs_coefficients(pf::PowerNetwork)
     # - 3rd column: coefficient c1
     # - 4th column: coefficient c2
     coefficients = zeros(ngens, 4)
+    # If cost is not specified, we return the array coefficients as is
+    if !haskey(pf.data, "cost")
+        @warn("PowerSystem: cost is not specified in PowerNetwork dataset")
+        return coefficients
+    end
+
+    cost_data = pf.data["cost"]
     # iterate generators and check if pv or ref.
     for i = 1:ngens
         # only 2nd degree polynomial implemented for now.
