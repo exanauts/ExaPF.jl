@@ -92,7 +92,7 @@ function cost_function(
     device=CPU();
     V=Float64
 )
-
+    @warn("Function `ExaPF.cost_function is deprecated")
     # indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
@@ -184,6 +184,7 @@ function cost_gradients(
     p::AbstractArray,
     device=CPU()
 )
+    @warn("Function `ExaPF.cost_gradients is deprecated")
 
     # indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,

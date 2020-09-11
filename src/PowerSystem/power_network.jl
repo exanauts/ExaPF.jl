@@ -123,6 +123,7 @@ function Base.show(io::IO, pf::PowerNetwork)
 end
 
 function print_state(pf::PowerNetwork, x, u, p)
+    @warn("Function `PowerSystem.print_state is deprecated")
     println("Power Network characteristics:")
     @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),
             length(pf.pv), length(pf.pq))
@@ -163,7 +164,7 @@ function get_x(
     pbus::VT,
     qbus::VT,
 ) where {T<:Real, VT<:AbstractVector{T}}
-
+    @warn("Function `PowerSystem.get_x is deprecated")
     nref = length(pf.ref)
     npv = length(pf.pv)
     npq = length(pf.pq)
@@ -201,6 +202,7 @@ function get_u(
     pbus::VT,
     qbus::VT,
 ) where {T<:Real, VT<:AbstractVector{T}}
+    @warn("Function `PowerSystem.get_u is deprecated")
 
     nref = length(pf.ref)
     npv = length(pf.pv)
@@ -243,6 +245,7 @@ function get_p(
     pbus::VT,
     qbus::VT,
 ) where {T<:Real, VT<:AbstractVector{T}}
+    @warn("Function `PowerSystem.get_p is deprecated")
 
     nref = length(pf.ref)
     npv = length(pf.pv)
@@ -316,6 +319,7 @@ end
 Converts x, u, p vectors to vmag, vang, pinj and qinj.
 """
 function retrieve_physics(pf::PowerNetwork, x, u, p; V=Float64)
+    @warn("Function `PowerSystem.retrieve_physics is deprecated")
 
     nbus = pf.nbus
     nref = length(pf.ref)
@@ -367,6 +371,7 @@ of the OPF box constraints.
 
 """
 function get_bound_constraints(pf::PowerNetwork)
+    @warn("Function `PowerSystem.get_bound_constraints is deprecated")
 
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()

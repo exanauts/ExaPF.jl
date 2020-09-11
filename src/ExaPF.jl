@@ -67,6 +67,7 @@ function solve(
     device=CPU(),
     verbose_level=0,
 )
+    @warn("Function `ExaPF.solve is deprecated. Use ExaPF.powerflow instead.")
     # Set array type
     # For CPU choose Vector and SparseMatrixCSC
     # For GPU choose CuVector and SparseMatrixCSR (CSR!!! Not CSC)
