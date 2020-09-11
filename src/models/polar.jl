@@ -31,10 +31,15 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
         M = CuSparseMatrixCSR
         AT = CuArray
     end
+
+    npv = PS.get(pf, PS.NumberOfPVBuses())
+    npq = PS.get(pf, PS.NumberOfPQBuses())
+    nref = PS.get(pf, PS.NumberOfSlackBuses())
+    ngens = PS.get(pf, PS.NumberOfGenerators())
+
     ybus_re, ybus_im = Spmat{IT, VT{Float64}}(pf.Ybus)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
-    u_min, u_max, x_min, x_max, p_min, p_max = PS.get_bound_constraints(pf)
     # Move load to the target device
     pload , qload = real.(pf.sload), imag.(pf.sload)
 
@@ -43,6 +48,37 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     idx_ref = convert(VT{Int}, PS.get(pf, PS.SlackIndexes()))
     idx_pv = convert(VT{Int}, PS.get(pf, PS.PVIndexes()))
     idx_pq = convert(VT{Int}, PS.get(pf, PS.PQIndexes()))
+
+    # Bounds
+    ## Get bounds on active power
+    p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
+    ## Get bounds on voltage magnitude
+    v_min, v_max = PS.bounds(pf, PS.Buses(), PS.VoltageMagnitude())
+    ## Instantiate arrays
+    nᵤ = nref + 2*npv
+    nₓ = npv + 2*npq
+    u_min = fill(-Inf, nᵤ)
+    u_max = fill( Inf, nᵤ)
+    x_min = fill(-Inf, nₓ)
+    x_max = fill( Inf, nₓ)
+    ## Bounds on v_pq
+    x_min[npv+npq+1:end] .= v_min[idx_pq]
+    x_max[npv+npq+1:end] .= v_max[idx_pq]
+    ## Bounds on v_pv
+    u_min[nref+npv+1:end] .= v_min[idx_pv]
+    u_max[nref+npv+1:end] .= v_max[idx_pv]
+    ## Bounds on v_ref
+    u_min[1:nref] .= v_min[idx_ref]
+    u_max[1:nref] .= v_max[idx_ref]
+    ## Bounds on p_pv
+    for i in 1:ngens
+        bus = idx_gen[i]
+        i_pv = findfirst(isequal(bus), idx_pv)
+        if !isnothing(i_pv)
+            u_min[i_pv + nref] = p_min[i]
+            u_max[i_pv + nref] = p_max[i]
+        end
+    end
 
     indexing = IndexingCache(idx_pv, idx_pq, idx_ref, idx_gen)
 
@@ -229,8 +265,11 @@ function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Generator, ::PS.ActivePower, 
 end
 
 function bounds(polar::PolarForm{T, IT, VT, AT}, ::State) where {T, IT, VT, AT}
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    return polar.x_min[1:npq], polar.x_max[1:npq]
+    fr_ = npq + npv + 1
+    to_ = 2*npq + npv
+    return polar.x_min[fr_:to_], polar.x_max[fr_:to_]
 end
 function bounds(polar::PolarForm{T, IT, VT, AT}, ::Control) where {T, IT, VT, AT}
     return polar.u_min, polar.u_max

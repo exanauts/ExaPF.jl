@@ -55,6 +55,13 @@ const PS = PowerSystem
             # Test powerflow with x, u, p signature
             xₖ, _ = @time powerflow(polar, jx, x0, u0, p, verbose_level=0, tol=tolerance)
 
+            # Bounds on state and control
+            u_min, u_max = ExaPF.bounds(polar, Control())
+            x_min, x_max = ExaPF.bounds(polar, State())
+            @test isequal(u_min, [0.9, 0.1, 0.1, 0.9, 0.9])
+            @test isequal(u_max, [1.1, 3.0, 2.7, 1.1, 1.1])
+            @test isequal(x_min, [0.9, 0.9, 0.9, 0.9, 0.9, 0.9])
+            @test isequal(x_max, [1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
             # Test callbacks
             ## Power Balance
             g = ExaPF.power_balance(polar, xₖ, u0, p)
