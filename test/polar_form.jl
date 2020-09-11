@@ -14,10 +14,12 @@ using TimerOutputs
 using ExaPF
 import ExaPF: PowerSystem, AD, Precondition, Iterative
 
+const PS = PowerSystem
+
 @testset "Polar formulation" begin
     datafile = "test/data/case9.m"
     tolerance = 1e-8
-    pf = PowerSystem.PowerNetwork(datafile, 1)
+    pf = PS.PowerNetwork(datafile, 1)
 
     @testset "Device $device" for (device, M) in zip([CPU(), CUDADevice()], [Array, CuArray])
         polar = PolarForm(pf, device)
@@ -40,37 +42,49 @@ import ExaPF: PowerSystem, AD, Precondition, Iterative
             @test isa(v, M)
         end
 
-        # Init AD factory
-        jx, ju = ExaPF.init_ad_factory(polar, x0, u0, p)
+        @testset "Polar model API" begin
+            # Init AD factory
+            jx, ju = ExaPF.init_ad_factory(polar, x0, u0, p)
 
-        # Test powerflow
-        xₖ, _ = @time powerflow(polar, jx, x0, u0, p, verbose_level=0, tol=tolerance)
+            # Test powerflow with x, u, p signature
+            xₖ, _ = @time powerflow(polar, jx, x0, u0, p, verbose_level=0, tol=tolerance)
 
-        # Test callbacks
-        ## Power Balance
-        g = ExaPF.power_balance(polar, xₖ, u0, p)
-        @test isa(g, M)
-        # As we run powerflow before, the balance should be below tolerance
-        @test norm(g, Inf) < tolerance
-        ## Cost Production
-        c = @time ExaPF.cost_production(polar, xₖ, u0, p)
-        @test isa(c, Real)
-        ## Inequality constraint
-        for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
-            m = ExaPF.size_constraint(polar, cons)
-            @test isa(m, Int)
-            g = M{Float64, 1}(undef, m) # TODO: this signature is not great
-            fill!(g, 0)
-            cons(polar, g, xₖ, u0, p)
+            # Test callbacks
+            ## Power Balance
+            g = ExaPF.power_balance(polar, xₖ, u0, p)
+            @test isa(g, M)
+            # As we run powerflow before, the balance should be below tolerance
+            @test norm(g, Inf) < tolerance
+            ## Cost Production
+            c = @time ExaPF.cost_production(polar, xₖ, u0, p)
+            @test isa(c, Real)
+            ## Inequality constraint
+            for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
+                m = ExaPF.size_constraint(polar, cons)
+                @test isa(m, Int)
+                g = M{Float64, 1}(undef, m) # TODO: this signature is not great
+                fill!(g, 0)
+                cons(polar, g, xₖ, u0, p)
 
-            g_min, g_max = ExaPF.bounds(polar, cons)
-            @test length(g_min) == m
-            @test length(g_max) == m
-            # Are we on the correct device?
-            @test isa(g_min, M)
-            @test isa(g_max, M)
-            # Test constraints are consistent
-            @test isless(g_min, g_max)
+                g_min, g_max = ExaPF.bounds(polar, cons)
+                @test length(g_min) == m
+                @test length(g_max) == m
+                # Are we on the correct device?
+                @test isa(g_min, M)
+                @test isa(g_max, M)
+                # Test constraints are consistent
+                @test isless(g_min, g_max)
+            end
+        end
+
+        # Test model with network state signature
+        @testset "Network state" begin
+            nbus = PS.get(polar.network, PS.NumberOfBuses())
+            ngen = PS.get(polar.network, PS.NumberOfGenerators())
+            network = ExaPF.NetworkState(nbus, ngen, device)
+            # network is a buffer instantiated on the target device
+            @test isa(network.vmag, M)
+            ExaPF.load!(network, x0, u0, p, polar)
         end
     end
 

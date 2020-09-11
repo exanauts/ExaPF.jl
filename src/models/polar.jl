@@ -1,6 +1,6 @@
 # Polar formulation
 #
-struct PolarForm{T, VT, AT} <: AbstractFormulation where {T, VT, AT}
+struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     network::PS.PowerNetwork
     device::Device
     x_min::VT
@@ -12,30 +12,45 @@ struct PolarForm{T, VT, AT} <: AbstractFormulation where {T, VT, AT}
     # Constants
     active_load::VT
     reactive_load::VT
+    indexing::IndexingCache{IT}
     # struct
-    ybus_re::Spmat
-    ybus_im::Spmat
+    ybus_re::Spmat{IT, VT}
+    ybus_im::Spmat{IT, VT}
     AT::Type
 end
 
 function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     if isa(device, CPU)
+        IT = Vector{Int}
         VT = Vector
         M = SparseMatrixCSC
         AT = Array
     elseif isa(device, CUDADevice)
+        IT = CuArray{Int64, 1, Nothing}
         VT = CuVector
         M = CuSparseMatrixCSR
         AT = CuArray
     end
-    ybus_re, ybus_im = Spmat{VT{Int}, VT{Float64}}(pf.Ybus)
-    coefs = PS.get_costs_coefficients(pf) |> AT
+    ybus_re, ybus_im = Spmat{IT, VT{Float64}}(pf.Ybus)
+    # Get coefficients penalizing the generation of the generators
+    coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
     u_min, u_max, x_min, x_max, p_min, p_max = PS.get_bound_constraints(pf)
+    # Move load to the target device
     pload , qload = real.(pf.sload), imag.(pf.sload)
-    return PolarForm{Float64, VT{Float64}, AT{Float64,  2}}(
+
+    # Move the indexing to the target device
+    idx_gen = convert(VT{Int}, PS.get(pf, PS.GeneratorIndexes()))
+    idx_ref = convert(VT{Int}, PS.get(pf, PS.SlackIndexes()))
+    idx_pv = convert(VT{Int}, PS.get(pf, PS.PVIndexes()))
+    idx_pq = convert(VT{Int}, PS.get(pf, PS.PQIndexes()))
+
+    indexing = IndexingCache(idx_pv, idx_pq, idx_ref, idx_gen)
+
+    return PolarForm{Float64, IT, VT{Float64}, AT{Float64,  2}}(
         pf, device,
         x_min, x_max, u_min, u_max,
         coefs, pload, qload,
+        indexing,
         ybus_re, ybus_im,
         AT,
     )
@@ -52,7 +67,7 @@ function get(polar::PolarForm, ::NumberOfControl)
     return nref + 2*npv
 end
 
-function initial(form::PolarForm{T, VT, AT}, v::AbstractVariable) where {T, VT, AT}
+function initial(form::PolarForm{T, IT, VT, AT}, v::AbstractVariable) where {T, IT, VT, AT}
     pbus = real.(form.network.sbus) |> VT
     qbus = imag.(form.network.sbus) |> VT
     vmag = abs.(form.network.vbus) |> VT
@@ -61,13 +76,13 @@ function initial(form::PolarForm{T, VT, AT}, v::AbstractVariable) where {T, VT, 
 end
 
 function get(
-    polar::PolarForm{T, VT, AT},
+    polar::PolarForm{T, IT, VT, AT},
     ::State,
     vmag::VT,
     vang::VT,
     pbus::VT,
     qbus::VT,
-) where {T<:Real, VT<:AbstractVector{T}, AT}
+) where {T, IT, VT, AT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
@@ -82,13 +97,13 @@ function get(
 end
 
 function get(
-    polar::PolarForm{T, VT, AT},
+    polar::PolarForm{T, IT, VT, AT},
     ::Control,
     vmag::VT,
     vang::VT,
     pbus::VT,
     qbus::VT,
-) where {T<:Real, VT<:AbstractVector{T}, AT}
+) where {T, IT, VT, AT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
@@ -105,13 +120,13 @@ function get(
 end
 
 function get(
-    polar::PolarForm{T, VT, AT},
+    polar::PolarForm{T, IT, VT, AT},
     ::Parameters,
     vmag::VT,
     vang::VT,
     pbus::VT,
     qbus::VT,
-) where {T<:Real, VT<:AbstractVector{T}, AT}
+) where {T, IT, VT, AT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
@@ -125,7 +140,7 @@ function get(
 end
 
 # Bridge with buses' attributes
-function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.VoltageMagnitude, x, u, p; V=eltype(x)) where {T, VT, AT}
+function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Buses, ::PS.VoltageMagnitude, x, u, p; V=eltype(x)) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
@@ -137,7 +152,7 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.VoltageMagnitude, x, 
     vmag[polar.network.pv] = u[nref + npv + 1:nref + 2*npv]
     return vmag
 end
-function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.VoltageAngle, x, u, p; V=eltype(x)) where {T, VT, AT}
+function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Buses, ::PS.VoltageAngle, x, u, p; V=eltype(x)) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
@@ -149,14 +164,15 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.VoltageAngle, x, u, p
     vang[polar.network.ref] = p[1:nref]
     return vang
 end
-function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.ActivePower, x, u, p; V=eltype(x)) where {T, VT, AT}
+function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Buses, ::PS.ActivePower, x, u, p; V=eltype(x)) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     vmag = get(polar, PS.Buses(), PS.VoltageMagnitude(), x, u, p)
     vang = get(polar, PS.Buses(), PS.VoltageAngle(), x, u, p)
-    pinj = VT(undef, nbus)
+    MT = polar.AT
+    pinj = MT{V, 1}(undef, nbus)
     pinj[polar.network.pv] = u[nref + 1:nref + npv] - polar.active_load[polar.network.pv]
     pinj[polar.network.pq] = p[nref + 1:nref + npq]
     for bus in polar.network.ref
@@ -164,7 +180,7 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.ActivePower, x, u, p;
     end
     return pinj
 end
-function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.ReactivePower, x, u, p; V=eltype(x)) where {T, VT, AT}
+function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Buses, ::PS.ReactivePower, x, u, p; V=eltype(x)) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
@@ -180,16 +196,16 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Buses, ::PS.ReactivePower, x, u, 
 end
 
 # Bridge with generators' attributes
-function get(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u, p; V=eltype(x)) where {T, VT, AT}
+function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u, p; V=eltype(x)) where {T, IT, VT, AT}
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
 
-    index_gen = PS.get(polar.network, PS.GeneratorIndexes())
-    index_pv = polar.network.pv
-    index_ref = polar.network.ref
+    index_ref = polar.indexing.index_ref
+    index_pv = polar.indexing.index_pv
+    index_gen = polar.indexing.index_generators
 
     # Get voltages.
     vmag = get(polar, PS.Buses(), PS.VoltageMagnitude(), x, u, p; V=V)
@@ -212,20 +228,24 @@ function get(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u
     return pg
 end
 
-function bounds(polar::PolarForm{T, VT, AT}, ::State) where {T, VT, AT}
+function bounds(polar::PolarForm{T, IT, VT, AT}, ::State) where {T, IT, VT, AT}
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     return polar.x_min[1:npq], polar.x_max[1:npq]
 end
-function bounds(polar::PolarForm{T, VT, AT}, ::Control) where {T, VT, AT}
+function bounds(polar::PolarForm{T, IT, VT, AT}, ::Control) where {T, IT, VT, AT}
     return polar.u_min, polar.u_max
 end
 
-function get_network_state(polar::PolarForm{T, VT, AT}, x, u, p; V=Float64) where {T, VT, AT}
+function get_network_state(polar::PolarForm{T, IT, VT, AT}, x, u, p; V=Float64) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     pf = polar.network
+
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
 
     MT = polar.AT
     vmag = MT{V, 1}(undef, nbus)
@@ -233,28 +253,60 @@ function get_network_state(polar::PolarForm{T, VT, AT}, x, u, p; V=Float64) wher
     pinj = MT{V, 1}(undef, nbus)
     qinj = MT{V, 1}(undef, nbus)
 
-    vmag[pf.pq] .= x[1:npq]
-    vang[pf.pq] .= x[npq + 1:2*npq]
-    vang[pf.pv] .= x[2*npq + 1:2*npq + npv]
+    vmag[pq] .= x[1:npq]
+    vang[pq] .= x[npq + 1:2*npq]
+    vang[pv] .= x[2*npq + 1:2*npq + npv]
 
-    vmag[pf.ref] .= u[1:nref]
-    pinj[pf.pv] .= u[nref + 1:nref + npv] - polar.active_load[pf.pv]
-    vmag[pf.pv] .= u[nref + npv + 1:nref + 2*npv]
+    vmag[ref] .= u[1:nref]
+    pinj[pv] .= u[nref + 1:nref + npv] - polar.active_load[pv]
+    vmag[pv] .= u[nref + npv + 1:nref + 2*npv]
 
-    vang[pf.ref] .= p[1:nref]
-    pinj[pf.pq] .= p[nref + 1:nref + npq]
-    qinj[pf.pq] .= p[nref + npq + 1:nref + 2*npq]
+    vang[ref] .= p[1:nref]
+    pinj[pq] .= p[nref + 1:nref + npq]
+    qinj[pq] .= p[nref + npq + 1:nref + 2*npq]
 
-    for bus in pf.ref
+    for bus in ref
         pinj[bus] = PS.get_power_injection(bus, vmag, vang, polar.ybus_re, polar.ybus_im)
         qinj[bus] = PS.get_react_injection(bus, vmag, vang, polar.ybus_re, polar.ybus_im)
     end
 
-    for bus in pf.pv
+    for bus in pv
         qinj[bus] = PS.get_react_injection(bus, vmag, vang, polar.ybus_re, polar.ybus_im)
     end
 
     return vmag, vang, pinj, qinj
+end
+
+function load!(network::NetworkState, x, u, p, polar::PolarForm{T, IT, VT, AT}) where {T, IT, VT, AT}
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+
+    network.vmag[pq] .= x[1:npq]
+    network.vang[pq] .= x[npq + 1:2*npq]
+    network.vang[pv] .= x[2*npq + 1:2*npq + npv]
+
+    network.vmag[ref] .= u[1:nref]
+    network.pinj[pv] .= u[nref + 1:nref + npv] - polar.active_load[pv]
+    network.vmag[pv] .= u[nref + npv + 1:nref + 2*npv]
+
+    network.vang[ref] .= p[1:nref]
+    network.pinj[pq] .= p[nref + 1:nref + npq]
+    network.qinj[pq] .= p[nref + npq + 1:nref + 2*npq]
+
+    for bus in ref
+        network.pinj[bus] = PS.get_power_injection(bus, network.vmag, network.vang, polar.ybus_re, polar.ybus_im)
+        network.qinj[bus] = PS.get_react_injection(bus, network.vmag, network.vang, polar.ybus_re, polar.ybus_im)
+    end
+
+    for bus in pv
+        network.qinj[bus] = PS.get_react_injection(bus, network.vmag, network.vang, polar.ybus_re, polar.ybus_im)
+    end
 end
 
 function power_balance(polar::PolarForm, x, u, p; V=Float64)
@@ -263,9 +315,10 @@ function power_balance(polar::PolarForm, x, u, p; V=Float64)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     # Indexing
-    ref = convert(polar.AT{Int, 1}, polar.network.ref)
-    pv = convert(polar.AT{Int, 1}, polar.network.pv)
-    pq = convert(polar.AT{Int, 1}, polar.network.pq)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+
     # Network state
     Vm, Va, pbus, qbus = get_network_state(polar, x, u, p; V=V)
     F = similar(x)
@@ -277,16 +330,16 @@ function power_balance(polar::PolarForm, x, u, p; V=Float64)
 end
 
 # TODO: find better naming
-function init_ad_factory(polar::PolarForm{T, VT, AT}, x, u, p) where {T, VT, AT}
+function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, x, u, p) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     n_states = get(polar, NumberOfState())
     # Indexing
-    ref = convert(polar.AT{Int, 1}, polar.network.ref)
-    pv = convert(polar.AT{Int, 1}, polar.network.pv)
-    pq = convert(polar.AT{Int, 1}, polar.network.pq)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
     # Network state
     Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
     F = VT(undef, n_states)
@@ -303,9 +356,9 @@ function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, x, u, p)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     # Indexing
-    ref = convert(polar.AT{Int, 1}, polar.network.ref)
-    pv = convert(polar.AT{Int, 1}, polar.network.pv)
-    pq = convert(polar.AT{Int, 1}, polar.network.pq)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
     # Network state
     Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
     AD.residualJacobianAD!(jac, residualFunction_polar!, Vm, Va,
@@ -314,22 +367,31 @@ function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, x, u, p)
 end
 
 function powerflow(
-    polar::PolarForm{T, VT, AT},
+    polar::PolarForm{T, IT, VT, AT},
     jacobian::AD.StateJacobianAD,
     x::VT,
     u::VT,
     p::VT;
+    kwargs...
+) where {T, IT, VT, AT}
+    Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
+    network = NetworkState{VT}(Vm, Va, pbus, qbus, VT(undef, 0), VT(undef, 0))
+    return powerflow(polar, jacobian, network; kwargs...)
+end
+
+function powerflow(
+    polar::PolarForm{T, IT, VT, AT},
+    jacobian::AD.StateJacobianAD,
+    network::NetworkState{VT};
     npartitions=2,
     solver="default",
     preconditioner=Precondition.NoPreconditioner(),
     tol=1e-7,
     maxiter=20,
     verbose_level=0,
-) where {T, VT, AT}
+) where {T, IT, VT, AT}
     # Retrieve parameter and initial voltage guess
-    @timeit TIMER "Init" begin
-        Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
-    end
+    Vm, Va, pbus, qbus = network.vmag, network.vang, network.pinj, network.qinj
     V = convert(polar.AT{Complex{T}, 1}, polar.network.vbus)
 
     nbus = PS.get(polar.network, PS.NumberOfBuses())
@@ -338,10 +400,9 @@ function powerflow(
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     n_states = get(polar, NumberOfState())
 
-    # TODO: avoid moving pv and pq each time we are calling powerflow
-    ref = convert(polar.AT{Int, 1}, polar.network.ref)
-    pv = convert(polar.AT{Int, 1}, polar.network.pv)
-    pq = convert(polar.AT{Int, 1}, polar.network.pq)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
 
     # iteration variables
     iter = 0
@@ -363,8 +424,8 @@ function powerflow(
 
     # Evaluate residual function
     residualFunction_polar!(F, Vm, Va,
-                                  polar.ybus_re, polar.ybus_im,
-                                  pbus, qbus, pv, pq, nbus)
+                            polar.ybus_re, polar.ybus_im,
+                            pbus, qbus, pv, pq, nbus)
 
     # check for convergence
     normF = norm(F, Inf)
@@ -475,7 +536,7 @@ function state_constraint(polar::PolarForm, g, x, u, p; V=Float64)
     g .= x[1:npq]
     return
 end
-size_constraint(polar::PolarForm{T, VT, AT}, ::typeof(state_constraint)) where {T, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())
+size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(state_constraint)) where {T, IT, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())
 bounds(polar::PolarForm, ::typeof(state_constraint)) = bounds(polar, State())
 
 # Here, the power constraints are ordered as:
@@ -507,12 +568,12 @@ function power_constraints(polar::PolarForm, g, x, u, p; V=Float64)
     end
     return
 end
-function size_constraint(polar::PolarForm{T, VT, AT}, ::typeof(power_constraints)) where {T, VT, AT}
+function size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(power_constraints)) where {T, IT, VT, AT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     return 2*nref + npv
 end
-function bounds(polar::PolarForm{T, VT, AT}, ::typeof(power_constraints)) where {T, VT, AT}
+function bounds(polar::PolarForm{T, IT, VT, AT}, ::typeof(power_constraints)) where {T, IT, VT, AT}
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
