@@ -45,7 +45,6 @@ using .PowerSystem
 
 const PS = PowerSystem
 
-include("formulations.jl")
 # Modeling
 include("models/models.jl")
 include("evaluators.jl")

@@ -132,6 +132,25 @@ function get(
     return x
 end
 
+function put(
+    polar::PolarForm{T, IT, VT, AT},
+    ::State,
+    vmag::VT,
+    vang::VT,
+) where {T, IT, VT, AT}
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+    # build vector x
+    dimension = get(polar, NumberOfState())
+    x = VT(undef, dimension)
+    x[1:npq] = vmag[polar.network.pq]
+    x[npq + 1:2*npq] = vang[polar.network.pq]
+    x[2*npq + 1:2*npq + npv] = vang[polar.network.pv]
+
+    return x
+end
+
 function get(
     polar::PolarForm{T, IT, VT, AT},
     ::Control,
@@ -151,6 +170,27 @@ function get(
     # u is equal to active power of generator (Pᵍ)
     # As P = Pᵍ - Pˡ , we get
     u[nref + 1:nref + npv] = pbus[polar.network.pv] + pload[polar.network.pv]
+    u[nref + npv + 1:nref + 2*npv] = vmag[polar.network.pv]
+    return u
+end
+
+function put(
+    polar::PolarForm{T, IT, VT, AT},
+    ::Control,
+    vmag::VT,
+    pbus::VT,
+) where {T, IT, VT, AT}
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+    pload = polar.active_load
+    # build vector u
+    dimension = get(polar, NumberOfControl())
+    u = VT(undef, dimension)
+    u[1:nref] = vmag[polar.network.ref]
+    # u is equal to active power of generator (Pᵍ)
+    # As P = Pᵍ - Pˡ , we get
+    u[nref + 1:nref + npv] .= 0.0
     u[nref + npv + 1:nref + 2*npv] = vmag[polar.network.pv]
     return u
 end
@@ -262,6 +302,52 @@ function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Generator, ::PS.ActivePower, 
     end
 
     return pg
+end
+
+# adjoint implementation of the function above
+function put(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u, p, adj_pg; V=eltype(x)) where {T, VT, AT}
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+
+    index_gen = PS.get(polar.network, PS.GeneratorIndexes())
+    index_pv = polar.network.pv
+    index_ref = polar.network.ref
+
+    # Get voltages. This is only needed to get the size of adjvmag and adjvang
+    vmag = get(polar, PS.Buses(), PS.VoltageMagnitude(), x, u, p; V=V)
+    vang = get(polar, PS.Buses(), PS.VoltageAngle(), x, u, p; V=V)
+
+    adj_vmag = similar(vmag)
+    adj_vang = similar(vang)
+    fill!(adj_vmag, 0.0)
+    fill!(adj_vang, 0.0)
+
+    MT = polar.AT
+    adj_u_tmp = similar(u)
+    fill!(adj_u_tmp, 0.0)
+
+    for i in 1:ngen
+        bus = index_gen[i]
+        if bus in index_ref
+            # pg[i] = inj + polar.active_load[bus]
+            adj_inj = adj_pg[i]
+            # inj = PS.get_power_injection(bus, vmag, vang, polar.ybus_re, polar.ybus_im)
+            PS.put_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
+            
+        else
+            ipv = findfirst(isequal(bus), index_pv)
+            # pg[i] = u[nref + ipv]
+            adj_u_tmp[nref + ipv] += adj_pg[i]
+        end
+    end
+    adj_u = put(polar, Control(), adj_vmag, adj_vang)
+    adj_x = put(polar, State(), adj_vmag, adj_vang)
+    adj_u .+= adj_u_tmp
+
+    return adj_x, adj_u
 end
 
 function bounds(polar::PolarForm{T, IT, VT, AT}, ::State) where {T, IT, VT, AT}
@@ -559,6 +645,19 @@ function cost_production(polar::PolarForm, x, u, p; V=Float64)
     # Return quadratic cost
     cost = sum(c0 .+ c1 .* power_generations + c2 .* power_generations.^2)
     return cost
+end
+
+function cost_production_adjoint(polar::PolarForm, x, u, p; V=Float64)
+    # TODO: this getter is particularly inefficient on GPU
+    power_generations = get(polar, PS.Generator(), PS.ActivePower(), x, u, p; V=V)
+    c0 = polar.costs_coefficients[:, 2]
+    c1 = polar.costs_coefficients[:, 3]
+    c2 = polar.costs_coefficients[:, 4]
+    # Return adjoint of quadratic cost
+    # cost = sum(c0 .+ c1 .* power_generations + c2 .* power_generations.^2)
+    adj_power_generations = c1 .+ 2.0 * power_generations .* c2
+    adj_x, adj_u = put(polar, PS.Generator(), PS.ActivePower(), x, u, p, adj_power_generations; V=V)
+    return adj_x, adj_u
 end
 
 # Generic inequality constraints
