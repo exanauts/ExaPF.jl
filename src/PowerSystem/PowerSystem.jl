@@ -31,8 +31,6 @@ struct PVIndexes <: AbstractIndexing end
 struct PQIndexes <: AbstractIndexing end
 struct SlackIndexes <: AbstractIndexing end
 struct GeneratorIndexes <: AbstractIndexing end
-struct PVGeneratorIndexes <: AbstractIndexing end
-struct SlackGeneratorIndexes <: AbstractIndexing end
 
 # TODO: replace const *_BUS_TYPE with this enum
 @enum BusType begin
