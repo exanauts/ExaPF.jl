@@ -138,10 +138,6 @@ end
     datafile = joinpath(dirname(@__FILE__), "data", matpower_datafile)
     pf = PS.PowerNetwork(datafile, 1)
 
-    @testset "Computing bounds" begin
-        u_min, u_max, x_min, x_max, p_min, p_max = PS.get_bound_constraints(pf)
-    end
-
     @testset "Computing cost coefficients" begin
         coefs = PS.get_costs_coefficients(pf)
         @test size(coefs) == (3, 4)

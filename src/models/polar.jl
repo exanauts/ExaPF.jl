@@ -31,10 +31,15 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
         M = CuSparseMatrixCSR
         AT = CuArray
     end
+
+    npv = PS.get(pf, PS.NumberOfPVBuses())
+    npq = PS.get(pf, PS.NumberOfPQBuses())
+    nref = PS.get(pf, PS.NumberOfSlackBuses())
+    ngens = PS.get(pf, PS.NumberOfGenerators())
+
     ybus_re, ybus_im = Spmat{IT, VT{Float64}}(pf.Ybus)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
-    u_min, u_max, x_min, x_max, p_min, p_max = PS.get_bound_constraints(pf)
     # Move load to the target device
     pload , qload = real.(pf.sload), imag.(pf.sload)
 
@@ -43,6 +48,37 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     idx_ref = convert(VT{Int}, PS.get(pf, PS.SlackIndexes()))
     idx_pv = convert(VT{Int}, PS.get(pf, PS.PVIndexes()))
     idx_pq = convert(VT{Int}, PS.get(pf, PS.PQIndexes()))
+
+    # Bounds
+    ## Get bounds on active power
+    p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
+    ## Get bounds on voltage magnitude
+    v_min, v_max = PS.bounds(pf, PS.Buses(), PS.VoltageMagnitude())
+    ## Instantiate arrays
+    nᵤ = nref + 2*npv
+    nₓ = npv + 2*npq
+    u_min = fill(-Inf, nᵤ)
+    u_max = fill( Inf, nᵤ)
+    x_min = fill(-Inf, nₓ)
+    x_max = fill( Inf, nₓ)
+    ## Bounds on v_pq
+    x_min[npv+npq+1:end] .= v_min[idx_pq]
+    x_max[npv+npq+1:end] .= v_max[idx_pq]
+    ## Bounds on v_pv
+    u_min[nref+npv+1:end] .= v_min[idx_pv]
+    u_max[nref+npv+1:end] .= v_max[idx_pv]
+    ## Bounds on v_ref
+    u_min[1:nref] .= v_min[idx_ref]
+    u_max[1:nref] .= v_max[idx_ref]
+    ## Bounds on p_pv
+    for i in 1:ngens
+        bus = idx_gen[i]
+        i_pv = findfirst(isequal(bus), idx_pv)
+        if !isnothing(i_pv)
+            u_min[i_pv + nref] = p_min[i]
+            u_max[i_pv + nref] = p_max[i]
+        end
+    end
 
     indexing = IndexingCache(idx_pv, idx_pq, idx_ref, idx_gen)
 
@@ -89,9 +125,9 @@ function get(
     # build vector x
     dimension = get(polar, NumberOfState())
     x = VT(undef, dimension)
-    x[1:npq] = vmag[polar.network.pq]
-    x[npq + 1:2*npq] = vang[polar.network.pq]
-    x[2*npq + 1:2*npq + npv] = vang[polar.network.pv]
+    x[1:npv] = vang[polar.network.pv]
+    x[npv+1:npv+npq] = vang[polar.network.pq]
+    x[npv+npq+1:end] = vmag[polar.network.pq]
 
     return x
 end
@@ -187,7 +223,7 @@ function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Buses, ::PS.VoltageMagnitude,
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     MT = polar.AT
     vmag = MT{V, 1}(undef, nbus)
-    vmag[polar.network.pq] = x[1:npq]
+    vmag[polar.network.pq] = x[npq+npv+1:end]
     vmag[polar.network.ref] = u[1:nref]
     vmag[polar.network.pv] = u[nref + npv + 1:nref + 2*npv]
     return vmag
@@ -199,8 +235,8 @@ function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Buses, ::PS.VoltageAngle, x, 
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     MT = polar.AT
     vang = MT{V, 1}(undef, nbus)
-    vang[polar.network.pq] = x[npq + 1:2*npq]
-    vang[polar.network.pv] = x[2*npq + 1:2*npq + npv]
+    vang[polar.network.pq] = x[npv+1:npv+npq]
+    vang[polar.network.pv] = x[1:npv]
     vang[polar.network.ref] = p[1:nref]
     return vang
 end
@@ -314,9 +350,12 @@ function put(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u
     return adj_x, adj_u
 end
 
-function bounds(polar::PolarForm{T, VT, AT}, ::State) where {T, VT, AT}
+function bounds(polar::PolarForm{T, IT, VT, AT}, ::State) where {T, IT, VT, AT}
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    return polar.x_min[1:npq], polar.x_max[1:npq]
+    fr_ = npq + npv + 1
+    to_ = 2*npq + npv
+    return polar.x_min[fr_:to_], polar.x_max[fr_:to_]
 end
 function bounds(polar::PolarForm{T, IT, VT, AT}, ::Control) where {T, IT, VT, AT}
     return polar.u_min, polar.u_max
@@ -339,9 +378,9 @@ function get_network_state(polar::PolarForm{T, IT, VT, AT}, x, u, p; V=Float64) 
     pinj = MT{V, 1}(undef, nbus)
     qinj = MT{V, 1}(undef, nbus)
 
-    vmag[pq] .= x[1:npq]
-    vang[pq] .= x[npq + 1:2*npq]
-    vang[pv] .= x[2*npq + 1:2*npq + npv]
+    vang[pv] .= x[1:npv]
+    vang[pq] .= x[npv+1:npv+npq]
+    vmag[pq] .= x[npv+npq+1:end]
 
     vmag[ref] .= u[1:nref]
     pinj[pv] .= u[nref + 1:nref + npv] - polar.active_load[pv]
@@ -495,11 +534,11 @@ function powerflow(
 
     # indices
     j1 = 1
-    j2 = npq
+    j2 = npv
     j3 = j2 + 1
     j4 = j2 + npq
     j5 = j4 + 1
-    j6 = j4 + npv
+    j6 = j4 + npq
 
     # form residual function directly on target device
     F = VT(undef, n_states)
@@ -525,9 +564,9 @@ function powerflow(
     Vapv = view(Va, pv)
     Vapq = view(Va, pq)
     Vmpq = view(Vm, pq)
-    dx12 = view(dx, j1:j2)
-    dx34 = view(dx, j3:j4)
-    dx56 = view(dx, j5:j6)
+    dx12 = view(dx, j5:j6) # Vmqp
+    dx34 = view(dx, j3:j4) # Vapq
+    dx56 = view(dx, j1:j2) # Vapv
 
     @timeit TIMER "Newton" while ((!converged) && (iter < maxiter))
 
@@ -624,8 +663,9 @@ end
 # Generic inequality constraints
 # We add constraint only on vmag_pq
 function state_constraint(polar::PolarForm, g, x, u, p; V=Float64)
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    g .= x[1:npq]
+    g .= x[npv+npq+1:end]
     return
 end
 size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(state_constraint)) where {T, IT, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())

@@ -49,7 +49,6 @@ mutable struct Preconditioner <: AbstractPreconditioner
         Js = Vector{Matrix{Float64}}(undef, npart)
         nJs = maximum(length.(partitions))
         id = Matrix{Float64}(I, nJs, nJs)
-        println("Block Jacobi block size: $nJs")
         for i in 1:npart
             Js[i] = Matrix{Float64}(I, nJs, nJs)
         end
@@ -105,7 +104,6 @@ function build_adjmatrix(A)
     rows = Int64[]
     cols = Int64[]
     vals = Float64[]
-    @show size(A)
     rowsA = rowvals(A)
     m, n = size(A)
     for i = 1:n
@@ -119,7 +117,6 @@ function build_adjmatrix(A)
             push!(vals, 1.0)
         end
     end
-    println("Creating matrix")
     return sparse(rows,cols,vals,size(A,1),size(A,2))
 end
 
@@ -207,4 +204,6 @@ function update(J::SparseMatrixCSC, p, to)
     end
     return p.P
 end
+
+
 end
