@@ -27,6 +27,14 @@ end
     include("powerflow.jl")
 end
 
+@testset "Problem formulations" begin
+    include("polar_form.jl")
+end
+
+@testset "Optimization evaluators" begin
+    include("evaluators.jl")
+end
+
 @testset "Reduced space algorithms" begin
     include("reduced_gradient.jl")
     include("test_rgm.jl")
