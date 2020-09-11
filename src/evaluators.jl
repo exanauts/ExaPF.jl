@@ -96,13 +96,13 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     # TODO: could we move this in the AD factory?
     cost_x = x_ -> cost_production(nlp.model, x_, u, nlp.p; V=eltype(x_))
     cost_u = u_ -> cost_production(nlp.model, xₖ, u_, nlp.p; V=eltype(u_))
-    fdCdx = x_ -> ForwardDiff.gradient(cost_x, x_)
-    fdCdu = u_ -> ForwardDiff.gradient(cost_u, u_)
+    fdCdx = x_ -> cost_production_adjoint(nlp.model, x_, u, nlp.p)
+    fdCdu = u_ -> cost_production_adjoint(nlp.model, xₖ, u_, nlp.p)
     ∇gₓ = nlp.ad.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
     ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, xₖ, u, nlp.p)
-    ∇fₓ = fdCdx(xₖ)
-    ∇fᵤ = fdCdu(u)
+    ∇fₓ = fdCdx(xₖ)[1]
+    ∇fᵤ = fdCdu(u)[2]
     # Update adjoint
     λₖ = _adjoint(∇gₓ, ∇fₓ)
     # compute reduced gradient
