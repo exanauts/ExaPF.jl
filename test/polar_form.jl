@@ -21,7 +21,13 @@ const PS = PowerSystem
     tolerance = 1e-8
     pf = PS.PowerNetwork(datafile, 1)
 
-    @testset "Device $device" for (device, M) in zip([CPU(), CUDADevice()], [Array, CuArray])
+    if has_cuda_gpu()
+        ITERATORS = zip([CPU(), CUDADevice()], [Array, CuArray])
+    else
+        ITERATORS = zip([CPU()], [Array])
+    end
+
+    @testset "Initiate polar formulation on device $device" for (device, M) in ITERATORS
         polar = PolarForm(pf, device)
 
         b = bounds(polar, State())
