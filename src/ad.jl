@@ -14,35 +14,37 @@ import Base: show
 
 abstract type AbstractJacobianAD end
 
-struct StateJacobianAD <: AbstractJacobianAD
-    J
-    compressedJ
-    coloring
-    t1sseeds
-    t1sF
-    x
-    t1sx
-    varx
-    t1svarx
-    map
+struct StateJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
+    J::SMT
+    compressedJ::MT
+    coloring::VI
+    t1sseeds::VP
+    t1sF::VD
+    x::VT
+    t1sx::VD
+    map::VI
     function StateJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
         if F isa Array
-            T = Vector
-            M = Matrix
-            A = Array
+            VI = Vector{Int}
+            VT = Vector{Float64}
+            MT = Matrix{Float64}
+            SMT = SparseMatrixCSC
+            A = Vector
         elseif F isa CuArray
-            T = CuVector
-            M = CuMatrix
-            A = CuArray
+            VI = CuVector{Int}
+            VT = CuVector{Float64}
+            MT = CuMatrix{Float64}
+            SMT = CuSparseMatrixCSR
+            A = CuVector
         else
             error("Wrong array type ", typeof(F))
         end
 
         mappv = [i + nv_m for i in pv]
         mappq = [i + nv_m for i in pq]
-        map = T{Int64}(vcat(pq, mappq, mappv))
+        map = VI(vcat(pq, mappq, mappv))
         nmap = size(map,1)
 
         # Used for sparsity detection with randomized inputs
@@ -69,28 +71,27 @@ struct StateJacobianAD <: AbstractJacobianAD
         hybus_re = Spmat{Vector{Int}, Vector{Float64}}(ybus_re)
         hybus_im = Spmat{Vector{Int}, Vector{Float64}}(ybus_im)
         n = nv_a
-        Yre=SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
-        Yim=SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
+        Yre = SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
+        Yim = SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
         Y = Yre .+ 1im .* Yim
         # Randomized inputs
         Vre = rand(n)
         Vim = rand(n)
         V = Vre .+ 1im .* Vim
         J = residualJacobian(V, Y, pv, pq)
-        coloring = T{Int64}(matrix_colors(J))
+        coloring = VI(matrix_colors(J))
         ncolor = size(unique(coloring),1)
         if F isa CuArray
             J = CuSparseMatrixCSR(J)
         end
-        t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
+        t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
         # x = T{Float64}(undef, nv_m + nv_a)
-        x = T(zeros(Float64, nv_m + nv_a))
-        t1sx = T{t1s{ncolor}}(x)
+        x = VT(zeros(Float64, nv_m + nv_a))
+        t1sx = A{t1s{ncolor}}(x)
         # t1sF = T{t1s{ncolor}}(undef, nmap)
-        t1sF = T{t1s{ncolor}}(zeros(Float64, nmap))
-        varx = view(x,map)
+        t1sF = A{t1s{ncolor}}(zeros(Float64, nmap))
         t1sseedvec = zeros(Float64, ncolor)
-        t1sseeds = T{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
+        t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
         for i in 1:nmap
             for j in 1:ncolor
                 if coloring[i] == j
@@ -100,26 +101,24 @@ struct StateJacobianAD <: AbstractJacobianAD
             t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
             t1sseedvec .= 0
         end
-        compressedJ = M{Float64}(zeros(Float64, ncolor, nmap))
-        t1svarx = view(t1sx, map)
+        compressedJ = MT(zeros(Float64, ncolor, nmap))
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
-        return new(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, varx, t1svarx, map)
+        VP = typeof(t1sseeds)
+        VD = typeof(t1sx)
+        return new{VI, VT, MT, SMT, VP, VD}(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, map)
     end
 end
 
-struct DesignJacobianAD <: AbstractJacobianAD
-    J
-    compressedJ
-    coloring
-    t1sseeds
-    t1sF
-    x
-    t1sx
-    varx
-    t1svarx
-    map
-    # function DesignJacobianAD(J, coloring, F, v_m, v_a, pbus, pv, pq, ref)
+struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
+    J::SMT
+    compressedJ::MT
+    coloring::VI
+    t1sseeds::VP
+    t1sF::VD
+    x::VT
+    t1sx::VD
+    map::VI
     function DesignJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
@@ -127,19 +126,23 @@ struct DesignJacobianAD <: AbstractJacobianAD
         nref = size(ref, 1)
         # ncolor = size(unique(coloring),1)
         if F isa Array
-            T = Vector
-            M = Matrix
-            A = Array
+            VI = Vector{Int}
+            VT = Vector{Float64}
+            MT = Matrix{Float64}
+            SMT = SparseMatrixCSC
+            A = Vector
         elseif F isa CuArray
-            T = CuVector
-            M = CuMatrix
-            A = CuArray
+            VI = CuVector{Int}
+            VT = CuVector{Float64}
+            MT = CuMatrix{Float64}
+            SMT = CuSparseMatrixCSR
+            A = CuVector
         else
             error("Wrong array type ", typeof(F))
         end
 
         mappv =  [i + nv_a for i in pv]
-        map = T{Int64}(vcat(ref, mappv, pv))
+        map = VI(vcat(ref, mappv, pv))
         nmap = size(map,1)
 
         # Used for sparsity detection with randomized inputs
@@ -152,23 +155,9 @@ struct DesignJacobianAD <: AbstractJacobianAD
 
             dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
             dSbus_dpbus = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-            # dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
-
-            # j11 = real(dSbus_dVm[[pv; pq], pq])
-            # j12 = real(dSbus_dVa[[pv; pq], [pq; pv]])
-            # j21 = imag(dSbus_dVm[pq, pq])
-            # j22 = imag(dSbus_dVa[pq, [pq; pv]])
 
             j11 = real(dSbus_dVm[[pv; pq], [ref; pv; pv]])
-            # j12 = real(dSbus_dVa[[pv; pq], [pq; pv]])
             j21 = imag(dSbus_dVm[pq, [ref; pv; pv]])
-            # j22 = imag(dSbus_dVa[pq, [pq; pv]])
-
-            # J = [j11 j12; j21 j22]
-            # @show size(j11)
-            # @show size(j21)
-            # @show j11
-            # @show j21
             J = [j11; j21]
         end
 
@@ -177,29 +166,28 @@ struct DesignJacobianAD <: AbstractJacobianAD
         hybus_re = Spmat{Vector{Int}, Vector{Float64}}(ybus_re)
         hybus_im = Spmat{Vector{Int}, Vector{Float64}}(ybus_im)
         n = nv_a
-        Yre=SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
-        Yim=SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
+        Yre = SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
+        Yim = SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
         Y = Yre .+ 1im .* Yim
         # Randomized inputs
         Vre = rand(n)
         Vim = rand(n)
         V = Vre .+ 1im .* Vim
         J = residualJacobian(V, Y, pinj, qinj, ref, pv, pq)
-        coloring = T{Int64}(matrix_colors(J))
+        coloring = VI(matrix_colors(J))
         ncolor = size(unique(coloring),1)
         if F isa CuArray
             J = CuSparseMatrixCSR(J)
         end
-        t1s{N} =  ForwardDiff.Dual{Nothing,Float64, N} where N
+        t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
         # x = T{Float64}(undef, nv_m + nv_a)
-        x = T(zeros(Float64, npbus + nv_a))
+        x = VT(zeros(Float64, npbus + nv_a))
         ncolor = length(x)
-        t1sx = T{t1s{ncolor}}(x)
+        t1sx = A{t1s{ncolor}}(x)
         # t1sF = T{t1s{ncolor}}(undef, nmap)
-        t1sF = T{t1s{ncolor}}(zeros(Float64, length(F)))
-        varx = view(x,map)
+        t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
         t1sseedvec = zeros(Float64, ncolor)
-        t1sseeds = T{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
+        t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
         for i in 1:nmap
             for j in 1:ncolor
                 if coloring[i] == j
@@ -209,11 +197,12 @@ struct DesignJacobianAD <: AbstractJacobianAD
             t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
             t1sseedvec .= 0
         end
-        compressedJ = M{Float64}(zeros(Float64, ncolor, length(F)))
-        t1svarx = view(t1sx, map)
+        compressedJ = MT(zeros(Float64, ncolor, length(F)))
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
-        return new(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, varx, t1svarx, map)
+        VP = typeof(t1sseeds)
+        VD = typeof(t1sx)
+        return new{VI, VT, MT, SMT, VP, VD}(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, map)
     end
 end
 
@@ -225,7 +214,6 @@ function myseed_kernel_cpu(
         duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
     end
 end
-
 function myseed_kernel_gpu(
     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
@@ -236,13 +224,26 @@ function myseed_kernel_gpu(
         duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
     end
 end
+function seeding(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+	nthreads = 256
+    nblocks = div(nbus, nthreads, RoundUp)
+    CUDA.@sync begin
+        @cuda threads=nthreads blocks=nblocks myseed_kernel_gpu(
+            t1svarx,
+            varx,
+            t1sseeds,
+        )
+    end
+end
+function seeding(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+    myseed_kernel_cpu(t1svarx, varx, t1sseeds)
+end
 
 function getpartials_cpu(compressedJ, t1sF)
     for i in 1:size(t1sF,1) # Go over outputs
         compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
     end
 end
-
 function getpartials_gpu(compressedJ, t1sF)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
@@ -252,16 +253,49 @@ function getpartials_gpu(compressedJ, t1sF)
         end
     end
 end
+function getpartials(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
+    nthreads = 256
+    nblocks = div(nbus, nthreads, RoundUp)
+    CUDA.@sync begin
+        @cuda threads=nthreads blocks=nblocks getpartials_gpu(
+            compressedJ,
+            t1sF
+        )
+    end
+end
+function getpartials(compressedJ::Array{T, 2}, t1sF, nbus) where T
+    getpartials_cpu(compressedJ, t1sF)
+end
 
 # uncompress (for GPU only)
 # TODO: should convert to @kernel
-function uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
+function _uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
     for i in index:stride:nmap
         for j in J_rowPtr[i]:J_rowPtr[i+1]-1
             @inbounds J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
         end
+    end
+end
+function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring, nmap)
+    for i in 1:nmap
+        for j in J.colptr[i]:J.colptr[i+1]-1
+            @inbounds J.nzval[j] = compressedJ[coloring[i], J.rowval[j]]
+        end
+    end
+end
+function uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring, nmap)
+    nthreads = 256
+    nblocks = div(nmap, nthreads, RoundUp)
+    CUDA.@sync begin
+        @cuda threads=nthreads blocks=nblocks _uncompress(
+                J.nzVal,
+                J.rowPtr,
+                J.colVal,
+                compressedJ,
+                coloring, nmap
+        )
     end
 end
 
@@ -282,27 +316,14 @@ function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v
             arrays.x[nv_m+1:nv_m+nv_a] .= v_a
             arrays.t1sx .= arrays.x
             arrays.t1sF .= 0.0
+            # Views
+            varx = view(arrays.x, arrays.map)
+            t1svarx = view(arrays.t1sx, arrays.map)
         end
     end
     @timeit timer "Seeding" begin
-        if isa(device, CUDADevice)
-            CUDA.@sync begin
-                @cuda threads=nthreads blocks=nblocks myseed_kernel_gpu(
-                    arrays.t1svarx,
-                    arrays.varx,
-                    arrays.t1sseeds,
-                )
-            end
-        else
-            myseed_kernel_cpu(
-                arrays.t1svarx,
-                arrays.varx,
-                arrays.t1sseeds,
-            )
-        end
+        seeding(arrays.t1sseeds, varx, t1svarx, nbus)
     end
-    nthreads = 256
-    nblocks = ceil(Int64, nbus/nthreads)
 
     @timeit timer "Function" begin
         residualFunction_polar!(
@@ -316,47 +337,16 @@ function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v
     end
 
     @timeit timer "Get partials" begin
-        if isa(device, CUDADevice)
-            CUDA.@sync begin
-                @cuda threads=nthreads blocks=nblocks getpartials_gpu(
-                    arrays.compressedJ,
-                    arrays.t1sF
-                )
-            end
-        else
-            ev = getpartials_cpu(
-                arrays.compressedJ,
-                arrays.t1sF,
-            )
-        end
+        getpartials(arrays.compressedJ, arrays.t1sF, nbus)
     end
     @timeit timer "Uncompress" begin
-        # Uncompress matrix. Sparse matrix elements have different names with CUDA
-        if arrays.J isa SparseArrays.SparseMatrixCSC
-            @inbounds for i in 1:nmap
-                for j in arrays.J.colptr[i]:arrays.J.colptr[i+1]-1
-                    @inbounds arrays.J.nzval[j] = arrays.compressedJ[arrays.coloring[i],arrays.J.rowval[j]]
-                end
-            end
-        end
-        if arrays.J isa CUDA.CUSPARSE.CuSparseMatrixCSR
-            CUDA.@sync begin
-                @cuda threads=nthreads blocks=nblocks uncompress(
-                        arrays.J.nzVal,
-                        arrays.J.rowPtr,
-                        arrays.J.colVal,
-                        arrays.compressedJ,
-                        arrays.coloring, nmap
-                )
-            end
-        end
-        return nothing
+        uncompress!(arrays.J, arrays.compressedJ, arrays.coloring, nmap)
     end
+    return nothing
 end
 
 function residualJacobianAD!(arrays::DesignJacobianAD, residualFunction_polar!, v_m, v_a,
                              ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, timer = nothing)
-    device = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? CPU() : CUDADevice()
 
     @timeit timer "Before" begin
         @timeit timer "Setup" begin
@@ -372,27 +362,14 @@ function residualJacobianAD!(arrays::DesignJacobianAD, residualFunction_polar!, 
             arrays.x[nv_m+1:nv_m+npinj] .= pinj
             arrays.t1sx .= arrays.x
             arrays.t1sF .= 0.0
+            # Views
+            varx = view(arrays.x, arrays.map)
+            t1svarx = view(arrays.t1sx, arrays.map)
         end
     end
     @timeit timer "Seeding" begin
-        if isa(device, CUDADevice)
-            CUDA.@sync begin
-                @cuda threads=nthreads blocks=nblocks myseed_kernel_gpu(
-                    arrays.t1svarx,
-                    arrays.varx,
-                    arrays.t1sseeds,
-                )
-            end
-        else
-            ev = myseed_kernel_cpu(
-                arrays.t1svarx,
-                arrays.varx,
-                arrays.t1sseeds,
-            )
-        end
+        seeding(arrays.t1sseeds, varx, t1svarx, nbus)
     end
-    nthreads=256
-    nblocks=ceil(Int64, nbus/nthreads)
     @timeit timer "Function" begin
         residualFunction_polar!(
             arrays.t1sF,
@@ -405,41 +382,11 @@ function residualJacobianAD!(arrays::DesignJacobianAD, residualFunction_polar!, 
     end
 
     @timeit timer "Get partials" begin
-        if isa(device, CUDADevice)
-            CUDA.@sync begin
-                @cuda threads=nthreads blocks=nblocks getpartials_gpu(
-                    arrays.compressedJ,
-                    arrays.t1sF
-                )
-            end
-        else
-            ev = getpartials_cpu(
-                arrays.compressedJ,
-                arrays.t1sF,
-            )
-        end
+        getpartials(arrays.compressedJ, arrays.t1sF, nbus)
     end
     @timeit timer "Uncompress" begin
         # Uncompress matrix. Sparse matrix elements have different names with CUDA
-        if arrays.J isa SparseArrays.SparseMatrixCSC
-            for i in 1:nmap
-                for j in arrays.J.colptr[i]:arrays.J.colptr[i+1]-1
-                    @inbounds arrays.J.nzval[j] = arrays.compressedJ[arrays.coloring[i],arrays.J.rowval[j]]
-                end
-            end
-        end
-        if arrays.J isa CUDA.CUSPARSE.CuSparseMatrixCSR
-            CUDA.@sync begin
-                @cuda threads=nthreads blocks=nblocks uncompress(
-                        arrays.J.nzVal,
-                        arrays.J.rowPtr,
-                        arrays.J.colVal,
-                        arrays.compressedJ,
-                        arrays.coloring, nmap
-                )
-            end
-        end
-        return nothing
+        uncompress!(arrays.J, arrays.compressedJ, arrays.coloring, nmap)
     end
 end
 
