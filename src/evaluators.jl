@@ -33,19 +33,14 @@ end
 
 function ReducedSpaceEvaluator(model, x, u, p;
                                constraints=Function[state_constraint],
-                               ε_tol=1e-12, solver="default", npartitions=2)
+                               ε_tol=1e-12, solver="default", npartitions=2,
+                               verbose_level=VERBOSE_LEVEL_NONE)
+    # Build up AD factory
     jx, ju = init_ad_factory(model, x, u, p)
-    J = jx.J
-    precond = Precondition.NoPreconditioner()
-    if solver != "default"
-        nblock = size(J,1) / npartitions
-        println("Blocks: $npartitions, Blocksize: n = ", nblock,
-                " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
-        println("Partitioning...")
-        precond = Precondition.Preconditioner(J, npartitions, device)
-        println("$npartitions partitions created")
-    end
     ad = ADFactory(jx, ju)
+    # Init preconditioner if needed for iterative linear algebra
+    precond = Iterative.init_preconditioner(jx.J, solver, npartitions, model.device)
+
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
 

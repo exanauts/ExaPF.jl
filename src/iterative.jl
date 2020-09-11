@@ -170,4 +170,23 @@ function ldiv!(
     return n_iters
 end
 
+# TODO: pass this function to multiple dispatch
+function init_preconditioner(J, solver, npartitions, device; verbose_level=0)
+    if solver == "default"
+        return Precondition.NoPreconditioner()
+    end
+
+    nblock = size(J,1) / npartitions
+    if verbose_level >= 2
+        println("Blocks: $npartitions, Blocksize: n = ", nblock,
+                " Mbytes = ", (nblock*nblock*npartitions*8.0)/(1024.0*1024.0))
+    end
+    precond = Precondition.Preconditioner(J, npartitions, device)
+    if verbose_level >= 2
+        println("Block Jacobi block size: $(precond.nJs)")
+        println("$npartitions partitions created")
+    end
+    return precond
+end
+
 end
