@@ -564,8 +564,9 @@ end
 # Generic inequality constraints
 # We add constraint only on vmag_pq
 function state_constraint(polar::PolarForm, g, x, u, p; V=Float64)
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    g .= x[1:npq]
+    g .= x[npv+npq+1:end]
     return
 end
 size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(state_constraint)) where {T, IT, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())

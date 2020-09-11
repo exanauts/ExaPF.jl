@@ -3,11 +3,11 @@ if has_cuda_gpu()
 else
     DEVICES = [CPU()]
 end
+datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
+pf = PowerSystem.PowerNetwork(datafile, 1)
 
 @testset "ReducedSpaceEvaluator $device" for device in DEVICES
     println("Device: $device")
-    datafile = "test/data/case9.m"
-    pf = PowerSystem.PowerNetwork(datafile, 1)
     polar = PolarForm(pf, device)
     x0 = ExaPF.initial(polar, State())
     u0 = ExaPF.initial(polar, Control())

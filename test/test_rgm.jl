@@ -15,11 +15,11 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
     pf = PowerSystem.PowerNetwork(datafile, 1)
     polar = PolarForm(pf, CPU())
-    
+
     xk = ExaPF.initial(polar, State())
     uk = ExaPF.initial(polar, Control())
     p = ExaPF.initial(polar, Parameters())
-    
+
     constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
     nlp = @time ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; constraints=constraints, solver="default")
 
@@ -50,21 +50,21 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
         # compute gradient
         ExaPF.gradient!(nlp, grad, uk)
-        
+
         println("Cost: ", c)
         println("Norm: ", norm(grad))
-        
+
         # Optional linesearch
         # step = ls(uk, grad, Lu, grad_Lu)
         # compute control step
         uk = uk - step*grad
-        
+
         ExaPF.project_constraints!(uk, grad, nlp.u_min, nlp.u_max)
         println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
 
         iter += 1
     end
-    ExaPF.PowerSystem.print_state(pf, nlp.x, uk, p)
+    show(nlp.model, nlp.x, uk, p)
 
 end

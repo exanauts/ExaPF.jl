@@ -25,14 +25,14 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     p = ExaPF.initial(polar, Parameters())
 
     println("Before solve")
-    ExaPF.PowerSystem.print_state(pf, x, u, p)
+    show(polar, x, u, p)
 
     jx, ju = ExaPF.init_ad_factory(polar, x, u, p)
     # solve power flow
     xk, convergence = ExaPF.powerflow(polar, jx, x, u, p, verbose_level=0)
 
     println("After solve")
-    ExaPF.PowerSystem.print_state(pf, xk, u, p)
+    show(polar, xk, u, p)
 
     x_sol = [0.16875136481876485, 0.0832709533581424,
              -0.04200385129447893, -0.07011446830092488,
