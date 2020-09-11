@@ -398,8 +398,8 @@ function get_bound_constraints(pf::PowerNetwork)
         bus_idx = pf.pq[i]
         vm_max = bus[bus_idx, VMAX]
         vm_min = bus[bus_idx, VMIN]
-        x_min[i] = vm_min
-        x_max[i] = vm_max
+        x_min[i+npv+npq] = vm_min
+        x_max[i+npv+npq] = vm_max
     end
 
     for i in 1:length(pf.pv)

@@ -89,9 +89,9 @@ function get(
     # build vector x
     dimension = get(polar, NumberOfState())
     x = VT(undef, dimension)
-    x[1:npq] = vmag[polar.network.pq]
-    x[npq + 1:2*npq] = vang[polar.network.pq]
-    x[2*npq + 1:2*npq + npv] = vang[polar.network.pv]
+    x[1:npv] = vang[polar.network.pv]
+    x[npv+1:npv+npq] = vang[polar.network.pq]
+    x[npv+npq+1:end] = vmag[polar.network.pq]
 
     return x
 end
@@ -147,7 +147,7 @@ function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Buses, ::PS.VoltageMagnitude,
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     MT = polar.AT
     vmag = MT{V, 1}(undef, nbus)
-    vmag[polar.network.pq] = x[1:npq]
+    vmag[polar.network.pq] = x[npq+npv+1:end]
     vmag[polar.network.ref] = u[1:nref]
     vmag[polar.network.pv] = u[nref + npv + 1:nref + 2*npv]
     return vmag
@@ -159,8 +159,8 @@ function get(polar::PolarForm{T, IT, VT, AT}, ::PS.Buses, ::PS.VoltageAngle, x, 
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     MT = polar.AT
     vang = MT{V, 1}(undef, nbus)
-    vang[polar.network.pq] = x[npq + 1:2*npq]
-    vang[polar.network.pv] = x[2*npq + 1:2*npq + npv]
+    vang[polar.network.pq] = x[npv+1:npv+npq]
+    vang[polar.network.pv] = x[1:npv]
     vang[polar.network.ref] = p[1:nref]
     return vang
 end
@@ -253,9 +253,9 @@ function get_network_state(polar::PolarForm{T, IT, VT, AT}, x, u, p; V=Float64) 
     pinj = MT{V, 1}(undef, nbus)
     qinj = MT{V, 1}(undef, nbus)
 
-    vmag[pq] .= x[1:npq]
-    vang[pq] .= x[npq + 1:2*npq]
-    vang[pv] .= x[2*npq + 1:2*npq + npv]
+    vang[pv] .= x[1:npv]
+    vang[pq] .= x[npv+1:npv+npq]
+    vmag[pq] .= x[npv+npq+1:end]
 
     vmag[ref] .= u[1:nref]
     pinj[pv] .= u[nref + 1:nref + npv] - polar.active_load[pv]
@@ -409,11 +409,11 @@ function powerflow(
 
     # indices
     j1 = 1
-    j2 = npq
+    j2 = npv
     j3 = j2 + 1
     j4 = j2 + npq
     j5 = j4 + 1
-    j6 = j4 + npv
+    j6 = j4 + npq
 
     # form residual function directly on target device
     F = VT(undef, n_states)
@@ -439,9 +439,9 @@ function powerflow(
     Vapv = view(Va, pv)
     Vapq = view(Va, pq)
     Vmpq = view(Vm, pq)
-    dx12 = view(dx, j1:j2)
-    dx34 = view(dx, j3:j4)
-    dx56 = view(dx, j5:j6)
+    dx12 = view(dx, j5:j6) # Vmqp
+    dx34 = view(dx, j3:j4) # Vapq
+    dx56 = view(dx, j1:j2) # Vapv
 
     @timeit TIMER "Newton" while ((!converged) && (iter < maxiter))
 

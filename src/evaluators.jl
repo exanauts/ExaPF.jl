@@ -42,7 +42,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
         println("Blocks: $npartitions, Blocksize: n = ", nblock,
                 " Mbytes = ", (nblock*nblock*npartitions*8.0)/1024.0/1024.0)
         println("Partitioning...")
-        precond = Precondition.Preconditioner(J, npartitions, device)
+        precond = Precondition.Preconditioner(J, npartitions, model.device)
         println("$npartitions partitions created")
     end
     ad = ADFactory(jx, ju)

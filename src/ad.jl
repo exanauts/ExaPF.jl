@@ -44,7 +44,8 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
 
         mappv = [i + nv_m for i in pv]
         mappq = [i + nv_m for i in pq]
-        map = VI(vcat(pq, mappq, mappv))
+        # Ordering for x is (θ_pv, θ_pq, v_pq)
+        map = VI(vcat(mappv, mappq, pq))
         nmap = size(map,1)
 
         # Used for sparsity detection with randomized inputs
@@ -58,10 +59,10 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
             dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
             dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
 
-            j11 = real(dSbus_dVm[[pv; pq], pq])
-            j12 = real(dSbus_dVa[[pv; pq], [pq; pv]])
-            j21 = imag(dSbus_dVm[pq, pq])
-            j22 = imag(dSbus_dVa[pq, [pq; pv]])
+            j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
+            j12 = real(dSbus_dVm[[pv; pq], pq])
+            j21 = imag(dSbus_dVa[pq, [pv; pq]])
+            j22 = imag(dSbus_dVm[pq, pq])
 
             J = [j11 j12; j21 j22]
         end

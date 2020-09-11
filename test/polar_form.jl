@@ -21,7 +21,7 @@ const PS = PowerSystem
     tolerance = 1e-8
     pf = PS.PowerNetwork(datafile, 1)
 
-    if has_cuda_gpu()
+    if false #has_cuda_gpu()
         ITERATORS = zip([CPU(), CUDADevice()], [Array, CuArray])
     else
         ITERATORS = zip([CPU()], [Array])

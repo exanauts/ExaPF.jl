@@ -76,10 +76,10 @@ function residualJacobian(V, Ybus, pv, pq)
     dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
     dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
 
-    j11 = real(dSbus_dVm[[pv; pq], pq])
-    j12 = real(dSbus_dVa[[pv; pq], [pq; pv]])
-    j21 = imag(dSbus_dVm[pq, pq])
-    j22 = imag(dSbus_dVa[pq, [pq; pv]])
+    j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
+    j12 = real(dSbus_dVm[[pv; pq], pq])
+    j21 = imag(dSbus_dVa[pq, [pv; pq]])
+    j22 = imag(dSbus_dVm[pq, pq])
 
     J = [j11 j12; j21 j22]
 end
