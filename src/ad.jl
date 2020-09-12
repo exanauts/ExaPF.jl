@@ -183,7 +183,6 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
         # x = T{Float64}(undef, nv_m + nv_a)
         x = VT(zeros(Float64, npbus + nv_a))
-        ncolor = length(x)
         t1sx = A{t1s{ncolor}}(x)
         # t1sF = T{t1s{ncolor}}(undef, nmap)
         t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
