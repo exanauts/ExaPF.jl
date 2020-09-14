@@ -144,7 +144,7 @@ function put(
     # build vector x
     dimension = get(polar, NumberOfState())
     x = VT(undef, dimension)
-    x[1:npv] = vmag[polar.network.pv]
+    x[1:npv] = vang[polar.network.pv]
     x[npv+1:npv+npq] = vang[polar.network.pq]
     x[npv+npq+1:end] = vmag[polar.network.pq]
 
