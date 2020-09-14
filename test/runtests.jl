@@ -28,6 +28,9 @@ end
 @testset "Optimization evaluators" begin
     # Resolution of powerflow equations with NLPEvaluators
     include("powerflow.jl")
+    # Reduced gradient
+    include("reduced_gradient.jl")
+    # ReducedSpaceEvaluator API
     include("evaluators.jl")
 end
 
