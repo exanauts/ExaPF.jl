@@ -60,8 +60,8 @@ const PS = PowerSystem
             x_min, x_max = ExaPF.bounds(polar, State())
             @test isequal(u_min, [0.9, 0.1, 0.1, 0.9, 0.9])
             @test isequal(u_max, [1.1, 3.0, 2.7, 1.1, 1.1])
-            @test isequal(x_min, [0.9, 0.9, 0.9, 0.9, 0.9, 0.9])
-            @test isequal(x_max, [1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
+            @test isequal(x_min, [-Inf, -Inf, -Inf, -Inf, -Inf, -Inf, -Inf, -Inf, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])
+            @test isequal(x_max, [Inf, Inf, Inf, Inf, Inf, Inf, Inf, Inf, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
             # Test callbacks
             ## Power Balance
             g = ExaPF.power_balance(polar, xₖ, u0, p)

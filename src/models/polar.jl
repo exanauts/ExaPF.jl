@@ -336,7 +336,7 @@ function put(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u
             adj_inj = adj_pg[i]
             # inj = PS.get_power_injection(bus, vmag, vang, polar.ybus_re, polar.ybus_im)
             PS.put_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
-            
+
         else
             ipv = findfirst(isequal(bus), index_pv)
             # pg[i] = u[nref + ipv]
@@ -351,11 +351,7 @@ function put(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, x, u
 end
 
 function bounds(polar::PolarForm{T, IT, VT, AT}, ::State) where {T, IT, VT, AT}
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    fr_ = npq + npv + 1
-    to_ = 2*npq + npv
-    return polar.x_min[fr_:to_], polar.x_max[fr_:to_]
+    return polar.x_min, polar.x_max
 end
 function bounds(polar::PolarForm{T, IT, VT, AT}, ::Control) where {T, IT, VT, AT}
     return polar.u_min, polar.u_max
@@ -669,7 +665,13 @@ function state_constraint(polar::PolarForm, g, x, u, p; V=Float64)
     return
 end
 size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(state_constraint)) where {T, IT, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())
-bounds(polar::PolarForm, ::typeof(state_constraint)) = bounds(polar, State())
+function bounds(polar::PolarForm, ::typeof(state_constraint))
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    fr_ = npq + npv + 1
+    to_ = 2*npq + npv
+    return polar.x_min[fr_:to_], polar.x_max[fr_:to_]
+end
 
 # Here, the power constraints are ordered as:
 # g = [P_ref; Q_ref; Q_pv]
