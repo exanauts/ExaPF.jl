@@ -1,13 +1,13 @@
 @testset "ReducedSpaceEvaluators" begin
     if has_cuda_gpu()
-        DEVICES = [CPU(), CUDADevice()]
+        ITERATORS = zip([CPU(), CUDADevice()], [Array, CuArray])
     else
-        DEVICES = [CPU()]
+        ITERATORS = zip([CPU()], [Array])
     end
     datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
-    @testset "Test API on $device" for device in DEVICES
+    @testset "Test API on $device" for (device, M) in ITERATORS
         println("Device: $device")
         polar = PolarForm(pf, device)
         x0 = ExaPF.initial(polar, State())
@@ -17,6 +17,14 @@
         constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
         print("Constructor\t")
         nlp = @time ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+
+        # Test evaluator is well instantiated on target device
+        TNLP = typeof(nlp)
+        for (fn, ft) in zip(fieldnames(TNLP), fieldtypes(TNLP))
+            if ft <: AbstractArray{Float64, P} where P
+                @test isa(getfield(nlp, fn), M)
+            end
+        end
 
         # Test consistence
         n = ExaPF.n_variables(nlp)
@@ -43,12 +51,15 @@
 
         # Constraint
         ## Evaluation of the constraints
-        g = zeros(m)
+        cons = similar(nlp.g_min)
+        fill!(cons, 0)
         print("Constrt \t")
-        @time ExaPF.constraint!(nlp, g, u)
+        @time ExaPF.constraint!(nlp, cons, u)
         ## Evaluation of the Jacobian
         print("Jacobian\t")
-        J = @time ExaPF.jacobian!(nlp, u)
+        jac = M{Float64, 2}(undef, m, n)
+        fill!(jac, 0)
+        @time ExaPF.jacobian!(nlp, jac, u)
         # @info("j", J)
     end
 

@@ -88,20 +88,15 @@ end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     xₖ = nlp.x
-    # TODO: could we move this in the AD factory?
-    cost_x = x_ -> cost_production(nlp.model, x_, u, nlp.p; V=eltype(x_))
-    cost_u = u_ -> cost_production(nlp.model, xₖ, u_, nlp.p; V=eltype(u_))
-    fdCdx = x_ -> cost_production_adjoint(nlp.model, x_, u, nlp.p)
-    fdCdu = u_ -> cost_production_adjoint(nlp.model, xₖ, u_, nlp.p)
     ∇gₓ = nlp.ad.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
     ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, xₖ, u, nlp.p)
-    ∇fₓ = fdCdx(xₖ)[1]
-    ∇fᵤ = fdCdu(u)[2]
+    ∇fₓ, ∇fᵤ = cost_production_adjoint(nlp.model, xₖ, u, nlp.p)
     # Update adjoint
     λₖ = _adjoint(∇gₓ, ∇fₓ)
-    # compute reduced gradient
-    g .= ∇fᵤ + (∇gᵤ')*λₖ
+    # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
+    copy!(g, ∇fᵤ)
+    mul!(g, ∇gᵤ', λₖ, 1.0, 1.0)
     return nothing
 end
 
@@ -131,15 +126,12 @@ function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     end
 end
 
-function jacobian!(nlp::ReducedSpaceEvaluator, u)
+function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     ∇gᵤ = nlp.ad.Jgᵤ.J
     nₓ = length(xₖ)
-    m = n_constraints(nlp)
-    n = length(u)
     MT = nlp.model.AT
-    J = MT{eltype(u), 2}(undef, m, n)
     cnt = 1
     for cons in nlp.constraints
         mc_ = size_constraint(nlp.model, cons)
@@ -152,9 +144,8 @@ function jacobian!(nlp::ReducedSpaceEvaluator, u)
         for ix in 1:mc_
             rhs = Jₓ[ix, :]
             λ = _adjoint(∇gₓ, rhs)
-            J[cnt, :] .= Jᵤ[ix, :] + ∇gᵤ' * λ
+            jac[cnt, :] .= Jᵤ[ix, :] + ∇gᵤ' * λ
             cnt += 1
         end
     end
-    return J
 end
