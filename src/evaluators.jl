@@ -37,10 +37,12 @@ function ReducedSpaceEvaluator(model, x, u, p;
                                constraints=Function[state_constraint],
                                ε_tol=1e-12, solver="default", npartitions=2,
                                verbose_level=VERBOSE_LEVEL_NONE)
+    # First, build up a network cache
+    network_cache = NetworkState(model)
     # Initiate adjoint
     λ = similar(x)
     # Build up AD factory
-    jx, ju = init_ad_factory(model, x, u, p)
+    jx, ju = init_ad_factory(model, network_cache)
     ad = ADFactory(jx, ju)
     # Init preconditioner if needed for iterative linear algebra
     precond = Iterative.init_preconditioner(jx.J, solver, npartitions, model.device)
@@ -56,7 +58,6 @@ function ReducedSpaceEvaluator(model, x, u, p;
         append!(g_min, cb)
         append!(g_max, cu)
     end
-    network_cache = NetworkState(model)
 
     return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
@@ -73,14 +74,16 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     # Transfer x, u, p into the network cache
     transfer!(nlp.model, nlp.network_cache, nlp.x, u, nlp.p)
     # Get corresponding point on the manifold
-    xk, conv = powerflow(nlp.model, jac_x, nlp.network_cache, tol=nlp.ε_tol;
+    conv = powerflow(nlp.model, jac_x, nlp.network_cache, tol=nlp.ε_tol;
                          solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
-    copy!(nlp.x, xk)
+    get!(nlp.model, State(), nlp.x, nlp.network_cache)
+    refresh!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.network_cache)
     return conv
 end
 
 function objective(nlp::ReducedSpaceEvaluator, u)
-    cost = cost_production(nlp.model, nlp.x, u, nlp.p)
+    # cost = cost_production(nlp.model, nlp.x, u, nlp.p)
+    cost = cost_production(nlp.model, nlp.network_cache.pg)
     # TODO: determine if we should include λ' * g(x, u), even if ≈ 0
     return cost
 end

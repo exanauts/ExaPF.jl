@@ -120,9 +120,31 @@ function transfer!(polar::PolarForm, cache::NetworkState, x, u, p)
         cache.vmag[bus] = u[nref + npv + i_pv]
         i_pv += 1
     end
-
-    # for bus in pq
-    #     cache.qinj[bus] = PS.get_react_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
-    # end
 end
 
+function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::NetworkState)
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+
+    index_gen = polar.indexing.index_generators
+    index_ref = polar.indexing.index_ref
+    index_pv = polar.indexing.index_pv
+    pv_to_gen = polar.indexing.index_pv_to_gen
+    ref_to_gen = polar.indexing.index_ref_to_gen
+
+    # TODO: check the complexity of this for loop
+    for i in 1:npv
+        bus = index_pv[i]
+        i_gen = pv_to_gen[i]
+        cache.pg[i_gen] = cache.pinj[bus] + polar.active_load[bus]
+    end
+    for i in 1:nref
+        bus = index_ref[i]
+        i_gen = ref_to_gen[i]
+        inj = PS.get_power_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
+        cache.pg[i_gen] = inj + polar.active_load[bus]
+    end
+end

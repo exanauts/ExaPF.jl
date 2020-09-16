@@ -50,6 +50,20 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     idx_ref = convert(IT, PS.get(pf, PS.SlackIndexes()))
     idx_pv = convert(IT, PS.get(pf, PS.PVIndexes()))
     idx_pq = convert(IT, PS.get(pf, PS.PQIndexes()))
+    pv_to_gen = similar(idx_pv)
+    ref_to_gen = similar(idx_ref)
+    for i in 1:ngens
+        bus = idx_gen[i]
+        i_pv = findfirst(isequal(bus), idx_pv)
+        if !isnothing(i_pv)
+            pv_to_gen[i_pv] = i
+        else
+            i_ref = findfirst(isequal(bus), idx_ref)
+            if !isnothing(i_ref)
+                ref_to_gen[i_ref] = i
+            end
+        end
+    end
 
     # Bounds
     ## Get bounds on active power
@@ -73,16 +87,10 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     u_min[1:nref] .= v_min[idx_ref]
     u_max[1:nref] .= v_max[idx_ref]
     ## Bounds on p_pv
-    for i in 1:ngens
-        bus = idx_gen[i]
-        i_pv = findfirst(isequal(bus), idx_pv)
-        if !isnothing(i_pv)
-            u_min[i_pv + nref] = p_min[i]
-            u_max[i_pv + nref] = p_max[i]
-        end
-    end
+    u_min[nref+1:nref+npv] .= p_min[pv_to_gen]
+    u_max[nref+1:nref+npv] .= p_max[pv_to_gen]
 
-    indexing = IndexingCache(idx_pv, idx_pq, idx_ref, idx_gen)
+    indexing = IndexingCache(idx_pv, idx_pq, idx_ref, idx_gen, pv_to_gen, ref_to_gen)
 
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
@@ -147,6 +155,17 @@ function get(
     x[npv+npq+1:end] = vmag[polar.network.pq]
 
     return x
+end
+function get!(
+    polar::PolarForm{T, IT, VT, AT},
+    ::State, x::AbstractVector, cache::NetworkState) where {T, IT, VT, AT}
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+    # build vector x
+    x[1:npv] .= cache.vang[polar.network.pv]
+    x[npv+1:npv+npq] .= cache.vang[polar.network.pq]
+    x[npv+npq+1:end] .= cache.vmag[polar.network.pq]
 end
 
 function put(
@@ -415,33 +434,7 @@ function get_network_state(polar::PolarForm{T, IT, VT, AT}, x, u, p; V=Float64) 
     return vmag, vang, pinj, qinj
 end
 
-function get!(polar::PolarForm, cache::NetworkState)
-    ngen = PS.get(polar.network, PS.NumberOfGenerators())
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-
-    index_ref = polar.indexing.index_ref
-    index_pv = polar.indexing.index_pv
-    index_gen = polar.indexing.index_generators
-
-    MT = polar.AT
-    # TODO: check the complexity of this for loop
-    for i in 1:ngen
-        bus = index_gen[i]
-        if bus in index_ref
-            pg[i] = inj + polar.active_load[bus]
-        else
-            ipv = findfirst(isequal(bus), index_pv)
-            pg[i] = u[nref + ipv]
-        end
-    end
-
-    return pg
-end
-
-function power_balance(polar::PolarForm, x, u, p; V=Float64)
+function power_balance!(polar::PolarForm, cache::NetworkState)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -450,19 +443,17 @@ function power_balance(polar::PolarForm, x, u, p; V=Float64)
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
+    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
 
-    # Network state
-    Vm, Va, pbus, qbus = get_network_state(polar, x, u, p; V=V)
-    F = similar(x)
+    F = cache.balance
     fill!(F, 0.0)
     residualFunction_polar!(F, Vm, Va,
                             polar.ybus_re, polar.ybus_im,
                             pbus, qbus, pv, pq, nbus)
-    return F
 end
 
 # TODO: find better naming
-function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, x, u, p) where {T, IT, VT, AT}
+function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::NetworkState) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -473,8 +464,8 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, x, u, p) where {T, IT,
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     # Network state
-    Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
-    F = VT(undef, n_states)
+    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
+    F = cache.balance
     fill!(F, zero(T))
     # Build the AD Jacobian structure
     stateJacobianAD = AD.StateJacobianAD(F, Vm, Va,
@@ -631,16 +622,13 @@ function powerflow(
         end
     end
 
-    xk = get(polar, State(), Vm, Va, pbus, qbus)
-
     # Timer outputs display
     if verbose_level >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
         println("")
     end
-    reset_timer!(TIMER)
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
-    return xk, conv
+    return conv
 end
 
 # Cost function
@@ -733,35 +721,16 @@ function bounds(polar::PolarForm{T, IT, VT, AT}, ::typeof(power_constraints)) wh
     p_min, p_max = PS.bounds(polar.network, PS.Generator(), PS.ActivePower())
     q_min, q_max = PS.bounds(polar.network, PS.Generator(), PS.ReactivePower())
 
-    index_gen = PS.get(polar.network, PS.GeneratorIndexes())
-    index_pv = polar.network.pv
-    index_ref = polar.network.ref
+    index_ref = polar.indexing.index_ref
+    index_pv = polar.indexing.index_pv
+    index_gen = polar.indexing.index_generators
+    pv_to_gen = polar.indexing.index_pv_to_gen
+    ref_to_gen = polar.indexing.index_ref_to_gen
 
-    MT = polar.AT
-    pq_min = MT{T, 1}(undef, 2*nref + npv)
-    pq_max = MT{T, 1}(undef, 2*nref + npv)
-    # TODO: check the complexity of this for loop
     # Remind that the ordering is
     # g = [P_ref; Q_ref; Q_pv]
-    for i in 1:ngen
-        bus = index_gen[i]
-        # First, try to find if index bus is a slack bus
-        # (most efficient to test index_ref first, as most of the time
-        #  index_ref has length equal to 1)
-        i_ref = findfirst(isequal(bus), index_ref)
-        if !isnothing(i_ref)
-            # fill P_ref
-            pq_min[i_ref] = p_min[i]
-            pq_max[i_ref] = p_max[i]
-            # fill Q_ref
-            pq_min[i_ref + nref] = q_min[i]
-            pq_max[i_ref + nref] = q_max[i]
-        else # is a PV bus
-            i_pv = findfirst(isequal(bus), index_pv)
-            # fill Q_pv
-            pq_min[i_pv + 2*nref] = q_min[i]
-            pq_max[i_pv + 2*nref] = q_max[i]
-        end
-    end
-    return pq_min, pq_max
+    MT = polar.AT
+    pq_min = [p_min[ref_to_gen]; q_min[ref_to_gen]; q_min[pv_to_gen]]
+    pq_max = [p_max[ref_to_gen]; q_max[ref_to_gen]; q_max[pv_to_gen]]
+    return convert(MT, pq_min), convert(MT, pq_max)
 end

@@ -6,6 +6,8 @@ struct IndexingCache{IVT} <: AbstractCache
     index_pq::IVT
     index_ref::IVT
     index_generators::IVT
+    index_pv_to_gen::IVT
+    index_ref_to_gen::IVT
 end
 
 struct NetworkState{VT} <: AbstractCache

@@ -59,19 +59,18 @@ function build_callback(form, x0, u, p, constraints)
         n = length(u)
         m = ExaPF.n_constraints(nlp)
         if mode == :Structure
-            r, c = ExaPF.jacobian_structure!(nlp)
-            rows .= r
-            cols .= c
+            ExaPF.jacobian_structure!(nlp, rows, cols)
         else
             (hash_u != hash(u)) && _update(u)
-            J = ExaPF.jacobian!(nlp, u)
+            jac = zeros(m, n)
+            ExaPF.jacobian!(nlp, jac, u)
 
             # @info("j", J)
             # Copy to Ipopt's Jacobian
             k = 1
             for i in 1:m
                 for j in 1:n
-                    values[k] = J[i, j]
+                    values[k] = jac[i, j]
                     k += 1
                 end
             end
@@ -155,7 +154,7 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     Ipopt.solveProblem(prob)
     u = prob.x
     # x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=50, tol=1e-14)
-    ExaPF.PowerSystem.print_state(pf, nlp.x, u, p)
+    # ExaPF.PowerSystem.print_state(pf, nlp.x, u, p)
     # res = flow_limit(pf, x, u, p) .- [F_max; F_max]
     # println(res)
     # @info("l", maximum(res))

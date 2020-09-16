@@ -48,12 +48,24 @@ const PS = PowerSystem
             @test isa(v, M)
         end
 
+        cache  = ExaPF.NetworkState(polar)
+        @testset "NetworkState cache" begin
+            @test isa(cache.vmag, M)
+            ExaPF.transfer!(polar, cache, x0, u0, p)
+            Vm, Va, pbus, qbus = ExaPF.get_network_state(polar, x0, u0, p)
+            @test isequal(Vm, cache.vmag)
+            @test isequal(Va, cache.vang)
+            @test isequal(pbus, cache.pinj)
+            @test isequal(qbus, cache.qinj)
+        end
         @testset "Polar model API" begin
+            xₖ = copy(x0)
             # Init AD factory
-            jx, ju = ExaPF.init_ad_factory(polar, x0, u0, p)
+            jx, ju = ExaPF.init_ad_factory(polar, cache)
 
             # Test powerflow with x, u, p signature
-            xₖ, _ = @time powerflow(polar, jx, x0, u0, p, verbose_level=0, tol=tolerance)
+            conv = @time powerflow(polar, jx, cache, verbose_level=0, tol=tolerance)
+            ExaPF.get!(polar, State(), xₖ, cache)
 
             # Bounds on state and control
             u_min, u_max = ExaPF.bounds(polar, Control())
@@ -64,7 +76,8 @@ const PS = PowerSystem
             @test isequal(x_max, [Inf, Inf, Inf, Inf, Inf, Inf, Inf, Inf, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
             # Test callbacks
             ## Power Balance
-            g = ExaPF.power_balance(polar, xₖ, u0, p)
+            ExaPF.power_balance!(polar, cache)
+            g = cache.balance
             @test isa(g, M)
             # As we run powerflow before, the balance should be below tolerance
             @test norm(g, Inf) < tolerance
@@ -90,14 +103,5 @@ const PS = PowerSystem
             end
         end
 
-        # Test model with network state signature
-        @testset "Network state" begin
-            nbus = PS.get(polar.network, PS.NumberOfBuses())
-            ngen = PS.get(polar.network, PS.NumberOfGenerators())
-            network = ExaPF.NetworkState(nbus, ngen, device)
-            # network is a buffer instantiated on the target device
-            @test isa(network.vmag, M)
-            ExaPF.load!(network, x0, u0, p, polar)
-        end
     end
 end
