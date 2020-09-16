@@ -83,7 +83,7 @@ Return the bounds attached to a particular attribute.
 
     bounds(form::AbstractFormulation, attr::AbstractFormAttribute)
 
-Return the upper and lower bounds attached to a given constraint
+Return the lower and upper bounds attached to a given constraint
 functional.
 
 ## Examples
