@@ -15,6 +15,7 @@ struct NetworkState{VT} <: AbstractCache
     qinj::VT
     pg::VT
     qg::VT
+    balance::VT
 end
 
 function NetworkState(nbus, ngen, device)
@@ -30,6 +31,7 @@ function NetworkState(nbus, ngen, device)
 
     pg = VT(undef, ngen)
     qg = VT(undef, ngen)
-    return NetworkState{VT}(vmag, vang, pinj, qinj, pg, qg)
+    balance = VT(undef, 2*nbus)
+    return NetworkState{VT}(vmag, vang, pinj, qinj, pg, qg, balance)
 end
 

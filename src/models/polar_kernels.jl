@@ -66,8 +66,7 @@ end
 end
 
 function residualFunction_polar!(F, v_m, v_a,
-                                 ybus_re,
-                                 ybus_im,
+                                 ybus_re, ybus_im,
                                  pinj, qinj, pv, pq, nbus)
     npv = length(pv)
     npq = length(pq)
@@ -83,3 +82,47 @@ function residualFunction_polar!(F, v_m, v_a,
                  ndrange=npv+npq)
     wait(ev)
 end
+
+# TODO: kernalize
+function transfer!(polar::PolarForm, cache::NetworkState, x, u, p)
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+
+    i_pq = 1
+    for bus in pq
+        cache.vang[bus] = x[npv+i_pq]
+        cache.vmag[bus] = x[npv+npq+i_pq]
+        cache.pinj[bus] = p[nref + i_pq]
+        cache.qinj[bus] = p[nref + npq + i_pq]
+        i_pq += 1
+    end
+
+    i_ref = 1
+    for bus in ref
+        cache.pinj[bus] = PS.get_power_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
+        cache.qinj[bus] = PS.get_react_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
+        cache.vmag[bus] = u[i_ref]
+        cache.vang[bus] = p[i_ref]
+        i_ref += 1
+    end
+
+    i_pv = 1
+    for bus in pv
+        cache.qinj[bus] = PS.get_react_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
+        cache.vang[bus] = x[i_pv]
+        cache.pinj[bus] = u[nref + i_pv] - polar.active_load[bus]
+        cache.vmag[bus] = u[nref + npv + i_pv]
+        i_pv += 1
+    end
+
+    # for bus in pq
+    #     cache.qinj[bus] = PS.get_react_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
+    # end
+end
+

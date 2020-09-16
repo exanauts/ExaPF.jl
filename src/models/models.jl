@@ -184,7 +184,6 @@ function thermal_limit_constraints end
 
 include("caches.jl")
 # Polar formulation
-include("polar_kernels.jl")
 include("polar.jl")
 
 

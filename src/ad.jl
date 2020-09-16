@@ -301,14 +301,12 @@ end
 
 function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v_m, v_a,
                              ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, timer = nothing)
-    device = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? CPU() : CUDADevice()
     @timeit timer "Before" begin
         @timeit timer "Setup" begin
             nv_m = size(v_m, 1)
             nv_a = size(v_a, 1)
             nmap = size(arrays.map, 1)
             nthreads=256
-            nblocks=ceil(Int64, nmap/nthreads)
             n = nv_m + nv_a
         end
         @timeit timer "Arrays" begin

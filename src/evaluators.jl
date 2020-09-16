@@ -15,6 +15,7 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     model::AbstractFormulation
     x::AbstractVector{T}
     p::AbstractVector{T}
+    λ::AbstractVector{T}
 
     x_min::AbstractVector{T}
     x_max::AbstractVector{T}
@@ -25,6 +26,7 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     g_min::AbstractVector{T}
     g_max::AbstractVector{T}
 
+    network_cache::NetworkState
     ad::ADFactory
     precond::Precondition.AbstractPreconditioner
     solver::String
@@ -35,6 +37,8 @@ function ReducedSpaceEvaluator(model, x, u, p;
                                constraints=Function[state_constraint],
                                ε_tol=1e-12, solver="default", npartitions=2,
                                verbose_level=VERBOSE_LEVEL_NONE)
+    # Initiate adjoint
+    λ = similar(x)
     # Build up AD factory
     jx, ju = init_ad_factory(model, x, u, p)
     ad = ADFactory(jx, ju)
@@ -52,9 +56,11 @@ function ReducedSpaceEvaluator(model, x, u, p;
         append!(g_min, cb)
         append!(g_max, cu)
     end
+    network_cache = NetworkState(model)
 
-    return ReducedSpaceEvaluator(model, x, p, x_min, x_max, u_min, u_max,
+    return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
+                                 network_cache,
                                  ad, precond, solver, ε_tol)
 end
 
@@ -64,8 +70,10 @@ n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x
     jac_x = nlp.ad.Jgₓ
+    # Transfer x, u, p into the network cache
+    transfer!(nlp.model, nlp.network_cache, nlp.x, u, nlp.p)
     # Get corresponding point on the manifold
-    xk, conv = powerflow(nlp.model, jac_x, x₀, u, nlp.p, tol=nlp.ε_tol;
+    xk, conv = powerflow(nlp.model, jac_x, nlp.network_cache, tol=nlp.ε_tol;
                          solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
     copy!(nlp.x, xk)
     return conv
@@ -78,22 +86,24 @@ function objective(nlp::ReducedSpaceEvaluator, u)
 end
 
 # Private function to compute adjoint (should be inlined)
-_adjoint(J, y) = - J' \ y
-function _adjoint(J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
+function _adjoint(λ, J, y)
+    λ .= - J' \ y
+end
+function _adjoint(λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
     # TODO: we SHOULD find a most efficient implementation
     Jt = CuArray(J') |> sparse
-    λk = similar(y)
-    return CUSOLVER.csrlsvqr!(Jt, -y, λk, 1e-8, one(Cint), 'O')
+    return CUSOLVER.csrlsvqr!(Jt, -y, λ, 1e-8, one(Cint), 'O')
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
-    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, xₖ, u, nlp.p)
+    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, nlp.network_cache)
     ∇fₓ, ∇fᵤ = cost_production_adjoint(nlp.model, xₖ, u, nlp.p)
     # Update adjoint
-    λₖ = _adjoint(∇gₓ, ∇fₓ)
+    λₖ = nlp.λ
+    _adjoint(λₖ, ∇gₓ, ∇fₓ)
     # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
     copy!(g, ∇fᵤ)
     mul!(g, ∇gᵤ', λₖ, 1.0, 1.0)
@@ -133,6 +143,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     nₓ = length(xₖ)
     MT = nlp.model.AT
     cnt = 1
+    λ = nlp.λ
     for cons in nlp.constraints
         mc_ = size_constraint(nlp.model, cons)
         g = MT{eltype(u), 1}(undef, mc_)
@@ -143,7 +154,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
         Jᵤ = ForwardDiff.jacobian(cons_u, g, u)
         for ix in 1:mc_
             rhs = Jₓ[ix, :]
-            λ = _adjoint(∇gₓ, rhs)
+            _adjoint(λ, ∇gₓ, rhs)
             jac[cnt, :] .= Jᵤ[ix, :] + ∇gᵤ' * λ
             cnt += 1
         end

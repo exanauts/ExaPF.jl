@@ -19,15 +19,17 @@ struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     AT::Type
 end
 
+include("polar_kernels.jl")
+
 function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     if isa(device, CPU)
         IT = Vector{Int}
-        VT = Vector
+        VT = Vector{Float64}
         M = SparseMatrixCSC
         AT = Array
     elseif isa(device, CUDADevice)
         IT = CuArray{Int64, 1, Nothing}
-        VT = CuVector
+        VT = CuVector{Float64, Nothing}
         M = CuSparseMatrixCSR
         AT = CuArray
     end
@@ -37,17 +39,17 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     nref = PS.get(pf, PS.NumberOfSlackBuses())
     ngens = PS.get(pf, PS.NumberOfGenerators())
 
-    ybus_re, ybus_im = Spmat{IT, VT{Float64}}(pf.Ybus)
+    ybus_re, ybus_im = Spmat{IT, VT}(pf.Ybus)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
     # Move load to the target device
     pload , qload = real.(pf.sload), imag.(pf.sload)
 
     # Move the indexing to the target device
-    idx_gen = convert(VT{Int}, PS.get(pf, PS.GeneratorIndexes()))
-    idx_ref = convert(VT{Int}, PS.get(pf, PS.SlackIndexes()))
-    idx_pv = convert(VT{Int}, PS.get(pf, PS.PVIndexes()))
-    idx_pq = convert(VT{Int}, PS.get(pf, PS.PQIndexes()))
+    idx_gen = convert(IT, PS.get(pf, PS.GeneratorIndexes()))
+    idx_ref = convert(IT, PS.get(pf, PS.SlackIndexes()))
+    idx_pv = convert(IT, PS.get(pf, PS.PVIndexes()))
+    idx_pq = convert(IT, PS.get(pf, PS.PQIndexes()))
 
     # Bounds
     ## Get bounds on active power
@@ -82,7 +84,7 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
 
     indexing = IndexingCache(idx_pv, idx_pq, idx_ref, idx_gen)
 
-    return PolarForm{Float64, IT, VT{Float64}, AT{Float64,  2}}(
+    return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
         x_min, x_max, u_min, u_max,
         coefs, pload, qload,
@@ -109,6 +111,21 @@ function initial(form::PolarForm{T, IT, VT, AT}, v::AbstractVariable) where {T, 
     vmag = abs.(form.network.vbus) |> VT
     vang = angle.(form.network.vbus) |> VT
     return get(form, v, vmag, vang, pbus, qbus)
+end
+
+function NetworkState(form::PolarForm{T, IT, VT, AT}) where {T, IT, VT, AT}
+    pbus = real.(form.network.sbus) |> VT
+    qbus = imag.(form.network.sbus) |> VT
+    vmag = abs.(form.network.vbus) |> VT
+    vang = angle.(form.network.vbus) |> VT
+    ngen = PS.get(form.network, PS.NumberOfGenerators())
+    pg = VT(undef, ngen)
+    qg = VT(undef, ngen)
+
+    npv = PS.get(form.network, PS.NumberOfPVBuses())
+    npq = PS.get(form.network, PS.NumberOfPQBuses())
+    balance = VT(undef, 2*npq+npv)
+    return NetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance)
 end
 
 function get(
@@ -398,36 +415,30 @@ function get_network_state(polar::PolarForm{T, IT, VT, AT}, x, u, p; V=Float64) 
     return vmag, vang, pinj, qinj
 end
 
-function load!(network::NetworkState, x, u, p, polar::PolarForm{T, IT, VT, AT}) where {T, IT, VT, AT}
+function get!(polar::PolarForm, cache::NetworkState)
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
 
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
+    index_ref = polar.indexing.index_ref
+    index_pv = polar.indexing.index_pv
+    index_gen = polar.indexing.index_generators
 
-    network.vmag[pq] .= x[1:npq]
-    network.vang[pq] .= x[npq + 1:2*npq]
-    network.vang[pv] .= x[2*npq + 1:2*npq + npv]
-
-    network.vmag[ref] .= u[1:nref]
-    network.pinj[pv] .= u[nref + 1:nref + npv] - polar.active_load[pv]
-    network.vmag[pv] .= u[nref + npv + 1:nref + 2*npv]
-
-    network.vang[ref] .= p[1:nref]
-    network.pinj[pq] .= p[nref + 1:nref + npq]
-    network.qinj[pq] .= p[nref + npq + 1:nref + 2*npq]
-
-    for bus in ref
-        network.pinj[bus] = PS.get_power_injection(bus, network.vmag, network.vang, polar.ybus_re, polar.ybus_im)
-        network.qinj[bus] = PS.get_react_injection(bus, network.vmag, network.vang, polar.ybus_re, polar.ybus_im)
+    MT = polar.AT
+    # TODO: check the complexity of this for loop
+    for i in 1:ngen
+        bus = index_gen[i]
+        if bus in index_ref
+            pg[i] = inj + polar.active_load[bus]
+        else
+            ipv = findfirst(isequal(bus), index_pv)
+            pg[i] = u[nref + ipv]
+        end
     end
 
-    for bus in pv
-        network.qinj[bus] = PS.get_react_injection(bus, network.vmag, network.vang, polar.ybus_re, polar.ybus_im)
-    end
+    return pg
 end
 
 function power_balance(polar::PolarForm, x, u, p; V=Float64)
@@ -473,7 +484,7 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, x, u, p) where {T, IT,
     return stateJacobianAD, designJacobianAD
 end
 
-function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, x, u, p)
+function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, cache::NetworkState)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     # Indexing
@@ -481,7 +492,7 @@ function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, x, u, p)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     # Network state
-    Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
+    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
     AD.residualJacobianAD!(jac, residualFunction_polar!, Vm, Va,
                            polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     return jac.J
@@ -496,7 +507,8 @@ function powerflow(
     kwargs...
 ) where {T, IT, VT, AT}
     Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
-    network = NetworkState{VT}(Vm, Va, pbus, qbus, VT(undef, 0), VT(undef, 0))
+    n_state = get(polar, NumberOfState())
+    network = NetworkState{VT}(Vm, Va, pbus, qbus, VT(undef, 0), VT(undef, 0), VT(undef, n_state))
     return powerflow(polar, jacobian, network; kwargs...)
 end
 
@@ -537,7 +549,7 @@ function powerflow(
     j6 = j4 + npq
 
     # form residual function directly on target device
-    F = VT(undef, n_states)
+    F = network.balance
     dx = similar(F)
     fill!(F, zero(T))
     fill!(dx, zero(T))
@@ -632,14 +644,17 @@ function powerflow(
 end
 
 # Cost function
-function cost_production(polar::PolarForm, x, u, p; V=Float64)
+function cost_production(polar::PolarForm, x, u, p)
     # TODO: this getter is particularly inefficient on GPU
-    power_generations = get(polar, PS.Generator(), PS.ActivePower(), x, u, p; V=V)
+    power_generations = get(polar, PS.Generator(), PS.ActivePower(), x, u, p)
+    return cost_production(polar, power_generations)
+end
+function cost_production(polar::PolarForm, pg)
     c0 = polar.costs_coefficients[:, 2]
     c1 = polar.costs_coefficients[:, 3]
     c2 = polar.costs_coefficients[:, 4]
     # Return quadratic cost
-    cost = sum(c0 .+ c1 .* power_generations + c2 .* power_generations.^2)
+    cost = sum(c0 .+ c1 .* pg + c2 .* pg.^2)
     return cost
 end
 
