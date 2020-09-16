@@ -638,11 +638,13 @@ function cost_production(polar::PolarForm, x, u, p)
     return cost_production(polar, power_generations)
 end
 function cost_production(polar::PolarForm, pg)
-    c0 = polar.costs_coefficients[:, 2]
-    c1 = polar.costs_coefficients[:, 3]
-    c2 = polar.costs_coefficients[:, 4]
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    coefs = polar.costs_coefficients
     # Return quadratic cost
-    cost = sum(c0 .+ c1 .* pg + c2 .* pg.^2)
+    cost = 0
+    @inbounds for i in 1:ngen
+        cost += coefs[i, 2] + coefs[i, 3] * pg[i] + coefs[i, 4] * pg[i]^2
+    end
     return cost
 end
 
