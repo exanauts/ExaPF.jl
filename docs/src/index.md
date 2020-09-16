@@ -10,6 +10,6 @@ TODO
 ## Table of contents
 
 ```@contents
-Pages = ["powersystem.md", "formulations.md"]
+Pages = ["powersystem.md", "formulations.md", "evaluators.md"]
 Depth = 3
 ```

@@ -33,7 +33,6 @@ initial
 
 ```
 
-
 ### Powerflow solver
 
 ```@docs
@@ -57,6 +56,9 @@ bounds
 
 ### Costs
 
+```@docs
+cost_production
+```
 
 ### Attributes
 

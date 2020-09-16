@@ -11,6 +11,7 @@ makedocs(
         "Introduction" => "index.md",
         "PowerSystem" => "powersystem.md",
         "Formulations" => "formulations.md",
+        "Evaluators" => "evaluators.md",
     ]
 )
 
