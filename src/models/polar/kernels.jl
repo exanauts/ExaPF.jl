@@ -32,6 +32,22 @@ function residualJacobian(V, Ybus, pv, pq)
     J = [j11 j12; j21 j22]
 end
 
+function _sparsity_pattern(polar::PolarForm)
+    pf = polar.network
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    n = PS.get(pf, PS.NumberOfBuses())
+
+    Y = pf.Ybus
+    # Randomized inputs
+    Vre = rand(n)
+    Vim = rand(n)
+    V = Vre .+ 1im .* Vim
+    J = residualJacobian(V, Y, pv, pq)
+    return findnz(J)
+end
+
 @kernel function residual_kernel!(F, @Const(v_m), @Const(v_a),
                                   @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
                                   @Const(ybus_im_nzval), @Const(ybus_im_colptr), @Const(ybus_im_rowval),
