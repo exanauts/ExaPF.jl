@@ -184,7 +184,7 @@ function thermal_limit_constraints end
 
 include("caches.jl")
 # Polar formulation
-include("polar.jl")
+include("polar/polar.jl")
 
 
 Base.show(model::AbstractFormulation, x, u, p) = Base.show(stdout, model, x, u, p)

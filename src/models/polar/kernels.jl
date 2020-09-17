@@ -122,6 +122,7 @@ function transfer!(polar::PolarForm, cache::NetworkState, x, u, p)
     end
 end
 
+# TODO: kernalize
 function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::NetworkState)
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
