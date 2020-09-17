@@ -12,6 +12,8 @@ using ..ExaPF: Spmat
 
 import Base: show
 
+abstract type AbstractADFramework end
+abstract type AbstractObjectiveAD <: AbstractADFramework end
 abstract type AbstractJacobianAD end
 
 struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianAD
@@ -398,6 +400,14 @@ end
 function Base.show(io::IO, ad::AbstractJacobianAD)
     ncolor = size(unique(ad.coloring), 1)
     print(io, "Number of Jacobian colors: ", ncolor)
+end
+
+struct ObjectiveAD{VT}
+    ∇fₓ::VT
+    ∇fᵤ::VT
+    ∂pg::VT
+    ∂vm::VT
+    ∂va::VT
 end
 
 end

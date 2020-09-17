@@ -7,6 +7,7 @@ abstract type AbstractADFactory end
 struct ADFactory <: AbstractADFactory
     Jgₓ::AD.StateJacobianAD
     Jgᵤ::AD.DesignJacobianAD
+    ∇f::AD.ObjectiveAD
 end
 
 abstract type AbstractNLPEvaluator end
@@ -42,8 +43,8 @@ function ReducedSpaceEvaluator(model, x, u, p;
     # Initiate adjoint
     λ = similar(x)
     # Build up AD factory
-    jx, ju = init_ad_factory(model, network_cache)
-    ad = ADFactory(jx, ju)
+    jx, ju, adjoint_f = init_ad_factory(model, network_cache)
+    ad = ADFactory(jx, ju, adjoint_f)
     # Init preconditioner if needed for iterative linear algebra
     precond = Iterative.init_preconditioner(jx.J, solver, npartitions, model.device)
 
@@ -90,12 +91,12 @@ end
 
 # Private function to compute adjoint (should be inlined)
 function _adjoint(λ, J, y)
-    λ .= - J' \ y
+    λ .= J' \ y
 end
 function _adjoint(λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
     # TODO: we SHOULD find a most efficient implementation
-    Jt = CuArray(J') |> sparse
-    return CUSOLVER.csrlsvqr!(Jt, -y, λ, 1e-8, one(Cint), 'O')
+    CUDA.@time Jt = CuArray(J') |> sparse
+    return CUSOLVER.csrlsvqr!(J, y, λ, 1e-8, one(Cint), 'O')
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
@@ -104,13 +105,16 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     ∇gₓ = nlp.ad.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
     ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, cache)
-    ∇fₓ, ∇fᵤ = cost_production_adjoint(nlp.model, cache)
-    # Update adjoint
-    λₖ = nlp.λ
-    _adjoint(λₖ, ∇gₓ, ∇fₓ)
+    cost_production_adjoint(nlp.model, nlp.ad.∇f, cache)
+
+    ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ
+    # Update (negative) adjoint
+    λₖ_neg = nlp.λ
+    _adjoint(λₖ_neg, ∇gₓ, ∇fₓ)
     # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
+    # equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
     copy!(g, ∇fᵤ)
-    mul!(g, ∇gᵤ', λₖ, 1.0, 1.0)
+    mul!(g, ∇gᵤ', λₖ_neg, -1.0, 1.0)
     return nothing
 end
 
@@ -159,7 +163,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
         for ix in 1:mc_
             rhs = Jₓ[ix, :]
             _adjoint(λ, ∇gₓ, rhs)
-            jac[cnt, :] .= Jᵤ[ix, :] + ∇gᵤ' * λ
+            jac[cnt, :] .= Jᵤ[ix, :] - ∇gᵤ' * λ
             cnt += 1
         end
     end

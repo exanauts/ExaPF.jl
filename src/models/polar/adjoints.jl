@@ -1,7 +1,8 @@
 
-function put(
+function put!(
     polar::PolarForm{T, IT, VT, AT},
     ::State,
+    ∂x::VT,
     vmag::VT,
     vang::VT,
 ) where {T, IT, VT, AT}
@@ -9,18 +10,19 @@ function put(
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     # build vector x
-    dimension = get(polar, NumberOfState())
-    x = VT(undef, dimension)
-    x[1:npv] = vang[polar.network.pv]
-    x[npv+1:npv+npq] = vang[polar.network.pq]
-    x[npv+npq+1:end] = vmag[polar.network.pq]
-
-    return x
+    for (i, p) in enumerate(polar.network.pv)
+        ∂x[i] = vang[p]
+    end
+    for (i, p) in enumerate(polar.network.pq)
+        ∂x[npv+i] = vang[p]
+        ∂x[npv+npq+i] = vmag[p]
+    end
 end
 
-function put(
+function put!(
     polar::PolarForm{T, IT, VT, AT},
     ::Control,
+    ∂u::VT,
     vmag::VT,
     pbus::VT,
 ) where {T, IT, VT, AT}
@@ -29,17 +31,16 @@ function put(
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     pload = polar.active_load
     # build vector u
-    dimension = get(polar, NumberOfControl())
-    u = VT(undef, dimension)
-    u[1:nref] = vmag[polar.network.ref]
-    # u is equal to active power of generator (Pᵍ)
-    # As P = Pᵍ - Pˡ , we get
-    u[nref + 1:nref + npv] .= 0.0
-    u[nref + npv + 1:nref + 2*npv] = vmag[polar.network.pv]
-    return u
+    for (i, p) in enumerate(polar.network.ref)
+        ∂u[i] = vmag[p]
+    end
+    for (i, p) in enumerate(polar.network.pv)
+        ∂u[nref + i] = 0.0
+        ∂u[nref + npv + i] = vmag[p]
+    end
 end
 
-function put(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, cache, adj_pg) where {T, VT, AT}
+function put(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, obj_ad, cache) where {T, VT, AT}
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -49,45 +50,49 @@ function put(polar::PolarForm{T, VT, AT}, ::PS.Generator, ::PS.ActivePower, cach
     index_gen = PS.get(polar.network, PS.GeneratorIndexes())
     index_pv = polar.network.pv
     index_ref = polar.network.ref
+    pv_to_gen = polar.indexing.index_pv_to_gen
+    ref_to_gen = polar.indexing.index_ref_to_gen
 
     # Get voltages. This is only needed to get the size of adjvmag and adjvang
     vmag = cache.vmag
     vang = cache.vang
 
-    adj_vmag = similar(vmag)
-    adj_vang = similar(vang)
+    adj_pg = obj_ad.∂pg
+    adj_x = obj_ad.∇fₓ
+    adj_u = obj_ad.∇fᵤ
+    adj_vmag = obj_ad.∂vm
+    adj_vang = obj_ad.∂va
     fill!(adj_vmag, 0.0)
     fill!(adj_vang, 0.0)
+    fill!(adj_x, 0.0)
+    fill!(adj_u, 0.0)
 
-    adj_u_tmp = polar.AT{Float64, 1}(undef, get(polar, NumberOfControl()))
-    fill!(adj_u_tmp, 0.0)
-
-    for i in 1:ngen
-        bus = index_gen[i]
-        if bus in index_ref
-            # pg[i] = inj + polar.active_load[bus]
-            adj_inj = adj_pg[i]
-            PS.put_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
-        else
-            ipv = findfirst(isequal(bus), index_pv)
-            # pg[i] = u[nref + ipv]
-            adj_u_tmp[nref + ipv] += adj_pg[i]
-        end
+    for i in 1:nref
+        bus = index_ref[i]
+        i_gen = ref_to_gen[i]
+        # pg[i] = inj + polar.active_load[bus]
+        adj_inj = adj_pg[i_gen]
+        PS.put_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
     end
-    adj_u = put(polar, Control(), adj_vmag, adj_vang)
-    adj_x = put(polar, State(), adj_vmag, adj_vang)
-    adj_u .+= adj_u_tmp
+    put!(polar, Control(), adj_u, adj_vmag, adj_vang)
+    put!(polar, State(), adj_x, adj_vmag, adj_vang)
+    for i in 1:npv
+        bus = index_pv[i]
+        i_gen = pv_to_gen[i]
+        # pg[i] = u[nref + ipv]
+        adj_u[nref + i] += adj_pg[i_gen]
+    end
 
-    return adj_x, adj_u
+    return
 end
 
-function cost_production_adjoint(polar::PolarForm, cache::NetworkState)
+function cost_production_adjoint(polar::PolarForm, obj_ad::AD.ObjectiveAD, cache::NetworkState)
     pg = cache.pg
-    c1 = polar.costs_coefficients[:, 3]
-    c2 = polar.costs_coefficients[:, 4]
+    coefs = polar.costs_coefficients
     # Return adjoint of quadratic cost
-    adj_power_generations = c1 .+ 2.0 * c2 .* pg
-    adj_x, adj_u = put(polar, PS.Generator(), PS.ActivePower(), cache, adj_power_generations)
-    return adj_x, adj_u
+    @inbounds for i in eachindex(pg)
+        obj_ad.∂pg[i] = coefs[i, 3] + 2.0 * coefs[i, 4] * pg[i]
+    end
+    put(polar, PS.Generator(), PS.ActivePower(), obj_ad, cache)
 end
 

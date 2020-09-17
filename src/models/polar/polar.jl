@@ -378,7 +378,8 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::NetworkState) w
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    n_states = get(polar, NumberOfState())
+    nₓ = get(polar, NumberOfState())
+    nᵤ = get(polar, NumberOfControl())
     # Indexing
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -392,7 +393,15 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::NetworkState) w
                                          polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus)
     designJacobianAD = AD.DesignJacobianAD(F, Vm, Va,
                                            polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus)
-    return stateJacobianAD, designJacobianAD
+
+
+    ∇fₓ = VT(undef, nₓ)
+    ∇fᵤ = VT(undef, nᵤ)
+    adjoint_pg = similar(cache.pg)
+    adjoint_vm = similar(Vm)
+    adjoint_va = similar(Va)
+    objectiveAD = AD.ObjectiveAD(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va)
+    return stateJacobianAD, designJacobianAD, objectiveAD
 end
 
 function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, cache::NetworkState)
