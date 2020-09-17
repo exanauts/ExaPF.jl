@@ -133,7 +133,8 @@ function NetworkState(form::PolarForm{T, IT, VT, AT}) where {T, IT, VT, AT}
     npv = PS.get(form.network, PS.NumberOfPVBuses())
     npq = PS.get(form.network, PS.NumberOfPQBuses())
     balance = VT(undef, 2*npq+npv)
-    return NetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance)
+    dx = VT(undef, 2*npq+npv)
+    return NetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx)
 end
 
 function get(
@@ -162,10 +163,14 @@ function get!(
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    # build vector x
-    x[1:npv] .= cache.vang[polar.network.pv]
-    x[npv+1:npv+npq] .= cache.vang[polar.network.pq]
-    x[npv+npq+1:end] .= cache.vmag[polar.network.pq]
+    # Copy the vector explicitly to avoid memory allocation
+    for (i, p) in enumerate(polar.network.pv)
+        x[i] = cache.vang[p]
+    end
+    for (i, p) in enumerate(polar.network.pq)
+        x[npv+i] = cache.vang[p]
+        x[npv+npq+i] = cache.vmag[p]
+    end
 end
 
 function put(
@@ -499,14 +504,16 @@ function powerflow(
 ) where {T, IT, VT, AT}
     Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
     n_state = get(polar, NumberOfState())
-    network = NetworkState{VT}(Vm, Va, pbus, qbus, VT(undef, 0), VT(undef, 0), VT(undef, n_state))
+    network = NetworkState{VT}(
+        Vm, Va, pbus, qbus, VT(undef, 0), VT(undef, 0), VT(undef, n_state), VT(undef, n_state)
+    )
     return powerflow(polar, jacobian, network; kwargs...)
 end
 
 function powerflow(
     polar::PolarForm{T, IT, VT, AT},
     jacobian::AD.StateJacobianAD,
-    network::NetworkState{VT};
+    cache::NetworkState{VT};
     npartitions=2,
     solver="default",
     preconditioner=Precondition.NoPreconditioner(),
@@ -515,7 +522,7 @@ function powerflow(
     verbose_level=0,
 ) where {T, IT, VT, AT}
     # Retrieve parameter and initial voltage guess
-    Vm, Va, pbus, qbus = network.vmag, network.vang, network.pinj, network.qinj
+    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
 
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
@@ -540,8 +547,8 @@ function powerflow(
     j6 = j4 + npq
 
     # form residual function directly on target device
-    F = network.balance
-    dx = similar(F)
+    F = cache.balance
+    dx = cache.dx
     fill!(F, zero(T))
     fill!(dx, zero(T))
 
@@ -580,20 +587,19 @@ function powerflow(
         # Find descent direction
         n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)
         push!(linsol_iters, n_iters)
-        # Sometimes it is better to move backward
-        dx .= -dx
 
         # update voltage
         @timeit TIMER "Update voltage" begin
+            # Sometimes it is better to move backward
             if (npv != 0)
                 # Va[pv] .= Va[pv] .+ dx[j5:j6]
-                Vapv .= Vapv .+ dx56
+                Vapv .= Vapv .- dx56
             end
             if (npq != 0)
                 # Vm[pq] .= Vm[pq] .+ dx[j1:j2]
-                Vmpq .= Vmpq .+ dx12
+                Vmpq .= Vmpq .- dx12
                 # Va[pq] .= Va[pq] .+ dx[j3:j4]
-                Vapq .= Vapq .+ dx34
+                Vapq .= Vapq .- dx34
             end
         end
 
