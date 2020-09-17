@@ -99,11 +99,12 @@ function _adjoint(λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
+    cache = nlp.network_cache
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
-    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, nlp.network_cache)
-    ∇fₓ, ∇fᵤ = cost_production_adjoint(nlp.model, xₖ, u, nlp.p)
+    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, cache)
+    ∇fₓ, ∇fᵤ = cost_production_adjoint(nlp.model, cache)
     # Update adjoint
     λₖ = nlp.λ
     _adjoint(λₖ, ∇gₓ, ∇fₓ)
