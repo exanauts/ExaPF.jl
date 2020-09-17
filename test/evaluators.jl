@@ -38,23 +38,23 @@
         u = u0
         # Update nlp to stay on manifold
         print("Update   \t")
-        CUDA.@time ExaPF.update!(nlp, u)
+        @time ExaPF.update!(nlp, u)
         # Compute objective
         print("Objective\t")
-        c = CUDA.@time ExaPF.objective(nlp, u)
+        c = @time ExaPF.objective(nlp, u)
         @test isa(c, Real)
         # Compute gradient of objective
         g = similar(u)
         fill!(g, 0)
         print("Gradient \t")
-        CUDA.@time ExaPF.gradient!(nlp, g, u)
+        @time ExaPF.gradient!(nlp, g, u)
 
         # Constraint
         ## Evaluation of the constraints
         cons = similar(nlp.g_min)
         fill!(cons, 0)
         print("Constrt \t")
-        CUDA.@time ExaPF.constraint!(nlp, cons, u)
+        @time ExaPF.constraint!(nlp, cons, u)
         ## Evaluation of the Jacobian
         # print("Jacobian\t")
         jac = M{Float64, 2}(undef, m, n)

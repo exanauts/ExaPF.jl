@@ -64,7 +64,7 @@ const PS = PowerSystem
             jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
 
             # Test powerflow with cache signature
-            conv = CUDA.@time powerflow(polar, jx, cache, tol=tolerance)
+            conv = @time powerflow(polar, jx, cache, tol=tolerance)
             ExaPF.get!(polar, State(), xₖ, cache)
             # Refresh active power of generators in cache
             ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
