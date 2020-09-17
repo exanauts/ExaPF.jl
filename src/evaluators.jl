@@ -54,6 +54,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
         ind_rows = convert(CuVector{Cint}, ind_rows)
         ind_cols = convert(CuVector{Cint}, ind_cols)
         nzvals = convert(CuVector{Float64}, nzvals)
+        # Get transpose of Jacobian
         Jt = CuSparseMatrixCSR(sparse(ind_cols, ind_rows, nzvals))
         ad = ADFactory(jx, ju, adjoint_f, Jt)
     else
@@ -91,13 +92,15 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.network_cache, tol=nlp.ε_tol;
                          solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
+    # Update value of nlp.x with new network state
     get!(nlp.model, State(), nlp.x, nlp.network_cache)
+    # Refresh value of the active power of the generators
     refresh!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.network_cache)
     return conv
 end
 
 function objective(nlp::ReducedSpaceEvaluator, u)
-    # cost = cost_production(nlp.model, nlp.x, u, nlp.p)
+    # Take as input the current cache, updated previously in `update!`.
     cost = cost_production(nlp.model, nlp.network_cache.pg)
     # TODO: determine if we should include λ' * g(x, u), even if ≈ 0
     return cost
@@ -116,10 +119,11 @@ end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
 # equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
-function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ)
+# (take λₖ_neg to avoid computing an intermediate array)
+function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
     copy!(g, ∇fᵤ)
     # TODO: For some reason, this operation is slow on the GPU
-    mul!(g, transpose(∇gᵤ), λₖ, -1.0, 1.0)
+    mul!(g, transpose(∇gᵤ), λₖ_neg, -1.0, 1.0)
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
@@ -128,6 +132,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     ∇gₓ = nlp.ad.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
     ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, cache)
+    # Evaluate adjoint of cost function and update inplace ObjectiveAD
     cost_production_adjoint(nlp.model, nlp.ad.∇f, cache)
 
     ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ

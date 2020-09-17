@@ -65,6 +65,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
         iter += 1
     end
+    @test iter == 79
     show(nlp.model, nlp.x, uk, p)
 
 end

@@ -20,52 +20,39 @@ const PS = PowerSystem
         pf = PS.PowerNetwork(datafile, 1)
 
         polar = PolarForm(pf, CPU())
+        cache = ExaPF.NetworkState(polar)
 
-        x0 = ExaPF.initial(polar, State())
-        u0 = ExaPF.initial(polar, Control())
+        xk = ExaPF.initial(polar, State())
+        u = ExaPF.initial(polar, Control())
         p = ExaPF.initial(polar, Parameters())
 
-        jx, ju = ExaPF.init_ad_factory(polar, x0, u0, p)
+        jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
 
         # solve power flow
-        xk, conv = powerflow(polar, jx, x0, u0, p, tol=1e-12)
+        conv = powerflow(polar, jx, cache, tol=1e-12)
+        ExaPF.get!(polar, State(), xk, cache)
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
-        ∇gᵤ = ExaPF.jacobian(polar, ju, xk, u0, p)
-        # Test Jacobian wrt x
-        ∇gᵥ = ExaPF.jacobian(polar, jx, xk, u0, p)
+        ∇gᵤ = ExaPF.jacobian(polar, ju, cache)
+        # test jacobian wrt x
+        ∇gᵥ = ExaPF.jacobian(polar, jx, cache)
         @test isapprox(∇gₓ, ∇gᵥ)
 
-        function residualFunction_x!(vecx)
-            nx = ExaPF.get(polar, NumberOfState())
-            nu = ExaPF.get(polar, NumberOfControl())
-            x_ = Vector{eltype(vecx)}(undef, nx)
-            u_ = Vector{eltype(vecx)}(undef, nu)
-            x_ .= vecx[1:length(x)]
-            u_ .= vecx[length(x)+1:end]
-            g = ExaPF.power_balance(polar, x_, u_, p; V=eltype(x_))
-            return g
-        end
-
-        x, u = xk, u0
-        vecx = Vector{Float64}(undef, length(x) + length(u))
-        vecx[1:length(x)] .= x
-        vecx[length(x)+1:end] .= u
-        fjac = vecx -> ForwardDiff.jacobian(residualFunction_x!, vecx)
-        jac = fjac(vecx)
-        jacx = sparse(jac[:,1:length(x)])
-        jacu = sparse(jac[:,length(x)+1:end])
-        @test isapprox(∇gₓ, jacx, rtol=1e-5)
-        @test isapprox(∇gᵤ, jacu, rtol=1e-5)
+        # Test with Matpower's Jacobian
+        V = cache.vmag .* exp.(im * cache.vang)
+        Ybus = pf.Ybus
+        J = ExaPF.residualJacobian(V, Ybus, pf.pv, pf.pq)
+        @test isapprox(∇gₓ, J)
 
         # Test gradients
         @testset "Reduced gradient" begin
+            # Refresh cache with new values of vmag and vang
+            ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
-            cost_x = x_ -> ExaPF.cost_production(polar, x_, uk, p; V=eltype(x_))
-            cost_u = u_ -> ExaPF.cost_production(polar, xk, u_, p; V=eltype(u_))
-            ∇fₓ = ForwardDiff.gradient(cost_x, xk)
-            ∇fᵤ = ForwardDiff.gradient(cost_u, uk)
+            ExaPF.cost_production_adjoint(polar, ∂obj, cache)
+            ∇fₓ = ∂obj.∇fₓ
+            ∇fᵤ = ∂obj.∇fᵤ
 
             ## ADJOINT
             # lamba calculation
@@ -79,8 +66,10 @@ const PS = PowerSystem
             # Compare with finite difference
             function reduced_cost(u_)
                 # Ensure we remain in the manifold
-                x_, convergence = powerflow(polar, jx, xk, u_, p, tol=1e-14)
-                return ExaPF.cost_production(polar, x_, u_, p)
+                ExaPF.transfer!(polar, cache, xk, u_, p)
+                convergence = powerflow(polar, jx, cache, tol=1e-14)
+                ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
+                return ExaPF.cost_production(polar, cache.pg)
             end
 
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, uk)

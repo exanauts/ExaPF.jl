@@ -4,7 +4,7 @@
     else
         ITERATORS = zip([CPU()], [Array])
     end
-    datafile = joinpath(dirname(@__FILE__), "data", "case300.m")
+    datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     @testset "Test API on $device" for (device, M) in ITERATORS

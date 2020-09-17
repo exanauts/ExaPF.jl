@@ -24,11 +24,10 @@ import ExaPF: PowerSystem
         uk = ExaPF.initial(polar, Control())
         p = ExaPF.initial(polar, Parameters())
 
-        # BROKEN: Disable iterative solvers for the time being
         @testset "[CPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(device)
             xk = copy(x0)
             nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p;
-                                                    ε_tol=tolerance, solver="$precond", npartitions=npartitions)
+                                              ε_tol=tolerance, solver="$precond", npartitions=npartitions)
             convergence = @time ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
             @test convergence.has_converged
             @test convergence.norm_residuals < tolerance

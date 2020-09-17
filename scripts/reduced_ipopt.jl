@@ -148,7 +148,7 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     end
     # addOption(prob, "accept_after_max_steps", 10)
     addOption(prob, "tol", 1e-2)
-    # addOption(prob, "derivative_test", "first-order")
+    addOption(prob, "derivative_test", "first-order")
     Ipopt.setIntermediateCallback(prob, intermediate)
 
     Ipopt.solveProblem(prob)

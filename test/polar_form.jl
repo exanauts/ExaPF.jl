@@ -48,7 +48,7 @@ const PS = PowerSystem
             @test isa(v, M)
         end
 
-        cache  = ExaPF.NetworkState(polar)
+        cache = ExaPF.NetworkState(polar)
         @testset "NetworkState cache" begin
             @test isa(cache.vmag, M)
             ExaPF.transfer!(polar, cache, x0, u0, p)
@@ -61,19 +61,23 @@ const PS = PowerSystem
         @testset "Polar model API" begin
             xₖ = copy(x0)
             # Init AD factory
-            jx, ju = ExaPF.init_ad_factory(polar, cache)
+            jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
 
-            # Test powerflow with x, u, p signature
-            conv = @time powerflow(polar, jx, cache, verbose_level=0, tol=tolerance)
+            # Test powerflow with cache signature
+            conv = CUDA.@time powerflow(polar, jx, cache, tol=tolerance)
             ExaPF.get!(polar, State(), xₖ, cache)
+            # Refresh active power of generators in cache
+            ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
 
             # Bounds on state and control
             u_min, u_max = ExaPF.bounds(polar, Control())
             x_min, x_max = ExaPF.bounds(polar, State())
+
             @test isequal(u_min, [0.9, 0.1, 0.1, 0.9, 0.9])
             @test isequal(u_max, [1.1, 3.0, 2.7, 1.1, 1.1])
             @test isequal(x_min, [-Inf, -Inf, -Inf, -Inf, -Inf, -Inf, -Inf, -Inf, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])
             @test isequal(x_max, [Inf, Inf, Inf, Inf, Inf, Inf, Inf, Inf, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
+
             # Test callbacks
             ## Power Balance
             ExaPF.power_balance!(polar, cache)
@@ -82,8 +86,11 @@ const PS = PowerSystem
             # As we run powerflow before, the balance should be below tolerance
             @test norm(g, Inf) < tolerance
             ## Cost Production
-            c = @time ExaPF.cost_production(polar, xₖ, u0, p)
-            @test isa(c, Real)
+            c1 = ExaPF.cost_production(polar, xₖ, u0, p)
+            @test isa(c1, Real)
+            c2 = ExaPF.cost_production(polar, cache.pg)
+            @test isa(c2, Real)
+            @test c1 == c2
             ## Inequality constraint
             for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
                 m = ExaPF.size_constraint(polar, cons)
