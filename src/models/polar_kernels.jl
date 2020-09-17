@@ -32,10 +32,10 @@ function residualJacobian(V, Ybus, pv, pq)
     J = [j11 j12; j21 j22]
 end
 
-@kernel function residual_kernel!(F, v_m, v_a,
-                                  ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                                  ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
-                                  pinj, qinj, pv, pq, nbus)
+@kernel function residual_kernel!(F, @Const(v_m), @Const(v_a),
+                                  @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
+                                  @Const(ybus_im_nzval), @Const(ybus_im_colptr), @Const(ybus_im_rowval),
+                                  @Const(pinj), @Const(qinj), @Const(pv), @Const(pq), nbus)
 
     npv = size(pv, 1)
     npq = size(pq, 1)
