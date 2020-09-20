@@ -3,7 +3,7 @@ using Documenter, ExaPF
 makedocs(
     sitename = "ExaPF",
     format = Documenter.HTML(
-        prettyurls = get(ENV, "CI", nothing) == "true",
+        prettyurls = Base.get(ENV, "CI", nothing) == "true",
         mathengine = Documenter.MathJax()
     ),
     strict = true,
