@@ -1,5 +1,5 @@
 """
-    PowerNetwork
+    PowerNetwork <: AbstractPowerSystem
 
 This structure contains constant parameters that define the topology and
 physics of the power network.

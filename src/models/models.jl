@@ -1,7 +1,7 @@
 export PolarForm, get, bounds, powerflow
 export State, Control, Parameters, NumberOfState, NumberOfControl
 
-import Base: show
+import Base: show, get
 
 """
     AbstractFormulation
@@ -77,13 +77,13 @@ get(form, NumberOfControl())
 function get end
 
 """
-    bounds(form::AbstractFormulation, attr::AbstractFormAttribute)
+    bounds(form::AbstractFormulation, var::AbstractVariable)
 
-Return the bounds attached to a particular attribute.
+Return the bounds attached to the variable `var`.
 
-    bounds(form::AbstractFormulation, attr::AbstractFormAttribute)
+    bounds(form::AbstractFormulation, func::Function)
 
-Return the upper and lower bounds attached to a given constraint
+Return the lower and upper bounds attached to a given constraint
 functional.
 
 ## Examples
@@ -97,9 +97,9 @@ h_min, h_max = bounds(form, power_constraints)
 function bounds end
 
 """
-    initial(form::AbstractFormulation, attr::AbstractFormAttribute)
+    initial(form::AbstractFormulation, var::AbstractVariable)
 
-Return an initial position for the attribute `attr`.
+Return an initial position for the variable `var`.
 
 ## Examples
 
@@ -144,16 +144,32 @@ irations `maxiter` are reached.
 function powerflow end
 
 """
-    power_balance(polar::PolarForm, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
+    power_balance(form::AbstractFormulation, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
 
 Get power balance at buses, depending on the state `x` and the control `u`.
 
 """
 function power_balance end
 
+# Cost function
+"""
+    cost_production(form::AbstractFormulation, x, u, p)::Float64
+
+Get operational cost for given state `x` and control `u`.
+"""
+function cost_production end
+
 # Generic constraints
 """
-    state_constraints(polar::PolarForm, g::VT, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
+    size_constraint(form::AbstractFormulation, cons_func)::Int
+
+Get dimension of the constraint specified by the function `cons_func`
+in the formulation `form`.
+"""
+function size_constraint end
+
+"""
+    state_constraints(form::AbstractFormulation, g::VT, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
 
 Evaluate the constraints porting on the state `x`, as a
 function of `x` and `u`. The result is stored inplace, inside `g`.
@@ -161,7 +177,7 @@ function of `x` and `u`. The result is stored inplace, inside `g`.
 function state_constraints end
 
 """
-    power_constraints(polar::PolarForm, g::VT, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
+    power_constraints(form::AbstractFormulation, g::VT, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
 
 Evaluate the constraints on the **power production** that are not taken into
 account in
@@ -174,7 +190,7 @@ The result is stored inplace, inside `g`.
 function power_constraints end
 
 """
-    thermal_limit_constraints(polar::PolarForm, g::VT, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
+    thermal_limit_constraints(form::AbstractFormulation, g::VT, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
 
 Evaluate the thermal limit constraints porting on the lines of the network.
 

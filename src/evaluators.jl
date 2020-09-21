@@ -9,8 +9,99 @@ struct ADFactory <: AbstractADFactory
     Jgᵤ::AD.DesignJacobianAD
 end
 
+
+"""
+    AbstractNLPEvaluator
+
+AbstractNLPEvaluator implements the bridge between the
+problem formulation (see `AbstractFormulation`) and the optimization
+solver. Once the problem formulation bridged, the evaluator allows
+to evaluate in a straightfoward fashion the objective and the different
+constraints, but also the corresponding gradient and Jacobian objects.
+
+"""
 abstract type AbstractNLPEvaluator end
 
+"""
+    n_variables(nlp::AbstractNLPEvaluator)
+Get the number of variables in the problem.
+"""
+function n_variables end
+
+"""
+    n_constraints(nlp::AbstractNLPEvaluator)
+Get the number of constraints in the problem.
+"""
+function n_constraints end
+
+"""
+    objective(nlp::AbstractNLPEvaluator, u)::Float64
+
+Evaluate the objective at point `u`.
+"""
+function objective end
+
+"""
+    gradient!(nlp::AbstractNLPEvaluator, g, u)
+
+Evaluate the gradient of the objective at point `u`. Store
+the result inplace in the vector `g`, which should have the same
+dimension as `u`.
+
+"""
+function gradient! end
+
+"""
+    constraint!(nlp::AbstractNLPEvaluator, cons, u)
+
+Evaluate the constraints of the problem at point `u`. Store
+the result inplace, in the vector `cons`.
+The vector `cons` should have the same dimension as the result
+returned by `n_constraints(nlp)`.
+
+"""
+function constraint! end
+
+"""
+    jacobian_structure!(nlp::AbstractNLPEvaluator, rows, cols)
+
+Return the sparsity pattern of the Jacobian matrix.
+"""
+function jacobian_structure! end
+
+"""
+    jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
+
+Evaluate the Jacobian of the problem at point `u`. Store
+the result inplace, in the vector `jac`.
+"""
+function jacobian! end
+
+"""
+    constraint!(nlp::AbstractNLPEvaluator, hess, u)
+
+Evaluate the Hessian of the problem at point `u`. Store
+the result inplace, in the vector `hess`.
+
+"""
+function hessian! end
+
+
+"""
+    ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
+
+Evaluator working in the reduced space corresponding to the
+control variable `u`. Once a new point `u` is passed to the evaluator,
+the user needs to call the method `update!` to find the corresponding
+state `x(u)` satisfying the equilibrium equation `g(x(u), u) = 0`.
+
+Taking as input a given `AbstractFormulation`, the reduced evaluator
+builds the bounds corresponding to the control `u` and the state `x`,
+and initiate an `ADFactory` tailored to the problem. The reduced evaluator
+could be instantiate on the main memory, or on a specific device (currently,
+only CUDA is supported).
+
+"""
 struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     model::AbstractFormulation
     x::AbstractVector{T}
