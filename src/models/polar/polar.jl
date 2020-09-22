@@ -51,10 +51,10 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     pload , qload = real.(pf.sload), imag.(pf.sload)
 
     # Move the indexing to the target device
-    idx_gen = convert(IT, PS.get(pf, PS.GeneratorIndexes()))
-    idx_ref = convert(IT, PS.get(pf, PS.SlackIndexes()))
-    idx_pv = convert(IT, PS.get(pf, PS.PVIndexes()))
-    idx_pq = convert(IT, PS.get(pf, PS.PQIndexes()))
+    idx_gen = PS.get(pf, PS.GeneratorIndexes())
+    idx_ref = PS.get(pf, PS.SlackIndexes())
+    idx_pv = PS.get(pf, PS.PVIndexes())
+    idx_pq = PS.get(pf, PS.PQIndexes())
     # Build-up reverse index for performance
     pv_to_gen = similar(idx_pv)
     ref_to_gen = similar(idx_ref)
@@ -70,6 +70,13 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
             end
         end
     end
+
+    gidx_gen = convert(IT, idx_gen)
+    gidx_ref = convert(IT, idx_ref)
+    gidx_pv = convert(IT, idx_pv)
+    gidx_pq = convert(IT, idx_pq)
+    gref_to_gen = convert(IT, ref_to_gen)
+    gpv_to_gen = convert(IT, pv_to_gen)
 
     # Bounds
     ## Get bounds on active power
@@ -96,7 +103,7 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     u_min[nref+1:nref+npv] .= p_min[pv_to_gen]
     u_max[nref+1:nref+npv] .= p_max[pv_to_gen]
 
-    indexing = IndexingCache(idx_pv, idx_pq, idx_ref, idx_gen, pv_to_gen, ref_to_gen)
+    indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen)
 
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
