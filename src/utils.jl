@@ -32,6 +32,10 @@ function polar!(Vm, Va, V, ::CUDADevice)
     Va .= CUDA.angle.(V)
 end
 
+# norm
+norm2(x::AbstractVector) = norm(x, 2)
+norm2(x::CuVector) = CUBLAS.nrm2(x)
+
 function project_constraints!(u::AbstractArray, grad::AbstractArray, u_min::AbstractArray,
                               u_max::AbstractArray)
     dim = length(u)

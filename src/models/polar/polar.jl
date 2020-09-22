@@ -337,7 +337,7 @@ function powerflow(
                 pbus, qbus, pv, pq, nbus)
         end
 
-        @timeit TIMER "Norm" normF = norm(F, Inf)
+        @timeit TIMER "Norm" normF = norm2(F)
         if verbose_level >= VERBOSE_LEVEL_HIGH
             @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
         end
