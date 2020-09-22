@@ -1,3 +1,4 @@
+
 module AD
 
 using CUDA
@@ -225,7 +226,7 @@ function myseed_kernel_gpu(
     end
 end
 function seeding(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
-	nthreads = 256
+    nthreads = 256
     nblocks = div(nbus, nthreads, RoundUp)
     CUDA.@sync begin
         @cuda threads=nthreads blocks=nblocks myseed_kernel_gpu(
@@ -278,14 +279,18 @@ function _uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
         end
     end
 end
-function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring, nmap)
+function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
+    # CSC is column oriented: nmap is equal to number of columns
+    nmap = size(J, 2)
     for i in 1:nmap
         for j in J.colptr[i]:J.colptr[i+1]-1
             @inbounds J.nzval[j] = compressedJ[coloring[i], J.rowval[j]]
         end
     end
 end
-function uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring, nmap)
+function uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
+    # CSR is row oriented: nmap is equal to number of rows
+    nmap = size(J, 1)
     nthreads = 256
     nblocks = div(nmap, nthreads, RoundUp)
     CUDA.@sync begin
@@ -340,7 +345,7 @@ function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v
         getpartials(arrays.compressedJ, arrays.t1sF, nbus)
     end
     @timeit timer "Uncompress" begin
-        uncompress!(arrays.J, arrays.compressedJ, arrays.coloring, nmap)
+        uncompress!(arrays.J, arrays.compressedJ, arrays.coloring)
     end
     return nothing
 end
@@ -386,7 +391,7 @@ function residualJacobianAD!(arrays::DesignJacobianAD, residualFunction_polar!, 
     end
     @timeit timer "Uncompress" begin
         # Uncompress matrix. Sparse matrix elements have different names with CUDA
-        uncompress!(arrays.J, arrays.compressedJ, arrays.coloring, nmap)
+        uncompress!(arrays.J, arrays.compressedJ, arrays.coloring)
     end
 end
 
