@@ -34,9 +34,9 @@ end
 
 function _sparsity_pattern(polar::PolarForm)
     pf = polar.network
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
+    ref = polar.network.ref
+    pv = polar.network.pv
+    pq = polar.network.pq
     n = PS.get(pf, PS.NumberOfBuses())
 
     Y = pf.Ybus
@@ -152,7 +152,6 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::Net
     pv_to_gen = polar.indexing.index_pv_to_gen
     ref_to_gen = polar.indexing.index_ref_to_gen
 
-    # TODO: check the complexity of this for loop
     for i in 1:npv
         bus = index_pv[i]
         i_gen = pv_to_gen[i]

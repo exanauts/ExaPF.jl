@@ -16,6 +16,19 @@ abstract type AbstractADFramework end
 abstract type AbstractObjectiveAD <: AbstractADFramework end
 abstract type AbstractJacobianAD end
 
+function _init_seed!(t1sseeds, coloring, ncolor, nmap)
+    t1sseedvec = zeros(Float64, ncolor)
+    @inbounds for i in 1:nmap
+        for j in 1:ncolor
+            if coloring[i] == j
+                t1sseedvec[j] = 1.0
+            end
+        end
+        t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
+        t1sseedvec .= 0
+    end
+end
+
 struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianAD
     J::SMT
     compressedJ::MT
@@ -91,22 +104,13 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianA
             J = CuSparseMatrixCSR(J)
         end
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-        # x = T{Float64}(undef, nv_m + nv_a)
         x = VT(zeros(Float64, nv_m + nv_a))
         t1sx = A{t1s{ncolor}}(x)
-        # t1sF = T{t1s{ncolor}}(undef, nmap)
         t1sF = A{t1s{ncolor}}(zeros(Float64, nmap))
-        t1sseedvec = zeros(Float64, ncolor)
+
         t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-        for i in 1:nmap
-            for j in 1:ncolor
-                if coloring[i] == j
-                    t1sseedvec[j] = 1.0
-                end
-            end
-            t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
-            t1sseedvec .= 0
-        end
+        _init_seed!(t1sseeds, coloring, ncolor, nmap)
+
         compressedJ = MT(zeros(Float64, ncolor, nmap))
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
@@ -199,17 +203,9 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
         t1sx = A{t1s{ncolor}}(x)
         # t1sF = T{t1s{ncolor}}(undef, nmap)
         t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
-        t1sseedvec = zeros(Float64, ncolor)
         t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-        for i in 1:nmap
-            for j in 1:ncolor
-                if coloring[i] == j
-                    t1sseedvec[j] = 1.0
-                end
-            end
-            t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
-            t1sseedvec .= 0
-        end
+        _init_seed!(t1sseeds, coloring, ncolor, nmap)
+
         compressedJ = MT(zeros(Float64, ncolor, length(F)))
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)

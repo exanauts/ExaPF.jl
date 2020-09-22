@@ -48,7 +48,8 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
     # Move load to the target device
-    pload , qload = real.(pf.sload), imag.(pf.sload)
+    pload = convert(VT, real.(pf.sload))
+    qload = convert(VT, imag.(pf.sload))
 
     # Move the indexing to the target device
     idx_gen = PS.get(pf, PS.GeneratorIndexes())
@@ -81,27 +82,31 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     # Bounds
     ## Get bounds on active power
     p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
+    p_min = convert(VT, p_min)
+    p_max = convert(VT, p_max)
     ## Get bounds on voltage magnitude
     v_min, v_max = PS.bounds(pf, PS.Buses(), PS.VoltageMagnitude())
+    v_min = convert(VT, v_min)
+    v_max = convert(VT, v_max)
     ## Instantiate arrays
     nᵤ = nref + 2*npv
     nₓ = npv + 2*npq
-    u_min = fill(-Inf, nᵤ)
-    u_max = fill( Inf, nᵤ)
-    x_min = fill(-Inf, nₓ)
-    x_max = fill( Inf, nₓ)
+    u_min = convert(VT, fill(-Inf, nᵤ))
+    u_max = convert(VT, fill( Inf, nᵤ))
+    x_min = convert(VT, fill(-Inf, nₓ))
+    x_max = convert(VT, fill( Inf, nₓ))
     ## Bounds on v_pq
-    x_min[npv+npq+1:end] .= v_min[idx_pq]
-    x_max[npv+npq+1:end] .= v_max[idx_pq]
+    x_min[npv+npq+1:end] .= v_min[gidx_pq]
+    x_max[npv+npq+1:end] .= v_max[gidx_pq]
     ## Bounds on v_pv
-    u_min[nref+npv+1:end] .= v_min[idx_pv]
-    u_max[nref+npv+1:end] .= v_max[idx_pv]
+    u_min[nref+npv+1:end] .= v_min[gidx_pv]
+    u_max[nref+npv+1:end] .= v_max[gidx_pv]
     ## Bounds on v_ref
-    u_min[1:nref] .= v_min[idx_ref]
-    u_max[1:nref] .= v_max[idx_ref]
+    u_min[1:nref] .= v_min[gidx_ref]
+    u_max[1:nref] .= v_max[gidx_ref]
     ## Bounds on p_pv
-    u_min[nref+1:nref+npv] .= p_min[pv_to_gen]
-    u_max[nref+1:nref+npv] .= p_max[pv_to_gen]
+    u_min[nref+1:nref+npv] .= p_min[gpv_to_gen]
+    u_max[nref+1:nref+npv] .= p_max[gpv_to_gen]
 
     indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen)
 
@@ -183,19 +188,21 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::NetworkState) w
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nₓ = get(polar, NumberOfState())
     nᵤ = get(polar, NumberOfControl())
-    # Indexing
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
+    # Take indexing on the CPU as we initiate AD on the CPU
+    ref = polar.network.ref
+    pv = polar.network.pv
+    pq = polar.network.pq
     # Network state
     Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
     F = cache.balance
     fill!(F, zero(T))
     # Build the AD Jacobian structure
     stateJacobianAD = AD.StateJacobianAD(F, Vm, Va,
-                                         polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus)
+        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus
+    )
     designJacobianAD = AD.DesignJacobianAD(F, Vm, Va,
-                                           polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus)
+        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus
+    )
 
     # Build the AD structure for the objective
     ∇fₓ = VT(undef, nₓ)
