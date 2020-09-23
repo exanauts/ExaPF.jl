@@ -36,6 +36,5 @@ end
 
 @testset "Reduced space algorithms" begin
     include("test_rgm.jl")
-    # include("test_ffwu.jl")
 end
 
