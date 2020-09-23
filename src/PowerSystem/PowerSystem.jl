@@ -55,7 +55,7 @@ abstract type AbstractPowerSystem end
 # Templating
 function get(::AbstractPowerSystem, ::AbstractNetworkAttribute) end
 
-include("network_topology.jl")
+include("topology.jl")
 include("power_network.jl")
 
 end

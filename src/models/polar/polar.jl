@@ -22,7 +22,7 @@ struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
 end
 
 include("kernels.jl")
-include("forward.jl")
+include("getters.jl")
 include("adjoints.jl")
 include("constraints.jl")
 
