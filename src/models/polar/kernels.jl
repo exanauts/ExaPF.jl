@@ -181,30 +181,62 @@ function transfer!(polar::PolarForm, cache::PolarNetworkState, x, u, p)
     wait(ev)
 end
 
-function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::PolarNetworkState)
-    ngen = PS.get(polar.network, PS.NumberOfGenerators())
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+@kernel function active_power_kernel!(
+    pg, vmag, vang, pinj, qinj,
+    pv, ref, pv_to_gen, ref_to_gen,
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
+    @Const(ybus_im_nzval), pload
+)
+    i = @index(Global, Linear)
+    npv = length(pv)
+    nref = length(ref)
+    if i <= npv
+        bus = pv[i]
+        i_gen = pv_to_gen[i]
+        pg[i_gen] = pinj[bus] + pload[bus]
+    elseif i <= npv + nref
+        i_ = i - npv
+        bus = ref[i_]
+        i_gen = ref_to_gen[i_]
+        inj = 0
+        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
+            to = ybus_re_rowval[c]
+            aij = vang[bus] - vang[to]
+            # f_re = a * cos + b * sin
+            # f_im = a * sin - b * cos
+            coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
+            coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
+            cos_val = cos(aij)
+            sin_val = sin(aij)
+            inj += coef_cos * cos_val + coef_sin * sin_val
+        end
+        pg[i_gen] = inj + pload[bus]
+    end
+end
 
-    index_gen = polar.indexing.index_generators
-    index_ref = polar.indexing.index_ref
-    index_pv = polar.indexing.index_pv
+function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::PolarNetworkState)
+    if isa(cache.vmag, Array)
+        kernel! = active_power_kernel!(CPU(), 1)
+    else
+        kernel! = active_power_kernel!(CUDADevice(), 256)
+    end
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ref = polar.indexing.index_ref
     pv_to_gen = polar.indexing.index_pv_to_gen
     ref_to_gen = polar.indexing.index_ref_to_gen
 
-    for i in 1:npv
-        bus = index_pv[i]
-        i_gen = pv_to_gen[i]
-        cache.pg[i_gen] = cache.pinj[bus] + polar.active_load[bus]
-    end
-    for i in 1:nref
-        bus = index_ref[i]
-        i_gen = ref_to_gen[i]
-        inj = PS.get_power_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
-        cache.pg[i_gen] = inj + polar.active_load[bus]
-    end
+    range_ = length(pv) + length(ref)
+
+    ev = kernel!(
+        cache.pg,
+        cache.vmag, cache.vang, cache.pinj, cache.qinj,
+        pv, ref, pv_to_gen, ref_to_gen,
+        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
+        polar.ybus_im.nzval, polar.active_load,
+        ndrange=range_
+    )
+    wait(ev)
 end
 
 function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, cache::PolarNetworkState)
