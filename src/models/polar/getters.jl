@@ -28,14 +28,14 @@ function get!(
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    # Copy the vector explicitly to avoid memory allocation
-    for (i, p) in enumerate(polar.network.pv)
-        x[i] = cache.vang[p]
-    end
-    for (i, p) in enumerate(polar.network.pq)
-        x[npv+i] = cache.vang[p]
-        x[npv+npq+i] = cache.vmag[p]
-    end
+    # Copy values of vang and vmag into x
+    # NB: this leads to 3 memory allocation on the GPU
+    #     we use indexing on the CPU, as for some reason
+    #     we get better performance than with the indexing on the GPU
+    #     stored in the cache polar.indexing.
+    x[1:npv] .= @view cache.vang[polar.network.pv]
+    x[npv+1:npv+npq] .= @view cache.vang[polar.network.pq]
+    x[npv+npq+1:npv+2*npq] .= @view cache.vmag[polar.network.pq]
 end
 
 function get(
