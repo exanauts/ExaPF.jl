@@ -59,6 +59,15 @@ Constant parameters.
 """
 struct Parameters <: AbstractVariable end
 
+"""
+    PhysicalState <: AbstractVariable
+
+All physical variables describing the current physical state
+of the underlying network.
+
+"""
+struct PhysicalState <: AbstractVariable end
+
 # Templates
 """
     get(form::AbstractFormulation, attr::AbstractFormAttribute)
@@ -200,8 +209,7 @@ function thermal_limit_constraints end
 
 include("caches.jl")
 # Polar formulation
-include("polar_kernels.jl")
-include("polar.jl")
+include("polar/polar.jl")
 
 
 Base.show(model::AbstractFormulation, x, u, p) = Base.show(stdout, model, x, u, p)

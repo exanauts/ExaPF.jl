@@ -229,7 +229,7 @@ v_min, v_max = bounds(pf, Buses(), VoltageMagnitude())
 """
 function bounds end
 
-include("network_topology.jl")
+include("topology.jl")
 include("power_network.jl")
 
 end

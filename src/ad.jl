@@ -13,9 +13,24 @@ using ..ExaPF: Spmat
 
 import Base: show
 
+abstract type AbstractADFramework end
+abstract type AbstractObjectiveAD <: AbstractADFramework end
 abstract type AbstractJacobianAD end
 
-struct StateJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
+function _init_seed!(t1sseeds, coloring, ncolor, nmap)
+    t1sseedvec = zeros(Float64, ncolor)
+    @inbounds for i in 1:nmap
+        for j in 1:ncolor
+            if coloring[i] == j
+                t1sseedvec[j] = 1.0
+            end
+        end
+        t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
+        t1sseedvec .= 0
+    end
+end
+
+struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianAD
     J::SMT
     compressedJ::MT
     coloring::VI
@@ -24,6 +39,9 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
     x::VT
     t1sx::VD
     map::VI
+    # Cache views on x and its dual vector to avoid reallocating on the GPU
+    varx::SubT
+    t1svarx::SubD
     function StateJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
@@ -87,32 +105,28 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
             J = CuSparseMatrixCSR(J)
         end
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-        # x = T{Float64}(undef, nv_m + nv_a)
         x = VT(zeros(Float64, nv_m + nv_a))
         t1sx = A{t1s{ncolor}}(x)
-        # t1sF = T{t1s{ncolor}}(undef, nmap)
         t1sF = A{t1s{ncolor}}(zeros(Float64, nmap))
-        t1sseedvec = zeros(Float64, ncolor)
+
         t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-        for i in 1:nmap
-            for j in 1:ncolor
-                if coloring[i] == j
-                    t1sseedvec[j] = 1.0
-                end
-            end
-            t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
-            t1sseedvec .= 0
-        end
+        _init_seed!(t1sseeds, coloring, ncolor, nmap)
+
         compressedJ = MT(zeros(Float64, ncolor, nmap))
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
+        # Views
+        varx = view(x, map)
+        t1svarx = view(t1sx, map)
         VP = typeof(t1sseeds)
         VD = typeof(t1sx)
-        return new{VI, VT, MT, SMT, VP, VD}(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, map)
+        return new{VI, VT, MT, SMT, VP, VD, typeof(varx), typeof(t1svarx)}(
+            J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+        )
     end
 end
 
-struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
+struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianAD
     J::SMT
     compressedJ::MT
     coloring::VI
@@ -121,6 +135,9 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
     x::VT
     t1sx::VD
     map::VI
+    # Cache views on x and its dual vector to avoid reallocating on the GPU
+    varx::SubT
+    t1svarx::SubD
     function DesignJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
@@ -187,23 +204,20 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD} <: AbstractJacobianAD
         t1sx = A{t1s{ncolor}}(x)
         # t1sF = T{t1s{ncolor}}(undef, nmap)
         t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
-        t1sseedvec = zeros(Float64, ncolor)
         t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-        for i in 1:nmap
-            for j in 1:ncolor
-                if coloring[i] == j
-                    t1sseedvec[j] = 1.0
-                end
-            end
-            t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
-            t1sseedvec .= 0
-        end
+        _init_seed!(t1sseeds, coloring, ncolor, nmap)
+
         compressedJ = MT(zeros(Float64, ncolor, length(F)))
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
+        # Views
+        varx = view(x, map)
+        t1svarx = view(t1sx, map)
         VP = typeof(t1sseeds)
         VD = typeof(t1sx)
-        return new{VI, VT, MT, SMT, VP, VD}(J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, map)
+        return new{VI, VT, MT, SMT, VP, VD, typeof(varx), typeof(t1svarx)}(
+            J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+        )
     end
 end
 
@@ -306,14 +320,11 @@ end
 
 function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v_m, v_a,
                              ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, timer = nothing)
-    device = isa(arrays.J, SparseArrays.SparseMatrixCSC) ? CPU() : CUDADevice()
     @timeit timer "Before" begin
         @timeit timer "Setup" begin
             nv_m = size(v_m, 1)
             nv_a = size(v_a, 1)
             nmap = size(arrays.map, 1)
-            nthreads=256
-            nblocks=ceil(Int64, nmap/nthreads)
             n = nv_m + nv_a
         end
         @timeit timer "Arrays" begin
@@ -321,20 +332,17 @@ function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v
             arrays.x[nv_m+1:nv_m+nv_a] .= v_a
             arrays.t1sx .= arrays.x
             arrays.t1sF .= 0.0
-            # Views
-            varx = view(arrays.x, arrays.map)
-            t1svarx = view(arrays.t1sx, arrays.map)
         end
     end
     @timeit timer "Seeding" begin
-        seeding(arrays.t1sseeds, varx, t1svarx, nbus)
+        seeding(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
     end
 
     @timeit timer "Function" begin
         residualFunction_polar!(
             arrays.t1sF,
-            arrays.t1sx[1:nv_m],
-            arrays.t1sx[nv_m+1:nv_m+nv_a],
+            view(arrays.t1sx, 1:nv_m),
+            view(arrays.t1sx, nv_m+1:nv_m+nv_a),
             ybus_re, ybus_im,
             pinj, qinj,
             pv, pq, nbus
@@ -358,8 +366,6 @@ function residualJacobianAD!(arrays::DesignJacobianAD, residualFunction_polar!, 
             npinj = size(pinj , 1)
             nv_m = size(v_m, 1)
             nmap = size(arrays.map, 1)
-            nthreads=256
-            nblocks=ceil(Int64, nmap/nthreads)
             n = npinj + nv_m
         end
         @timeit timer "Arrays" begin
@@ -367,21 +373,18 @@ function residualJacobianAD!(arrays::DesignJacobianAD, residualFunction_polar!, 
             arrays.x[nv_m+1:nv_m+npinj] .= pinj
             arrays.t1sx .= arrays.x
             arrays.t1sF .= 0.0
-            # Views
-            varx = view(arrays.x, arrays.map)
-            t1svarx = view(arrays.t1sx, arrays.map)
         end
     end
     @timeit timer "Seeding" begin
-        seeding(arrays.t1sseeds, varx, t1svarx, nbus)
+        seeding(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
     end
     @timeit timer "Function" begin
         residualFunction_polar!(
             arrays.t1sF,
-            arrays.t1sx[1:nv_m],
+            view(arrays.t1sx, 1:nv_m),
             v_a,
             ybus_re, ybus_im,
-            arrays.t1sx[nv_m+1:nv_m + npinj], qinj,
+            view(arrays.t1sx, nv_m+1:nv_m + npinj), qinj,
             pv, pq, nbus
         )
     end
@@ -398,6 +401,14 @@ end
 function Base.show(io::IO, ad::AbstractJacobianAD)
     ncolor = size(unique(ad.coloring), 1)
     print(io, "Number of Jacobian colors: ", ncolor)
+end
+
+struct ObjectiveAD{VT}
+    ∇fₓ::VT
+    ∇fᵤ::VT
+    ∂pg::VT
+    ∂vm::VT
+    ∂va::VT
 end
 
 end

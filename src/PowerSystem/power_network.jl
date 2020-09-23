@@ -139,17 +139,17 @@ function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
 end
 
 function put_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, ybus_im)
-    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
+    @inbounds for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
         to = ybus_re.rowval[c]
         aij = v_a[fr] - v_a[to]
-        # P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
-        adj_v_m[fr] += v_m[to] * (ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij)) * adj_P
-        adj_v_m[to] += v_m[fr] * (ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij)) * adj_P
+        cθ = ybus_re.nzval[c]*cos(aij)
+        sθ = ybus_im.nzval[c]*sin(aij)
+        adj_v_m[fr] += v_m[to] * (cθ + sθ) * adj_P
+        adj_v_m[to] += v_m[fr] * (cθ + sθ) * adj_P
 
         adj_aij = -(v_m[fr]*v_m[to]*(ybus_re.nzval[c]*(sin(aij))))
         adj_aij += v_m[fr]*v_m[to]*(ybus_im.nzval[c]*(cos(aij)))
         adj_aij *= adj_P
-        # aij = v_a[fr] - v_a[to]
         adj_v_a[to] += -adj_aij
         adj_v_a[fr] += adj_aij
     end

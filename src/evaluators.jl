@@ -7,6 +7,11 @@ abstract type AbstractADFactory end
 struct ADFactory <: AbstractADFactory
     Jgₓ::AD.StateJacobianAD
     Jgᵤ::AD.DesignJacobianAD
+    ∇f::AD.ObjectiveAD
+    # Workaround before CUDA.jl 1.4: keep a cache for the transpose
+    # matrix of the State Jacobian matrix, and update it inplace
+    # when we need to solve the system Jₓ' \ y
+    Jᵗ::Union{Nothing, AbstractMatrix}
 end
 
 
@@ -106,6 +111,7 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     model::AbstractFormulation
     x::AbstractVector{T}
     p::AbstractVector{T}
+    λ::AbstractVector{T}
 
     x_min::AbstractVector{T}
     x_max::AbstractVector{T}
@@ -116,6 +122,7 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     g_min::AbstractVector{T}
     g_max::AbstractVector{T}
 
+    network_cache::AbstractPhysicalCache
     ad::ADFactory
     precond::Precondition.AbstractPreconditioner
     solver::String
@@ -126,9 +133,24 @@ function ReducedSpaceEvaluator(model, x, u, p;
                                constraints=Function[state_constraint],
                                ε_tol=1e-12, solver="default", npartitions=2,
                                verbose_level=VERBOSE_LEVEL_NONE)
+    # First, build up a network cache
+    network_cache = get(model, PhysicalState())
+    # Initiate adjoint
+    λ = similar(x)
     # Build up AD factory
-    jx, ju = init_ad_factory(model, x, u, p)
-    ad = ADFactory(jx, ju)
+    jx, ju, adjoint_f = init_ad_factory(model, network_cache)
+    if isa(x, CuArray)
+        nₓ = length(x)
+        ind_rows, ind_cols, nzvals = _sparsity_pattern(model)
+        ind_rows = convert(CuVector{Cint}, ind_rows)
+        ind_cols = convert(CuVector{Cint}, ind_cols)
+        nzvals = convert(CuVector{Float64}, nzvals)
+        # Get transpose of Jacobian
+        Jt = CuSparseMatrixCSR(sparse(ind_cols, ind_rows, nzvals))
+        ad = ADFactory(jx, ju, adjoint_f, Jt)
+    else
+        ad = ADFactory(jx, ju, adjoint_f, nothing)
+    end
     # Init preconditioner if needed for iterative linear algebra
     precond = Iterative.init_preconditioner(jx.J, solver, npartitions, model.device)
 
@@ -144,8 +166,9 @@ function ReducedSpaceEvaluator(model, x, u, p;
         append!(g_max, cu)
     end
 
-    return ReducedSpaceEvaluator(model, x, p, x_min, x_max, u_min, u_max,
+    return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
+                                 network_cache,
                                  ad, precond, solver, ε_tol)
 end
 
@@ -155,49 +178,71 @@ n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x
     jac_x = nlp.ad.Jgₓ
+    # Transfer x, u, p into the network cache
+    transfer!(nlp.model, nlp.network_cache, nlp.x, u, nlp.p)
     # Get corresponding point on the manifold
-    xk, conv = powerflow(nlp.model, jac_x, x₀, u, nlp.p, tol=nlp.ε_tol;
+    conv = powerflow(nlp.model, jac_x, nlp.network_cache, tol=nlp.ε_tol;
                          solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
-    copy!(nlp.x, xk)
+    # Update value of nlp.x with new network state
+    get!(nlp.model, State(), nlp.x, nlp.network_cache)
+    # Refresh value of the active power of the generators
+    refresh!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.network_cache)
     return conv
 end
 
 function objective(nlp::ReducedSpaceEvaluator, u)
-    cost = cost_production(nlp.model, nlp.x, u, nlp.p)
+    # Take as input the current cache, updated previously in `update!`.
+    cost = cost_production(nlp.model, nlp.network_cache.pg)
     # TODO: determine if we should include λ' * g(x, u), even if ≈ 0
     return cost
 end
 
 # Private function to compute adjoint (should be inlined)
-_adjoint(J, y) = - J' \ y
-function _adjoint(J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
-    # TODO: we SHOULD find a most efficient implementation
-    Jt = CuArray(J') |> sparse
-    λk = similar(y)
-    return CUSOLVER.csrlsvqr!(Jt, -y, λk, 1e-8, one(Cint), 'O')
+function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J, y)
+    λ .= J' \ y
+end
+function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
+    Jt = nlp.ad.Jᵗ
+    # # TODO: fix this hack once CUDA.jl 1.4 is released
+    copy!(Jt.nzVal, J.nzVal)
+    return CUSOLVER.csrlsvqr!(Jt, y, λ, 1e-8, one(Cint), 'O')
+end
+
+# compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
+# equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
+# (take λₖ_neg to avoid computing an intermediate array)
+function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
+    copy!(g, ∇fᵤ)
+    mul!(g, transpose(∇gᵤ), λₖ_neg, -1.0, 1.0)
+end
+# TODO: For some reason, this operation is slow on the GPU
+# because mul! does not dispatch on CUSPARSE.mv!
+# Use the allocating version currently, but should update to mul!
+# once the code is ported to CUDA.jl 1.4
+function _reduced_gradient!(g::CuVector, ∇fᵤ, ∇gᵤ, λₖ_neg)
+    g .= ∇fᵤ .- transpose(∇gᵤ) * λₖ_neg
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
+    cache = nlp.network_cache
     xₖ = nlp.x
-    # TODO: could we move this in the AD factory?
-    cost_x = x_ -> cost_production(nlp.model, x_, u, nlp.p; V=eltype(x_))
-    cost_u = u_ -> cost_production(nlp.model, xₖ, u_, nlp.p; V=eltype(u_))
-    fdCdx = x_ -> cost_production_adjoint(nlp.model, x_, u, nlp.p)
-    fdCdu = u_ -> cost_production_adjoint(nlp.model, xₖ, u_, nlp.p)
     ∇gₓ = nlp.ad.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
-    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, xₖ, u, nlp.p)
-    ∇fₓ = fdCdx(xₖ)[1]
-    ∇fᵤ = fdCdu(u)[2]
-    # Update adjoint
-    λₖ = _adjoint(∇gₓ, ∇fₓ)
-    # compute reduced gradient
-    g .= ∇fᵤ + (∇gᵤ')*λₖ
+    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, cache)
+    # Evaluate adjoint of cost function and update inplace ObjectiveAD
+    cost_production_adjoint(nlp.model, nlp.ad.∇f, cache)
+
+    ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ
+    # Update (negative) adjoint
+    λₖ_neg = nlp.λ
+    _adjoint!(nlp, λₖ_neg, ∇gₓ, ∇fₓ)
+    _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
     return nothing
 end
 
 function constraint!(nlp::ReducedSpaceEvaluator, g, u)
     xₖ = nlp.x
+    ϕ = nlp.network_cache
     # First: state constraint
     mf = 1
     mt = 0
@@ -205,7 +250,7 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
         m_ = size_constraint(nlp.model, cons)
         mt += m_
         cons_ = @view(g[mf:mt])
-        cons(nlp.model, cons_, xₖ, u, nlp.p)
+        cons(nlp.model, cons_, ϕ)
         mf += m_
     end
 end
@@ -222,16 +267,14 @@ function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     end
 end
 
-function jacobian!(nlp::ReducedSpaceEvaluator, u)
+function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     ∇gᵤ = nlp.ad.Jgᵤ.J
     nₓ = length(xₖ)
-    m = n_constraints(nlp)
-    n = length(u)
     MT = nlp.model.AT
-    J = MT{eltype(u), 2}(undef, m, n)
     cnt = 1
+    λ = nlp.λ
     for cons in nlp.constraints
         mc_ = size_constraint(nlp.model, cons)
         g = MT{eltype(u), 1}(undef, mc_)
@@ -242,10 +285,9 @@ function jacobian!(nlp::ReducedSpaceEvaluator, u)
         Jᵤ = ForwardDiff.jacobian(cons_u, g, u)
         for ix in 1:mc_
             rhs = Jₓ[ix, :]
-            λ = _adjoint(∇gₓ, rhs)
-            J[cnt, :] .= Jᵤ[ix, :] + ∇gᵤ' * λ
+            _adjoint!(nlp, λ, ∇gₓ, rhs)
+            jac[cnt, :] .= Jᵤ[ix, :] - ∇gᵤ' * λ
             cnt += 1
         end
     end
-    return J
 end

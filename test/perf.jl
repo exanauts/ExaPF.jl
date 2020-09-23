@@ -8,64 +8,49 @@ using SparseArrays
 using TimerOutputs
 import ExaPF: PowerSystem, IndexSet, AD
 
-# read data
-function run_level0(datafile; device=CPU())
-    to = TimerOutputs.TimerOutput()
+function run_level1(datafile; device=CPU())
     pf = PowerSystem.PowerNetwork(datafile, 1)
+    polar = PolarForm(pf, device)
+    cache = ExaPF.NetworkState(polar)
+    jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
 
-    # retrieve initial state of network
-    pbus = real.(pf.sbus)
-    qbus = imag.(pf.sbus)
-    Vm = abs.(pf.vbus)
-    Va = angle.(pf.vbus)
-    nbus = length(pbus)
-
-    ref = pf.ref
-    pv = pf.pv
-    pq = pf.pq
-    npv = size(pv, 1);
-    npq = size(pq, 1);
-    ybus_re, ybus_im = ExaPF.Spmat{Array}(pf.Ybus)
-
-    F = zeros(Float64, npv + 2*npq)
-    @info("Benchmark function residualFunction_polar!")
     @btime begin
-        ExaPF.residualFunction_polar!($F, $Vm, $Va,
-            $ybus_re, $ybus_im,
-            $pbus, $qbus, $pv, $pq, $nbus)
-    end
-
-    jacobianAD = AD.StateJacobianAD(F, Vm, Va,
-                                    ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
-    @info("Benchmark residualJacobianAD!")
-    @btime begin
-        AD.residualJacobianAD!($jacobianAD, ExaPF.residualFunction_polar!,
-                               $Vm, $Va,
-                               $ybus_re, $ybus_im, $pbus, $qbus, $pv, $pq, $ref, $nbus, $to)
+        cache = ExaPF.NetworkState($polar)
+        ExaPF.powerflow($polar, $jx, cache, tol=1e-14, verbose_level=0)
     end
     return
 end
 
-function run_level1(datafile; device=CPU())
+function run_level2(datafile; device=CPU())
     pf = PowerSystem.PowerNetwork(datafile, 1)
+    polar = PolarForm(pf, device)
+    x0 = ExaPF.initial(polar, State())
+    u0 = ExaPF.initial(polar, Control())
+    p = ExaPF.initial(polar, Parameters())
 
-    # retrieve initial state of network
-    pbus = real.(pf.sbus)
-    qbus = imag.(pf.sbus)
-    vmag = abs.(pf.vbus)
-    vang = angle.(pf.vbus)
+    constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
+    print("Constructor\t")
+    nlp = @time ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+    u = u0
+    # Update nlp to stay on manifold
+    print("Update   \t")
+    CUDA.@time ExaPF.update!(nlp, u)
+    # Compute objective
+    print("Objective\t")
+    c = CUDA.@time ExaPF.objective(nlp, u)
+    # Compute gradient of objective
+    g = similar(u)
+    fill!(g, 0)
+    print("Gradient \t")
+    CUDA.@time ExaPF.gradient!(nlp, g, u)
 
-    x = ExaPF.PowerSystem.get_x(pf, vmag, vang, pbus, qbus)
-    u = ExaPF.PowerSystem.get_u(pf, vmag, vang, pbus, qbus)
-    p = ExaPF.PowerSystem.get_p(pf, vmag, vang, pbus, qbus)
-
-    n = length(u)
-    @btime begin
-        ExaPF.solve($pf, $x, $u, $p, tol=1e-14, verbose_level=0)
-    end
-    ExaPF.solve(pf, x, u, p, tol=1e-14, verbose_level=2)
-    return
+    # Constraint
+    ## Evaluation of the constraints
+    cons = similar(nlp.g_min)
+    fill!(cons, 0)
+    print("Constrt \t")
+    CUDA.@time ExaPF.constraint!(nlp, cons, u)
 end
 
 datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
-run_level0(datafile)
+run_level2(datafile, device=CUDADevice())

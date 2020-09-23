@@ -21,7 +21,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     p = ExaPF.initial(polar, Parameters())
 
     constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-    nlp = @time ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; constraints=constraints, solver="default")
+    nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; constraints=constraints, solver="default")
 
     # solve power flow
     ExaPF.update!(nlp, uk)
@@ -40,31 +40,16 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     fill!(grad, 0)
 
     while norm_grad > norm_tol && iter < iter_max
-        println("Iteration: ", iter)
-
-        # solve power flow and compute gradients
         ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
-
-        # evaluate cost
         c = ExaPF.objective(nlp, uk)
-
-        # compute gradient
         ExaPF.gradient!(nlp, grad, uk)
-
-        println("Cost: ", c)
-        println("Norm: ", norm(grad))
-
-        # Optional linesearch
-        # step = ls(uk, grad, Lu, grad_Lu)
         # compute control step
         uk = uk - step*grad
-
         ExaPF.project_constraints!(uk, grad, nlp.u_min, nlp.u_max)
-        println("Gradient norm: ", norm(grad))
         norm_grad = norm(grad)
-
         iter += 1
     end
-    show(nlp.model, nlp.x, uk, p)
-
+    @test iter == 79
+    @test isapprox(uk, [1.1, 1.343109921105559, 0.9421135274454701, 1.1, 1.1])
 end
+
