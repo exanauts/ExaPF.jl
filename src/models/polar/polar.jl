@@ -146,7 +146,7 @@ function initial(form::PolarForm{T, IT, VT, AT}, v::AbstractVariable) where {T, 
     return get(form, v, vmag, vang, pbus, qbus)
 end
 
-function NetworkState(form::PolarForm{T, IT, VT, AT}) where {T, IT, VT, AT}
+function get(form::PolarForm{T, IT, VT, AT}, ::PhysicalState) where {T, IT, VT, AT}
     pbus = real.(form.network.sbus) |> VT
     qbus = imag.(form.network.sbus) |> VT
     vmag = abs.(form.network.vbus) |> VT
@@ -159,10 +159,10 @@ function NetworkState(form::PolarForm{T, IT, VT, AT}) where {T, IT, VT, AT}
     npq = PS.get(form.network, PS.NumberOfPQBuses())
     balance = VT(undef, 2*npq+npv)
     dx = VT(undef, 2*npq+npv)
-    return NetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx)
+    return PolarNetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx)
 end
 
-function power_balance!(polar::PolarForm, cache::NetworkState)
+function power_balance!(polar::PolarForm, cache::PolarNetworkState)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -181,7 +181,7 @@ function power_balance!(polar::PolarForm, cache::NetworkState)
 end
 
 # TODO: find better naming
-function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::NetworkState) where {T, IT, VT, AT}
+function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::PolarNetworkState) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -214,7 +214,7 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::NetworkState) w
     return stateJacobianAD, designJacobianAD, objectiveAD
 end
 
-function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, cache::NetworkState)
+function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, cache::PolarNetworkState)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     # Indexing
@@ -238,7 +238,7 @@ function powerflow(
 ) where {T, IT, VT, AT}
     Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
     n_state = get(polar, NumberOfState())
-    network = NetworkState{VT}(
+    network = PolarNetworkState{VT}(
         Vm, Va, pbus, qbus, VT(undef, 0), VT(undef, 0), VT(undef, n_state), VT(undef, n_state)
     )
     return powerflow(polar, jacobian, network; kwargs...)
@@ -247,7 +247,7 @@ end
 function powerflow(
     polar::PolarForm{T, IT, VT, AT},
     jacobian::AD.StateJacobianAD,
-    cache::NetworkState{VT};
+    cache::PolarNetworkState{VT};
     npartitions=2,
     solver="default",
     preconditioner=Precondition.NoPreconditioner(),

@@ -59,6 +59,15 @@ Constant parameters.
 """
 struct Parameters <: AbstractVariable end
 
+"""
+    PhysicalState <: AbstractVariable
+
+All physical variables describing the current physical state
+of the underlying network.
+
+"""
+struct PhysicalState <: AbstractVariable end
+
 # Templates
 """
     get(form::AbstractFormulation, attr::AbstractFormAttribute)

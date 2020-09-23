@@ -31,7 +31,7 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     g_min::AbstractVector{T}
     g_max::AbstractVector{T}
 
-    network_cache::NetworkState
+    network_cache::AbstractPhysicalCache
     ad::ADFactory
     precond::Precondition.AbstractPreconditioner
     solver::String
@@ -43,7 +43,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
                                ε_tol=1e-12, solver="default", npartitions=2,
                                verbose_level=VERBOSE_LEVEL_NONE)
     # First, build up a network cache
-    network_cache = NetworkState(model)
+    network_cache = get(model, PhysicalState())
     # Initiate adjoint
     λ = similar(x)
     # Build up AD factory

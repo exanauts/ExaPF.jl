@@ -42,7 +42,7 @@ function put(
     ::PS.Generator,
     ::PS.ActivePower,
     obj_ad::AD.ObjectiveAD,
-    cache::NetworkState
+    cache::PolarNetworkState
 ) where {T, VT, AT}
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
@@ -89,7 +89,7 @@ function put(
     return
 end
 
-function cost_production_adjoint(polar::PolarForm, ∂obj::AD.ObjectiveAD, cache::NetworkState)
+function cost_production_adjoint(polar::PolarForm, ∂obj::AD.ObjectiveAD, cache::PolarNetworkState)
     pg = cache.pg
     coefs = polar.costs_coefficients
     # Return adjoint of quadratic cost

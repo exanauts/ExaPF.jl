@@ -23,7 +23,7 @@ function get!(
     polar::PolarForm{T, IT, VT, AT},
     ::State,
     x::AbstractVector,
-    cache::NetworkState
+    cache::PolarNetworkState
 ) where {T, IT, VT, AT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())

@@ -1,4 +1,5 @@
 abstract type AbstractCache end
+abstract type AbstractPhysicalCache end
 
 "Store indexing on target device"
 struct IndexingCache{IVT} <: AbstractCache
@@ -10,7 +11,7 @@ struct IndexingCache{IVT} <: AbstractCache
     index_ref_to_gen::IVT
 end
 
-struct NetworkState{VT} <: AbstractCache
+struct PolarNetworkState{VT} <: AbstractPhysicalCache
     vmag::VT
     vang::VT
     pinj::VT
@@ -21,7 +22,7 @@ struct NetworkState{VT} <: AbstractCache
     dx::VT
 end
 
-function NetworkState(nbus, ngen, device)
+function PolarNetworkState(nbus, ngen, device)
     if isa(device, CPU)
         VT = Vector{Float64}
     elseif isa(device, CUDADevice)
@@ -36,6 +37,6 @@ function NetworkState(nbus, ngen, device)
     qg = VT(undef, ngen)
     balance = VT(undef, 2*nbus)
     dx = VT(undef, 2*nbus)
-    return NetworkState{VT}(vmag, vang, pinj, qinj, pg, qg, balance, dx)
+    return PolarNetworkState{VT}(vmag, vang, pinj, qinj, pg, qg, balance, dx)
 end
 

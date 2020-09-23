@@ -100,7 +100,7 @@ function residualFunction_polar!(F, v_m, v_a,
 end
 
 # TODO: kernalize
-function transfer!(polar::PolarForm, cache::NetworkState, x, u, p)
+function transfer!(polar::PolarForm, cache::PolarNetworkState, x, u, p)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
@@ -139,7 +139,7 @@ function transfer!(polar::PolarForm, cache::NetworkState, x, u, p)
 end
 
 # TODO: kernalize
-function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::NetworkState)
+function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::PolarNetworkState)
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -162,5 +162,32 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::Net
         i_gen = ref_to_gen[i]
         inj = PS.get_power_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
         cache.pg[i_gen] = inj + polar.active_load[bus]
+    end
+end
+
+function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, cache::PolarNetworkState)
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+
+    index_gen = polar.indexing.index_generators
+    index_ref = polar.indexing.index_ref
+    index_pv = polar.indexing.index_pv
+    pv_to_gen = polar.indexing.index_pv_to_gen
+    ref_to_gen = polar.indexing.index_ref_to_gen
+
+    for i in 1:npv
+        bus = index_pv[i]
+        qinj = PS.get_react_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
+        i_gen = pv_to_gen[i]
+        cache.qg[i_gen] = qinj + polar.reactive_load[bus]
+    end
+    for i in 1:nref
+        bus = index_ref[i]
+        i_gen = ref_to_gen[i]
+        qinj = PS.get_react_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
+        cache.qg[i_gen] = qinj + polar.reactive_load[bus]
     end
 end

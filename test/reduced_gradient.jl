@@ -20,7 +20,7 @@ const PS = PowerSystem
         pf = PS.PowerNetwork(datafile, 1)
 
         polar = PolarForm(pf, CPU())
-        cache = ExaPF.NetworkState(polar)
+        cache = ExaPF.get(polar, ExaPF.PhysicalState())
 
         xk = ExaPF.initial(polar, State())
         u = ExaPF.initial(polar, Control())
