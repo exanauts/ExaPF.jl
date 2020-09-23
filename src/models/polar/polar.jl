@@ -381,10 +381,12 @@ end
 function cost_production(polar::PolarForm, pg)
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     coefs = polar.costs_coefficients
+    c2 = @view coefs[:, 2]
+    c3 = @view coefs[:, 3]
+    c4 = @view coefs[:, 4]
     # Return quadratic cost
-    cost = 0
-    @inbounds for i in 1:ngen
-        cost += coefs[i, 2] + coefs[i, 3] * pg[i] + coefs[i, 4] * pg[i]^2
-    end
+    # NB: this operation induces three allocations on the GPU,
+    #     but is faster than writing the sum manually
+    cost = sum(c2 .+ c3 .* pg .+ c4 .* pg.^2)
     return cost
 end
