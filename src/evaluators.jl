@@ -151,6 +151,7 @@ end
 
 function constraint!(nlp::ReducedSpaceEvaluator, g, u)
     xₖ = nlp.x
+    ϕ = nlp.network_cache
     # First: state constraint
     mf = 1
     mt = 0
@@ -158,7 +159,7 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
         m_ = size_constraint(nlp.model, cons)
         mt += m_
         cons_ = @view(g[mf:mt])
-        cons(nlp.model, cons_, xₖ, u, nlp.p)
+        cons(nlp.model, cons_, ϕ)
         mf += m_
     end
 end

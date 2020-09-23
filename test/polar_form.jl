@@ -97,7 +97,7 @@ const PS = PowerSystem
                 @test isa(m, Int)
                 g = M{Float64, 1}(undef, m) # TODO: this signature is not great
                 fill!(g, 0)
-                cons(polar, g, xₖ, u0, p)
+                cons(polar, g, cache)
 
                 g_min, g_max = ExaPF.bounds(polar, cons)
                 @test length(g_min) == m

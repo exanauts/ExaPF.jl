@@ -75,18 +75,5 @@ const PS = PowerSystem
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, uk)
             @test isapprox(grad_fd, grad_adjoint, rtol=1e-4)
         end
-        @testset "Reduced Jacobian" begin
-            uk = copy(u)
-            cons = ExaPF.power_constraints
-            m = ExaPF.size_constraint(polar, cons)
-
-            cons_x = (g_, x_) -> cons(polar, g_, x_, uk, p; V=eltype(x_))
-            cons_u = (g_, u_) -> cons(polar, g_, xk, u_, p; V=eltype(u_))
-
-            g = zeros(m)
-
-            jx = ForwardDiff.jacobian(cons_x, g, xk)
-            ju = ForwardDiff.jacobian(cons_u, g, uk)
-        end
     end
 end

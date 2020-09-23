@@ -1,10 +1,9 @@
 
 # Generic inequality constraints
 # We add constraint only on vmag_pq
-function state_constraint(polar::PolarForm, g, x, u, p; V=Float64)
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    g .= x[npv+npq+1:end]
+function state_constraint(polar::PolarForm, g, cache)
+    index_pq = polar.indexing.index_pq
+    g .= @view cache.vmag[index_pq]
     return
 end
 size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(state_constraint)) where {T, IT, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())
@@ -18,14 +17,14 @@ end
 
 # Here, the power constraints are ordered as:
 # g = [P_ref; Q_ref; Q_pv]
-function power_constraints(polar::PolarForm, g, x, u, p; V=Float64)
+function power_constraints(polar::PolarForm, g, cache)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    Vm, Va, pbus, qbus = get_network_state(polar, x, u, p; V=V)
-    ref = convert(polar.AT{Int, 1}, polar.network.ref)
-    pv = convert(polar.AT{Int, 1}, polar.network.pv)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
 
     cnt = 1
     # Constraint on P_ref (generator) (P_inj = P_g - P_load)
