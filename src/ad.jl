@@ -13,6 +13,14 @@ using ..ExaPF: Spmat
 
 import Base: show
 
+"""
+    AbstractADFramework
+
+Automatic differentiation for the compressed Jacobians of the constraints `g(x,u)` with respect to the state `x` and the control `u` (here called design). 
+
+TODO: Use dispatch to unify the code of the state and control Jacobian. This is currently not done because the abstraction of the indexing is not yet resolved.
+
+"""
 abstract type AbstractADFramework end
 abstract type AbstractObjectiveAD <: AbstractADFramework end
 abstract type AbstractJacobianAD end
@@ -30,6 +38,22 @@ function _init_seed!(t1sseeds, coloring, ncolor, nmap)
     end
 end
 
+"""
+    StateJacobianAD
+
+Creates an object for the state Jacobian
+
+* `J::SMT`: Sparse uncompressed Jacobian to be used by linear solver. This is either of type `SparseMatrixCSC` or `CuSparseMatrixCSR`.
+* `compressedJ::MT`: Dense compressed Jacobian used for updating values through AD either of type `Matrix` or `CuMatrix`.
+* `coloring::VI`: Row coloring of the Jacobian.
+* `t1sseeds::VP`: The seeding vector for AD built based on the coloring.
+* `t1sF::VD`: Output array of active (AD) type.
+* `x::VT`: Input array of passive type. This includes both state and control.
+* `t1sx::VD`: Input array of active type. 
+* `map::VI`: State and control mapping to array `x`
+* `varx::SubT`: View of `map` on `x`
+* `t1svarx::SubD`: Active (AD) view of `map` on `x`
+"""
 struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianAD
     J::SMT
     compressedJ::MT
@@ -126,6 +150,22 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianA
     end
 end
 
+"""
+    DesignJacobianAD
+
+Creates an object for the control Jacobian.
+
+* `J::SMT`: Sparse uncompressed Jacobian to be used by linear solver. This is either of type `SparseMatrixCSC` or `CuSparseMatrixCSR`.
+* `compressedJ::MT`: Dense compressed Jacobian used for updating values through AD either of type `Matrix` or `CuMatrix`.
+* `coloring::VI`: Row coloring of the Jacobian.
+* `t1sseeds::VP`: The seeding vector for AD built based on the coloring.
+* `t1sF::VD`: Output array of active (AD) type.
+* `x::VT`: Input array of passive type. This includes both state and control.
+* `t1sx::VD`: Input array of active type. 
+* `map::VI`: State and control mapping to array `x`
+* `varx::SubT`: View of `map` on `x`
+* `t1svarx::SubD`: Active (AD) view of `map` on `x`
+"""
 struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianAD
     J::SMT
     compressedJ::MT
@@ -221,6 +261,12 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
     end
 end
 
+"""
+    myseed_kernel_cpu
+
+Seeding on the CPU, not parallelized. 
+
+"""
 function myseed_kernel_cpu(
     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
@@ -229,6 +275,13 @@ function myseed_kernel_cpu(
         duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
     end
 end
+
+"""
+    myseed_kernel_cpu
+
+Seeding on GPU parallelized over the `ncolor` number of duals 
+
+"""
 function myseed_kernel_gpu(
     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
@@ -239,6 +292,13 @@ function myseed_kernel_gpu(
         duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
     end
 end
+
+"""
+    seeding(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+
+Calling the GPU seeding kernel
+
+"""
 function seeding(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
     nthreads = 256
     nblocks = div(nbus, nthreads, RoundUp)
@@ -250,15 +310,37 @@ function seeding(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, n
         )
     end
 end
+
+"""
+    seeding(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+
+Calling the CPU seeding kernel
+
+"""
 function seeding(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
     myseed_kernel_cpu(t1svarx, varx, t1sseeds)
 end
 
+"""
+    getpartials_cpu(compressedJ, t1sF)
+
+Extract the partials from the AD dual type on the CPU and put it in the
+compressed Jacobian
+
+"""
 function getpartials_cpu(compressedJ, t1sF)
     for i in 1:size(t1sF,1) # Go over outputs
         compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
     end
 end
+
+"""
+    getpartials_gpu(compressedJ, t1sF)
+
+Extract the partials from the AD dual type on the GPU and put it in the
+compressed Jacobian
+
+"""
 function getpartials_gpu(compressedJ, t1sF)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
@@ -268,6 +350,13 @@ function getpartials_gpu(compressedJ, t1sF)
         end
     end
 end
+
+"""
+    getpartials(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
+
+Calling the GPU partial extraction kernel
+
+"""
 function getpartials(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
     nthreads = 256
     nblocks = div(nbus, nthreads, RoundUp)
@@ -278,12 +367,24 @@ function getpartials(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
         )
     end
 end
+
+"""
+    getpartials(compressedJ::Array{T, 2}, t1sF, nbus) where T
+
+Calling the GPU partial extraction kernel
+
+"""
 function getpartials(compressedJ::Array{T, 2}, t1sF, nbus) where T
     getpartials_cpu(compressedJ, t1sF)
 end
 
-# uncompress (for GPU only)
-# TODO: should convert to @kernel
+"""
+    _uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
+
+Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSR on
+the GPU. Only bitarguments are allowed for the kernel.
+(for GPU only) TODO: should convert to @kernel
+"""
 function _uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
@@ -293,6 +394,13 @@ function _uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
         end
     end
 end
+
+"""
+    uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
+
+Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
+the CPU. 
+"""
 function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
     # CSC is column oriented: nmap is equal to number of columns
     nmap = size(J, 2)
@@ -302,6 +410,13 @@ function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
         end
     end
 end
+
+"""
+    uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
+
+Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
+the GPU by calling the kernel [`_uncompress`](@ref).
+"""
 function uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
     # CSR is row oriented: nmap is equal to number of rows
     nmap = size(J, 1)
@@ -318,8 +433,23 @@ function uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
     end
 end
 
-function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v_m, v_a,
-                             ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, timer = nothing)
+"""
+    residualJacobianAD!(arrays::StateJacobianAD, 
+                        residualFunction_polar!, 
+                        v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, 
+                        timer = nothing)
+
+Update the sparse Jacobian entries using AD. No allocations are taking place in this function.
+
+* `arrays::StateJacobianAD`: Factory created Jacobian object to update
+* `residualFunction_polar`: Primal function
+* `v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
+
+"""
+function residualJacobianAD!(arrays::StateJacobianAD, 
+                             residualFunction_polar!, 
+                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, 
+                             timer = nothing)
     @timeit timer "Before" begin
         @timeit timer "Setup" begin
             nv_m = size(v_m, 1)
@@ -358,8 +488,23 @@ function residualJacobianAD!(arrays::StateJacobianAD, residualFunction_polar!, v
     return nothing
 end
 
-function residualJacobianAD!(arrays::DesignJacobianAD, residualFunction_polar!, v_m, v_a,
-                             ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, timer = nothing)
+"""
+    residualJacobianAD!(arrays::DesignJacobianAD, 
+                        residualFunction_polar!, 
+                        v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, 
+                        timer = nothing)
+
+Update the sparse Jacobian entries using AD. No allocations are taking place in this function.
+
+* `arrays::DesignJacobianAD`: Factory created Jacobian object to update
+* `residualFunction_polar`: Primal function
+* `v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
+
+"""
+function residualJacobianAD!(arrays::DesignJacobianAD, 
+                             residualFunction_polar!, 
+                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, 
+                             timer = nothing)
 
     @timeit timer "Before" begin
         @timeit timer "Setup" begin
