@@ -9,7 +9,7 @@ using SparseArrays
 using TimerOutputs
 
 using ..ExaPF: Precondition
-import ..ExaPF: norm2
+import ..ExaPF: norm2, TIMER
 
 export bicgstab, list_solvers
 export DirectSolver, BICGSTAB
@@ -22,9 +22,94 @@ export DirectSolver, BICGSTAB
 )
 
 abstract type AbstractLinearSolver end
+abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
 
 struct DirectSolver <: AbstractLinearSolver end
-struct BICGSTAB <: AbstractLinearSolver end
+DirectSolver(precond) = DirectSolver()
+function ldiv!(::DirectSolver,
+    y::Vector, J::AbstractSparseMatrix, x::Vector,
+)
+    y .= J \ x
+    return 0
+end
+function ldiv!(::DirectSolver,
+    y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSR, x::CuVector,
+)
+    CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
+    return 0
+end
+
+function update!(solver::AbstractIterativeLinearSolver, J)
+    @timeit solver.timer "Preconditioner"  Precondition.update(J, solver.precond, solver.timer)
+end
+struct BICGSTAB <: AbstractIterativeLinearSolver
+    precond::Precondition.AbstractPreconditioner
+    maxiter::Int
+    tol::Float64
+    verbose::Bool
+    timer::TimerOutput
+end
+BICGSTAB(precond; maxiter=10_000, tol=1e-8, verbose=false) = BICGSTAB(precond, maxiter, tol, verbose, TIMER)
+function ldiv!(solver::BICGSTAB,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+)
+    P = solver.precond.P
+    @timeit solver.timer "BICGSTAB" begin
+        y[:], n_iters, status = bicgstab(J, x, P, y, solver.timer; maxiter=solver.maxiter,
+                                         verbose=solver.verbose, tol=solver.tol)
+    end
+    return n_iters
+end
+
+struct RefBICGSTAB <: AbstractIterativeLinearSolver
+    precond::Precondition.AbstractPreconditioner
+    verbose::Bool
+    timer::TimerOutput
+end
+RefBICGSTAB(precond; verbose=true) = RefBICGSTAB(precond, verbose, TIMER)
+function ldiv!(solver::RefBICGSTAB,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+)
+    P = solver.precond.P
+    @timeit solver.timer "CPU-BICGSTAB" begin
+        y[:], history = IterativeSolvers.bicgstabl(P*J, P*x, log=solver.verbose)
+    end
+    return history.iters
+end
+
+struct RefGMRES <: AbstractIterativeLinearSolver
+    precond::Precondition.AbstractPreconditioner
+    restart::Int
+    verbose::Bool
+    timer::TimerOutput
+end
+RefGMRES(precond; restart=4, verbose=true) = RefGMRES(precond, restart, verbose, TIMER)
+function ldiv!(solver::RefGMRES,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+)
+    P = solver.precond.P
+    @timeit solver.timer "CPU-GMRES" begin
+        y[:], history = IterativeSolvers.gmres(P*J, P*x, restart=solver.restart, log=solver.verbose)
+    end
+    return history.iters
+end
+
+struct DQGMRES <: AbstractIterativeLinearSolver
+    precond::Precondition.AbstractPreconditioner
+    memory::Int
+    verbose::Bool
+    timer::TimerOutput
+end
+DQGMRES(precond; memory=4, verbose=false) = DQGMRES(precond, memory, verbose, TIMER)
+function ldiv!(solver::DQGMRES,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+)
+    P = solver.precond.P
+    @timeit solver.timer "GPU-DQGMRES" begin
+        (y[:], status) = Krylov.dqgmres(J, x, M=P, memory=solver.memory)
+    end
+    return length(status.residuals)
+end
 
 
 """
@@ -126,105 +211,7 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
     return xi, iter, status
 end
 
-list_solvers(::CPU) = ["bicgstab_ref", "bicgstab", "gmres", "dqgmres", "default"]
-
-function ldiv!(
-    dx::AbstractVector,
-    J::SparseArrays.SparseMatrixCSC,
-    F::AbstractVector,
-    solver::String,
-    preconditioner=nothing,
-    timer::TimerOutputs.TimerOutput=nothing,
-)
-    if preconditioner != nothing && solver != "default"
-        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-        if solver == "bicgstab_ref"
-            @timeit timer "CPU-BICGSTAB" (dx[:], history) = IterativeSolvers.bicgstabl(P*J, P*F, log=true)
-            n_iters = history.iters
-        elseif solver == "bicgstab"
-            @timeit timer "GPU-BICGSTAB" dx[:], n_iters = bicgstab(J, F, P, dx, timer, maxiter=10000)
-        elseif solver == "gmres"
-            @timeit timer "CPU-GMRES" (dx[:], history) = IterativeSolvers.gmres(P*J, P*F, restart=4, log=true)
-            n_iters = history.iters
-        elseif solver == "dqgmres"
-            @timeit timer "GPU-DQGMRES" (dx[:], status) = Krylov.dqgmres(J, F, M=P, memory=4)
-            n_iters = length(status.residuals)
-        else
-            error("Unknown linear solver")
-        end
-    else
-        @timeit timer "CPU-Default sparse solver" dx .= J\F
-        n_iters = 0
-    end
-    return n_iters
-end
-
-list_solvers(::CUDADevice) = ["bicgstab", "dqgmres", "default"]
-
-function ldiv!(
-    dx::CuVector,
-    J::CUDA.CUSPARSE.CuSparseMatrixCSR,
-    F::CuVector,
-    solver::String,
-    preconditioner,
-    timer=nothing,
-)
-    if solver == "bicgstab"
-        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-        @timeit timer "GPU-BICGSTAB" dx[:], n_iters, status = bicgstab(J, F, P, dx, timer, maxiter=10000)
-        if status != Converged
-            error("BICGSTAB failed to converge (final status: $(status))")
-        end
-    elseif solver == "dqgmres"
-        @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-        @timeit timer "GPU-DQGMRES" (dx[:], status) = Krylov.dqgmres(J, F, M=P, memory=4)
-        n_iters = length(status.residuals)
-    else
-        lintol = 1e-8
-        @timeit timer "Sparse CUSOLVER" dx  = CUSOLVER.csrlsvqr!(J,F,dx,lintol,one(Cint),'O')
-        n_iters = 0
-    end
-    return n_iters
-end
-
-# TODO: pass this function to multiple dispatch
-function init_preconditioner(J, solver, npartitions, device; verbose_level=0)
-    if solver == "default"
-        return Precondition.NoPreconditioner()
-    end
-
-    nblock = div(size(J,1), npartitions)
-    if verbose_level >= 2
-        println("#partitions: $npartitions, Blocksize: n = ", nblock,
-                " Mbytes = ", (nblock*nblock*npartitions*8.0)/(1024.0*1024.0))
-    end
-    precond = Precondition.Preconditioner(J, npartitions, device)
-    if verbose_level >= 2
-        println("Block Jacobi block size: $(precond.nJs)")
-        println("$npartitions partitions created")
-    end
-    return precond
-end
-
-function ldiv!(::DirectSolver,
-    y::Vector, J::AbstractSparseMatrix, x::Vector,
-    preconditioner, timer,
-)
-    y .= J \ x
-end
-function ldiv!(::DirectSolver,
-    y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSR, x::CuVector,
-    preconditioner, timer,
-)
-    CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
-end
-
-function ldiv!(::BICGSTAB,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
-    preconditioner, timer,
-)
-    @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-    @timeit timer "BICGSTAB" y[:], n_iters, status = bicgstab(J, x, P, y, timer, maxiter=10000)
-end
+list_solvers(::CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, DirectSolver]
+list_solvers(::CUDADevice) = [BICGSTAB, DQGMRES, DirectSolver]
 
 end

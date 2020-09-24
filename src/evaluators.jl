@@ -125,28 +125,17 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     network_cache::AbstractPhysicalCache
     ad::ADFactory
     linear_solver::Iterative.AbstractLinearSolver
-    precond::Precondition.AbstractPreconditioner
-    solver::String
     ε_tol::Float64
 end
 
 function ReducedSpaceEvaluator(model, x, u, p;
                                constraints=Function[state_constraint],
-                               ε_tol=1e-12, solver="default", npartitions=2,
+                               ε_tol=1e-12, linear_solver=DirectSolver(), npartitions=2,
                                verbose_level=VERBOSE_LEVEL_NONE)
-    if solver == "bicgstab"
-        linear_solver = BICGSTAB()
-    else
-        linear_solver = DirectSolver()
-    end
-
     # First, build up a network cache
     network_cache = get(model, PhysicalState())
     # Initiate adjoint
     λ = similar(x)
-    # Init preconditioner if needed for iterative linear algebra
-    jac = _state_jacobian(model)
-    precond = Iterative.init_preconditioner(jac, solver, npartitions, model.device)
     # Build up AD factory
     jx, ju, adjoint_f = init_ad_factory(model, network_cache)
     if isa(x, CuArray)
@@ -177,7 +166,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
     return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
                                  network_cache,
-                                 ad, linear_solver, precond, solver, ε_tol)
+                                 ad, linear_solver, ε_tol)
 end
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
@@ -190,7 +179,7 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     transfer!(nlp.model, nlp.network_cache, nlp.x, u, nlp.p)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.network_cache, tol=nlp.ε_tol;
-                     solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
+                     solver=nlp.linear_solver, verbose_level=verbose_level)
     # Update value of nlp.x with new network state
     get!(nlp.model, State(), nlp.x, nlp.network_cache)
     # Refresh value of the active power of the generators
@@ -213,7 +202,7 @@ function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J::CuSparseMatrixCSR{T}, y::C
     # # TODO: fix this hack once CUDA.jl 1.4 is released
     Jt = nlp.ad.Jᵗ
     Jt.nzVal .= J.nzVal
-    Iterative.ldiv!(nlp.linear_solver, λ, Jt, y, nlp.precond, TIMER)
+    Iterative.ldiv!(nlp.linear_solver, λ, Jt, y)
 end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)

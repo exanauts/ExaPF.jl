@@ -31,8 +31,10 @@ using Krylov
         resid = norm(r) / norm(b)
         @test(resid ≤ 1e-6)
     end
-    @testset "($algo)" for algo in ExaPF.list_solvers(CPU())
-        ExaPF.Iterative.ldiv!(x, spA, b, algo, precond, to)
+    # Embed preconditioner in linear solvers
+    @testset "($LinSolver)" for LinSolver in ExaPF.list_solvers(CPU())
+        algo = LinSolver(precond)
+        ExaPF.Iterative.ldiv!(algo, x, spA, b)
         r = b - spA * x
         resid = norm(r) / norm(b)
         @test(resid ≤ 1e-6)
@@ -80,9 +82,10 @@ end
             @test n_iters <= m
             @test x_sol ≈ xs♯ atol=1e-6
         end
-        @testset "Interface for iterative algorithm ($algo)" for algo in ExaPF.list_solvers(device)
+        @testset "Interface for iterative algorithm ($LinSolver)" for LinSolver in ExaPF.list_solvers(device)
+            algo = LinSolver(precond)
             fill!(x0, 0.0)
-            n_iters = ExaPF.Iterative.ldiv!(x0, As, bs, algo, precond, to)
+            n_iters = ExaPF.Iterative.ldiv!(algo, x0, As, bs)
             @test n_iters <= m
             @test x0 ≈ xs♯ atol=1e-6
         end

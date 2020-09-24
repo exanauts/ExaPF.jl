@@ -248,9 +248,7 @@ function powerflow(
     polar::PolarForm{T, IT, VT, AT},
     jacobian::AD.StateJacobianAD,
     cache::PolarNetworkState{VT};
-    npartitions=2,
-    solver="default",
-    preconditioner=Precondition.NoPreconditioner(),
+    solver=DirectSolver(),
     tol=1e-7,
     maxiter=20,
     verbose_level=0,
@@ -319,7 +317,10 @@ function powerflow(
         J = jacobian.J
 
         # Find descent direction
-        n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)
+        if isa(solver, Iterative.AbstractIterativeLinearSolver)
+            Iterative.update!(solver, J)
+        end
+        n_iters = Iterative.ldiv!(solver, dx, J, F)
         push!(linsol_iters, n_iters)
 
         # update voltage

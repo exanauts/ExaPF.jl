@@ -21,7 +21,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     p = ExaPF.initial(polar, Parameters())
 
     constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-    nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; constraints=constraints, solver="default")
+    nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; constraints=constraints)
 
     # solve power flow
     ExaPF.update!(nlp, uk)

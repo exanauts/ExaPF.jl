@@ -9,10 +9,9 @@ using Metis
 using SparseArrays
 using TimerOutputs
 
-cuzeros = CUDA.zeros
+import Base: show
 
 abstract type AbstractPreconditioner end
-
 struct NoPreconditioner <: AbstractPreconditioner end
 
 mutable struct Preconditioner <: AbstractPreconditioner
@@ -100,6 +99,7 @@ mutable struct Preconditioner <: AbstractPreconditioner
     end
 end
 
+
 function build_adjmatrix(A)
     rows = Int64[]
     cols = Int64[]
@@ -175,7 +175,7 @@ end
 function update(J::SparseMatrixCSC, p, to)
     nblocks = length(p.partitions)
     @timeit to "Fill Block Jacobi" begin
-        for b in 1:nblocks
+        @inbounds for b in 1:nblocks
             for i in p.partitions[b]
                 for j in J.colptr[i]:J.colptr[i+1]-1
                     if b == p.part[J.rowval[j]]
@@ -192,7 +192,7 @@ function update(J::SparseMatrixCSC, p, to)
     end
     p.P.nzval .= 0.0
     @timeit to "Move blocks to P" begin
-        for b in 1:nblocks
+        @inbounds for b in 1:nblocks
             for i in p.partitions[b]
                 for j in p.P.colptr[i]:p.P.colptr[i+1]-1
                     if b == p.part[p.P.rowval[j]]
@@ -205,5 +205,12 @@ function update(J::SparseMatrixCSC, p, to)
     return p.P
 end
 
+function Base.show(precond::Preconditioner)
+    npartitions = precond.npart
+    nblock = div(size(precond.P, 1), npartitions)
+    println("#partitions: $npartitions, Blocksize: n = ", nblock,
+            " Mbytes = ", (nblock*nblock*npartitions*8.0)/(1024.0*1024.0))
+    println("Block Jacobi block size: $(precond.nJs)")
+end
 
 end

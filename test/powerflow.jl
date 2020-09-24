@@ -19,15 +19,18 @@ import ExaPF: PowerSystem
 
     @testset "Deport computation on device $device" for device in DEVICES
         polar = PolarForm(pf, device)
+        jac = ExaPF._state_jacobian(polar)
+        precond = ExaPF.Precondition.Preconditioner(jac, npartitions, device)
         # Retrieve initial state of network
         x0 = ExaPF.initial(polar, State())
         uk = ExaPF.initial(polar, Control())
         p = ExaPF.initial(polar, Parameters())
 
-        @testset "[CPU] Powerflow solver $precond" for precond in ExaPF.list_solvers(device)
+        @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
+            algo = LinSolver(precond)
             xk = copy(x0)
             nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p;
-                                              ε_tol=tolerance, solver="$precond", npartitions=npartitions)
+                                              ε_tol=tolerance, linear_solver=algo)
             convergence = @time ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
             @test convergence.has_converged
             @test convergence.norm_residuals < tolerance

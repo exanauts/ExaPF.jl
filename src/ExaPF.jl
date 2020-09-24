@@ -21,6 +21,8 @@ using SparseArrays
 using SparseDiffTools
 using TimerOutputs
 
+const TIMER = TimerOutput()
+
 const VERBOSE_LEVEL_HIGH = 3
 const VERBOSE_LEVEL_MEDIUM = 2
 const VERBOSE_LEVEL_LOW = 1
@@ -49,7 +51,6 @@ const PS = PowerSystem
 include("models/models.jl")
 include("evaluators.jl")
 
-const TIMER = TimerOutput()
 
 
 end
