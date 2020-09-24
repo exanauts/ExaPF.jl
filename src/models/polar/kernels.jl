@@ -32,7 +32,7 @@ function residualJacobian(V, Ybus, pv, pq)
     J = [j11 j12; j21 j22]
 end
 
-function _sparsity_pattern(polar::PolarForm)
+function _state_jacobian(polar::PolarForm)
     pf = polar.network
     ref = polar.network.ref
     pv = polar.network.pv
@@ -44,9 +44,9 @@ function _sparsity_pattern(polar::PolarForm)
     Vre = rand(n)
     Vim = rand(n)
     V = Vre .+ 1im .* Vim
-    J = residualJacobian(V, Y, pv, pq)
-    return findnz(J)
+    return residualJacobian(V, Y, pv, pq)
 end
+_sparsity_pattern(polar::PolarForm) = findnz(_state_jacobian(polar))
 
 @kernel function residual_kernel!(F, @Const(v_m), @Const(v_a),
                                   @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),

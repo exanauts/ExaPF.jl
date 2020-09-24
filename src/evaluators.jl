@@ -137,6 +137,9 @@ function ReducedSpaceEvaluator(model, x, u, p;
     network_cache = get(model, PhysicalState())
     # Initiate adjoint
     λ = similar(x)
+    # Init preconditioner if needed for iterative linear algebra
+    jac = _state_jacobian(model)
+    precond = Iterative.init_preconditioner(jac, solver, npartitions, model.device)
     # Build up AD factory
     jx, ju, adjoint_f = init_ad_factory(model, network_cache)
     if isa(x, CuArray)
@@ -151,8 +154,6 @@ function ReducedSpaceEvaluator(model, x, u, p;
     else
         ad = ADFactory(jx, ju, adjoint_f, nothing)
     end
-    # Init preconditioner if needed for iterative linear algebra
-    precond = Iterative.init_preconditioner(jx.J, solver, npartitions, model.device)
 
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
@@ -182,7 +183,7 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     transfer!(nlp.model, nlp.network_cache, nlp.x, u, nlp.p)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.network_cache, tol=nlp.ε_tol;
-                         solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
+                     solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
     # Update value of nlp.x with new network state
     get!(nlp.model, State(), nlp.x, nlp.network_cache)
     # Refresh value of the active power of the generators

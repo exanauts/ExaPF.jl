@@ -293,7 +293,7 @@ function powerflow(
 
     # check for convergence
     normF = norm(F, Inf)
-    if verbose_level >= VERBOSE_LEVEL_HIGH
+    if verbose_level >= VERBOSE_LEVEL_LOW
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
     end
     if normF < tol
@@ -345,7 +345,7 @@ function powerflow(
         end
 
         @timeit TIMER "Norm" normF = norm2(F)
-        if verbose_level >= VERBOSE_LEVEL_HIGH
+        if verbose_level >= VERBOSE_LEVEL_LOW
             @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
         end
 
@@ -366,6 +366,7 @@ function powerflow(
     if verbose_level >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
         println("")
+        reset_timer!(TIMER)
     end
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
     return conv
