@@ -12,6 +12,7 @@ using ..ExaPF: Precondition
 import ..ExaPF: norm2
 
 export bicgstab, list_solvers
+export DirectSolver, BICGSTAB
 
 @enum(SolveStatus,
     Unsolved,
@@ -19,6 +20,12 @@ export bicgstab, list_solvers
     NotANumber,
     Converged
 )
+
+abstract type AbstractLinearSolver end
+
+struct DirectSolver <: AbstractLinearSolver end
+struct BICGSTAB <: AbstractLinearSolver end
+
 
 """
 bicgstab according to
@@ -32,7 +39,6 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
                   tol=1e-8, maxiter=size(A, 1), verbose=false)
     # parameters
     n    = size(b, 1)
-    xi   = similar(b)
     mul!(xi, P, b)
     ri   = b - A * xi
     br0  = copy(ri)
@@ -167,7 +173,7 @@ function ldiv!(
         @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
         @timeit timer "GPU-BICGSTAB" dx[:], n_iters, status = bicgstab(J, F, P, dx, timer, maxiter=10000)
         if status != Converged
-            error("BICGSTAB failed to converge")
+            error("BICGSTAB failed to converge (final status: $(status))")
         end
     elseif solver == "dqgmres"
         @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
@@ -198,6 +204,27 @@ function init_preconditioner(J, solver, npartitions, device; verbose_level=0)
         println("$npartitions partitions created")
     end
     return precond
+end
+
+function ldiv!(::DirectSolver,
+    y::Vector, J::AbstractSparseMatrix, x::Vector,
+    preconditioner, timer,
+)
+    y .= J \ x
+end
+function ldiv!(::DirectSolver,
+    y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSR, x::CuVector,
+    preconditioner, timer,
+)
+    CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
+end
+
+function ldiv!(::BICGSTAB,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+    preconditioner, timer,
+)
+    @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
+    @timeit timer "BICGSTAB" y[:], n_iters, status = bicgstab(J, x, P, y, timer, maxiter=10000)
 end
 
 end

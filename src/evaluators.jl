@@ -124,6 +124,7 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 
     network_cache::AbstractPhysicalCache
     ad::ADFactory
+    linear_solver::Iterative.AbstractLinearSolver
     precond::Precondition.AbstractPreconditioner
     solver::String
     ε_tol::Float64
@@ -133,6 +134,12 @@ function ReducedSpaceEvaluator(model, x, u, p;
                                constraints=Function[state_constraint],
                                ε_tol=1e-12, solver="default", npartitions=2,
                                verbose_level=VERBOSE_LEVEL_NONE)
+    if solver == "bicgstab"
+        linear_solver = BICGSTAB()
+    else
+        linear_solver = DirectSolver()
+    end
+
     # First, build up a network cache
     network_cache = get(model, PhysicalState())
     # Initiate adjoint
@@ -170,7 +177,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
     return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
                                  network_cache,
-                                 ad, precond, solver, ε_tol)
+                                 ad, linear_solver, precond, solver, ε_tol)
 end
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
@@ -203,17 +210,17 @@ function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J, y)
     λ .= J' \ y
 end
 function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
-    Jt = nlp.ad.Jᵗ
     # # TODO: fix this hack once CUDA.jl 1.4 is released
-    copy!(Jt.nzVal, J.nzVal)
-    return CUSOLVER.csrlsvqr!(Jt, y, λ, 1e-8, one(Cint), 'O')
+    Jt = nlp.ad.Jᵗ
+    Jt.nzVal .= J.nzVal
+    Iterative.ldiv!(nlp.linear_solver, λ, Jt, y, nlp.precond, TIMER)
 end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
 # equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
 # (take λₖ_neg to avoid computing an intermediate array)
 function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
-    copy!(g, ∇fᵤ)
+    g .= ∇fᵤ
     mul!(g, transpose(∇gᵤ), λₖ_neg, -1.0, 1.0)
 end
 # TODO: For some reason, this operation is slow on the GPU
