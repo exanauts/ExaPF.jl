@@ -75,7 +75,8 @@ end
             ExaPF.Precondition.update(As, precond, to)
             P = precond.P
             fill!(x0, 0.0)
-            x_sol, n_iters = ExaPF.bicgstab(As, bs, P, x0, to)
+            x_sol, n_iters, status = ExaPF.bicgstab(As, bs, P, x0, to)
+            @test status == ExaPF.Iterative.Converged
             @test n_iters <= m
             @test x_sol ≈ xs♯ atol=1e-6
         end

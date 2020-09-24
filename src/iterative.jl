@@ -13,7 +13,12 @@ import ..ExaPF: norm2
 
 export bicgstab, list_solvers
 
-cuzeros = CUDA.zeros
+@enum(SolveStatus,
+    Unsolved,
+    MaxIterations,
+    NotANumber,
+    Converged
+)
 
 """
 bicgstab according to
@@ -24,7 +29,7 @@ of nonsymmetric linear systems."
 SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
 """
 function bicgstab(A, b, P, xi, to::TimerOutput;
-                  tol=1e-10, maxiter=size(A, 1), verbose=false)
+                  tol=1e-8, maxiter=size(A, 1), verbose=false)
     # parameters
     n    = size(b, 1)
     xi   = similar(b)
@@ -53,6 +58,7 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
     t = similar(pi)
 
     go = true
+    status = Unsolved
     iter = 1
     @timeit to "While loop" begin
         while go
@@ -85,14 +91,19 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
                     println("\tAbsolute norm: ", anorm)
                 end
 
+                if isnan(anorm)
+                    go = false
+                    status = NotANumber
+                end
                 if anorm < tol
                     go = false
+                    status = Converged
                     verbose && println("Tolerance reached at iteration $iter")
                 end
-
                 if maxiter == iter
                     @show iter
                     go = false
+                    status = MaxIterations
                     verbose && println("Not converged")
                 end
 
@@ -106,7 +117,7 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
         end
     end
 
-    return xi, iter
+    return xi, iter, status
 end
 
 list_solvers(::CPU) = ["bicgstab_ref", "bicgstab", "gmres", "dqgmres", "default"]
@@ -154,7 +165,10 @@ function ldiv!(
 )
     if solver == "bicgstab"
         @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
-        @timeit timer "GPU-BICGSTAB" dx[:], n_iters = bicgstab(J, F, P, dx, timer, maxiter=10000)
+        @timeit timer "GPU-BICGSTAB" dx[:], n_iters, status = bicgstab(J, F, P, dx, timer, maxiter=10000)
+        if status != Converged
+            error("BICGSTAB failed to converge")
+        end
     elseif solver == "dqgmres"
         @timeit timer "Preconditioner" P = Precondition.update(J, preconditioner, timer)
         @timeit timer "GPU-DQGMRES" (dx[:], status) = Krylov.dqgmres(J, F, M=P, memory=4)
@@ -173,9 +187,9 @@ function init_preconditioner(J, solver, npartitions, device; verbose_level=0)
         return Precondition.NoPreconditioner()
     end
 
-    nblock = size(J,1) / npartitions
+    nblock = div(size(J,1), npartitions)
     if verbose_level >= 2
-        println("Blocks: $npartitions, Blocksize: n = ", nblock,
+        println("#partitions: $npartitions, Blocksize: n = ", nblock,
                 " Mbytes = ", (nblock*nblock*npartitions*8.0)/(1024.0*1024.0))
     end
     precond = Precondition.Preconditioner(J, npartitions, device)
