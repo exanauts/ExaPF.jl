@@ -1,8 +1,8 @@
 # ExaPF
 
-| **Build Status** |
+| **Test Status** |
 |:----------------:|
-| [![Build Status][build-img]][build-url] |
+![Run tests](https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=dev%2Frgm) |
 
 ExaPF is a HPC package for solving power flow (PF) on a GPU. It currently solves PF using the Newton-Raphson algorithm on NVIDIA GPUs.
 Its main features are:
