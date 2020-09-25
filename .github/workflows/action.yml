@@ -1,6 +1,24 @@
-steps:
-- uses: actions/checkout@v1.0.0
-- uses: julia-actions/setup-julia@v1
-  with:
-    version: 1.5.2
-- run: julia -e 'println("Hello, World!")'
+name: Run tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        julia-version: ['1.5']
+        julia-arch: [x64]
+        os: [ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v1.0.0
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: 1.5.2
+      - uses: actions/checkout@v2
+      - uses: julia-actions/setup-julia@latest
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/julia-buildpkg@latest
+      - uses: julia-actions/julia-runtest@latest
