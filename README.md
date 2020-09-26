@@ -29,11 +29,3 @@ pkg> dev git@github.com:exanauts/ExaPF.jl.git
 ```julia
 pkg> test ExaPF
 ```
-
-## Documentation
-WIP
-
-
-[build-img]: https://travis-ci.com/exanauts/ExaPF.jl.svg?branch=master
-[build-url]: https://travis-ci.com/exanauts/ExaPF.jl
-

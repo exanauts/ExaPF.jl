@@ -1,3 +1,12 @@
+```@meta
+CurrentModule = ExaPF
+DocTestSetup = quote
+    using ExaPF
+    const Precondition = ExaPF.Precondition
+    const Iterative = ExaPF.Iterative
+end
+DocTestFilters = [r"ExaPF"]
+```
 # Linear Solver
 
 As mentioned before, a linear solver is required to compute the Newton step in 
@@ -37,3 +46,17 @@ CUDA.@sync pivot, info, p.cuJs = CUDA.CUBLAS.getri_batched(blocks, pivot)
 ```
 
 Assuming that other vendors will provide such batched BLAS APIs, this code is portable to other GPU architectures.
+
+## Description
+```@docs
+Precondition.AbstractPreconditioner
+```
+
+## API Reference
+```@docs
+Precondition.Preconditioner
+Precondition.update
+Precondition.build_adjmatrix
+Precondition.fillblock_gpu!
+Precondition.fillP_gpu!
+```

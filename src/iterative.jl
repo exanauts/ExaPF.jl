@@ -15,8 +15,9 @@ export bicgstab, list_solvers
 cuzeros = CUDA.zeros
 
 """
-bicgstab according to
+    bicgstab
 
+The bicgstab implementation used for GPU according to 
 Van der Vorst, Henk A.
 "Bi-CGSTAB: A fast and smoothly converging variant of Bi-CG for the solution
 of nonsymmetric linear systems."
@@ -112,8 +113,36 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
     return xi, iter
 end
 
+"""
+    list_solver(::CPU)
+
+Return the list of linear solvers for the CPU
+
+"""
+
 list_solvers(::CPU) = ["bicgstab_ref", "bicgstab", "gmres", "dqgmres", "default"]
 
+"""
+    ldiv!(dx, J, F, solver, preconditioner, timer)
+
+* `dx::AbstractVector`: Solution
+* `J::SparseArrays.SparseMatrixCSC`: Input matrix 
+* `F::AbstractVector`: RHS
+* `solver::String`: A CPU solver 
+* `preconditioner=nothing`:
+* `timer::TimerOutputs.TimerOutput=nothing`:
+
+Solve the linear system `J * dx = F` 
+
+A valid CPU solver is:
+
+* `bicgstab`: Package internal implementation for GPUs
+* `bicgstab_ref`: BiCGSTAB implementation from `IterativeSolvers.jl`
+* `gmres`: GMRES implementation from `IterativeSolvers.jl`
+* `dqgmres`: DQGMRES implementation from `Krylov.jl`
+* `default`: `J\\F`
+
+"""
 function ldiv!(
     dx::AbstractVector,
     J::SparseArrays.SparseMatrixCSC,
@@ -145,8 +174,33 @@ function ldiv!(
     return n_iters
 end
 
+"""
+    list_solver(::CPU)
+
+Return the list of linear solvers for the CPU
+
+"""
 list_solvers(::CUDADevice) = ["bicgstab", "dqgmres", "default"]
 
+"""
+    ldiv!(dx, J, F, solver, preconditioner, timer)
+
+* `dx::AbstractVector`: Solution
+* `J::CUDA.CUSPARSE.CuSparseMatrixCSR`: Input matrix on the GPU
+* `F::AbstractVector`: RHS
+* `solver::String`: A CPU solver 
+* `preconditioner=nothing`:
+* `timer::TimerOutputs.TimerOutput=nothing`:
+
+Solve the linear system `J * dx = F` 
+
+A valid CPU solver is:
+
+* `bicgstab`: Package internal implementation for GPUs
+* `dqgmres`: DQGMRES implementation from `Krylov.jl`
+* `default`: `CUSOLVER.csrlsvqr`
+
+"""
 function ldiv!(
     dx::CuVector,
     J::CUDA.CUSPARSE.CuSparseMatrixCSR,
