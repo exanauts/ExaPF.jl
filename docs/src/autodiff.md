@@ -48,7 +48,7 @@ independent columns in one Jacobian-vector evaluation (see
 algorithm implemented by [`SparseDiffTools.jl`](https://github.com/JuliaDiff/SparseDiffTools.jl).
 
 Given the sparsity pattern, the forward model is applied through the package
-`FordwardDiff.jl` [@RevelsLubinPapamarkou2016]. Given the number of Jaocbian
+[`ForwardDiff.jl`](https://github.com/exanauts/ForwardDiff.jl). Given the number of Jaocbian
 colors $c$ we can build our dual type `t1s` with `c` directions:
 
 ```julia
