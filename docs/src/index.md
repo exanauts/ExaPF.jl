@@ -17,7 +17,7 @@ in the reduced space.
 
 To make our implementation portable to CPU and GPU architectures we leverage
 two abstractions: arrays and kernels. Both of these abstractions are
-supported through the packages `CUDA.jl` [@besard2017juliagpu; @besard2019prototyping] and `KernelAbstractions.jl`
+supported through the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl)
 Please take a look at the [autodiff](autodiff.md) and [linear solver](linearsolver.md) 
 implementations to get a design overview of `ExaPF.jl` targeted for GPUs. 
 

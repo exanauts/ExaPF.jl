@@ -45,8 +45,7 @@ coloring to compress the sparse Jacobian `J`. Running the tangent mode, it
 allows to compute columns of the Jacobian concurrently, by combining
 independent columns in one Jacobian-vector evaluation (see
 \autoref{fig:coloring}). For sparsity detection we rely on the greedy
-algorithm implemented by `SparseDiffTools.jl` 
-[@sparsedifftools].
+algorithm implemented by [`SparseDiffTools.jl`](https://github.com/JuliaDiff/SparseDiffTools.jl).
 
 Given the sparsity pattern, the forward model is applied through the package
 `FordwardDiff.jl` [@RevelsLubinPapamarkou2016]. Given the number of Jaocbian
@@ -119,9 +118,9 @@ illustrate this in \autoref{fig:simd} with a point-wise vector product `x .* y`
 
 This natural way of computing the compressed Jacobian yields a very high
 performing code that is portable to any vector architecture, given that a
-similar package like `CUDA.jl` exists. We note that similar packages for the
-Intel Compute Engine and AMD ROCm are in development called `oneAPI.jl` and
-`AMDGPU.jl`, respectively. We expect our package to be portable to AMD and
+similar package like [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) exists. We note that similar packages for the
+Intel Compute Engine and AMD ROCm are in development called [`oneAPI.jl`](https://github.com/JuliaGPU/oneAPI.jl) and
+[`AMDGPU.jl`](https://github.com/JuliaGPU/AMDGPU.jl), respectively. We expect our package to be portable to AMD and
 Intel GPUs in the future.
 
 ## Description
