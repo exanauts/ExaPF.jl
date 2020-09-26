@@ -28,8 +28,6 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
-      - name: env
-        run: env
       - uses: actions/checkout@v2
       - uses: julia-actions/setup-julia@latest
         with:
