@@ -9,7 +9,7 @@ DocTestFilters = [r"ExaPF"]
 ```
 # Linear Solver
 
-As mentioned before, a linear solver is required to compute the Newton step in 
+As mentioned before, a linear solver is required to compute the Newton step in
 
 ```julia
 dx .= jacobian(x)\f(x)
@@ -18,7 +18,7 @@ dx .= jacobian(x)\f(x)
 Our package supports the following linear solvers:
 
 * CUSOLVER with `csrlsvqr` (GPU),
-* [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) with `dqgmres` (CPU/GPU), 
+* [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) with `dqgmres` (CPU/GPU),
 * [`IterativeSolvers.jl`](https://github.com/JuliaMath/IterativeSolvers.jl) with `bicgstab` (CPU),
 * UMFPACK through the default Julia `\` operator (CPU),
 * and a generic BiCGSTAB implementation [^Vorst1992] \(CPU/GPU\).
@@ -47,8 +47,8 @@ CUDA.@sync pivot, info, p.cuJs = CUDA.CUBLAS.getri_batched(blocks, pivot)
 
 Assuming that other vendors will provide such batched BLAS APIs, this code is portable to other GPU architectures.
 
-[^Vorst1992]: 
-    Vorst, H. A. van der. 1992. “Bi-Cgstab: A Fast and Smoothly ConvergingVariant of Bi-Cg for the Solution of Nonsymmetric Linear Systems.”SIAMJournal on Scientific and Statistical Computing13 (2):  631–44
+[^Vorst1992]:
+    Vorst, H. A. van der. 1992. “Bi-Cgstab: A Fast and Smoothly Converging Variant of Bi-Cg for the Solution of Nonsymmetric Linear Systems.”SIAM Journal on Scientific and Statistical Computing 13 (2): 631–44
 
 ## Description
 ```@docs

@@ -16,9 +16,12 @@ import Base: show
 """
     AbstractADFramework
 
-Automatic differentiation for the compressed Jacobians of the constraints `g(x,u)` with respect to the state `x` and the control `u` (here called design). 
+Automatic differentiation for the compressed Jacobians of the
+constraints `g(x,u)` with respect to the state `x` and the control `u`
+(here called design).
 
-TODO: Use dispatch to unify the code of the state and control Jacobian. This is currently not done because the abstraction of the indexing is not yet resolved.
+TODO: Use dispatch to unify the code of the state and control Jacobian.
+This is currently not done because the abstraction of the indexing is not yet resolved.
 
 """
 abstract type AbstractADFramework end
@@ -49,7 +52,7 @@ Creates an object for the state Jacobian
 * `t1sseeds::VP`: The seeding vector for AD built based on the coloring.
 * `t1sF::VD`: Output array of active (AD) type.
 * `x::VT`: Input array of passive type. This includes both state and control.
-* `t1sx::VD`: Input array of active type. 
+* `t1sx::VD`: Input array of active type.
 * `map::VI`: State and control mapping to array `x`
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
@@ -161,7 +164,7 @@ Creates an object for the control Jacobian.
 * `t1sseeds::VP`: The seeding vector for AD built based on the coloring.
 * `t1sF::VD`: Output array of active (AD) type.
 * `x::VT`: Input array of passive type. This includes both state and control.
-* `t1sx::VD`: Input array of active type. 
+* `t1sx::VD`: Input array of active type.
 * `map::VI`: State and control mapping to array `x`
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
@@ -264,7 +267,7 @@ end
 """
     myseed_kernel_cpu
 
-Seeding on the CPU, not parallelized. 
+Seeding on the CPU, not parallelized.
 
 """
 function myseed_kernel_cpu(
@@ -277,9 +280,9 @@ function myseed_kernel_cpu(
 end
 
 """
-    myseed_kernel_cpu
+    myseed_kernel_gpu
 
-Seeding on GPU parallelized over the `ncolor` number of duals 
+Seeding on GPU parallelized over the `ncolor` number of duals
 
 """
 function myseed_kernel_gpu(
@@ -399,7 +402,7 @@ end
     uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
-the CPU. 
+the CPU.
 """
 function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
     # CSC is column oriented: nmap is equal to number of columns
@@ -434,21 +437,22 @@ function uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
 end
 
 """
-    residualJacobianAD!(arrays::StateJacobianAD, 
-                        residualFunction_polar!, 
-                        v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, 
+    residualJacobianAD!(arrays::StateJacobianAD,
+                        residualFunction_polar!,
+                        v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                         timer = nothing)
 
 Update the sparse Jacobian entries using AD. No allocations are taking place in this function.
 
 * `arrays::StateJacobianAD`: Factory created Jacobian object to update
 * `residualFunction_polar`: Primal function
-* `v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
+* `v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both
+  active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
 
 """
-function residualJacobianAD!(arrays::StateJacobianAD, 
-                             residualFunction_polar!, 
-                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, 
+function residualJacobianAD!(arrays::StateJacobianAD,
+                             residualFunction_polar!,
+                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                              timer = nothing)
     @timeit timer "Before" begin
         @timeit timer "Setup" begin
@@ -489,9 +493,9 @@ function residualJacobianAD!(arrays::StateJacobianAD,
 end
 
 """
-    residualJacobianAD!(arrays::DesignJacobianAD, 
-                        residualFunction_polar!, 
-                        v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, 
+    residualJacobianAD!(arrays::DesignJacobianAD,
+                        residualFunction_polar!,
+                        v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                         timer = nothing)
 
 Update the sparse Jacobian entries using AD. No allocations are taking place in this function.
@@ -501,9 +505,9 @@ Update the sparse Jacobian entries using AD. No allocations are taking place in 
 * `v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
 
 """
-function residualJacobianAD!(arrays::DesignJacobianAD, 
-                             residualFunction_polar!, 
-                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, 
+function residualJacobianAD!(arrays::DesignJacobianAD,
+                             residualFunction_polar!,
+                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                              timer = nothing)
 
     @timeit timer "Before" begin

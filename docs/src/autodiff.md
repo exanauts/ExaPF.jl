@@ -12,24 +12,25 @@ DocTestFilters = [r"ExaPF"]
 ## Overview
 
 Given a set of equations `F(x) = 0`, the Newton-Raphson algorithm for
-solving nonlinear equations (see below) requires the Jacobian `J = jacobian(x)` 
+solving nonlinear equations (see below) requires the Jacobian `J = jacobian(x)`
 of `F`. At each iteration a new step `dx` is computed by
 solving a linear system. In our case `J` is sparse and indefinite.
 
 ```julia
-  go = true
-  while(go)
-    dx .= jacobian(x)\f(x)
-    x  .= x .- dx
-    go = norm(f(x)) < tol ? true : false
-  end
+    go = true
+    while(go)
+        dx .= jacobian(x)\f(x)
+        x  .= x .- dx
+        go = norm(f(x)) < tol ? true : false
+    end
 ```
 There are two modes of differentiation called *forward/tangent* or
 *reverse/adjoint*. The latter is known in machine learning as
 *backpropagation*. The forward mode generates Jacobian-vector product code
 `tgt(x,d) = J(x) * d`, while the adjoint mode generates code for the
 transposed Jacobian-vector product `adj(x,y) = (J(x)'*y)`. We recommend
-@griewank2008evaluating for a more in-depth introduction to automatic
+the book *Evaluating derivatives: principles and techniques of algorithmic
+differentiation* by Griewank and Walther[^1] for a more in-depth introduction to automatic
 differentiation. The computational complexity of both models favors the
 adjoint mode if the number of outputs of `F` is much smaller than the
 number of inputs `size(x) >> size(F)`, like for example the loss functions
@@ -48,7 +49,7 @@ independent columns in one Jacobian-vector evaluation (see
 algorithm implemented by [`SparseDiffTools.jl`](https://github.com/JuliaDiff/SparseDiffTools.jl).
 
 Given the sparsity pattern, the forward model is applied through the package
-[`ForwardDiff.jl`](https://github.com/exanauts/ForwardDiff.jl). Given the number of Jaocbian
+[`ForwardDiff.jl`](https://github.com/exanauts/ForwardDiff.jl). Given the number of Jacobian
 colors $c$ we can build our dual type `t1s` with `c` directions:
 
 ```julia
@@ -63,12 +64,12 @@ t2s{M,N} =  ForwardDiff.Dual{Nothing,t1s{N}, M} where M, N}
 Finally, this dual type can be ported to both vector types `Vector` and `CuVector`:
 
 ```julia
-T = Vector{Float64}
-T = Vector{t1s{N}}}
-T = CuVector{t1s{N}}}
+VT = Vector{Float64}
+VT = Vector{t1s{N}}}
+VT = CuVector{t1s{N}}}
 ```
 
-Setting `T` to either of the three types allows us to instantiate code that has been written using the *broadcast operator* `.` 
+Setting `VT` to either of the three types allows us to instantiate code that has been written using the *broadcast operator* `.`
 
 ```julia
 x .= a .* b
@@ -122,6 +123,9 @@ similar package like [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) exists. We
 Intel Compute Engine and AMD ROCm are in development called [`oneAPI.jl`](https://github.com/JuliaGPU/oneAPI.jl) and
 [`AMDGPU.jl`](https://github.com/JuliaGPU/AMDGPU.jl), respectively. We expect our package to be portable to AMD and
 Intel GPUs in the future.
+
+[^1]:
+    Griewank, Andreas, and Andrea Walther. *Evaluating derivatives: principles and techniques of algorithmic differentiation*. Society for Industrial and Applied Mathematics, 2008.
 
 ## Description
 ```@docs
