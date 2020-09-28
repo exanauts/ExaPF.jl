@@ -18,20 +18,39 @@ in the reduced space.
 To make our implementation portable to CPU and GPU architectures we leverage
 two abstractions: arrays and kernels. Both of these abstractions are
 supported through the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl)
-Please take a look at the [autodiff](autodiff.md) and [linear solver](linearsolver.md) 
-implementations to get a design overview of `ExaPF.jl` targeted for GPUs. 
+Please take a look at the [autodiff](man/autodiff.md) and [linear solver](man/linearsolver.md)
+implementations to get a design overview of `ExaPF.jl` targeted for GPUs.
 
 The user API is separated into three layers:
 
-* First layer or physical layer: Power network topology in [powersystem](powersystem.md) 
-* Second layer: Interface between power network and NLE or NLP in [formulations](formulations.md) 
-* Third layer: Evaluators for NLE or NLP 
+* First layer or physical layer: Power network topology in [powersystem](man/powersystem.md)
+* Second layer: Interface between power network and NLE or NLP in [formulations](lib/formulations.md)
+* Third layer: Evaluators for non-linear problems
 
 The third layer is for users working in optimization whereas the first layer is for electrical engineers. They meet in the second layer.
 
 ## Table of contents
 
+### Manual
+
 ```@contents
-Pages = ["autodiff.md", "linearsolver.md", "powersystem.md", "formulations.md", "evaluators.md"]
-Depth = 3
+Pages = [
+    "man/autodiff.md",
+    "man/linearsolver.md",
+    "man/powersystem.md",
+]
+Depth = 1
+```
+
+### Library
+
+```@contents
+Pages = [
+    "lib/autodiff.md",
+    "lib/linearsolver.md",
+    "lib/powersystem.md",
+    "lib/formulations.md",
+    "lib/evaluators.md",
+]
+Depth = 1
 ```

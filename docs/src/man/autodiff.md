@@ -38,7 +38,7 @@ in machine learning. However, in our case `F` is a multivariate vector
 function from $\mathbb{R}^n$ to $\mathbb{R}^n$, where $n$ is the number of
 buses.
 
-![Jacobian coloring \label{fig:coloring}](figures/compression.png)
+![Jacobian coloring \label{fig:coloring}](../figures/compression.png)
 
 To avoid a complexity of $\mathcal{O}(n) \cdot cost(F)$ by letting the tangent mode
 run over all Cartesian basis vectors of $\mathbb{R}^n$, we apply the technique of Jacobian
@@ -115,7 +115,7 @@ forward mode in vectorized form where the number of directions or tangent
 components of a tangent variable are the number of Jacobian colors. We
 illustrate this in \autoref{fig:simd} with a point-wise vector product `x .* y`
 
-![SIMD AD for point-wise vector product \label{fig:simd}](figures/simd.png)
+![SIMD AD for point-wise vector product \label{fig:simd}](../figures/simd.png)
 
 This natural way of computing the compressed Jacobian yields a very high
 performing code that is portable to any vector architecture, given that a
@@ -126,23 +126,3 @@ Intel GPUs in the future.
 
 [^1]:
     Griewank, Andreas, and Andrea Walther. *Evaluating derivatives: principles and techniques of algorithmic differentiation*. Society for Industrial and Applied Mathematics, 2008.
-
-## Description
-```@docs
-AD.AbstractADFramework
-```
-
-## API Reference
-```@docs
-AD.StateJacobianAD
-AD.DesignJacobianAD
-AD.myseed_kernel_cpu
-AD.myseed_kernel_gpu
-AD.seeding
-AD.getpartials_cpu
-AD.getpartials_gpu
-AD.getpartials
-AD._uncompress
-AD.uncompress!
-AD.residualJacobianAD!
-```

@@ -36,7 +36,7 @@ problems.
 
 The Jacobian is partitioned into a dense block diagonal structure, where each block is inverted to build our preconditioner `P`. For the partition we use `Metis.jl`.
 
-![Dense block Jacobi preconditioner \label{fig:preconditioner}](figures/gpublocks.png)
+![Dense block Jacobi preconditioner \label{fig:preconditioner}](../figures/gpublocks.png)
 
 Compared to incomplete Cholesky and incomplete LU this preconditioner is easily portable to the GPU if the number of blocks is high enough. `ExaPF.jl` uses the batch BLAS calls from `CUBLAS` to invert the single blocks.
 
@@ -49,17 +49,3 @@ Assuming that other vendors will provide such batched BLAS APIs, this code is po
 
 [^Vorst1992]:
     Vorst, H. A. van der. 1992. “Bi-Cgstab: A Fast and Smoothly Converging Variant of Bi-Cg for the Solution of Nonsymmetric Linear Systems.”SIAM Journal on Scientific and Statistical Computing 13 (2): 631–44
-
-## Description
-```@docs
-Precondition.AbstractPreconditioner
-```
-
-## API Reference
-```@docs
-Precondition.Preconditioner
-Precondition.update
-Precondition.build_adjmatrix
-Precondition.fillblock_gpu!
-Precondition.fillP_gpu!
-```
