@@ -9,6 +9,8 @@ DocTestFilters = [r"ExaPF"]
 ```
 # Linear Solver
 
+## Overview
+
 As mentioned before, a linear solver is required to compute the Newton step in
 
 ```julia
@@ -27,6 +29,8 @@ The last custom implementation was necessary as BiCGSTAB showed much better
 performance than GMRES and at the time of this writing both [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) and
 [`IterativeSolvers.jl`](https://github.com/JuliaMath/IterativeSolvers.jl) did not provide an implementation that supported
 [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl).
+
+## Preconditioning
 
 Using only an iterative solver leads to divergence and bad performance due to
 ill-conditioning of the Jacobian. This is a known phenomenon in power

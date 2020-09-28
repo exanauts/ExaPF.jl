@@ -39,6 +39,8 @@ Pages = [
     "man/autodiff.md",
     "man/linearsolver.md",
     "man/powersystem.md",
+    "man/formulations.md",
+    "man/evaluators.md",
 ]
 Depth = 1
 ```

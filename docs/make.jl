@@ -14,6 +14,8 @@ makedocs(
             "AutoDiff" => "man/autodiff.md",
             "Linear Solver" => "man/linearsolver.md",
             "PowerSystem" => "man/powersystem.md",
+            "Formulations" => "man/formulations.md",
+            "Evaluators" => "man/evaluators.md",
         ],
         "Library" => [
             "AutoDiff" => "lib/autodiff.md",
