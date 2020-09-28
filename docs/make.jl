@@ -4,11 +4,12 @@ makedocs(
     sitename = "ExaPF.jl",
     format = Documenter.HTML(
         prettyurls = Base.get(ENV, "CI", nothing) == "true",
-        mathengine = Documenter.MathJax2()
+        mathengine = Documenter.KaTeX()
     ),
     strict = true,
     pages = [
         "Home" => "index.md",
+        "Quick start" => "quickstart.md",
         "Manual" => [
             "AutoDiff" => "man/autodiff.md",
             "Linear Solver" => "man/linearsolver.md",

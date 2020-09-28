@@ -35,6 +35,7 @@ The third layer is for users working in optimization whereas the first layer is 
 
 ```@contents
 Pages = [
+    "quickstart.md",
     "man/autodiff.md",
     "man/linearsolver.md",
     "man/powersystem.md",

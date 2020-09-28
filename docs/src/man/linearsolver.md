@@ -17,7 +17,7 @@ dx .= jacobian(x)\f(x)
 
 Our package supports the following linear solvers:
 
-* CUSOLVER with `csrlsvqr` (GPU),
+* [`CUSOLVER`](https://docs.nvidia.com/cuda/cusolver/index.html) with `csrlsvqr` (GPU),
 * [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) with `dqgmres` (CPU/GPU),
 * [`IterativeSolvers.jl`](https://github.com/JuliaMath/IterativeSolvers.jl) with `bicgstab` (CPU),
 * UMFPACK through the default Julia `\` operator (CPU),
@@ -28,7 +28,7 @@ performance than GMRES and at the time of this writing both [`Krylov.jl`](https:
 [`IterativeSolvers.jl`](https://github.com/JuliaMath/IterativeSolvers.jl) did not provide an implementation that supported
 [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl).
 
-Using only an iterative solver lead to divergence and bad performance due to
+Using only an iterative solver leads to divergence and bad performance due to
 ill-conditioning of the Jacobian. This is a known phenomenon in power
 systems. That's why this package comes with a block Jacobi preconditioner
 that is tailored towards GPUs and is proven to work well with power flow
