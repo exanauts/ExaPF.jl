@@ -178,10 +178,8 @@ function bicgstab_eigen(A, b, P, x, to::TimerOutput;
     r0 = similar(r)
     r0 .= r
     
-    r0_sqnorm = norm(r0)
-    r0_sqnorm = r0_sqnorm^2
-    rhs_sqnorm = norm(b)
-    rhs_sqnorm = rhs_sqnorm^2
+    r0_sqnorm = norm(r0)^2
+    rhs_sqnorm = norm(b)^2
     if rhs_sqnorm == 0
         x .= 0.0
         return x, 0.0, Converged
@@ -190,13 +188,13 @@ function bicgstab_eigen(A, b, P, x, to::TimerOutput;
     alpha  = 1.0
     w      = 1.0
     
-    v = similar(b); p = similar(b)
+    v = similar(x); p = similar(x)
     fill!(v, 0.0); fill!(p, 0.0)
 
-    y = similar(b); z = similar(b)
-    s = similar(b); t = similar(b)
+    y = similar(x); z = similar(x)
+    s = similar(x); t = similar(x)
 
-    tol2 = tol*tol*rhs_sqnorm;
+    tol2 = tol*tol*rhs_sqnorm
     eps2 = eps(Float64)^2
     i = 0
     restarts = 0
@@ -208,11 +206,13 @@ function bicgstab_eigen(A, b, P, x, to::TimerOutput;
         rho = dot(r0, r)
 
         if abs(rho) < eps2*r0_sqnorm
-            r  .= b .- A * x
+            mul!(r, A, x)
+            r .= b .- r
             r0 .= r
             v .= 0.0
             p .= 0.0
-            rho = r0_sqnorm = norm(r)
+            rho = norm(r)^2
+            r0_sqnorm = norm(r)^2
             if restarts == 0
                 i = 0
             end
@@ -220,20 +220,19 @@ function bicgstab_eigen(A, b, P, x, to::TimerOutput;
         end
 
         beta = (rho/rho_old) * (alpha / w)
-        p .= r .+ (beta * (p .- w * v))
+        p .= r .+ (beta * (p .- w .* v))
         
 
         mul!(y, P, p)
         mul!(v, A, y)
 
         alpha = rho / dot(r0, v)
-        s .= r .- alpha * v
+        s .= r .- alpha .* v
 
         mul!(z, P, s)
         mul!(t, A, z)
 
-        tmp = norm(t)
-        tmp = tmp^2
+        tmp = norm(t)^2
         if tmp > 0.0
             w = dot(t,s) / tmp
         else
@@ -297,10 +296,26 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
     go = true
     status = Unsolved
     iter = 1
+    restarts = 0
     @timeit to "While loop" begin
         while go
             @timeit to "First stage" begin
-                rhoi1 = dot(br0, ri) ; beta = (rhoi1/rhoi) * (alpha / omegai)
+                rhoi1 = dot(br0, ri) ; 
+                if abs(rhoi1) < 1e-20
+                    restarts += 1
+                    ri .= b - A * xi
+                    br0 .= ri
+                    residual .= b
+                    rho0 = 1.0
+                    rhoi = rho0
+                    rhoi1 = dot(br0,ri)
+                    alpha = 1.0
+                    omega0 = 1.0
+                    omegai = 1.0
+                    fill!(vi, 0.0)
+                    fill!(pi, 0.0)
+                end
+                beta = (rhoi1/rhoi) * (alpha / omegai)
                 pi1 .= ri .+ beta .* (pi .- omegai .* vi)
                 mul!(y, P, pi1)
                 mul!(vi1, A, y)
