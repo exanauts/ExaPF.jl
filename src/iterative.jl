@@ -12,7 +12,7 @@ using ..ExaPF: Precondition
 import ..ExaPF: norm2, TIMER
 
 export bicgstab, list_solvers
-export DirectSolver, BICGSTAB
+export DirectSolver, BICGSTAB, EigenBICGSTAB
 
 @enum(SolveStatus,
     Unsolved,
@@ -42,6 +42,7 @@ end
 function update!(solver::AbstractIterativeLinearSolver, J)
     @timeit solver.timer "Preconditioner"  Precondition.update(J, solver.precond, solver.timer)
 end
+
 struct BICGSTAB <: AbstractIterativeLinearSolver
     precond::Precondition.AbstractPreconditioner
     maxiter::Int
@@ -54,13 +55,71 @@ function ldiv!(solver::BICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
+    if P isa SparseMatrixCSC
+        if any(isnan.(P.nzval))
+            error("NaNs in P")
+        end
+        if any(isnan.(J.nzval))
+            error("NaNs in J")
+        end
+    else
+        if any(isnan.(P.nzVal))
+            error("NaNs in P")
+        end
+        if any(isnan.(J.nzVal))
+            error("NaNs in J")
+        end
+    end
+
     @timeit solver.timer "BICGSTAB" begin
         y[:], n_iters, status = bicgstab(J, x, P, y, solver.timer; maxiter=solver.maxiter,
                                          verbose=solver.verbose, tol=solver.tol)
     end
+    if any(isnan.(y))
+        error("NaNs in y")
+    end
     return n_iters
 end
 
+struct EigenBICGSTAB <: AbstractIterativeLinearSolver
+    precond::Precondition.AbstractPreconditioner
+    maxiter::Int
+    tol::Float64
+    verbose::Bool
+    timer::TimerOutput
+end
+EigenBICGSTAB(precond; maxiter=10_000, tol=1e-8, verbose=false) = EigenBICGSTAB(precond, maxiter, tol, verbose, TIMER)
+function ldiv!(solver::EigenBICGSTAB,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+)
+    P = solver.precond.P
+    if P isa SparseMatrixCSC
+        if any(isnan.(P.nzval))
+            error("NaNs in P")
+        end
+        if any(isnan.(J.nzval))
+            error("NaNs in J")
+        end
+    else
+        if any(isnan.(P.nzVal))
+            error("NaNs in P")
+        end
+        if any(isnan.(J.nzVal))
+            error("NaNs in J")
+        end
+    end
+
+    @timeit solver.timer "BICGSTAB" begin
+        y[:], n_iters, status = bicgstab_eigen(J, x, P, y, solver.timer; maxiter=solver.maxiter,
+                                         verbose=solver.verbose, tol=solver.tol)
+    end
+
+    if any(isnan.(y))
+        error("NaNs in y")
+    end
+
+    return n_iters
+end
 struct RefBICGSTAB <: AbstractIterativeLinearSolver
     precond::Precondition.AbstractPreconditioner
     verbose::Bool
@@ -111,6 +170,91 @@ function ldiv!(solver::DQGMRES,
     return length(status.residuals)
 end
 
+function bicgstab_eigen(A, b, P, x, to::TimerOutput;
+                  tol=1e-8, maxiter=size(A, 1), verbose=false)
+
+    n = size(A,2)
+    r  = b - A * x
+    r0 = copy(r)
+    
+    r0_sqnorm = norm(r0)^2
+    rhs_sqnorm = norm(b)^2
+    if rhs_sqnorm == 0
+        x .= 0.0
+        return x, 0.0, Converged
+    end
+    rho    = 1.0
+    alpha  = 1.0
+    w      = 1.0
+    
+    v = similar(b); p = similar(b)
+    fill!(v, 0.0); fill!(p, 0.0)
+
+    y = similar(b); z = similar(b)
+    s = similar(b); t = similar(b)
+
+    tol2 = tol*tol*rhs_sqnorm;
+    eps2 = 1e-20
+    i = 0
+    restarts = 0
+    status = Unsolved
+
+    while norm(r)^2 > tol2 && i < maxiter
+        rho_old = rho
+
+        rho = dot(r0, r)
+
+        # if abs(rho) < eps2*r0_sqnorm
+        #     r  .= b - A * x
+        #     r0 .= r
+        #     v .= 0.0
+        #     p .= 0.0
+        #     rho = r0_sqnorm = norm(r)
+        #     if restarts == 0
+        #         i = 0
+        #     end
+        #     restarts += 1
+        # end
+
+        beta = (rho/rho_old) * (alpha / w)
+        p .= r .+ beta * (p .- w * v)
+        
+
+        y .= P * p
+        v .= A * y
+
+        alpha = rho / dot(r0, v)
+        s .= r .- alpha * v
+
+        z .= P * s
+        t .= A * z
+
+        tmp = norm(t)^2
+        if tmp > 0.0
+            w = dot(t,s) / tmp
+        else
+            w = 0.0
+        end
+        x .= x .+ alpha * y .+ w * z;
+        r .= s .- w * t;
+        i += 1
+    end
+    if maxiter == i
+        @show iter
+        go = false
+        status = MaxIterations
+        println("Restarts: $restarts")
+        println("Not converged")
+    end
+    if norm(r)^2 <= tol2
+        go = false
+        status = Converged
+        println("Restarts: $restarts")
+        println("Tolerance reached at iteration $i")
+    end
+    @show i, restarts
+    return x, i, status
+end
 
 """
 bicgstab according to
@@ -148,27 +292,70 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
     vi1 = similar(pi)
     t = similar(pi)
 
+    restarts = 0
     go = true
     status = Unsolved
     iter = 1
+    function isok(x, line, kwargs...)
+        if any(isinf.(x))
+            @show kwargs
+            error("Infs at iteration $iter at line $line")
+        end
+        if any(isnan.(x))
+            @show kwargs
+            error("NaNs at iteration $iter at line $line")
+        end
+    end
     @timeit to "While loop" begin
         while go
             @timeit to "First stage" begin
                 rhoi1 = dot(br0, ri) ; beta = (rhoi1/rhoi) * (alpha / omegai)
+                if abs(rhoi1) < 1e-18
+                    restarts += 1
+                    ri .= b - A * xi
+                    br0 .= ri
+                    residual .= b
+                    rho0 = 1.0
+                    rhoi = rho0
+                    rhoi1 = dot(br0,ri)
+                    alpha = 1.0
+                    omega0 = 1.0
+                    omegai = 1.0
+                    fill!(vi, 0.0)
+                    fill!(pi, 0.0)
+                end
+                isok(rhoi1, @__LINE__)
+                isok(rhoi, @__LINE__)
+                isok(alpha, @__LINE__)
+                isok(omegai, @__LINE__)
+                isok(ri, @__LINE__)
+                isok(pi, @__LINE__)
+                isok(vi, @__LINE__)
+                isok(beta, @__LINE__, rhoi1, rhoi, alpha, omegai)
+                isok(omegai, @__LINE__)
                 pi1 .= ri .+ beta .* (pi .- omegai .* vi)
+                isok(pi1, @__LINE__)
                 mul!(y, P, pi1)
+                isok(y, @__LINE__)
                 mul!(vi1, A, y)
+                isok(vi1, @__LINE__)
                 alpha = rhoi1 / dot(br0, vi1)
                 s .= ri .- (alpha .* vi1)
+
+                isok(alpha, @__LINE__)
                 mul!(z, P, s)
                 mul!(t, A, z)
                 mul!(t1, P, t)
                 mul!(t2, P, s)
             end
             @timeit to "Main stage" begin
+                isok(t1, @__LINE__)
+                isok(t2, @__LINE__)
                 omegai1 = dot(t1, t2) / dot(t1, t1)
+                isok(omegai1, @__LINE__, dot(t1,t2), dot(t1,t1))
                 xi .= xi .+ alpha .* y .+ omegai1 .* z
             end
+            isok(xi, @__LINE__)
 
             @timeit to "End stage" begin
                 # TODO: should update to five arguments mul!
@@ -189,13 +376,14 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
                 if anorm < tol
                     go = false
                     status = Converged
-                    verbose && println("Tolerance reached at iteration $iter")
+                    verbose && println("Tolerance reached at iteration $iter and $restarts restarts")
                 end
                 if maxiter == iter
                     @show iter
                     go = false
                     status = MaxIterations
-                    verbose && println("Not converged")
+                    println("Restarts: $restarts")
+                    verbose && println("Not converged and $restarts restarts")
                 end
 
                 ri     .= s .- omegai1 .* t
@@ -211,7 +399,7 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
     return xi, iter, status
 end
 
-list_solvers(::CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, DirectSolver]
-list_solvers(::CUDADevice) = [BICGSTAB, DQGMRES, DirectSolver]
+list_solvers(::CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver]
+list_solvers(::CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver]
 
 end

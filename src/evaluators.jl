@@ -107,7 +107,7 @@ could be instantiate on the main memory, or on a specific device (currently,
 only CUDA is supported).
 
 """
-struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
+mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     model::AbstractFormulation
     x::AbstractVector{T}
     p::AbstractVector{T}
