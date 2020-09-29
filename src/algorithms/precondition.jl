@@ -26,6 +26,7 @@ mutable struct Preconditioner <: AbstractPreconditioner
     part
     cupart
     P
+    id
     function Preconditioner(J, npart, device=CPU())
         if isa(J, CuSparseMatrixCSR)
             J = SparseMatrixCSC(J)
@@ -77,6 +78,7 @@ mutable struct Preconditioner <: AbstractPreconditioner
             end
         end
         P = sparse(row, col, nzval)
+        id = CuMatrix{Float64}(I, nJs, nJs)
         if isa(device, CUDADevice)
             cupartitions = Vector{CuVector{Int64}}(undef, npart)
             for i in 1:npart
@@ -94,8 +96,9 @@ mutable struct Preconditioner <: AbstractPreconditioner
             cupartitions = nothing
             cumap = nothing
             cupart = nothing
+            id = nothing
         end
-        return new(npart, nJs, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P)
+        return new(npart, nJs, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P, id)
     end
 end
 
@@ -150,6 +153,9 @@ function update(J::CuSparseMatrixCSR, p, to)
     m = size(J, 1)
     n = size(J, 2)
     nblocks = length(p.partitions)
+    for el in p.cuJs
+        el .= p.id
+    end
     @timeit to "Fill Block Jacobi" begin
         CUDA.@sync begin
             for b in 1:nblocks
