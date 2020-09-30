@@ -155,26 +155,6 @@ function put_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, yb
     end
 end
 
-function get_power_injection_partials(fr, v_m, v_a, ybus_re, ybus_im)
-    nbus = length(v_m)
-    dPdVm = zeros(nbus)
-    dPdVa = zeros(nbus)
-    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
-        to = ybus_re.rowval[c]
-        aij = v_a[fr] - v_a[to]
-
-        if to != fr
-            dPdVm[to] = v_m[fr]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
-            dPdVa[to] = v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
-            dPdVm[fr] += v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
-            dPdVa[fr] += v_m[to]*v_m[fr]*(-ybus_re.nzval[c]*sin(aij) + ybus_im.nzval[c]*cos(aij))
-        else
-            dPdVm[fr] += 2*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
-        end
-    end
-    return dPdVm, dPdVa
-end
-
 """
 get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
 

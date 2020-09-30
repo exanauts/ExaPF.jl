@@ -10,29 +10,7 @@ using Ipopt
 
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
-get_lines_limit(pf::PowerSystem.PowerNetwork) = (pf.data["branch"][:, 6] / pf.data["baseMVA"][1]).^2
-
-function flow_limit(pf, x, u, p; T=Float64)
-    nref = length(pf.ref)
-    npv = length(pf.pv)
-    npq = length(pf.pq)
-    b2i = pf.bus_to_indexes
-    branches = pf.data["branch"]
-    nlines = size(branches, 1)
-    cons_fr = zeros(T, nlines)
-    cons_to = zeros(T, nlines)
-    Vm, Va, pbus, qbus = ExaPF.PowerSystem.retrieve_physics(pf, x, u, p; V=T)
-
-    for i in 1:nlines
-        bus_fr = b2i[Int(branches[i, 1])]
-        cons_fr[i] = pbus[bus_fr]^2 + qbus[bus_fr]^2
-        bus_to = b2i[Int(branches[i, 2])]
-        cons_to[i] = pbus[bus_to]^2 + qbus[bus_to]^2
-    end
-    return [cons_fr; cons_to]
-end
-
-# Build all the callbacks in a single closure.
+# Wrap up ReducedSpaceEvaluator
 function build_callback(form, x0, u, p, constraints)
     hash_u = hash(u)
     nlp = ExaPF.ReducedSpaceEvaluator(form, x0, u, p; constraints=constraints)
@@ -65,14 +43,11 @@ function build_callback(form, x0, u, p, constraints)
             jac = zeros(m, n)
             ExaPF.jacobian!(nlp, jac, u)
 
-            # @info("j", J)
             # Copy to Ipopt's Jacobian
             k = 1
-            for i in 1:m
-                for j in 1:n
-                    values[k] = jac[i, j]
-                    k += 1
-                end
+            for (i, j) in zip(rows, cols)
+                values[k] = jac[i, j]
+                k += 1
             end
         end
         return nothing
@@ -81,18 +56,6 @@ function build_callback(form, x0, u, p, constraints)
                     rows::Vector{Int32}, cols::Vector{Int32}, obj_factor::Float64,
                     lambda::Vector{Float64}, values::Vector{Float64})
         n = length(u)
-        # if mode == :Structure
-        #     index = 0
-        #     for i in 1:n
-        #         for j in i:n
-        #             index += 1
-        #             rows[index] = i
-        #             cols[index] = j
-        #         end
-        #     end
-        # else
-        #     (hash_u != hash(u)) && _update(u)
-        # end
         return nothing
     end
     return nlp, eval_f, eval_grad_f, eval_g, eval_jac_g, eval_h
@@ -109,7 +72,7 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     uk = copy(u0)
     n = length(uk)
 
-    constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
+    constraints = Function[]
     # constraints = Function[]
     # Build callbacks in closure
     nlp, eval_f, eval_grad_f, eval_g, eval_jac_g, eval_h = build_callback(polar, xk, uk, p, constraints)
@@ -153,19 +116,13 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
 
     Ipopt.solveProblem(prob)
     u = prob.x
-    # x, g, Jx, Ju, conv = ExaPF.solve(pf, xk, u, p, maxiter=50, tol=1e-14)
-    # ExaPF.PowerSystem.print_state(pf, nlp.x, u, p)
-    # res = flow_limit(pf, x, u, p) .- [F_max; F_max]
-    # println(res)
-    # @info("l", maximum(res))
-    # println(findall(x -> x > 0, res))
     return prob, pf
 end
 
 # datafile = "test/data/case9.m"
-# datafile = "../pglib-opf/pglib_opf_case30_ieee.m"
+datafile = "../pglib-opf/pglib_opf_case30_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case57_ieee.m"
-datafile = "../pglib-opf/pglib_opf_case118_ieee.m"
+# datafile = "../pglib-opf/pglib_opf_case118_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case300_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case1354_pegase.m"
 # datafile = "../pglib-opf/pglib_opf_case1888_rte.m"
