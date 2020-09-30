@@ -6,9 +6,6 @@ using ForwardDiff
 using LinearAlgebra
 using KernelAbstractions
 
-# Include the linesearch here for now
-include("../src/algorithms/linesearches.jl")
-
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "RGM Optimal Power flow 9 bus case" begin

@@ -9,7 +9,7 @@ using SparseArrays
 using Test
 using TimerOutputs
 using ExaPF
-import ExaPF: PowerSystem, AD, Precondition, Iterative
+import ExaPF: PowerSystem, AD
 
 const PS = PowerSystem
 

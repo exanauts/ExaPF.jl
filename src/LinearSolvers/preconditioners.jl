@@ -1,4 +1,3 @@
-module Precondition
 
 using CUDA
 using CUDA.CUSPARSE
@@ -9,12 +8,10 @@ using Metis
 using SparseArrays
 using TimerOutputs
 
-import Base: show
-
 abstract type AbstractPreconditioner end
 struct NoPreconditioner <: AbstractPreconditioner end
 
-mutable struct Preconditioner <: AbstractPreconditioner
+mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
     npart::Int64
     nJs::Int64
     partitions::Vector{Vector{Int64}}
@@ -27,7 +24,7 @@ mutable struct Preconditioner <: AbstractPreconditioner
     cupart
     P
     id
-    function Preconditioner(J, npart, device=CPU())
+    function BlockJacobiPreconditioner(J, npart, device=CPU())
         if isa(J, CuSparseMatrixCSR)
             J = SparseMatrixCSC(J)
         end
@@ -101,7 +98,6 @@ mutable struct Preconditioner <: AbstractPreconditioner
         return new(npart, nJs, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P, id)
     end
 end
-
 
 function build_adjmatrix(A)
     rows = Int64[]
@@ -211,11 +207,11 @@ function update(J::SparseMatrixCSC, p, to)
     return p.P
 end
 
-is_valid(precond::Preconditioner) = _check_nan(precond.P)
+is_valid(precond::BlockJacobiPreconditioner) = _check_nan(precond.P)
 _check_nan(P::SparseMatrixCSC) = !any(isnan.(P.nzval))
 _check_nan(P::CuSparseMatrixCSR) = !any(isnan.(P.nzVal))
 
-function Base.show(precond::Preconditioner)
+function Base.show(precond::BlockJacobiPreconditioner)
     npartitions = precond.npart
     nblock = div(size(precond.P, 1), npartitions)
     println("#partitions: $npartitions, Blocksize: n = ", nblock,
@@ -223,4 +219,3 @@ function Base.show(precond::Preconditioner)
     println("Block Jacobi block size: $(precond.nJs)")
 end
 
-end

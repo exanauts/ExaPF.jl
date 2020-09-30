@@ -32,12 +32,10 @@ include("utils.jl")
 # Import submodules
 include("ad.jl")
 using .AD
-include("algorithms/precondition.jl")
-using .Precondition
 include("indexes.jl")
 using .IndexSet
-include("iterative.jl")
-using .Iterative
+include("LinearSolvers/LinearSolvers.jl")
+using .LinearSolvers
 include("parsers/parse_mat.jl")
 using .ParseMAT
 include("parsers/parse_psse.jl")

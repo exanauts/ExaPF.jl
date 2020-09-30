@@ -317,10 +317,10 @@ function powerflow(
         J = jacobian.J
 
         # Find descent direction
-        if isa(solver, Iterative.AbstractIterativeLinearSolver)
-            Iterative.update!(solver, J)
+        if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
+            LinearSolvers.update!(solver, J)
         end
-        n_iters = Iterative.ldiv!(solver, dx, J, F)
+        n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
         push!(linsol_iters, n_iters)
 
         # update voltage

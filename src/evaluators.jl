@@ -124,7 +124,7 @@ mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 
     network_cache::AbstractPhysicalCache
     ad::ADFactory
-    linear_solver::Iterative.AbstractLinearSolver
+    linear_solver::LinearSolvers.AbstractLinearSolver
     ε_tol::Float64
 end
 
@@ -202,7 +202,7 @@ function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J::CuSparseMatrixCSR{T}, y::C
     # # TODO: fix this hack once CUDA.jl 1.4 is released
     Jt = nlp.ad.Jᵗ
     Jt.nzVal .= J.nzVal
-    Iterative.ldiv!(nlp.linear_solver, λ, Jt, y)
+    LinearSolvers.ldiv!(nlp.linear_solver, λ, Jt, y)
 end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
