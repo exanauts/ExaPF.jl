@@ -248,9 +248,7 @@ function powerflow(
     polar::PolarForm{T, IT, VT, AT},
     jacobian::AD.StateJacobianAD,
     buffer::PolarNetworkState{VT};
-    npartitions=2,
-    solver="default",
-    preconditioner=Precondition.NoPreconditioner(),
+    solver=DirectSolver(),
     tol=1e-7,
     maxiter=20,
     verbose_level=0,
@@ -293,7 +291,7 @@ function powerflow(
 
     # check for convergence
     normF = norm(F, Inf)
-    if verbose_level >= VERBOSE_LEVEL_HIGH
+    if verbose_level >= VERBOSE_LEVEL_LOW
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
     end
     if normF < tol
@@ -319,7 +317,10 @@ function powerflow(
         J = jacobian.J
 
         # Find descent direction
-        n_iters = Iterative.ldiv!(dx, J, F, solver, preconditioner, TIMER)
+        if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
+            LinearSolvers.update!(solver, J)
+        end
+        n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
         push!(linsol_iters, n_iters)
 
         # update voltage
@@ -345,7 +346,7 @@ function powerflow(
         end
 
         @timeit TIMER "Norm" normF = norm2(F)
-        if verbose_level >= VERBOSE_LEVEL_HIGH
+        if verbose_level >= VERBOSE_LEVEL_LOW
             @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
         end
 
@@ -366,6 +367,7 @@ function powerflow(
     if verbose_level >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
         println("")
+        reset_timer!(TIMER)
     end
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
     return conv

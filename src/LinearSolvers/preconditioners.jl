@@ -1,4 +1,3 @@
-module Precondition
 
 using CUDA
 using CUDA.CUSPARSE
@@ -9,20 +8,18 @@ using Metis
 using SparseArrays
 using TimerOutputs
 
-cuzeros = CUDA.zeros
 
 """
     AbstractPreconditioner
 
-Preconditioners for the iterative solvers mostly focused on GPUs 
+Preconditioners for the iterative solvers mostly focused on GPUs
 
 """
 abstract type AbstractPreconditioner end
-
 struct NoPreconditioner <: AbstractPreconditioner end
 
 """
-    Preconditioner
+    BlockJacobiPreconditioner
 
 Creates an object for the block-Jacobi preconditioner
 
@@ -32,13 +29,13 @@ Creates an object for the block-Jacobi preconditioner
 * `cupartitions`: `partitions` transfered to the GPU
 * `Js`: Dense blocks of the block-Jacobi
 * `cuJs`: `Js` transfered to the GPU
-* `map`: The partitions as a mapping to construct views 
+* `map`: The partitions as a mapping to construct views
 * `cumap`: `cumap` transferred to the GPU`
 * `part`: Partitioning as output by Metis
 * `cupart`: `part` transferred to the GPU
 * `P`: The sparse precondition matrix whose values are updated at each iteration
 """
-mutable struct Preconditioner <: AbstractPreconditioner
+mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
     npart::Int64
     nJs::Int64
     partitions::Vector{Vector{Int64}}
@@ -50,7 +47,8 @@ mutable struct Preconditioner <: AbstractPreconditioner
     part
     cupart
     P
-    function Preconditioner(J, npart, device=CPU())
+    id
+    function BlockJacobiPreconditioner(J, npart, device=CPU())
         if isa(J, CuSparseMatrixCSR)
             J = SparseMatrixCSC(J)
         end
@@ -102,6 +100,7 @@ mutable struct Preconditioner <: AbstractPreconditioner
         end
         P = sparse(row, col, nzval)
         if isa(device, CUDADevice)
+            id = CuMatrix{Float64}(I, nJs, nJs)
             cupartitions = Vector{CuVector{Int64}}(undef, npart)
             for i in 1:npart
                 cupartitions[i] = CuVector{Int64}(partitions[i])
@@ -118,8 +117,9 @@ mutable struct Preconditioner <: AbstractPreconditioner
             cupartitions = nothing
             cumap = nothing
             cupart = nothing
+            id = nothing
         end
-        return new(npart, nJs, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P)
+        return new(npart, nJs, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P, id)
     end
 end
 
@@ -191,17 +191,20 @@ end
 """
     function update(J::CuSparseMatrixCSR, p, to)
 
-Update the preconditioner `p` from the sparse Jacobian `J` in CSR format for the GPU  
+Update the preconditioner `p` from the sparse Jacobian `J` in CSR format for the GPU
 
 1) The dense blocks `cuJs` are filled from the sparse Jacobian `J`
 2) To a batch inversion of the dense blocks using CUBLAS
-3) Extract the preconditioner matrix `p.P` from the dense blocks `cuJs` 
+3) Extract the preconditioner matrix `p.P` from the dense blocks `cuJs`
 
 """
 function update(J::CuSparseMatrixCSR, p, to)
     m = size(J, 1)
     n = size(J, 2)
     nblocks = length(p.partitions)
+    for el in p.cuJs
+        el .= p.id
+    end
     @timeit to "Fill Block Jacobi" begin
         CUDA.@sync begin
             for b in 1:nblocks
@@ -227,7 +230,7 @@ end
 """
     function update(J::CuSparseMatrixCSR, p, to)
 
-Update the preconditioner `p` from the sparse Jacobian `J` in CSC format for the CPU  
+Update the preconditioner `p` from the sparse Jacobian `J` in CSC format for the CPU
 
 Note that this implements the same algorithm as for the GPU and becomes very slow on CPU with growing number of blocks.
 
@@ -235,7 +238,7 @@ Note that this implements the same algorithm as for the GPU and becomes very slo
 function update(J::SparseMatrixCSC, p, to)
     nblocks = length(p.partitions)
     @timeit to "Fill Block Jacobi" begin
-        for b in 1:nblocks
+        @inbounds for b in 1:nblocks
             for i in p.partitions[b]
                 for j in J.colptr[i]:J.colptr[i+1]-1
                     if b == p.part[J.rowval[j]]
@@ -252,7 +255,7 @@ function update(J::SparseMatrixCSC, p, to)
     end
     p.P.nzval .= 0.0
     @timeit to "Move blocks to P" begin
-        for b in 1:nblocks
+        @inbounds for b in 1:nblocks
             for i in p.partitions[b]
                 for j in p.P.colptr[i]:p.P.colptr[i+1]-1
                     if b == p.part[p.P.rowval[j]]
@@ -265,4 +268,15 @@ function update(J::SparseMatrixCSC, p, to)
     return p.P
 end
 
+is_valid(precond::BlockJacobiPreconditioner) = _check_nan(precond.P)
+_check_nan(P::SparseMatrixCSC) = !any(isnan.(P.nzval))
+_check_nan(P::CuSparseMatrixCSR) = !any(isnan.(P.nzVal))
+
+function Base.show(precond::BlockJacobiPreconditioner)
+    npartitions = precond.npart
+    nblock = div(size(precond.P, 1), npartitions)
+    println("#partitions: $npartitions, Blocksize: n = ", nblock,
+            " Mbytes = ", (nblock*nblock*npartitions*8.0)/(1024.0*1024.0))
+    println("Block Jacobi block size: $(precond.nJs)")
 end
+

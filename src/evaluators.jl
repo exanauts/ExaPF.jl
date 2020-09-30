@@ -107,7 +107,7 @@ could be instantiate on the main memory, or on a specific device (currently,
 only CUDA is supported).
 
 """
-struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
+mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     model::AbstractFormulation
     x::AbstractVector{T}
     p::AbstractVector{T}
@@ -124,14 +124,13 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 
     buffer::AbstractNetworkBuffer
     ad::ADFactory
-    precond::Precondition.AbstractPreconditioner
-    solver::String
+    linear_solver::LinearSolvers.AbstractLinearSolver
     ε_tol::Float64
 end
 
 function ReducedSpaceEvaluator(model, x, u, p;
                                constraints=Function[state_constraint],
-                               ε_tol=1e-12, solver="default", npartitions=2,
+                               ε_tol=1e-12, linear_solver=DirectSolver(), npartitions=2,
                                verbose_level=VERBOSE_LEVEL_NONE)
     # First, build up a network buffer
     buffer = get(model, PhysicalState())
@@ -151,8 +150,6 @@ function ReducedSpaceEvaluator(model, x, u, p;
     else
         ad = ADFactory(jx, ju, adjoint_f, nothing)
     end
-    # Init preconditioner if needed for iterative linear algebra
-    precond = Iterative.init_preconditioner(jx.J, solver, npartitions, model.device)
 
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
@@ -169,7 +166,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
     return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
                                  buffer,
-                                 ad, precond, solver, ε_tol)
+                                 ad, linear_solver, ε_tol)
 end
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
@@ -182,7 +179,7 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     transfer!(nlp.model, nlp.buffer, nlp.x, u, nlp.p)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
-                         solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
+                     solver=nlp.linear_solver, verbose_level=verbose_level)
     # Update value of nlp.x with new network state
     get!(nlp.model, State(), nlp.x, nlp.buffer)
     # Refresh value of the active power of the generators
@@ -202,17 +199,17 @@ function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J, y)
     λ .= J' \ y
 end
 function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
-    Jt = nlp.ad.Jᵗ
     # # TODO: fix this hack once CUDA.jl 1.4 is released
-    copy!(Jt.nzVal, J.nzVal)
-    return CUSOLVER.csrlsvqr!(Jt, y, λ, 1e-8, one(Cint), 'O')
+    Jt = nlp.ad.Jᵗ
+    Jt.nzVal .= J.nzVal
+    LinearSolvers.ldiv!(nlp.linear_solver, λ, Jt, y)
 end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
 # equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
 # (take λₖ_neg to avoid computing an intermediate array)
 function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
-    copy!(g, ∇fᵤ)
+    g .= ∇fᵤ
     mul!(g, transpose(∇gᵤ), λₖ_neg, -1.0, 1.0)
 end
 # TODO: For some reason, this operation is slow on the GPU

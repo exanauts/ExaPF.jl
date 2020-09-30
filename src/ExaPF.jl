@@ -21,6 +21,8 @@ using SparseArrays
 using SparseDiffTools
 using TimerOutputs
 
+const TIMER = TimerOutput()
+
 const VERBOSE_LEVEL_HIGH = 3
 const VERBOSE_LEVEL_MEDIUM = 2
 const VERBOSE_LEVEL_LOW = 1
@@ -30,12 +32,10 @@ include("utils.jl")
 # Import submodules
 include("ad.jl")
 using .AD
-include("algorithms/precondition.jl")
-using .Precondition
 include("indexes.jl")
 using .IndexSet
-include("iterative.jl")
-using .Iterative
+include("LinearSolvers/LinearSolvers.jl")
+using .LinearSolvers
 include("parsers/parse_mat.jl")
 using .ParseMAT
 include("parsers/parse_psse.jl")
@@ -49,7 +49,6 @@ const PS = PowerSystem
 include("models/models.jl")
 include("evaluators.jl")
 
-const TIMER = TimerOutput()
 
 
 end

@@ -9,6 +9,8 @@ using Test
 using TimerOutputs
 using Krylov
 
+const LS = ExaPF.LinearSolvers
+
 @testset "Iterative linear solvers with custom block Jacobi" begin
     to = TimerOutputs.TimerOutput()
     # Square and preconditioned problems.
@@ -22,8 +24,8 @@ using Krylov
     x = similar(b); r = similar(b)
     spA = sparse(A)
     nblocks = 2
-    precond = ExaPF.Precondition.Preconditioner(spA, nblocks, CPU())
-    ExaPF.Precondition.update(spA, precond, to)
+    precond = LS.BlockJacobiPreconditioner(spA, nblocks, CPU())
+    LS.update(spA, precond, to)
     @testset "BICGSTAB" begin
         P = precond.P
         x, n_iters = ExaPF.bicgstab(spA, b, P, x, to)
@@ -31,8 +33,10 @@ using Krylov
         resid = norm(r) / norm(b)
         @test(resid ≤ 1e-6)
     end
-    @testset "($algo)" for algo in ExaPF.list_solvers(CPU())
-        ExaPF.Iterative.ldiv!(x, spA, b, algo, precond, to)
+    # Embed preconditioner in linear solvers
+    @testset "($LinSolver)" for LinSolver in ExaPF.list_solvers(CPU())
+        algo = LinSolver(precond)
+        LS.ldiv!(algo, x, spA, b)
         r = b - spA * x
         resid = norm(r) / norm(b)
         @test(resid ≤ 1e-6)
@@ -67,21 +71,23 @@ end
 
         # TODO: currently Preconditioner takes as input only sparse matrix
         # defined on the main memory.
-        precond = ExaPF.Precondition.Preconditioner(A, nblocks, device)
+        precond = LS.BlockJacobiPreconditioner(A, nblocks, device)
 
         # First test the custom implementation of BICGSTAB
         @testset "BICGSTAB" begin
             # Need to update preconditioner before resolution
-            ExaPF.Precondition.update(As, precond, to)
+            LS.update(As, precond, to)
             P = precond.P
             fill!(x0, 0.0)
-            x_sol, n_iters = ExaPF.bicgstab(As, bs, P, x0, to)
+            x_sol, n_iters, status = ExaPF.bicgstab(As, bs, P, x0, to)
+            @test status == LS.Converged
             @test n_iters <= m
             @test x_sol ≈ xs♯ atol=1e-6
         end
-        @testset "Interface for iterative algorithm ($algo)" for algo in ExaPF.list_solvers(device)
+        @testset "Interface for iterative algorithm ($LinSolver)" for LinSolver in ExaPF.list_solvers(device)
+            algo = LinSolver(precond)
             fill!(x0, 0.0)
-            n_iters = ExaPF.Iterative.ldiv!(x0, As, bs, algo, precond, to)
+            n_iters = LS.ldiv!(algo, x0, As, bs)
             @test n_iters <= m
             @test x0 ≈ xs♯ atol=1e-6
         end
