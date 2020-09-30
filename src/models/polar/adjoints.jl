@@ -42,7 +42,7 @@ function put(
     ::PS.Generator,
     ::PS.ActivePower,
     obj_ad::AD.ObjectiveAD,
-    cache::PolarNetworkState
+    buffer::PolarNetworkState
 ) where {T, VT, AT}
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
@@ -57,8 +57,8 @@ function put(
     ref_to_gen = polar.indexing.index_ref_to_gen
 
     # Get voltages. This is only needed to get the size of adjvmag and adjvang
-    vmag = cache.vmag
-    vang = cache.vang
+    vmag = buffer.vmag
+    vang = buffer.vang
 
     adj_pg = obj_ad.∂pg
     adj_x = obj_ad.∇fₓ
@@ -89,13 +89,13 @@ function put(
     return
 end
 
-function cost_production_adjoint(polar::PolarForm, ∂obj::AD.ObjectiveAD, cache::PolarNetworkState)
-    pg = cache.pg
+function cost_production_adjoint(polar::PolarForm, ∂obj::AD.ObjectiveAD, buffer::PolarNetworkState)
+    pg = buffer.pg
     coefs = polar.costs_coefficients
     # Return adjoint of quadratic cost
     @inbounds for i in eachindex(pg)
         ∂obj.∂pg[i] = coefs[i, 3] + 2.0 * coefs[i, 4] * pg[i]
     end
-    put(polar, PS.Generator(), PS.ActivePower(), ∂obj, cache)
+    put(polar, PS.Generator(), PS.ActivePower(), ∂obj, buffer)
 end
 

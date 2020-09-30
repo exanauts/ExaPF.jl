@@ -28,7 +28,7 @@ import ExaPF: PowerSystem
             xk = copy(x0)
             nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p;
                                               ε_tol=tolerance, solver="$precond", npartitions=npartitions)
-            convergence = @time ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
+            convergence = ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
             @test convergence.has_converged
             @test convergence.norm_residuals < tolerance
             @test convergence.n_iterations == 2

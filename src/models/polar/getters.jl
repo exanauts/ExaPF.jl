@@ -23,7 +23,7 @@ function get!(
     polar::PolarForm{T, IT, VT, AT},
     ::State,
     x::AbstractVector,
-    cache::PolarNetworkState
+    buffer::PolarNetworkState
 ) where {T, IT, VT, AT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
@@ -32,10 +32,10 @@ function get!(
     # NB: this leads to 3 memory allocation on the GPU
     #     we use indexing on the CPU, as for some reason
     #     we get better performance than with the indexing on the GPU
-    #     stored in the cache polar.indexing.
-    x[1:npv] .= @view cache.vang[polar.network.pv]
-    x[npv+1:npv+npq] .= @view cache.vang[polar.network.pq]
-    x[npv+npq+1:npv+2*npq] .= @view cache.vmag[polar.network.pq]
+    #     stored in the buffer polar.indexing.
+    x[1:npv] .= @view buffer.vang[polar.network.pv]
+    x[npv+1:npv+npq] .= @view buffer.vang[polar.network.pq]
+    x[npv+npq+1:npv+2*npq] .= @view buffer.vmag[polar.network.pq]
 end
 
 function get(

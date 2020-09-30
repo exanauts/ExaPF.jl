@@ -8,15 +8,13 @@
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     @testset "Test API on $device" for (device, M) in ITERATORS
-        println("Device: $device")
         polar = PolarForm(pf, device)
         x0 = ExaPF.initial(polar, State())
         u0 = ExaPF.initial(polar, Control())
         p = ExaPF.initial(polar, Parameters())
 
         constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-        print("Constructor\t")
-        nlp = @time ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
 
         # Test evaluator is well instantiated on target device
         TNLP = typeof(nlp)
@@ -37,29 +35,24 @@
 
         u = u0
         # Update nlp to stay on manifold
-        print("Update   \t")
-        @time ExaPF.update!(nlp, u)
+        ExaPF.update!(nlp, u)
         # Compute objective
-        print("Objective\t")
-        c = @time ExaPF.objective(nlp, u)
+        c = ExaPF.objective(nlp, u)
         @test isa(c, Real)
         # Compute gradient of objective
         g = similar(u)
         fill!(g, 0)
-        print("Gradient \t")
-        @time ExaPF.gradient!(nlp, g, u)
+        ExaPF.gradient!(nlp, g, u)
 
         # Constraint
         ## Evaluation of the constraints
         cons = similar(nlp.g_min)
         fill!(cons, 0)
-        print("Constrt \t")
-        @time ExaPF.constraint!(nlp, cons, u)
+        ExaPF.constraint!(nlp, cons, u)
         ## Evaluation of the Jacobian
-        # print("Jacobian\t")
         jac = M{Float64, 2}(undef, m, n)
         fill!(jac, 0)
-        # @time ExaPF.jacobian!(nlp, jac, u)
+        # ExaPF.jacobian!(nlp, jac, u)
         # @info("j", J)
     end
 

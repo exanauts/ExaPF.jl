@@ -122,7 +122,7 @@ struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     g_min::AbstractVector{T}
     g_max::AbstractVector{T}
 
-    network_cache::AbstractPhysicalCache
+    buffer::AbstractNetworkBuffer
     ad::ADFactory
     precond::Precondition.AbstractPreconditioner
     solver::String
@@ -133,12 +133,12 @@ function ReducedSpaceEvaluator(model, x, u, p;
                                constraints=Function[state_constraint],
                                ε_tol=1e-12, solver="default", npartitions=2,
                                verbose_level=VERBOSE_LEVEL_NONE)
-    # First, build up a network cache
-    network_cache = get(model, PhysicalState())
+    # First, build up a network buffer
+    buffer = get(model, PhysicalState())
     # Initiate adjoint
     λ = similar(x)
     # Build up AD factory
-    jx, ju, adjoint_f = init_ad_factory(model, network_cache)
+    jx, ju, adjoint_f = init_ad_factory(model, buffer)
     if isa(x, CuArray)
         nₓ = length(x)
         ind_rows, ind_cols, nzvals = _sparsity_pattern(model)
@@ -168,7 +168,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
 
     return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
-                                 network_cache,
+                                 buffer,
                                  ad, precond, solver, ε_tol)
 end
 
@@ -179,20 +179,20 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x
     jac_x = nlp.ad.Jgₓ
     # Transfer x, u, p into the network cache
-    transfer!(nlp.model, nlp.network_cache, nlp.x, u, nlp.p)
+    transfer!(nlp.model, nlp.buffer, nlp.x, u, nlp.p)
     # Get corresponding point on the manifold
-    conv = powerflow(nlp.model, jac_x, nlp.network_cache, tol=nlp.ε_tol;
+    conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
                          solver=nlp.solver, preconditioner=nlp.precond, verbose_level=verbose_level)
     # Update value of nlp.x with new network state
-    get!(nlp.model, State(), nlp.x, nlp.network_cache)
+    get!(nlp.model, State(), nlp.x, nlp.buffer)
     # Refresh value of the active power of the generators
-    refresh!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.network_cache)
+    refresh!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.buffer)
     return conv
 end
 
 function objective(nlp::ReducedSpaceEvaluator, u)
     # Take as input the current cache, updated previously in `update!`.
-    cost = cost_production(nlp.model, nlp.network_cache.pg)
+    cost = cost_production(nlp.model, nlp.buffer.pg)
     # TODO: determine if we should include λ' * g(x, u), even if ≈ 0
     return cost
 end
@@ -224,13 +224,13 @@ function _reduced_gradient!(g::CuVector, ∇fᵤ, ∇gᵤ, λₖ_neg)
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
-    cache = nlp.network_cache
+    buffer = nlp.buffer
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
-    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, cache)
+    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, buffer)
     # Evaluate adjoint of cost function and update inplace ObjectiveAD
-    cost_production_adjoint(nlp.model, nlp.ad.∇f, cache)
+    cost_production_adjoint(nlp.model, nlp.ad.∇f, buffer)
 
     ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ
     # Update (negative) adjoint
@@ -242,7 +242,7 @@ end
 
 function constraint!(nlp::ReducedSpaceEvaluator, g, u)
     xₖ = nlp.x
-    ϕ = nlp.network_cache
+    ϕ = nlp.buffer
     # First: state constraint
     mf = 1
     mt = 0

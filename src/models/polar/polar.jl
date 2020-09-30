@@ -162,7 +162,7 @@ function get(form::PolarForm{T, IT, VT, AT}, ::PhysicalState) where {T, IT, VT, 
     return PolarNetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx)
 end
 
-function power_balance!(polar::PolarForm, cache::PolarNetworkState)
+function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -171,9 +171,9 @@ function power_balance!(polar::PolarForm, cache::PolarNetworkState)
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
-    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
+    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
 
-    F = cache.balance
+    F = buffer.balance
     fill!(F, 0.0)
     residualFunction_polar!(F, Vm, Va,
                             polar.ybus_re, polar.ybus_im,
@@ -181,7 +181,7 @@ function power_balance!(polar::PolarForm, cache::PolarNetworkState)
 end
 
 # TODO: find better naming
-function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::PolarNetworkState) where {T, IT, VT, AT}
+function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -193,8 +193,8 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::PolarNetworkSta
     pv = polar.network.pv
     pq = polar.network.pq
     # Network state
-    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
-    F = cache.balance
+    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
+    F = buffer.balance
     fill!(F, zero(T))
     # Build the AD Jacobian structure
     stateJacobianAD = AD.StateJacobianAD(F, Vm, Va,
@@ -207,14 +207,14 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, cache::PolarNetworkSta
     # Build the AD structure for the objective
     ∇fₓ = VT(undef, nₓ)
     ∇fᵤ = VT(undef, nᵤ)
-    adjoint_pg = similar(cache.pg)
+    adjoint_pg = similar(buffer.pg)
     adjoint_vm = similar(Vm)
     adjoint_va = similar(Va)
     objectiveAD = AD.ObjectiveAD(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va)
     return stateJacobianAD, designJacobianAD, objectiveAD
 end
 
-function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, cache::PolarNetworkState)
+function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, buffer::PolarNetworkState)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     # Indexing
@@ -222,7 +222,7 @@ function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, cache::PolarNetw
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     # Network state
-    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
+    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
     AD.residualJacobianAD!(jac, residualFunction_polar!, Vm, Va,
                            polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     return jac.J
@@ -247,7 +247,7 @@ end
 function powerflow(
     polar::PolarForm{T, IT, VT, AT},
     jacobian::AD.StateJacobianAD,
-    cache::PolarNetworkState{VT};
+    buffer::PolarNetworkState{VT};
     npartitions=2,
     solver="default",
     preconditioner=Precondition.NoPreconditioner(),
@@ -256,7 +256,7 @@ function powerflow(
     verbose_level=0,
 ) where {T, IT, VT, AT}
     # Retrieve parameter and initial voltage guess
-    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
+    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
 
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
@@ -281,8 +281,8 @@ function powerflow(
     j6 = j4 + npq
 
     # form residual function directly on target device
-    F = cache.balance
-    dx = cache.dx
+    F = buffer.balance
+    dx = buffer.dx
     fill!(F, zero(T))
     fill!(dx, zero(T))
 

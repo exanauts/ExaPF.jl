@@ -1,8 +1,8 @@
-abstract type AbstractCache end
-abstract type AbstractPhysicalCache end
+abstract type AbstractBuffer end
+abstract type AbstractNetworkBuffer <: AbstractBuffer end
 
 "Store indexing on target device"
-struct IndexingCache{IVT} <: AbstractCache
+struct IndexingCache{IVT} <: AbstractBuffer
     index_pv::IVT
     index_pq::IVT
     index_ref::IVT
@@ -11,7 +11,7 @@ struct IndexingCache{IVT} <: AbstractCache
     index_ref_to_gen::IVT
 end
 
-struct PolarNetworkState{VT} <: AbstractPhysicalCache
+struct PolarNetworkState{VT} <: AbstractNetworkBuffer
     vmag::VT
     vang::VT
     pinj::VT

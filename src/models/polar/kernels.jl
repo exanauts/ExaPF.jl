@@ -160,18 +160,18 @@ end
     end
 end
 
-function transfer!(polar::PolarForm, cache::PolarNetworkState, x, u, p)
+function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u, p)
     if isa(x, Array)
         kernel! = transfer_kernel!(CPU(), 1)
     else
         kernel! = transfer_kernel!(CUDADevice(), 256)
     end
-    nbus = length(cache.vmag)
+    nbus = length(buffer.vmag)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
     ev = kernel!(
-        cache.vmag, cache.vang, cache.pinj, cache.qinj,
+        buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
         x, u, p,
         pv, pq, ref,
         polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
@@ -214,8 +214,8 @@ end
     end
 end
 
-function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::PolarNetworkState)
-    if isa(cache.vmag, Array)
+function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::PolarNetworkState)
+    if isa(buffer.vmag, Array)
         kernel! = active_power_kernel!(CPU(), 1)
     else
         kernel! = active_power_kernel!(CUDADevice(), 256)
@@ -229,8 +229,8 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::Pol
     range_ = length(pv) + length(ref)
 
     ev = kernel!(
-        cache.pg,
-        cache.vmag, cache.vang, cache.pinj, cache.qinj,
+        buffer.pg,
+        buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
         pv, ref, pv_to_gen, ref_to_gen,
         polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
         polar.ybus_im.nzval, polar.active_load,
@@ -239,7 +239,7 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, cache::Pol
     wait(ev)
 end
 
-function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, cache::PolarNetworkState)
+function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::PolarNetworkState)
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -254,14 +254,14 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, cache::P
 
     for i in 1:npv
         bus = index_pv[i]
-        qinj = PS.get_react_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
+        qinj = PS.get_react_injection(bus, buffer.vmag, buffer.vang, polar.ybus_re, polar.ybus_im)
         i_gen = pv_to_gen[i]
-        cache.qg[i_gen] = qinj + polar.reactive_load[bus]
+        buffer.qg[i_gen] = qinj + polar.reactive_load[bus]
     end
     for i in 1:nref
         bus = index_ref[i]
         i_gen = ref_to_gen[i]
-        qinj = PS.get_react_injection(bus, cache.vmag, cache.vang, polar.ybus_re, polar.ybus_im)
-        cache.qg[i_gen] = qinj + polar.reactive_load[bus]
+        qinj = PS.get_react_injection(bus, buffer.vmag, buffer.vang, polar.ybus_re, polar.ybus_im)
+        buffer.qg[i_gen] = qinj + polar.reactive_load[bus]
     end
 end
