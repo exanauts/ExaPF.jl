@@ -1,3 +1,21 @@
+# Adjoints needed in polar formulation
+#
+function put_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, ybus_im)
+    @inbounds for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        cθ = ybus_re.nzval[c]*cos(aij)
+        sθ = ybus_im.nzval[c]*sin(aij)
+        adj_v_m[fr] += v_m[to] * (cθ + sθ) * adj_P
+        adj_v_m[to] += v_m[fr] * (cθ + sθ) * adj_P
+
+        adj_aij = -(v_m[fr]*v_m[to]*(ybus_re.nzval[c]*(sin(aij))))
+        adj_aij += v_m[fr]*v_m[to]*(ybus_im.nzval[c]*(cos(aij)))
+        adj_aij *= adj_P
+        adj_v_a[to] += -adj_aij
+        adj_v_a[fr] += adj_aij
+    end
+end
 
 function put!(
     polar::PolarForm{T, IT, VT, AT},
@@ -75,7 +93,7 @@ function put(
         i_gen = ref_to_gen[i]
         # pg[i] = inj + polar.active_load[bus]
         adj_inj = adj_pg[i_gen]
-        PS.put_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
+        put_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
     end
     put!(polar, Control(), adj_u, adj_vmag, adj_vang)
     put!(polar, State(), adj_x, adj_vmag, adj_vang)

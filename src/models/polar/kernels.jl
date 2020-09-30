@@ -1,3 +1,4 @@
+# Implement kernels for polar formulation
 
 """
 residualFunction
@@ -46,6 +47,36 @@ function _sparsity_pattern(polar::PolarForm)
     V = Vre .+ 1im .* Vim
     J = residualJacobian(V, Y, pv, pq)
     return findnz(J)
+end
+
+"""
+    get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+Computes the power injection at node "fr".
+"""
+function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
+    P = 0.0
+    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
+    end
+    return P
+end
+
+"""
+    get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
+
+Computes the reactive power injection at node "fr".
+"""
+function get_react_injection(fr::Int, v_m, v_a, ybus_re::Spmat{VI,VT}, ybus_im::Spmat{VI,VT}) where {VT <: AbstractVector, VI<:AbstractVector}
+    Q = zero(eltype(v_m))
+    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        Q += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
+    end
+    return Q
 end
 
 @kernel function residual_kernel!(F, @Const(v_m), @Const(v_a),
@@ -254,14 +285,14 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::
 
     for i in 1:npv
         bus = index_pv[i]
-        qinj = PS.get_react_injection(bus, buffer.vmag, buffer.vang, polar.ybus_re, polar.ybus_im)
+        qinj = get_react_injection(bus, buffer.vmag, buffer.vang, polar.ybus_re, polar.ybus_im)
         i_gen = pv_to_gen[i]
         buffer.qg[i_gen] = qinj + polar.reactive_load[bus]
     end
     for i in 1:nref
         bus = index_ref[i]
         i_gen = ref_to_gen[i]
-        qinj = PS.get_react_injection(bus, buffer.vmag, buffer.vang, polar.ybus_re, polar.ybus_im)
+        qinj = get_react_injection(bus, buffer.vmag, buffer.vang, polar.ybus_re, polar.ybus_im)
         buffer.qg[i_gen] = qinj + polar.reactive_load[bus]
     end
 end

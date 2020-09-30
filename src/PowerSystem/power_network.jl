@@ -123,52 +123,6 @@ function Base.show(io::IO, pf::PowerNetwork)
 end
 
 # Some utils function
-"""
-get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
-Computes the power injection at node "fr".
-"""
-function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
-    P = 0.0
-    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
-        to = ybus_re.rowval[c]
-        aij = v_a[fr] - v_a[to]
-        P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
-    end
-    return P
-end
-
-function put_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, ybus_im)
-    @inbounds for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
-        to = ybus_re.rowval[c]
-        aij = v_a[fr] - v_a[to]
-        cθ = ybus_re.nzval[c]*cos(aij)
-        sθ = ybus_im.nzval[c]*sin(aij)
-        adj_v_m[fr] += v_m[to] * (cθ + sθ) * adj_P
-        adj_v_m[to] += v_m[fr] * (cθ + sθ) * adj_P
-
-        adj_aij = -(v_m[fr]*v_m[to]*(ybus_re.nzval[c]*(sin(aij))))
-        adj_aij += v_m[fr]*v_m[to]*(ybus_im.nzval[c]*(cos(aij)))
-        adj_aij *= adj_P
-        adj_v_a[to] += -adj_aij
-        adj_v_a[fr] += adj_aij
-    end
-end
-
-"""
-get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
-Computes the reactive power injection at node "fr".
-"""
-function get_react_injection(fr::Int, v_m, v_a, ybus_re::Spmat{VI,VT}, ybus_im::Spmat{VI,VT}) where {VT <: AbstractVector, VI<:AbstractVector}
-    Q = zero(eltype(v_m))
-    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
-        to = ybus_re.rowval[c]
-        aij = v_a[fr] - v_a[to]
-        Q += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
-    end
-    return Q
-end
 
 function bounds(pf::PowerNetwork, ::Buses, ::VoltageMagnitude)
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
