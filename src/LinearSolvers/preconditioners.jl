@@ -99,8 +99,8 @@ mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
             end
         end
         P = sparse(row, col, nzval)
-        id = CuMatrix{Float64}(I, nJs, nJs)
         if isa(device, CUDADevice)
+            id = CuMatrix{Float64}(I, nJs, nJs)
             cupartitions = Vector{CuVector{Int64}}(undef, npart)
             for i in 1:npart
                 cupartitions[i] = CuVector{Int64}(partitions[i])
