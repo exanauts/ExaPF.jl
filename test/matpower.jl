@@ -24,17 +24,11 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     u = ExaPF.initial(polar, Control())
     p = ExaPF.initial(polar, Parameters())
 
-    println("Before solve")
-    show(polar, x, u, p)
-
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     jx, ju = ExaPF.init_ad_factory(polar, cache)
     # solve power flow
-    convergence = @time ExaPF.powerflow(polar, jx, cache, verbose_level=0)
+    convergence = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
     ExaPF.get!(polar, State(), x, cache)
-
-    println("After solve")
-    show(polar, x, u, p)
 
     x_sol = [0.16875136481876485, 0.0832709533581424,
              -0.04200385129447893, -0.07011446830092488,
@@ -59,7 +53,7 @@ end
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     jx, ju = ExaPF.init_ad_factory(polar, cache)
     # solve power flow
-    conv = @time ExaPF.powerflow(polar, jx, cache, verbose_level=0)
+    conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
     ExaPF.get!(polar, State(), x, cache)
 
     @test conv.n_iterations == 2
@@ -84,7 +78,7 @@ end
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     jx, ju = ExaPF.init_ad_factory(polar, cache)
     # solve power flow
-    conv = @time ExaPF.powerflow(polar, jx, cache, verbose_level=0)
+    conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
     ExaPF.get!(polar, State(), x, cache)
 
     @test conv.n_iterations == 3
@@ -107,7 +101,7 @@ end
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     jx, ju = ExaPF.init_ad_factory(polar, cache)
     # solve power flow
-    conv = @time ExaPF.powerflow(polar, jx, cache, verbose_level=0)
+    conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
     ExaPF.get!(polar, State(), x, cache)
 
     @test conv.n_iterations == 5

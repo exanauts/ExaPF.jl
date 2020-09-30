@@ -22,16 +22,6 @@ mutable struct Spmat{VTI<:AbstractVector, VTF<:AbstractVector}
     end
 end
 
-# small utils function
-function polar!(Vm, Va, V, ::CPU)
-    Vm .= abs.(V)
-    Va .= angle.(V)
-end
-function polar!(Vm, Va, V, ::CUDADevice)
-    Vm .= CUDA.abs.(V)
-    Va .= CUDA.angle.(V)
-end
-
 # norm
 norm2(x::AbstractVector) = norm(x, 2)
 norm2(x::CuVector) = CUBLAS.nrm2(x)

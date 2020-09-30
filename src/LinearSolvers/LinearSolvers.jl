@@ -29,6 +29,19 @@ include("bicgstab.jl")
 abstract type AbstractLinearSolver end
 abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
 
+"""
+    ldiv!(solver, y, J, x)
+
+* `solver::AbstractLinearSolver`: linear solver to solve the system
+* `y::AbstractVector`: Solution
+* `J::AbstractMatrix`: Input matrix
+* `x::AbstractVector`: RHS
+
+Solve the linear system `J * y = Fx
+
+"""
+function ldiv! end
+
 struct DirectSolver <: AbstractLinearSolver end
 DirectSolver(precond) = DirectSolver()
 function ldiv!(::DirectSolver,

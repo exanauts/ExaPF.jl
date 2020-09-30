@@ -52,11 +52,6 @@ const PS = PowerSystem
         @testset "NetworkState cache" begin
             @test isa(cache.vmag, M)
             ExaPF.transfer!(polar, cache, x0, u0, p)
-            Vm, Va, pbus, qbus = ExaPF.get_network_state(polar, x0, u0, p)
-            @test isequal(Vm, cache.vmag)
-            @test isequal(Va, cache.vang)
-            @test isequal(pbus, cache.pinj)
-            @test isequal(qbus, cache.qinj)
         end
         @testset "Polar model API" begin
             xₖ = copy(x0)
@@ -64,10 +59,12 @@ const PS = PowerSystem
             jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
 
             # Test powerflow with cache signature
-            conv = @time powerflow(polar, jx, cache, tol=tolerance)
+            conv = powerflow(polar, jx, cache, tol=tolerance)
             ExaPF.get!(polar, State(), xₖ, cache)
-            # Refresh active power of generators in cache
-            ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
+            # Refresh power of generators in cache
+            for Power in [PS.ActivePower, PS.ReactivePower]
+                ExaPF.refresh!(polar, PS.Generator(), Power(), cache)
+            end
 
             # Bounds on state and control
             u_min, u_max = ExaPF.bounds(polar, Control())
@@ -86,11 +83,8 @@ const PS = PowerSystem
             # As we run powerflow before, the balance should be below tolerance
             @test norm(g, Inf) < tolerance
             ## Cost Production
-            c1 = ExaPF.cost_production(polar, xₖ, u0, p)
-            @test isa(c1, Real)
             c2 = ExaPF.cost_production(polar, cache.pg)
             @test isa(c2, Real)
-            @test c1 == c2
             ## Inequality constraint
             for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
                 m = ExaPF.size_constraint(polar, cons)
@@ -109,6 +103,5 @@ const PS = PowerSystem
                 @test isless(g_min, g_max)
             end
         end
-
     end
 end

@@ -8,9 +8,33 @@ using Metis
 using SparseArrays
 using TimerOutputs
 
+
+"""
+    AbstractPreconditioner
+
+Preconditioners for the iterative solvers mostly focused on GPUs
+
+"""
 abstract type AbstractPreconditioner end
 struct NoPreconditioner <: AbstractPreconditioner end
 
+"""
+    BlockJacobiPreconditioner
+
+Creates an object for the block-Jacobi preconditioner
+
+* `npart::Int64`: Number of partitions or blocks
+* `nJs::Int64`: Size of the blocks. For the GPUs these all have to be of equal size.
+* `partitions::Vector{Vector{Int64}}``: `npart` partitions stored as lists
+* `cupartitions`: `partitions` transfered to the GPU
+* `Js`: Dense blocks of the block-Jacobi
+* `cuJs`: `Js` transfered to the GPU
+* `map`: The partitions as a mapping to construct views
+* `cumap`: `cumap` transferred to the GPU`
+* `part`: Partitioning as output by Metis
+* `cupart`: `part` transferred to the GPU
+* `P`: The sparse precondition matrix whose values are updated at each iteration
+"""
 mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
     npart::Int64
     nJs::Int64
@@ -99,6 +123,12 @@ mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
     end
 end
 
+"""
+    build_adjmatrix
+
+Build the adjacency matrix of a matrix A corresponding to the undirected graph
+
+"""
 function build_adjmatrix(A)
     rows = Int64[]
     cols = Int64[]
@@ -119,6 +149,12 @@ function build_adjmatrix(A)
     return sparse(rows,cols,vals,size(A,1),size(A,2))
 end
 
+"""
+    fillblock_gpu
+
+Fill the dense blocks of the preconditioner from the sparse CSC matrix arrays
+
+"""
 function fillblock_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
@@ -132,6 +168,12 @@ function fillblock_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
     return nothing
 end
 
+"""
+    fillblock_gpu
+
+Update the values of the preconditioner matrix from the dense Jacobi blocks
+
+"""
 function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
@@ -145,6 +187,17 @@ function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
     return nothing
 end
 
+
+"""
+    function update(J::CuSparseMatrixCSR, p, to)
+
+Update the preconditioner `p` from the sparse Jacobian `J` in CSR format for the GPU
+
+1) The dense blocks `cuJs` are filled from the sparse Jacobian `J`
+2) To a batch inversion of the dense blocks using CUBLAS
+3) Extract the preconditioner matrix `p.P` from the dense blocks `cuJs`
+
+"""
 function update(J::CuSparseMatrixCSR, p, to)
     m = size(J, 1)
     n = size(J, 2)
@@ -174,6 +227,14 @@ function update(J::CuSparseMatrixCSR, p, to)
     return p.P
 end
 
+"""
+    function update(J::CuSparseMatrixCSR, p, to)
+
+Update the preconditioner `p` from the sparse Jacobian `J` in CSC format for the CPU
+
+Note that this implements the same algorithm as for the GPU and becomes very slow on CPU with growing number of blocks.
+
+"""
 function update(J::SparseMatrixCSC, p, to)
     nblocks = length(p.partitions)
     @timeit to "Fill Block Jacobi" begin

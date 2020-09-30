@@ -1,8 +1,11 @@
 # ExaPF
 
-| **Build Status** |
-|:----------------:|
-| [![Build Status][build-img]][build-url] |
+| **Documentation**                       | **Build Status**                                              |
+|:---------------------------------------:|:-------------------------------------------------------------:|
+| [![][docs-latest-img]][docs-latest-url] | ![Run tests](https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=dev%2Frgm) | 
+
+[docs-latest-img]: https://img.shields.io/badge/docs-latest-blue.svg
+[docs-latest-url]: https://exanauts.github.io/ExaPF.jl/
 
 ExaPF is a HPC package for solving power flow (PF) on a GPU. It currently solves PF using the Newton-Raphson algorithm on NVIDIA GPUs.
 Its main features are:
@@ -27,10 +30,6 @@ pkg> dev git@github.com:exanauts/ExaPF.jl.git
 pkg> test ExaPF
 ```
 
-## Documentation
-WIP
-
-
-[build-img]: https://travis-ci.com/exanauts/ExaPF.jl.svg?branch=master
-[build-url]: https://travis-ci.com/exanauts/ExaPF.jl
+## Funding
+This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy’s Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation’s exascale computing imperative.
 

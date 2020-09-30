@@ -113,13 +113,6 @@ const PS = PowerSystem
             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
         @test jacobianAD.J ≈ J♯
     end
-    @testset "Computing react and active flows" begin
-        fr = 1
-        q = PS.get_react_injection(fr, Vm, Va, ybus_re, ybus_im)
-        @test isa(q, Real)
-        p = PS.get_power_injection(fr, Vm, Va, ybus_re, ybus_im)
-        @test isa(p, Real)
-    end
 end
 
 @testset "PowerNetwork object" begin

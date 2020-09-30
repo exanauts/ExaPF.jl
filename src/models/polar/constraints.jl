@@ -1,9 +1,9 @@
 
 # Generic inequality constraints
 # We add constraint only on vmag_pq
-function state_constraint(polar::PolarForm, g, cache)
+function state_constraint(polar::PolarForm, g, buffer)
     index_pq = polar.indexing.index_pq
-    g .= @view cache.vmag[index_pq]
+    g .= @view buffer.vmag[index_pq]
     return
 end
 size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(state_constraint)) where {T, IT, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())
@@ -17,29 +17,29 @@ end
 
 # Here, the power constraints are ordered as:
 # g = [P_ref; Q_ref; Q_pv]
-function power_constraints(polar::PolarForm, g, cache)
+function power_constraints(polar::PolarForm, g, buffer)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
-    Vm, Va, pbus, qbus = cache.vmag, cache.vang, cache.pinj, cache.qinj
+    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
 
     cnt = 1
     # Constraint on P_ref (generator) (P_inj = P_g - P_load)
     for bus in ref
-        g[cnt] = PS.get_power_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.active_load[bus]
+        g[cnt] = get_power_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.active_load[bus]
         cnt += 1
     end
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
     for bus in ref
-        g[cnt] = PS.get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
+        g[cnt] = get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
         cnt += 1
     end
     # Constraint on Q_pv (generator) (Q_inj = Q_g - Q_load)
     for bus in pv
-        g[cnt] = PS.get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
+        g[cnt] = get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
         cnt += 1
     end
     return
