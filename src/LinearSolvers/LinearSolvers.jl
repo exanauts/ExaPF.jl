@@ -25,6 +25,7 @@ export DirectSolver, BICGSTAB, EigenBICGSTAB
 
 include("preconditioners.jl")
 include("bicgstab.jl")
+include("bicgstab_eigen.jl")
 
 abstract type AbstractLinearSolver end
 abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
