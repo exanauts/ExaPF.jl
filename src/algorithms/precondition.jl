@@ -211,6 +211,10 @@ function update(J::SparseMatrixCSC, p, to)
     return p.P
 end
 
+is_valid(precond::Preconditioner) = _check_nan(precond.P)
+_check_nan(P::SparseMatrixCSC) = !any(isnan.(P.nzval))
+_check_nan(P::CuSparseMatrixCSR) = !any(isnan.(P.nzVal))
+
 function Base.show(precond::Preconditioner)
     npartitions = precond.npart
     nblock = div(size(precond.P, 1), npartitions)

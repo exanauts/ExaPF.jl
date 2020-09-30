@@ -5,6 +5,7 @@ using KernelAbstractions
 using IterativeSolvers
 using Krylov
 using LinearAlgebra
+using Printf
 using SparseArrays
 using TimerOutputs
 
@@ -18,7 +19,8 @@ export DirectSolver, BICGSTAB, EigenBICGSTAB
     Unsolved,
     MaxIterations,
     NotANumber,
-    Converged
+    Converged,
+    Diverged,
 )
 
 abstract type AbstractLinearSolver end
@@ -50,33 +52,18 @@ struct BICGSTAB <: AbstractIterativeLinearSolver
     verbose::Bool
     timer::TimerOutput
 end
-BICGSTAB(precond; maxiter=10_000, tol=1e-8, verbose=false) = BICGSTAB(precond, maxiter, tol, verbose, TIMER)
+BICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = BICGSTAB(precond, maxiter, tol, verbose, TIMER)
 function ldiv!(solver::BICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    if P isa SparseMatrixCSC
-        if any(isnan.(P.nzval))
-            error("NaNs in P")
-        end
-        if any(isnan.(J.nzval))
-            error("NaNs in J")
-        end
-    else
-        if any(isnan.(P.nzVal))
-            error("NaNs in P")
-        end
-        if any(isnan.(J.nzVal))
-            error("NaNs in J")
-        end
-    end
 
     @timeit solver.timer "BICGSTAB" begin
         y[:], n_iters, status = bicgstab(J, x, P, y, solver.timer; maxiter=solver.maxiter,
                                          verbose=solver.verbose, tol=solver.tol)
     end
-    if any(isnan.(y))
-        error("NaNs in y")
+    if status != Converged
+        error("BICGSTAB failed to converge. Final status is $(status)")
     end
     return n_iters
 end
@@ -93,33 +80,18 @@ function ldiv!(solver::EigenBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    if P isa SparseMatrixCSC
-        if any(isnan.(P.nzval))
-            error("NaNs in P")
-        end
-        if any(isnan.(J.nzval))
-            error("NaNs in J")
-        end
-    else
-        if any(isnan.(P.nzVal))
-            error("NaNs in P")
-        end
-        if any(isnan.(J.nzVal))
-            error("NaNs in J")
-        end
-    end
 
     @timeit solver.timer "BICGSTAB" begin
         y[:], n_iters, status = bicgstab_eigen(J, x, P, y, solver.timer; maxiter=solver.maxiter,
-                                         verbose=solver.verbose, tol=solver.tol)
+                                               verbose=solver.verbose, tol=solver.tol)
     end
-
-    if any(isnan.(y))
-        error("NaNs in y")
+    if status != Converged
+        error("EigenBICGSTAB failed to converge. Final status is $(status)")
     end
 
     return n_iters
 end
+
 struct RefBICGSTAB <: AbstractIterativeLinearSolver
     precond::Precondition.AbstractPreconditioner
     verbose::Bool
@@ -177,17 +149,17 @@ function bicgstab_eigen(A, b, P, x, to::TimerOutput;
     r  = b .- A * x
     r0 = similar(r)
     r0 .= r
-    
+
     r0_sqnorm = norm(r0)^2
     rhs_sqnorm = norm(b)^2
     if rhs_sqnorm == 0
         x .= 0.0
-        return x, 0.0, Converged
+        return x, 0, Converged
     end
     rho    = 1.0
     alpha  = 1.0
     w      = 1.0
-    
+
     v = similar(x); p = similar(x)
     fill!(v, 0.0); fill!(p, 0.0)
 
@@ -221,7 +193,6 @@ function bicgstab_eigen(A, b, P, x, to::TimerOutput;
 
         beta = (rho/rho_old) * (alpha / w)
         p .= r .+ (beta * (p .- w .* v))
-        
 
         mul!(y, P, p)
         mul!(v, A, y)
@@ -266,7 +237,7 @@ of nonsymmetric linear systems."
 SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
 """
 function bicgstab(A, b, P, xi, to::TimerOutput;
-                  tol=1e-8, maxiter=size(A, 1), verbose=false)
+                  tol=1e-8, maxiter=size(A, 1), verbose=false, maxtol=1e20)
     # parameters
     n    = size(b, 1)
     mul!(xi, P, b)
@@ -300,7 +271,7 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
     @timeit to "While loop" begin
         while go
             @timeit to "First stage" begin
-                rhoi1 = dot(br0, ri) ; 
+                rhoi1 = dot(br0, ri) ;
                 if abs(rhoi1) < 1e-20
                     restarts += 1
                     ri .= b - A * xi
@@ -340,8 +311,7 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
                 anorm = norm2(residual)
 
                 if verbose
-                    println("\tIteration: ", iter)
-                    println("\tAbsolute norm: ", anorm)
+                    @printf("%4d %10.4e\n", iter, anorm)
                 end
 
                 if isnan(anorm)
@@ -352,8 +322,10 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
                     go = false
                     status = Converged
                     verbose && println("Tolerance reached at iteration $iter")
-                end
-                if maxiter == iter
+                elseif anorm > maxtol
+                    go = false
+                    status = Diverged
+                elseif maxiter == iter
                     go = false
                     status = MaxIterations
                     verbose && println("Not converged")
