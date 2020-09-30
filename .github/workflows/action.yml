@@ -3,7 +3,7 @@ name: Run tests
 on: [push, pull_request]
 
 jobs:
-  test:
+  test-github-cpuonly:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
