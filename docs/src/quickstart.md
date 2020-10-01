@@ -153,12 +153,13 @@ By default, the algorithm runs with a direct solver, which might be
 inefficient for large problems. We might want to use an iterative
 solver instead. `ExaPF.jl` allows to use a block-Jacobi preconditioner:
 ```julia-repl
+julia> const LS = ExaPF.LinearSolvers
 julia> npartitions = 8
-julia> precond = ExaPF.Precondition.Preconditioner(jac, npartitions, CUDADevice())
+julia> precond = LS.BlockJacobiPreconditioner(jac, npartitions, CUDADevice())
 ```
-and we could instantiate a new linear solver with:
+The iterative linear solver is instantiated with:
 ```julia-repl
-julia> linear_solver = ExaPF.BICGSTAB(precond, )
+julia> linear_solver = ExaPF.BICGSTAB(precond)
 
 ```
 By default, the tolerance of BICGSTAB is set to `1e-8`:

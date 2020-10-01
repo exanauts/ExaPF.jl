@@ -83,7 +83,7 @@ the result inplace, in the vector `jac`.
 function jacobian! end
 
 """
-    constraint!(nlp::AbstractNLPEvaluator, hess, u)
+    hessian!(nlp::AbstractNLPEvaluator, hess, u)
 
 Evaluate the Hessian of the problem at point `u`. Store
 the result inplace, in the vector `hess`.
@@ -103,7 +103,7 @@ state `x(u)` satisfying the equilibrium equation `g(x(u), u) = 0`.
 Taking as input a given `AbstractFormulation`, the reduced evaluator
 builds the bounds corresponding to the control `u` and the state `x`,
 and initiate an `ADFactory` tailored to the problem. The reduced evaluator
-could be instantiate on the main memory, or on a specific device (currently,
+could be instantiated on the main memory, or on a specific device (currently,
 only CUDA is supported).
 
 """

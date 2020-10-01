@@ -2,22 +2,20 @@
 CurrentModule = ExaPF
 DocTestSetup = quote
     using ExaPF
-    const Precondition = ExaPF.Precondition
-    const Iterative = ExaPF.Iterative
 end
 DocTestFilters = [r"ExaPF"]
 ```
 
 ## Description
 ```@docs
-Precondition.AbstractPreconditioner
+ExaPF.LinearSolvers.AbstractPreconditioner
 ```
 
 ## API Reference
 ```@docs
-Precondition.Preconditioner
-Precondition.update
-Precondition.build_adjmatrix
-Precondition.fillblock_gpu!
-Precondition.fillP_gpu!
+ExaPF.LinearSolvers.BlockJacobiPreconditioner
+ExaPF.LinearSolvers.update
+ExaPF.LinearSolvers.build_adjmatrix
+ExaPF.LinearSolvers.fillblock_gpu!
+ExaPF.LinearSolvers.fillP_gpu!
 ```

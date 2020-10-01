@@ -123,15 +123,14 @@ function initial end
 """
     powerflow(form::AbstractFormulation,
               jacobian::AD.StateJacobianAD,
-              x::VT,
-              u::VT,
-              p::VT;
+              buffer::AbstractNetworkBuffer,
               kwargs...) where VT <: AbstractVector
 
 Solve the power flow equations `g(x, u) = 0` w.r.t. the state `x`,
 using a Newton-Raphson algorithm.
 The power flow equations are specified in the formulation `form`.
-The solution `x(u)` depends on the control `u` passed in input.
+The current state `x` and control `u` are specified in
+`buffer`. The object `buffer` is modified inplace.
 
 The algorithm stops when a tolerance `tol` or a maximum number of
 irations `maxiter` are reached.
@@ -139,9 +138,8 @@ irations `maxiter` are reached.
 ## Arguments
 
 * `form::AbstractFormulation`: formulation of the power flow equation
-* `x::AbstractVector`: initial state (the value of `x` is kept constant)
-* `u::AbstractVector`: fixed control (the control is determined by the formulation used)
-* `p::AbstractVector`: fixed parameters (also dependent on the formulation used)
+* `jacobian::AD.StateJacobianAD`: Jacobian
+* `buffer::AbstractNetworkBuffer`: buffer storing current state `x` and control `u`
 
 ## Optional arguments
 
