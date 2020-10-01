@@ -1,6 +1,6 @@
 name = "ExaPF"
 uuid = "0cf0e50c-a82e-488f-ac7e-41ffdff1b8aa"
-authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@anl.gov>"]
+authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@anl.gov>", "François Pacaud <fpacaud@anl.gov>"]
 version = "0.2.0"
 
 [deps]
