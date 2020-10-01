@@ -1,11 +1,12 @@
 name = "ExaPF"
 uuid = "0cf0e50c-a82e-488f-ac7e-41ffdff1b8aa"
-authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@anl.gov>"]
+authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@anl.gov>", "François Pacaud <fpacaud@anl.gov>"]
 version = "0.2.0"
 
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 IterativeSolvers = "42fd0dbc-a981-5370-80f2-aaf504508153"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
@@ -18,6 +19,7 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SparseDiffTools = "47a9eef4-7e08-11e9-0b38-333d64bd3804"
+SparsityDetection = "684fba80-ace3-11e9-3d08-3bc7ed6f96df"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
