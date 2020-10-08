@@ -14,6 +14,15 @@ function bounds(polar::PolarForm, ::typeof(state_constraint))
     to_ = 2*npq + npv
     return polar.x_min[fr_:to_], polar.x_max[fr_:to_]
 end
+# State Jacobian: Jx_i = [0, ..., 1, ... 0] where
+function jacobian(polar::PolarForm, ::typeof(state_constraint), ::State, i_cons, jac, buffer)
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    fr_ = npq + npv
+    jac[fr_ + i_cons] = 1.0
+end
+# Control Jacobian: equal to 0
+jacobian(polar::PolarForm, ::typeof(state_constraint), ::Control, i_cons, jac, buffer) = nothing
 
 # Here, the power constraints are ordered as:
 # g = [P_ref; Q_ref; Q_pv]

@@ -265,26 +265,96 @@ function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
 end
 
 function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
+    model = nlp.model
+    xₖ = nlp.x
+    ∇gₓ = nlp.ad.Jgₓ.J
+    ∇gᵤ = nlp.ad.Jgᵤ.J
+    nₓ = length(xₖ)
+    MT = nlp.model.AT
+    jx = similar(u, nₓ)
+    ju = similar(u)
+    μ = similar(nlp.λ)
+    cnt = 1
+
+    for cons in nlp.constraints
+        mc_ = size_constraint(nlp.model, cons)
+        for i_cons in 1:mc_
+            fill!(jx, 0)
+            fill!(ju, 0)
+            jacobian(model, cons, State(), i_cons, jx, nlp.buffer)
+            jacobian(model, cons, Control(), i_cons, ju, nlp.buffer)
+            # Get adjoint
+            _adjoint!(nlp, μ, ∇gₓ, jx)
+            jac[cnt, :] .= (ju .- ∇gᵤ' * μ)
+            cnt += 1
+        end
+    end
+end
+
+function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    model = nlp.model
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     ∇gᵤ = nlp.ad.Jgᵤ.J
     nₓ = length(xₖ)
     MT = nlp.model.AT
     cnt = 1
-    λ = nlp.λ
+    μ = similar(nlp.λ)
+    # Build buffer:
+    jx = similar(u, nₓ)
+    ju = similar(u)
+
     for cons in nlp.constraints
         mc_ = size_constraint(nlp.model, cons)
-        g = MT{eltype(u), 1}(undef, mc_)
-        fill!(g, 0)
-        cons_x(g, x_) = cons(nlp.model, g, x_, u, nlp.p; V=eltype(x_))
-        cons_u(g, u_) = cons(nlp.model, g, xₖ, u_, nlp.p; V=eltype(u_))
-        Jₓ = ForwardDiff.jacobian(cons_x, g, xₖ)
-        Jᵤ = ForwardDiff.jacobian(cons_u, g, u)
-        for ix in 1:mc_
-            rhs = Jₓ[ix, :]
-            _adjoint!(nlp, λ, ∇gₓ, rhs)
-            jac[cnt, :] .= Jᵤ[ix, :] - ∇gᵤ' * λ
+        for i_cons in 1:mc_
+            fill!(jx, 0)
+            fill!(ju, 0)
+            jacobian(model, cons, State(), i_cons, jx, nlp.buffer)
+            jacobian(model, cons, Control(), i_cons, ju, nlp.buffer)
+            # Get adjoint
+            _adjoint!(nlp, μ, ∇gₓ, jx)
+            jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
             cnt += 1
         end
     end
 end
+
+# Utils function
+function project_constraints!(nlp::ReducedSpaceEvaluator, grad::VT, u::VT) where VT<:AbstractArray
+    for i in eachindex(u)
+        if u[i] > nlp.u_max[i]
+            u[i] = nlp.u_max[i]
+            grad[i] = 0.0
+        elseif u[i] < nlp.u_min[i]
+            u[i] = nlp.u_min[i]
+            grad[i] = 0.0
+        end
+    end
+end
+
+function _check(val, val_min, val_max)
+    violated_inf = findall(val .< val_min)
+    violated_sup = findall(val .> val_max)
+    n_inf = length(violated_inf)
+    n_sup = length(violated_sup)
+    err_inf = norm(val_min[violated_inf] .- val[violated_inf], Inf)
+    err_sup = norm(val[violated_sup] .- val_max[violated_sup] , Inf)
+    return (n_inf, err_inf, n_sup, err_sup)
+end
+
+function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
+    println("Check violation of constraints")
+    print("Control  \t")
+    (n_inf, err_inf, n_sup, err_sup) = _check(u, nlp.u_min, nlp.u_max)
+    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
+            err_sup, n_sup, err_inf, n_inf)
+    print("State    \t")
+    (n_inf, err_inf, n_sup, err_sup) = _check(nlp.x, nlp.x_min, nlp.x_max)
+    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
+            err_sup, n_sup, err_inf, n_inf)
+    print("Constraints\t")
+    (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
+    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
+            err_sup, n_sup, err_inf, n_inf)
+end
+
