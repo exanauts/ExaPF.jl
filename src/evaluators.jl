@@ -180,6 +180,11 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
                      solver=nlp.linear_solver, verbose_level=verbose_level)
+    if !conv.has_converged
+        println(conv.norm_residuals)
+        error("Failure")
+    end
+
     # Update value of nlp.x with new network state
     get!(nlp.model, State(), nlp.x, nlp.buffer)
     # Refresh value of the active power of the generators
@@ -271,19 +276,16 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     ∇gᵤ = nlp.ad.Jgᵤ.J
     nₓ = length(xₖ)
     MT = nlp.model.AT
-    jx = similar(u, nₓ)
-    ju = similar(u)
     μ = similar(nlp.λ)
+    ∂obj = nlp.ad.∇f
     cnt = 1
 
     for cons in nlp.constraints
         mc_ = size_constraint(nlp.model, cons)
         for i_cons in 1:mc_
-            fill!(jx, 0)
-            fill!(ju, 0)
-            jacobian(model, cons, State(), i_cons, jx, nlp.buffer)
-            jacobian(model, cons, Control(), i_cons, ju, nlp.buffer)
             # Get adjoint
+            jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
+            jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
             _adjoint!(nlp, μ, ∇gₓ, jx)
             jac[cnt, :] .= (ju .- ∇gᵤ' * μ)
             cnt += 1
@@ -299,17 +301,13 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1)
     nₓ = length(xₖ)
     cnt::Int = shift
     μ = similar(nlp.λ)
-    # Build buffer:
-    jx = similar(u, nₓ)
-    ju = similar(u)
 
+    ∂obj = nlp.ad.∇f
     mc_ = size_constraint(nlp.model, cons)
     for i_cons in 1:mc_
         iszero(v[cnt]) && continue
-        fill!(jx, 0)
-        fill!(ju, 0)
-        jacobian(model, cons, State(), i_cons, jx, nlp.buffer)
-        jacobian(model, cons, Control(), i_cons, ju, nlp.buffer)
+        jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
+        jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
         # Get adjoint
         _adjoint!(nlp, μ, ∇gₓ, jx)
         jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]

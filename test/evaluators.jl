@@ -13,7 +13,7 @@
         u0 = ExaPF.initial(polar, Control())
         p = ExaPF.initial(polar, Parameters())
 
-        constraints = Function[ExaPF.state_constraint]
+        constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
         nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
 
         # Test evaluator is well instantiated on target device
@@ -53,6 +53,7 @@
         jac = M{Float64, 2}(undef, m, n)
         fill!(jac, 0)
         ExaPF.jacobian!(nlp, jac, u)
+        @info("j", jac)
     end
 
     # Test correctness of the reduced gradient (currently only on CPU)

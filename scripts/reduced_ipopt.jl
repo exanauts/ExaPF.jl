@@ -13,7 +13,8 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 # Wrap up ReducedSpaceEvaluator
 function build_callback(form, x0, u, p, constraints)
     hash_u = hash(u)
-    nlp = ExaPF.ReducedSpaceEvaluator(form, x0, u, p; constraints=constraints)
+    nlp = ExaPF.ReducedSpaceEvaluator(form, x0, u, p; constraints=constraints,
+                                      ε_tol=2e-12)
     function _update(u)
         # Update hash
         hash_u = hash(u)
@@ -37,7 +38,13 @@ function build_callback(form, x0, u, p, constraints)
         n = length(u)
         m = ExaPF.n_constraints(nlp)
         if mode == :Structure
-            ExaPF.jacobian_structure!(nlp, rows, cols)
+            k = 1
+            for i = 1:m
+                for j = 1:n
+                    rows[k] = i ; cols[k] = j
+                    k += 1
+                end
+            end
         else
             (hash_u != hash(u)) && _update(u)
             jac = zeros(m, n)
@@ -45,9 +52,11 @@ function build_callback(form, x0, u, p, constraints)
 
             # Copy to Ipopt's Jacobian
             k = 1
-            for (i, j) in zip(rows, cols)
-                values[k] = jac[i, j]
-                k += 1
+            for i = 1:m
+                for j = 1:n
+                    values[k] = jac[i, j]
+                    k += 1
+                end
             end
         end
         return nothing
@@ -72,7 +81,8 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     uk = copy(u0)
     n = length(uk)
 
-    constraints = Function[]
+    # constraints = Function[ExaPF.state_constraint]
+    constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
     # constraints = Function[]
     # Build callbacks in closure
     nlp, eval_f, eval_grad_f, eval_g, eval_jac_g, eval_h = build_callback(polar, xk, uk, p, constraints)
@@ -87,6 +97,12 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     jnnz = n * m
     hnnz = 0
 
+    jac = zeros(m, n)
+    rows = zeros(Cint, jnnz)
+    cols = zeros(Cint, jnnz)
+    ExaPF.jacobian_structure!(nlp, rows, cols)
+    ExaPF.jacobian!(nlp, jac, zeros(n))
+    println(jnnz)
     # Number of nonzeros in upper triangular Hessian
     prob = Ipopt.createProblem(n, x_L, x_U, m, g_L, g_U, jnnz, hnnz,
                                eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
@@ -99,7 +115,7 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
                           obj_value::Float64, inf_pr::Float64, inf_du::Float64, mu::Float64,
                           d_norm::Float64, regularization_size::Float64, alpha_du::Float64, alpha_pr::Float64,
                           ls_trials::Int)
-        return iter_count < 500  # Interrupts after one iteration.
+        return iter_count < 50  # Interrupts after one iteration.
     end
 
     # I am too lazy to compute second order information
@@ -119,10 +135,9 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     return prob, pf
 end
 
-# datafile = "test/data/case9.m"
-datafile = "../pglib-opf/pglib_opf_case30_ieee.m"
-# datafile = "../pglib-opf/pglib_opf_case57_ieee.m"
-# datafile = "../pglib-opf/pglib_opf_case118_ieee.m"
+datafile = "test/data/case9.m"
+# datafile = "../pglib-opf/pglib_opf_case30_ieee.m"
+datafile = "../pglib-opf/pglib_opf_case118_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case300_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case1354_pegase.m"
 # datafile = "../pglib-opf/pglib_opf_case1888_rte.m"

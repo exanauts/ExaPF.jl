@@ -102,19 +102,6 @@ const PS = PowerSystem
                 # Test constraints are consistent
                 @test isless(g_min, g_max)
             end
-            # Test Jacobian
-            ### Buffer to evaluate the Jacobian line by line
-            Jx = similar(x0)
-            Ju = similar(u0)
-            for cons in [ExaPF.state_constraint]
-                m = ExaPF.size_constraint(polar, cons)
-                for ic in 1:m
-                    fill!(Jx, 0)
-                    fill!(Ju, 0)
-                    ExaPF.jacobian(polar, cons, State(), ic, Jx, cache)
-                    ExaPF.jacobian(polar, cons, Control(), ic, Jx, cache)
-                end
-            end
         end
     end
 end
