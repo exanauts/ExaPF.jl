@@ -291,31 +291,29 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     end
 end
 
-function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1)
     model = nlp.model
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     ∇gᵤ = nlp.ad.Jgᵤ.J
     nₓ = length(xₖ)
-    MT = nlp.model.AT
-    cnt = 1
+    cnt::Int = shift
     μ = similar(nlp.λ)
     # Build buffer:
     jx = similar(u, nₓ)
     ju = similar(u)
 
-    for cons in nlp.constraints
-        mc_ = size_constraint(nlp.model, cons)
-        for i_cons in 1:mc_
-            fill!(jx, 0)
-            fill!(ju, 0)
-            jacobian(model, cons, State(), i_cons, jx, nlp.buffer)
-            jacobian(model, cons, Control(), i_cons, ju, nlp.buffer)
-            # Get adjoint
-            _adjoint!(nlp, μ, ∇gₓ, jx)
-            jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
-            cnt += 1
-        end
+    mc_ = size_constraint(nlp.model, cons)
+    for i_cons in 1:mc_
+        iszero(v[cnt]) && continue
+        fill!(jx, 0)
+        fill!(ju, 0)
+        jacobian(model, cons, State(), i_cons, jx, nlp.buffer)
+        jacobian(model, cons, Control(), i_cons, ju, nlp.buffer)
+        # Get adjoint
+        _adjoint!(nlp, μ, ∇gₓ, jx)
+        jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
+        cnt += 1
     end
 end
 

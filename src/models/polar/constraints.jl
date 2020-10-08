@@ -1,4 +1,7 @@
 
+# By default, generic Julia functions are not considered as constraint:
+is_constraint(::Function) = false
+
 # Generic inequality constraints
 # We add constraint only on vmag_pq
 function state_constraint(polar::PolarForm, g, buffer)
@@ -6,6 +9,7 @@ function state_constraint(polar::PolarForm, g, buffer)
     g .= @view buffer.vmag[index_pq]
     return
 end
+is_constraint(::typeof(state_constraint)) = true
 size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(state_constraint)) where {T, IT, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())
 function bounds(polar::PolarForm, ::typeof(state_constraint))
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -53,6 +57,7 @@ function power_constraints(polar::PolarForm, g, buffer)
     end
     return
 end
+is_constraint(::typeof(power_constraints)) = true
 function size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(power_constraints)) where {T, IT, VT, AT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
