@@ -8,23 +8,23 @@ struct QuadraticPenalty{T} <: AbstractPenalty
     η::T
     c♯::T
 end
-function QuadraticPenalty(nlp::AbstractNLPEvaluator, cons::Function)
+function QuadraticPenalty(nlp::AbstractNLPEvaluator, cons::Function; c₀=0.1)
     if !is_constraint(cons)
         error("Function $cons is not a valid constraint function")
     end
     n = size_constraint(nlp.model, cons)
     # Default coefficients
     coefs = similar(nlp.x, n)
-    fill!(coefs, 0.0)
-    η = 1.0
-    c♯ = 1e4
+    fill!(coefs, c₀)
+    η = 10.0
+    c♯ = 1e5
     return QuadraticPenalty(coefs, η, c♯)
 end
 function (penalty::QuadraticPenalty)(cx::AbstractVector)
     return 0.5 * dot(penalty.coefs, cx .* cx)
 end
-function update!(penal::QuadraticPenalty, cx::AbstractVector)
-    penal.coefs .= min.(penal.η .* cx, penal.c♯)
+function update!(penal::QuadraticPenalty, cx::AbstractVector, η)
+    penal.coefs .= min.(η .* penal.coefs, penal.c♯)
 end
 function gradient!(
     nlp::AbstractNLPEvaluator,
@@ -34,7 +34,7 @@ function gradient!(
     u::AbstractVector,
     cx::AbstractVector
 )
-    jtprod!(nlp, cons, grad, u, cx)
+    jtprod!(nlp, cons, grad, u, cx .* penal.coefs)
 end
 
 struct AugLagPenalty{T} <: AbstractPenalty
@@ -50,13 +50,14 @@ mutable struct PenaltyEvaluator{T} <: AbstractNLPEvaluator
     penalties::Vector{AbstractPenalty}
 end
 function PenaltyEvaluator(nlp::ReducedSpaceEvaluator;
-                          penalties=AbstractPenalty[])
+                          penalties=AbstractPenalty[],
+                          c₀=0.1)
 
     if n_constraints(nlp) == 0
         @warn("Original model has no inequality constraint")
     end
     if length(penalties) != nlp.constraints
-        penalties = AbstractPenalty[QuadraticPenalty(nlp, cons) for cons in nlp.constraints]
+        penalties = AbstractPenalty[QuadraticPenalty(nlp, cons; c₀=c₀) for cons in nlp.constraints]
     end
 
     cons = similar(nlp.g_min)
@@ -75,12 +76,12 @@ function update!(pen::PenaltyEvaluator, u)
     pen.infeasibility .= max.(0, pen.cons .- g♯) + min.(0, pen.cons .- g♭)
 end
 
-function update_penalty!(pen::PenaltyEvaluator)
+function update_penalty!(pen::PenaltyEvaluator; η=10.0)
     fr_ = 0
     for penalty in pen.penalties
         n = size(penalty)
         mask = fr_+1:fr_+n
-        update!(penalty, @view pen.infeasibility[mask])
+        update!(penalty, view(pen.infeasibility, mask), η)
         fr_ += n
     end
 end

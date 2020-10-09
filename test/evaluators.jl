@@ -53,7 +53,6 @@
         jac = M{Float64, 2}(undef, m, n)
         fill!(jac, 0)
         ExaPF.jacobian!(nlp, jac, u)
-        @info("j", jac)
     end
 
     # Test correctness of the reduced gradient (currently only on CPU)

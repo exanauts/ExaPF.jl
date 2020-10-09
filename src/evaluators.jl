@@ -305,12 +305,14 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1)
     ∂obj = nlp.ad.∇f
     mc_ = size_constraint(nlp.model, cons)
     for i_cons in 1:mc_
-        iszero(v[cnt]) && continue
-        jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
-        jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
-        # Get adjoint
-        _adjoint!(nlp, μ, ∇gₓ, jx)
-        jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
+        # If v_i is equal to 0, there is no need to evaluate the adjoint
+        if !iszero(v[cnt])
+            jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
+            jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
+            # Get adjoint
+            _adjoint!(nlp, μ, ∇gₓ, jx)
+            jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
+        end
         cnt += 1
     end
 end
@@ -354,3 +356,7 @@ function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
             err_sup, n_sup, err_inf, n_inf)
 end
 
+function primal_infeasibility(nlp::ReducedSpaceEvaluator, cons)
+    (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
+    return max(err_inf, err_sup)
+end
