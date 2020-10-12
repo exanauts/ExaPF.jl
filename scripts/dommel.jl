@@ -10,7 +10,14 @@ using KernelAbstractions
 using UnicodePlots
 using Statistics
 
+include("armijo.jl")
+
 reldiff(a, b) = abs(a - b) / max(1, a)
+function active_set(x, x♭, x♯; tol=1e-8)
+    are_min = findall(x .<= x♭ .+ tol)
+    are_max = findall(x .>= x♯ .- tol)
+    return vcat(are_min, are_max)
+end
 
 function ls(algo, nlp, uk::Vector{Float64}, obj, grad::Vector{Float64})
     nᵤ = length(grad)
@@ -131,7 +138,8 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
             ExaPF.gradient!(pen, grad, uk)
 
             # compute control step
-            step = sample_ls(pen, uk, -grad, αi; sample_max=10)
+            # step = sample_ls(pen, uk, -grad, αi; sample_max=10)
+            step = armijo_ls(pen, uk, c, grad; t0=αi)
             wk .= uk .- step * H * grad
             ExaPF.project_constraints!(pen.nlp, uk, wk)
 
@@ -174,6 +182,7 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
     # uncomment to plot cost evolution
     plt = lineplot(cost_history, title = "Cost history", width=80);
     println(plt)
+    println(uk)
 
     ExaPF.sanity_check(nlp, uk, pen.cons)
 
