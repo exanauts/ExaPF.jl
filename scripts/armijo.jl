@@ -105,12 +105,16 @@ function armijo_ls(nlp, uk::Vector{Float64}, f0, grad::Vector{Float64}; t0=1e-4)
     nᵤ = length(grad)
     s = copy(-grad)
     function Lalpha(alpha)
-        u_ = uk .+ alpha.*s
+        w_ = uk .+ alpha.*s
+        u_ = similar(w_)
+        ExaPF.project_constraints!(nlp.nlp, u_, w_)
         ExaPF.update!(nlp, u_)
         return ExaPF.objective(nlp, u_)
     end
     function grad_Lalpha(alpha, g_)
-        u_ = uk .+ alpha .* s
+        w_ = uk .+ alpha .* s
+        u_ = similar(w_)
+        ExaPF.project_constraints!(nlp.nlp, u_, w_)
         ExaPF.update!(nlp, u_)
         ExaPF.gradient!(nlp, g_, u_)
         return dot(g_, s)
