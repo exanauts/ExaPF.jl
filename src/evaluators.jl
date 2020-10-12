@@ -318,16 +318,8 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1)
 end
 
 # Utils function
-function project_constraints!(nlp::ReducedSpaceEvaluator, grad::VT, u::VT) where VT<:AbstractArray
-    for i in eachindex(u)
-        if u[i] > nlp.u_max[i]
-            u[i] = nlp.u_max[i]
-            grad[i] = 0.0
-        elseif u[i] < nlp.u_min[i]
-            u[i] = nlp.u_min[i]
-            grad[i] = 0.0
-        end
-    end
+function project_constraints!(nlp::ReducedSpaceEvaluator, w::VT, u::VT) where VT<:AbstractArray
+    w .= max.(min.(u, nlp.u_max), nlp.u_min)
 end
 
 function _check(val, val_min, val_max)

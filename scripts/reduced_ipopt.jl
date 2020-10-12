@@ -11,10 +11,11 @@ using Ipopt
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 # Wrap up ReducedSpaceEvaluator
-function build_callback(form, x0, u, p, constraints)
+function build_callback(form, x0, u, p, constraints; feasible=false)
     hash_u = hash(u)
+    obj_coef = feasible ? 0.0 : 1.0
     nlp = ExaPF.ReducedSpaceEvaluator(form, x0, u, p; constraints=constraints,
-                                      ε_tol=2e-12)
+                                      ε_tol=1e-11)
     function _update(u)
         # Update hash
         hash_u = hash(u)
@@ -22,11 +23,12 @@ function build_callback(form, x0, u, p, constraints)
     end
     function eval_f(u)
         (hash_u != hash(u)) && _update(u)
-        return ExaPF.objective(nlp, u)
+        return obj_coef * ExaPF.objective(nlp, u)
     end
     function eval_grad_f(u, grad_f)
         (hash_u != hash(u)) && _update(u)
         ExaPF.gradient!(nlp, grad_f, u)
+        grad_f .*= obj_coef
         return nothing
     end
     function eval_g(u, g)
@@ -70,7 +72,7 @@ function build_callback(form, x0, u, p, constraints)
     return nlp, eval_f, eval_grad_f, eval_g, eval_jac_g, eval_h
 end
 
-function run_reduced_ipopt(datafile; hessian=false, cons=false)
+function run_reduced_ipopt(datafile; hessian=false, feasible=false)
     pf = PowerSystem.PowerNetwork(datafile, 1)
     polar = PolarForm(pf, CPU())
     x0 = ExaPF.initial(polar, State())
@@ -85,7 +87,8 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
     # constraints = Function[]
     # Build callbacks in closure
-    nlp, eval_f, eval_grad_f, eval_g, eval_jac_g, eval_h = build_callback(polar, xk, uk, p, constraints)
+    nlp, eval_f, eval_grad_f, eval_g, eval_jac_g, eval_h = build_callback(polar, xk, uk, p, constraints;
+                                                                          feasible=feasible)
     m = ExaPF.n_constraints(nlp)
 
     # Set bounds on decision variable
@@ -102,7 +105,6 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
     cols = zeros(Cint, jnnz)
     ExaPF.jacobian_structure!(nlp, rows, cols)
     ExaPF.jacobian!(nlp, jac, zeros(n))
-    println(jnnz)
     # Number of nonzeros in upper triangular Hessian
     prob = Ipopt.createProblem(n, x_L, x_U, m, g_L, g_U, jnnz, hnnz,
                                eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
@@ -115,7 +117,7 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
                           obj_value::Float64, inf_pr::Float64, inf_du::Float64, mu::Float64,
                           d_norm::Float64, regularization_size::Float64, alpha_du::Float64, alpha_pr::Float64,
                           ls_trials::Int)
-        return iter_count < 50  # Interrupts after one iteration.
+        return true #iter_count < 50  # Interrupts after one iteration.
     end
 
     # I am too lazy to compute second order information
@@ -132,17 +134,18 @@ function run_reduced_ipopt(datafile; hessian=false, cons=false)
 
     Ipopt.solveProblem(prob)
     u = prob.x
-    return prob, pf
+    return prob
 end
 
 datafile = "test/data/case9.m"
-# datafile = "../pglib-opf/pglib_opf_case30_ieee.m"
-datafile = "../pglib-opf/pglib_opf_case118_ieee.m"
+datafile = "../pglib-opf/pglib_opf_case30_ieee.m"
+datafile = "../pglib-opf/pglib_opf_case57_ieee.m"
+# datafile = "../pglib-opf/pglib_opf_case118_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case300_ieee.m"
 # datafile = "../pglib-opf/pglib_opf_case1354_pegase.m"
 # datafile = "../pglib-opf/pglib_opf_case1888_rte.m"
 # datafile = "../pglib-opf/pglib_opf_case200_activ.m"
 # datafile = "../pglib-opf/pglib_opf_case500_goc.m"
-prob, pf = run_reduced_ipopt(datafile; hessian=false, cons=false)
+prob = run_reduced_ipopt(datafile; hessian=false, feasible=false)
 prob.status
 
