@@ -17,7 +17,7 @@ function QuadraticPenalty(nlp::AbstractNLPEvaluator, cons::Function; c₀=0.1)
     coefs = similar(nlp.x, n)
     fill!(coefs, c₀)
     η = 10.0
-    c♯ = 1e5
+    c♯ = 1e7
     return QuadraticPenalty(coefs, η, c♯)
 end
 function (penalty::QuadraticPenalty)(cx::AbstractVector)
@@ -56,7 +56,7 @@ function PenaltyEvaluator(nlp::ReducedSpaceEvaluator;
     if n_constraints(nlp) == 0
         @warn("Original model has no inequality constraint")
     end
-    if length(penalties) != nlp.constraints
+    if length(penalties) != length(nlp.constraints)
         penalties = AbstractPenalty[QuadraticPenalty(nlp, cons; c₀=c₀) for cons in nlp.constraints]
     end
 

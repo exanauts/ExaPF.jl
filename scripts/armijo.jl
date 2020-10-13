@@ -101,11 +101,24 @@ function armijo_wolfe(obj,
     return (t, good_grad, ht, nbk, nbW)
 end
 
+function projected_direction!(pₓ, p, x, x♭, x♯)
+    for i in eachindex(x)
+        if (x[i] == x♭[i]) && (p[i] < 0.0)
+            pₓ[i] = 0
+        elseif (x[i] == x♯[i]) && (p[i] > 0.0)
+            pₓ[i] = 0
+        else
+            pₓ[i] = p[i]
+        end
+    end
+end
+
 function armijo_ls(nlp, uk::Vector{Float64}, f0, grad::Vector{Float64}; t0=1e-4)
     nᵤ = length(grad)
     s = copy(-grad)
+    pₓ = copy(-grad)
     function Lalpha(alpha)
-        w_ = uk .+ alpha.*s
+        w_ = uk .+ alpha .* s
         u_ = similar(w_)
         ExaPF.project_constraints!(nlp.nlp, u_, w_)
         ExaPF.update!(nlp, u_)
@@ -115,9 +128,9 @@ function armijo_ls(nlp, uk::Vector{Float64}, f0, grad::Vector{Float64}; t0=1e-4)
         w_ = uk .+ alpha .* s
         u_ = similar(w_)
         ExaPF.project_constraints!(nlp.nlp, u_, w_)
-        ExaPF.update!(nlp, u_)
         ExaPF.gradient!(nlp, g_, u_)
-        return dot(g_, s)
+        projected_direction!(pₓ, s, u_, nlp.nlp.u_min, nlp.nlp.u_max)
+        return dot(g_, pₓ)
     end
     slope = dot(s, grad)
     alpha, _ =
