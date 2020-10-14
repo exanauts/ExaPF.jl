@@ -47,9 +47,7 @@ const PS = PowerSystem
 
 # Modeling
 include("models/models.jl")
-include("evaluators.jl")
-include("penalty.jl")
-
-
+# Evaluators
+include("Evaluators/Evaluators.jl")
 
 end

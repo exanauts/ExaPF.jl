@@ -1,97 +1,4 @@
 
-import Base: show
-
-# WIP: definition of AD factory
-abstract type AbstractADFactory end
-
-struct ADFactory <: AbstractADFactory
-    Jgₓ::AD.StateJacobianAD
-    Jgᵤ::AD.DesignJacobianAD
-    ∇f::AD.ObjectiveAD
-    # Workaround before CUDA.jl 1.4: keep a cache for the transpose
-    # matrix of the State Jacobian matrix, and update it inplace
-    # when we need to solve the system Jₓ' \ y
-    Jᵗ::Union{Nothing, AbstractMatrix}
-end
-
-
-"""
-    AbstractNLPEvaluator
-
-AbstractNLPEvaluator implements the bridge between the
-problem formulation (see `AbstractFormulation`) and the optimization
-solver. Once the problem formulation bridged, the evaluator allows
-to evaluate in a straightfoward fashion the objective and the different
-constraints, but also the corresponding gradient and Jacobian objects.
-
-"""
-abstract type AbstractNLPEvaluator end
-
-"""
-    n_variables(nlp::AbstractNLPEvaluator)
-Get the number of variables in the problem.
-"""
-function n_variables end
-
-"""
-    n_constraints(nlp::AbstractNLPEvaluator)
-Get the number of constraints in the problem.
-"""
-function n_constraints end
-
-"""
-    objective(nlp::AbstractNLPEvaluator, u)::Float64
-
-Evaluate the objective at point `u`.
-"""
-function objective end
-
-"""
-    gradient!(nlp::AbstractNLPEvaluator, g, u)
-
-Evaluate the gradient of the objective at point `u`. Store
-the result inplace in the vector `g`, which should have the same
-dimension as `u`.
-
-"""
-function gradient! end
-
-"""
-    constraint!(nlp::AbstractNLPEvaluator, cons, u)
-
-Evaluate the constraints of the problem at point `u`. Store
-the result inplace, in the vector `cons`.
-The vector `cons` should have the same dimension as the result
-returned by `n_constraints(nlp)`.
-
-"""
-function constraint! end
-
-"""
-    jacobian_structure!(nlp::AbstractNLPEvaluator, rows, cols)
-
-Return the sparsity pattern of the Jacobian matrix.
-"""
-function jacobian_structure! end
-
-"""
-    jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
-
-Evaluate the Jacobian of the problem at point `u`. Store
-the result inplace, in the vector `jac`.
-"""
-function jacobian! end
-
-"""
-    hessian!(nlp::AbstractNLPEvaluator, hess, u)
-
-Evaluate the Hessian of the problem at point `u`. Store
-the result inplace, in the vector `hess`.
-
-"""
-function hessian! end
-
-
 """
     ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 
@@ -260,7 +167,6 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
     end
 end
 
-#TODO: return sparsity pattern there, currently return dense pattern
 function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     m, n = n_constraints(nlp), n_variables(nlp)
     idx = 1
@@ -332,16 +238,6 @@ function project_constraints!(nlp::ReducedSpaceEvaluator, w::VT, u::VT) where VT
     w .= max.(min.(u, nlp.u_max), nlp.u_min)
 end
 
-function _check(val, val_min, val_max)
-    violated_inf = findall(val .< val_min)
-    violated_sup = findall(val .> val_max)
-    n_inf = length(violated_inf)
-    n_sup = length(violated_sup)
-    err_inf = norm(val_min[violated_inf] .- val[violated_inf], Inf)
-    err_sup = norm(val[violated_sup] .- val_max[violated_sup] , Inf)
-    return (n_inf, err_inf, n_sup, err_sup)
-end
-
 function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
     println("Check violation of constraints")
     print("Control  \t")
@@ -362,3 +258,4 @@ function primal_infeasibility(nlp::ReducedSpaceEvaluator, cons)
     (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
     return max(err_inf, err_sup)
 end
+
