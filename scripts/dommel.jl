@@ -98,13 +98,15 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
                                       ε_tol=1e-10)
     # Init a penalty evaluator with initial penalty c₀
     c0 = 10.0
-    nq1 = ExaPF.size_constraint(nlp.model, constraints[1])
-    nq2 = ExaPF.size_constraint(nlp.model, constraints[2])
+    nq1 = ExaPF.size_constraint(polar, constraints[1])
+    nq2 = ExaPF.size_constraint(polar, constraints[2])
     q1 = ExaPF.QuadraticPenalty(nq1; c₀=10.0)
     q2 = ExaPF.QuadraticPenalty(nq2; c₀=10.0)
     penalties = ExaPF.AbstractPenalty[q1, q2]
 
-    pen = ExaPF.PenaltyEvaluator(nlp; c₀=c0, penalties=penalties)
+    ev = ExaPF.ScalingEvaluator(nlp, u0)
+    println(ev.scale_obj)
+    pen = ExaPF.PenaltyEvaluator(ev; c₀=c0, penalties=penalties)
     ωtol = 1 / c0
 
     # initialize arrays
@@ -123,7 +125,7 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
         α0 = 1.0
     else
         H = I
-        α0 = 1e-5
+        α0 = 1e-7
         # α0 = 1e-12
     end
     αi = α0

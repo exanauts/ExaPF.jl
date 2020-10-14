@@ -1,7 +1,7 @@
 
 scale_factor(h, tol) = max(tol, 100.0 / max(1.0, h))
 
-mutable struct ScalingEvaluator{T}
+mutable struct ScalingEvaluator{T} <: AbstractNLPEvaluator
     inner::AbstractNLPEvaluator
     scale_obj::T
     scale_cons::AbstractVector{T}
@@ -12,6 +12,7 @@ end
 function ScalingEvaluator(nlp::AbstractNLPEvaluator, u0::AbstractVector; tol=1e-8)
     n, m = n_variables(nlp), n_constraints(nlp)
 
+    update!(nlp, u0)
     ∇g = similar(u0, n) ; fill!(∇g, 0)
     gradient!(nlp, ∇g, u0)
     s_obj = scale_factor(norm(∇g, Inf), tol)
@@ -24,8 +25,11 @@ function ScalingEvaluator(nlp::AbstractNLPEvaluator, u0::AbstractVector; tol=1e-
         ∇c = @view jac[i, :]
         s_cons[i] = scale_factor(norm(∇c, Inf), tol)
     end
-    return ScalingEvaluator(nlp, s_obj, s_cons, tol, s_cons .* nlp.g_min, s_cons .* nlp.g_max)
+    return ScalingEvaluator{Float64}(nlp, s_obj, s_cons, tol, s_cons .* nlp.g_min, s_cons .* nlp.g_max)
 end
+
+n_variables(ev::ScalingEvaluator) = length(ev.u_min)
+n_constraints(ev::ScalingEvaluator) = length(ev.g_min)
 
 # Inherit attributes of underlying evaluator
 function Base.getproperty(ev::ScalingEvaluator, name::Symbol)
@@ -59,8 +63,9 @@ function jacobian!(ev::ScalingEvaluator, jac, u)
     jac .= Diagonal(ev.scale_cons) * jac
 end
 
-function jtprod!(ev::ScalingEvaluator, cons, jv, u, v; shift=1)
-    w = v .* ev.scale_cons
+function jtprod!(ev::ScalingEvaluator, cons, jv, u, v; shift=1, start=1)
+    fr_, to_ = start, start + size_constraint(ev.model, cons) - 1
+    w = v .* ev.scale_cons[fr_:to_]
     jtprod!(ev.inner, cons, jv, u, w; shift=shift)
 end
 function jtprod!(ev::ScalingEvaluator, jv, u, v)

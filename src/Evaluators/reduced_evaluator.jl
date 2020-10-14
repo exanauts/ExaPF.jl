@@ -202,7 +202,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     end
 end
 
-function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1)
+function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1, start=1)
     model = nlp.model
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
