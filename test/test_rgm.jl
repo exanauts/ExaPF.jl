@@ -34,6 +34,8 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
     # initial gradient
     grad = similar(uk)
+    wk = similar(uk)
+    up = copy(uk)
     fill!(grad, 0)
 
     while norm_grad > norm_tol && iter < iter_max
@@ -41,12 +43,13 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         c = ExaPF.objective(nlp, uk)
         ExaPF.gradient!(nlp, grad, uk)
         # compute control step
-        uk = uk - step*grad
-        ExaPF.project_constraints!(uk, grad, nlp.u_min, nlp.u_max)
-        norm_grad = norm(grad)
+        wk = uk - step*grad
+        ExaPF.project_constraints!(nlp, uk, wk)
+        norm_grad = norm(uk .- up, Inf)
         iter += 1
+        up .= uk
     end
-    @test iter == 79
-    @test isapprox(uk, [1.1, 1.343109921105559, 0.9421135274454701, 1.1, 1.1])
+    @test iter == 39
+    @test isapprox(uk, [1.1, 1.343109921105559, 0.9421135274454701, 1.1, 1.1], atol=1e-4)
 end
 
