@@ -80,6 +80,7 @@ function hessian! end
 include("common.jl")
 include("reduced_evaluator.jl")
 include("penalty.jl")
+include("scaling.jl")
 
 function _check(val, val_min, val_max)
     violated_inf = findall(val .< val_min)
