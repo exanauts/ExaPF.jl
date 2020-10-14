@@ -53,6 +53,14 @@
         jac = M{Float64, 2}(undef, m, n)
         fill!(jac, 0)
         ExaPF.jacobian!(nlp, jac, u)
+        ## Evaluation of the Jacobian transpose product
+        v = similar(cons) ; fill!(v, 0)
+        fill!(g, 0)
+        ExaPF.jtprod!(nlp, g, u, v)
+        @test iszero(g)
+        fill!(v, 1) ; fill!(g, 0)
+        ExaPF.jtprod!(nlp, g, u, v)
+        @test isapprox(g, transpose(jac) * v)
     end
 
     # Test correctness of the reduced gradient (currently only on CPU)

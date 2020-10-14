@@ -182,6 +182,9 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
                      solver=nlp.linear_solver, verbose_level=verbose_level)
     if !conv.has_converged
         println(conv.norm_residuals)
+        cons = zeros(n_constraints(nlp))
+        constraint!(nlp, cons, u)
+        sanity_check(nlp, u, cons)
         error("Failure")
     end
 
@@ -314,6 +317,13 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1)
             jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
         end
         cnt += 1
+    end
+end
+function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    cnt = 1
+    for cons in nlp.constraints
+        jtprod!(nlp, cons, jv, u, v; shift=cnt)
+        cnt += size_constraint(nlp.model, cons)
     end
 end
 
