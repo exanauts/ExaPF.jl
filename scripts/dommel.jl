@@ -98,9 +98,12 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
                                       ε_tol=1e-10)
     # Init a penalty evaluator with initial penalty c₀
     c0 = 10.0
-    q1 = ExaPF.QuadraticPenalty(nlp, constraints[1]; c₀=10.0)
-    q2 = ExaPF.QuadraticPenalty(nlp, constraints[2]; c₀=10.0)
+    nq1 = ExaPF.size_constraint(nlp.model, constraints[1])
+    nq2 = ExaPF.size_constraint(nlp.model, constraints[2])
+    q1 = ExaPF.QuadraticPenalty(nq1; c₀=10.0)
+    q2 = ExaPF.QuadraticPenalty(nq2; c₀=10.0)
     penalties = ExaPF.AbstractPenalty[q1, q2]
+
     pen = ExaPF.PenaltyEvaluator(nlp; c₀=c0, penalties=penalties)
     ωtol = 1 / c0
 
@@ -141,20 +144,21 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
             # evaluate cost
             c = ExaPF.objective(pen, uk)
             # Evaluate cost of problem without penalties
-            c_ref = ExaPF.objective(pen.nlp, uk)
+            c_ref = ExaPF.objective(pen.inner, uk)
             ExaPF.gradient!(pen, grad, uk)
 
             # compute control step
             # step = sample_ls(pen, uk, -grad, αi; sample_max=10)
             step = armijo_ls(pen, uk, c, grad; t0=αi)
+            # step = αi
             wk .= uk .- step * H * grad
-            ExaPF.project_constraints!(pen.nlp, uk, wk)
+            ExaPF.project!(uk, wk, pen.inner.u_min, pen.inner.u_max)
 
             # Stopping criteration: uₖ₊₁ - uₖ
             ## Dual infeasibility
             norm_grad = norm(uk .- u_prev, Inf)
             ## Primal infeasibility
-            inf_pr = ExaPF.primal_infeasibility(pen.nlp, pen.cons)
+            inf_pr = ExaPF.primal_infeasibility(pen.inner, pen.cons)
 
             # check convergence
             if (iter%100 == 0)
@@ -189,8 +193,12 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
         u_start .= ρ * u0 .+ (1 - ρ) .* uk
         ωtol *= 1 / η
         ωtol = max(ωtol, 1e-6)
-        inf_pr = ExaPF.primal_infeasibility(pen.nlp, pen.cons)
-        obj = ExaPF.objective(pen.nlp, uk)
+
+        # Evaluate current position in the original space
+        cons = zeros(ExaPF.n_constraints(nlp))
+        ExaPF.constraint!(nlp, cons, uk)
+        obj = ExaPF.objective(nlp, uk)
+        inf_pr = ExaPF.primal_infeasibility(nlp, cons)
         push!(outer_costs, obj)
         @printf("#Outer %d %-4d %.3e %.3e \n",
                 i_out, n_iter, obj, inf_pr)
@@ -200,7 +208,9 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
     plt = lineplot(cost_history, title = "Cost history", width=80);
     println(plt)
 
-    ExaPF.sanity_check(nlp, uk, pen.cons)
+    cons = zeros(ExaPF.n_constraints(nlp))
+    ExaPF.constraint!(nlp, cons, uk)
+    ExaPF.sanity_check(nlp, uk, cons)
 
     return uk, cost_history
 end

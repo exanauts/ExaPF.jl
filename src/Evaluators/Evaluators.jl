@@ -92,3 +92,8 @@ function _check(val, val_min, val_max)
     return (n_inf, err_inf, n_sup, err_sup)
 end
 
+function primal_infeasibility(nlp::AbstractNLPEvaluator, cons)
+    (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
+    return max(err_inf, err_sup)
+end
+

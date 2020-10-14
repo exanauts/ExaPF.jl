@@ -6,6 +6,8 @@ mutable struct ScalingEvaluator{T}
     scale_obj::T
     scale_cons::AbstractVector{T}
     tol::T
+    g_min::AbstractVector{T}
+    g_max::AbstractVector{T}
 end
 function ScalingEvaluator(nlp::AbstractNLPEvaluator, u0::AbstractVector; tol=1e-8)
     n, m = n_variables(nlp), n_constraints(nlp)
@@ -22,7 +24,17 @@ function ScalingEvaluator(nlp::AbstractNLPEvaluator, u0::AbstractVector; tol=1e-
         ∇c = @view jac[i, :]
         s_cons[i] = scale_factor(norm(∇c, Inf), tol)
     end
-    return ScalingEvaluator(nlp, s_obj, s_cons, tol)
+    return ScalingEvaluator(nlp, s_obj, s_cons, tol, s_cons .* nlp.g_min, s_cons .* nlp.g_max)
+end
+
+# Inherit attributes of underlying evaluator
+function Base.getproperty(ev::ScalingEvaluator, name::Symbol)
+    if !hasfield(typeof(ev), name)
+        inner_model = getfield(ev, :inner)
+        return getfield(inner_model, name)
+    else
+        return getfield(ev, name)
+    end
 end
 
 update!(ev::ScalingEvaluator, u) = update!(ev.inner, u)

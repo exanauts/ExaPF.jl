@@ -26,3 +26,7 @@ end
 norm2(x::AbstractVector) = norm(x, 2)
 norm2(x::CuVector) = CUBLAS.nrm2(x)
 
+function project!(w::VT, u::VT, u♭::VT, u♯::VT) where VT<:AbstractArray
+    w .= max.(min.(u, u♯), u♭)
+end
+

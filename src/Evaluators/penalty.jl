@@ -1,12 +1,12 @@
 
 # Ref: https://github.com/JuliaSmoothOptimizers/Percival.jl/blob/master/src/AugLagModel.jl
 mutable struct PenaltyEvaluator{T} <: AbstractNLPEvaluator
-    nlp::AbstractNLPEvaluator
+    inner::AbstractNLPEvaluator
     cons::AbstractVector{T}
     infeasibility::AbstractVector{T}
     penalties::Vector{AbstractPenalty}
 end
-function PenaltyEvaluator(nlp::ReducedSpaceEvaluator;
+function PenaltyEvaluator(nlp::AbstractNLPEvaluator;
                           penalties=AbstractPenalty[],
                           c₀=0.1)
 
@@ -14,7 +14,7 @@ function PenaltyEvaluator(nlp::ReducedSpaceEvaluator;
         @warn("Original model has no inequality constraint")
     end
     if length(penalties) != length(nlp.constraints)
-        penalties = AbstractPenalty[QuadraticPenalty(nlp, cons; c₀=c₀) for cons in nlp.constraints]
+        penalties = AbstractPenalty[QuadraticPenalty(size_constraint(nlp.model, cons); c₀=c₀) for cons in nlp.constraints]
     end
 
     cons = similar(nlp.g_min)
@@ -24,12 +24,12 @@ function PenaltyEvaluator(nlp::ReducedSpaceEvaluator;
 end
 
 function update!(pen::PenaltyEvaluator, u)
-    update!(pen.nlp, u)
+    update!(pen.inner, u)
     # Update constraints
-    constraint!(pen.nlp, pen.cons, u)
+    constraint!(pen.inner, pen.cons, u)
     # Update infeasibility error
-    g♭ = pen.nlp.g_min
-    g♯ = pen.nlp.g_max
+    g♭ = pen.inner.g_min
+    g♯ = pen.inner.g_max
     pen.infeasibility .= max.(0, pen.cons .- g♯) + min.(0, pen.cons .- g♭)
 end
 
@@ -45,7 +45,7 @@ end
 
 function objective(pen::PenaltyEvaluator, u)
     # Internal objective
-    obj = objective(pen.nlp, u)
+    obj = objective(pen.inner, u)
     # Add penalty terms
     fr_ = 0
     for penalty in pen.penalties
@@ -58,7 +58,7 @@ function objective(pen::PenaltyEvaluator, u)
 end
 
 function gradient!(pen::PenaltyEvaluator, grad, u)
-    base_nlp = pen.nlp
+    base_nlp = pen.inner
     gradient!(base_nlp, grad, u)
     fr_ = 0
     for (penalty, cons) in zip(pen.penalties, base_nlp.constraints)

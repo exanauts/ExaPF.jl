@@ -234,9 +234,6 @@ function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
 end
 
 # Utils function
-function project_constraints!(nlp::ReducedSpaceEvaluator, w::VT, u::VT) where VT<:AbstractArray
-    w .= max.(min.(u, nlp.u_max), nlp.u_min)
-end
 
 function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
     println("Check violation of constraints")
@@ -254,8 +251,4 @@ function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
             err_sup, n_sup, err_inf, n_inf)
 end
 
-function primal_infeasibility(nlp::ReducedSpaceEvaluator, cons)
-    (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
-    return max(err_inf, err_sup)
-end
 

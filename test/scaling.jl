@@ -32,6 +32,12 @@
         g = similar(u)
         fill!(g, 0)
         ExaPF.gradient!(ev, g, u)
+        function reduced_cost(u_)
+            ExaPF.update!(ev, u_)
+            return ExaPF.objective(ev, u_)
+        end
+        grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
+        @test isapprox(grad_fd, g, rtol=1e-4)
 
         # Constraint
         ## Evaluation of the constraints

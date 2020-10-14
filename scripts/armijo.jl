@@ -120,20 +120,20 @@ function armijo_ls(nlp, uk::Vector{Float64}, f0, grad::Vector{Float64}; t0=1e-4)
     function Lalpha(alpha)
         w_ = uk .+ alpha .* s
         u_ = similar(w_)
-        ExaPF.project_constraints!(nlp.nlp, u_, w_)
+        ExaPF.project!(u_, w_, nlp.inner.u_min, nlp.inner.u_max)
         ExaPF.update!(nlp, u_)
         return ExaPF.objective(nlp, u_)
     end
     function grad_Lalpha(alpha, g_)
         w_ = uk .+ alpha .* s
         u_ = similar(w_)
-        ExaPF.project_constraints!(nlp.nlp, u_, w_)
+        ExaPF.project!(u_, w_, nlp.inner.u_min, nlp.inner.u_max)
         ExaPF.gradient!(nlp, g_, u_)
-        projected_direction!(pₓ, s, u_, nlp.nlp.u_min, nlp.nlp.u_max)
+        projected_direction!(pₓ, s, u_, nlp.inner.u_min, nlp.inner.u_max)
         return dot(g_, pₓ)
     end
     slope = dot(s, grad)
-    alpha, _ =
     alpha, obj = armijo_wolfe(Lalpha, grad_Lalpha, f0, slope, s; t=t0)
     return alpha
 end
+

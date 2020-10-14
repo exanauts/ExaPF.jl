@@ -44,7 +44,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         ExaPF.gradient!(nlp, grad, uk)
         # compute control step
         wk = uk - step*grad
-        ExaPF.project_constraints!(nlp, uk, wk)
+        ExaPF.project!(uk, wk, nlp.u_min, nlp.u_max)
         norm_grad = norm(uk .- up, Inf)
         iter += 1
         up .= uk

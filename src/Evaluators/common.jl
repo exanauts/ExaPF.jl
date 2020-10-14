@@ -13,30 +13,24 @@ end
 
 abstract type AbstractPenalty end
 
-Base.size(penal::AbstractPenalty) = length(penal.coefs)
+Base.size(penal::AbstractPenalty) = penal.n
 
-struct QuadraticPenalty{T} <: AbstractPenalty
-    coefs::AbstractVector{T}
-    η::T
+mutable struct QuadraticPenalty{T} <: AbstractPenalty
+    n::Int
+    coefs::T
     c♯::T
 end
-function QuadraticPenalty(nlp::AbstractNLPEvaluator, cons::Function; c₀=0.1)
-    if !is_constraint(cons)
-        error("Function $cons is not a valid constraint function")
-    end
-    n = size_constraint(nlp.model, cons)
+function QuadraticPenalty(n::Int; c₀=0.1)
     # Default coefficients
-    coefs = similar(nlp.x, n)
-    fill!(coefs, c₀)
-    η = 10.0
+    coefs = c₀
     c♯ = 1e12
-    return QuadraticPenalty(coefs, η, c♯)
+    return QuadraticPenalty(n, coefs, c♯)
 end
 function (penalty::QuadraticPenalty)(cx::AbstractVector)
-    return 0.5 * dot(penalty.coefs, cx .* cx)
+    return 0.5 * penalty.coefs * dot(cx, cx)
 end
 function update!(penal::QuadraticPenalty, cx::AbstractVector, η)
-    penal.coefs .= min.(η .* penal.coefs, penal.c♯)
+    penal.coefs = min(η * penal.coefs, penal.c♯)
 end
 function gradient!(
     nlp::AbstractNLPEvaluator,
