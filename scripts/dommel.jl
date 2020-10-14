@@ -85,8 +85,10 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
         uk = prob.x
     else
         uk = ExaPF.initial(polar, Control())
+        # uk = nlp.u_min
     end
     u0 = copy(uk)
+    u_start = copy(u0)
     wk = copy(uk)
     u_prev = copy(uk)
 
@@ -96,7 +98,10 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
                                       ε_tol=1e-10)
     # Init a penalty evaluator with initial penalty c₀
     c0 = 10.0
-    pen = ExaPF.PenaltyEvaluator(nlp, c₀=c0)
+    q1 = ExaPF.QuadraticPenalty(nlp, constraints[1]; c₀=10.0)
+    q2 = ExaPF.QuadraticPenalty(nlp, constraints[2]; c₀=10.0)
+    penalties = ExaPF.AbstractPenalty[q1, q2]
+    pen = ExaPF.PenaltyEvaluator(nlp; c₀=c0, penalties=penalties)
     ωtol = 1 / c0
 
     # initialize arrays
@@ -105,24 +110,26 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
     grad_prev = copy(grad)
     obj_prev = Inf
 
+    outer_costs = Float64[]
     cost_history = Float64[]
     grad_history = Float64[]
 
     ls_algo = BackTracking()
     if bfgs
         H = InverseLBFGSOperator(Float64, length(uk), 50, scaling=true)
-        α0 = 1e-5
+        α0 = 1.0
     else
         H = I
-        α0 = 1e-7
+        α0 = 1e-5
+        # α0 = 1e-12
     end
+    αi = α0
 
     for i_out in 1:itout_max
         iter = 1
-        # uk .= u0
+        uk .= u_start
         converged = false
-        αi = α0
-        @printf("%6s %8s %4s %4s\n", "iter", "obj", "∇f", "αₗₛ")
+        # @printf("%6s %8s %4s %4s\n", "iter", "obj", "∇f", "αₗₛ")
         # Inner iteration: projected gradient algorithm
         n_iter = 0
         for i in 1:iter_max
@@ -157,39 +164,48 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
             push!(grad_history, norm_grad)
             push!(cost_history, c)
             if bfgs
-                push!(H, step * H * grad, grad .- grad_prev)
+                push!(H, uk .- u_prev, grad .- grad_prev)
             end
             grad_prev .= grad
             u_prev .= uk
             # Check whether we have converged nicely
             if (norm_grad < ωtol
                 || (iter >= 4 && reldiff(c, mean(cost_history[end-2:end])) < 1e-5)
-               )
+            )
                 converged = true
                 break
             end
         end
         # Update penalty term, according to Nocedal & Wright §17.1 (p.501)
         # Safeguard: update nicely the penalty if previously we failed to converge
-        η = converged ? 10.0 : 2.0
+        if converged
+            ρ = 1e-6
+            η = 10.0
+        else
+            ρ = 0.001
+            η = 2.0
+        end
+        αi *= 2.0 / η
+        u_start .= ρ * u0 .+ (1 - ρ) .* uk
         ωtol *= 1 / η
-        ωtol = max(ωtol, 1e-5)
+        ωtol = max(ωtol, 1e-6)
         inf_pr = ExaPF.primal_infeasibility(pen.nlp, pen.cons)
+        obj = ExaPF.objective(pen.nlp, uk)
+        push!(outer_costs, obj)
         @printf("#Outer %d %-4d %.3e %.3e \n",
-                i_out, n_iter, ExaPF.objective(pen.nlp, uk), inf_pr)
+                i_out, n_iter, obj, inf_pr)
         ExaPF.update_penalty!(pen; η=η)
     end
     # uncomment to plot cost evolution
     plt = lineplot(cost_history, title = "Cost history", width=80);
     println(plt)
-    println(uk)
 
     ExaPF.sanity_check(nlp, uk, pen.cons)
 
-    return cost_history
+    return uk, cost_history
 end
 
 datafile = joinpath(dirname(@__FILE__), "..", "test", "data", "case57.m")
-#
-ch = dommel_method(datafile; bfgs=false, itout_max=10, feasible_start=false,
+
+u_opt, ch = dommel_method(datafile; bfgs=false, itout_max=10, feasible_start=false,
                    iter_max=1000)
