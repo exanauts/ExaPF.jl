@@ -33,8 +33,8 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
         M = SparseMatrixCSC
         AT = Array
     elseif isa(device, CUDADevice)
-        IT = CuArray{Int64, 1, Nothing}
-        VT = CuVector{Float64, Nothing}
+        IT = CuVector{Int64}
+        VT = CuVector{Float64}
         M = CuSparseMatrixCSR
         AT = CuArray
     end

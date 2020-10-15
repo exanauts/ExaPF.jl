@@ -141,9 +141,6 @@ function ReducedSpaceEvaluator(model, x, u, p;
     if isa(x, CuArray)
         nₓ = length(x)
         ind_rows, ind_cols, nzvals = _sparsity_pattern(model)
-        ind_rows = convert(CuVector{Cint}, ind_rows)
-        ind_cols = convert(CuVector{Cint}, ind_cols)
-        nzvals = convert(CuVector{Float64}, nzvals)
         # Get transpose of Jacobian
         Jt = CuSparseMatrixCSR(sparse(ind_cols, ind_rows, nzvals))
         ad = ADFactory(jx, ju, adjoint_f, Jt)

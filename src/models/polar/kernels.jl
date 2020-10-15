@@ -79,10 +79,10 @@ function get_react_injection(fr::Int, v_m, v_a, ybus_re::Spmat{VI,VT}, ybus_im::
     return Q
 end
 
-@kernel function residual_kernel!(F, @Const(v_m), @Const(v_a),
-                                  @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
-                                  @Const(ybus_im_nzval), @Const(ybus_im_colptr), @Const(ybus_im_rowval),
-                                  @Const(pinj), @Const(qinj), @Const(pv), @Const(pq), nbus)
+@kernel function residual_kernel!(F, v_m, v_a,
+                                  ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
+                                  ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
+                                  pinj, qinj, pv, pq, nbus)
 
     npv = size(pv, 1)
     npq = size(pq, 1)
@@ -132,8 +132,8 @@ end
 
 @kernel function transfer_kernel!(vmag, vang, pinj, qinj,
                         x, u, p, pv, pq, ref,
-                        @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
-                        @Const(ybus_im_nzval), pload)
+                        ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
+                        ybus_im_nzval, pload)
     i = @index(Global, Linear)
     npv = length(pv)
     npq = length(pq)
@@ -215,8 +215,8 @@ end
 @kernel function active_power_kernel!(
     pg, vmag, vang, pinj, qinj,
     pv, ref, pv_to_gen, ref_to_gen,
-    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
-    @Const(ybus_im_nzval), pload
+    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
+    ybus_im_nzval, pload
 )
     i = @index(Global, Linear)
     npv = length(pv)
