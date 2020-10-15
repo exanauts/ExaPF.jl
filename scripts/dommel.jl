@@ -100,8 +100,8 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
     c0 = 10.0
     nq1 = ExaPF.size_constraint(polar, constraints[1])
     nq2 = ExaPF.size_constraint(polar, constraints[2])
-    q1 = ExaPF.QuadraticPenalty(nq1; c₀=10.0)
-    q2 = ExaPF.QuadraticPenalty(nq2; c₀=10.0)
+    q1 = ExaPF.QuadraticPenalty(nq1; c₀=0.10)
+    q2 = ExaPF.QuadraticPenalty(nq2; c₀=0.10)
     penalties = ExaPF.AbstractPenalty[q1, q2]
 
     ev = ExaPF.ScalingEvaluator(nlp, u0)
@@ -125,7 +125,7 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
         α0 = 1.0
     else
         H = I
-        α0 = 1e-7
+        α0 = 1e-4
         # α0 = 1e-12
     end
     αi = α0
@@ -219,5 +219,5 @@ end
 
 datafile = joinpath(dirname(@__FILE__), "..", "test", "data", "case57.m")
 
-u_opt, ch = dommel_method(datafile; bfgs=false, itout_max=10, feasible_start=false,
+u_opt, ch = dommel_method(datafile; bfgs=false, itout_max=15, feasible_start=false,
                    iter_max=1000)

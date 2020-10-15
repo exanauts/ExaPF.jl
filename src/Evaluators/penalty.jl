@@ -65,7 +65,7 @@ function gradient!(pen::PenaltyEvaluator, grad, u)
         n = size(penalty)
         mask = fr_+1:fr_+n
         cx = @view pen.infeasibility[mask]
-        gradient!(base_nlp, grad, penalty, cons, u, cx)
+        gradient!(base_nlp, grad, penalty, cons, u, cx; start=fr_+1)
         fr_ += n
     end
 end

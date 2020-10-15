@@ -38,9 +38,10 @@ function gradient!(
     penal::QuadraticPenalty,
     cons::Function,
     u::AbstractVector,
-    cx::AbstractVector
+    cx::AbstractVector;
+    start=1
 )
-    jtprod!(nlp, cons, grad, u, cx .* penal.coefs)
+    jtprod!(nlp, cons, grad, u, cx .* penal.coefs; start=start)
 end
 
 struct AugLagPenalty{T} <: AbstractPenalty
