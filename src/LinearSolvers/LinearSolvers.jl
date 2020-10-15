@@ -9,7 +9,7 @@ using Printf
 using SparseArrays
 using TimerOutputs
 
-import ..ExaPF: norm2, TIMER
+import ..ExaPF: norm2, TIMER, csclsvqr!
 import Base: show
 
 export bicgstab, list_solvers
@@ -55,6 +55,12 @@ function ldiv!(::DirectSolver,
     y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSR, x::CuVector,
 )
     CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
+    return 0
+end
+function ldiv!(::DirectSolver,
+    y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSC, x::CuVector,
+)
+    csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
 

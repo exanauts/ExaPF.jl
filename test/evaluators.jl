@@ -1,10 +1,10 @@
-@testset "ReducedSpaceEvaluators" begin
+@testset "ReducedSpaceEvaluators ($case)" for case in ["case9.m", "case30.m"]
     if has_cuda_gpu()
         ITERATORS = zip([CPU(), CUDADevice()], [Array, CuArray])
     else
         ITERATORS = zip([CPU()], [Array])
     end
-    datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
+    datafile = joinpath(dirname(@__FILE__), "data", case)
     pf = PowerSystem.PowerNetwork(datafile, 1)
 
     @testset "Test API on $device" for (device, M) in ITERATORS
@@ -43,6 +43,12 @@
         g = similar(u)
         fill!(g, 0)
         ExaPF.gradient!(nlp, g, u)
+        function reduced_cost(u_)
+            ExaPF.update!(nlp, u_)
+            return ExaPF.objective(nlp, u_)
+        end
+        grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
+        @test isapprox(grad_fd, g, rtol=1e-4)
 
         # Constraint
         ## Evaluation of the constraints
@@ -55,30 +61,5 @@
         # ExaPF.jacobian!(nlp, jac, u)
         # @info("j", J)
     end
-
-    # Test correctness of the reduced gradient (currently only on CPU)
-    CASES = ["case9.m", "case30.m"]
-    @testset "Evaluation of reduced gradient on $case" for case in CASES
-        datafile = joinpath(dirname(@__FILE__), "data", case)
-        pf = PowerSystem.PowerNetwork(datafile, 1)
-        polar = PolarForm(pf, CPU())
-        x0 = ExaPF.initial(polar, State())
-        u = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
-
-        constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u, p; constraints=constraints)
-        ExaPF.update!(nlp, u)
-        ∇fᵣ = similar(u)
-        fill!(∇fᵣ, 0)
-        ExaPF.gradient!(nlp, ∇fᵣ, u)
-
-        # Compare with finite differences
-        function reduced_cost(u_)
-            ExaPF.update!(nlp, u_)
-            return ExaPF.objective(nlp, u_)
-        end
-        grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
-        @test isapprox(grad_fd, ∇fᵣ, rtol=1e-4)
-    end
 end
+

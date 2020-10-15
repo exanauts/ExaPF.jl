@@ -8,10 +8,6 @@ struct ADFactory <: AbstractADFactory
     Jgₓ::AD.StateJacobianAD
     Jgᵤ::AD.DesignJacobianAD
     ∇f::AD.ObjectiveAD
-    # Workaround before CUDA.jl 1.4: keep a cache for the transpose
-    # matrix of the State Jacobian matrix, and update it inplace
-    # when we need to solve the system Jₓ' \ y
-    Jᵗ::Union{Nothing, AbstractMatrix}
 end
 
 
@@ -138,15 +134,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
     λ = similar(x)
     # Build up AD factory
     jx, ju, adjoint_f = init_ad_factory(model, buffer)
-    if isa(x, CuArray)
-        nₓ = length(x)
-        ind_rows, ind_cols, nzvals = _sparsity_pattern(model)
-        # Get transpose of Jacobian
-        Jt = CuSparseMatrixCSR(sparse(ind_cols, ind_rows, nzvals))
-        ad = ADFactory(jx, ju, adjoint_f, Jt)
-    else
-        ad = ADFactory(jx, ju, adjoint_f, nothing)
-    end
+    ad = ADFactory(jx, ju, adjoint_f)
 
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
@@ -192,14 +180,18 @@ function objective(nlp::ReducedSpaceEvaluator, u)
 end
 
 # Private function to compute adjoint (should be inlined)
-function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J, y)
+function _adjoint!(linear_solver, λ, J, y)
     λ .= J' \ y
 end
-function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
-    # # TODO: fix this hack once CUDA.jl 1.4 is released
-    Jt = nlp.ad.Jᵗ
-    Jt.nzVal .= J.nzVal
-    LinearSolvers.ldiv!(nlp.linear_solver, λ, Jt, y)
+# Further restriction for GPU:
+function _adjoint!(linear_solver, λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
+    LinearSolvers.ldiv!(linear_solver, λ, transpose(J), y)
+end
+# Need a special workaround to have QR decomposition working on GPU
+function _adjoint!(linear_solver::DirectSolver, λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
+    # CSC has same entries as CSC representation of transpose matrix
+    Jt = CuSparseMatrixCSC(J)
+    LinearSolvers.ldiv!(linear_solver, λ, Jt, y)
 end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
@@ -222,7 +214,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ
     # Update (negative) adjoint
     λₖ_neg = nlp.λ
-    _adjoint!(nlp, λₖ_neg, ∇gₓ, ∇fₓ)
+    _adjoint!(nlp.linear_solver, λₖ_neg, ∇gₓ, ∇fₓ)
     _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
     return nothing
 end
@@ -272,7 +264,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
         Jᵤ = ForwardDiff.jacobian(cons_u, g, u)
         for ix in 1:mc_
             rhs = Jₓ[ix, :]
-            _adjoint!(nlp, λ, ∇gₓ, rhs)
+            _adjoint!(nlp.linear_solver, λ, ∇gₓ, rhs)
             jac[cnt, :] .= Jᵤ[ix, :] - ∇gᵤ' * λ
             cnt += 1
         end
