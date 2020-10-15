@@ -209,13 +209,6 @@ function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
     g .= ∇fᵤ
     mul!(g, transpose(∇gᵤ), λₖ_neg, -1.0, 1.0)
 end
-# TODO: For some reason, this operation is slow on the GPU
-# because mul! does not dispatch on CUSPARSE.mv!
-# Use the allocating version currently, but should update to mul!
-# once the code is ported to CUDA.jl 1.4
-function _reduced_gradient!(g::CuVector, ∇fᵤ, ∇gᵤ, λₖ_neg)
-    g .= ∇fᵤ .- transpose(∇gᵤ) * λₖ_neg
-end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     buffer = nlp.buffer
