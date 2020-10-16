@@ -14,6 +14,7 @@ import Base: show
 
 export bicgstab, list_solvers
 export DirectSolver, BICGSTAB, EigenBICGSTAB
+export get_transpose
 
 @enum(SolveStatus,
     Unsolved,
@@ -29,6 +30,8 @@ include("bicgstab_eigen.jl")
 
 abstract type AbstractLinearSolver end
 abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
+
+get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 
 """
     ldiv!(solver, y, J, x)
@@ -46,7 +49,7 @@ function ldiv! end
 struct DirectSolver <: AbstractLinearSolver end
 DirectSolver(precond) = DirectSolver()
 function ldiv!(::DirectSolver,
-    y::Vector, J::AbstractSparseMatrix, x::Vector,
+    y::Vector, J::AbstractMatrix, x::Vector,
 )
     y .= J \ x
     return 0
@@ -63,6 +66,7 @@ function ldiv!(::DirectSolver,
     csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
+get_transpose(::DirectSolver, M::CUDA.CUSPARSE.CuSparseMatrixCSR) = CuSparseMatrixCSC(M)
 
 function update!(solver::AbstractIterativeLinearSolver, J)
     @timeit solver.timer "Preconditioner"  update(J, solver.precond, solver.timer)

@@ -31,6 +31,7 @@ mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 
     buffer::AbstractNetworkBuffer
     ad::ADFactory
+    ∇gᵗ::AbstractMatrix
     linear_solver::LinearSolvers.AbstractLinearSolver
     ε_tol::Float64
 end
@@ -62,7 +63,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
     return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
                                  buffer,
-                                 ad, linear_solver, ε_tol)
+                                 ad, jx.J, linear_solver, ε_tol)
 end
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
@@ -78,11 +79,10 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
                      solver=nlp.linear_solver, verbose_level=verbose_level)
     if !conv.has_converged
         println(conv.norm_residuals)
-        cons = zeros(n_constraints(nlp))
-        constraint!(nlp, cons, u)
-        sanity_check(nlp, u, cons)
         error("Failure")
     end
+    ∇gₓ = nlp.ad.Jgₓ.J
+    nlp.∇gᵗ = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
 
     # Update value of nlp.x with new network state
     get!(nlp.model, State(), nlp.x, nlp.buffer)
@@ -96,21 +96,6 @@ function objective(nlp::ReducedSpaceEvaluator, u)
     cost = cost_production(nlp.model, nlp.buffer.pg)
     # TODO: determine if we should include λ' * g(x, u), even if ≈ 0
     return cost
-end
-
-# Private function to compute adjoint (should be inlined)
-function _adjoint!(linear_solver, λ, J, y)
-    λ .= J' \ y
-end
-# Further restriction for GPU:
-function _adjoint!(linear_solver, λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
-    LinearSolvers.ldiv!(linear_solver, λ, transpose(J), y)
-end
-# Need a special workaround to have QR decomposition working on GPU
-function _adjoint!(linear_solver::DirectSolver, λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
-    # CSC has same entries as CSC representation of transpose matrix
-    Jt = CuSparseMatrixCSC(J)
-    LinearSolvers.ldiv!(linear_solver, λ, Jt, y)
 end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
@@ -133,7 +118,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ
     # Update (negative) adjoint
     λₖ_neg = nlp.λ
-    _adjoint!(nlp.linear_solver, λₖ_neg, ∇gₓ, ∇fₓ)
+    LinearSolvers.ldiv!(nlp.linear_solver, λₖ_neg, nlp.∇gᵗ, ∇fₓ)
     _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
     return nothing
 end
@@ -181,7 +166,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
             # Get adjoint
             jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
             jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
-            _adjoint!(nlp.linear_solver, μ, ∇gₓ, jx)
+            LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jx)
             jac[cnt, :] .= (ju .- ∇gᵤ' * μ)
             cnt += 1
         end
@@ -195,7 +180,7 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1, start=1)
     ∇gᵤ = nlp.ad.Jgᵤ.J
     nₓ = length(xₖ)
     cnt::Int = shift
-    μ = similar(nlp.λ)
+    μ = nlp.λ
 
     ∂obj = nlp.ad.∇f
     mc_ = size_constraint(nlp.model, cons)
@@ -205,8 +190,10 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1, start=1)
             jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
             jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
             # Get adjoint
-            _adjoint!(nlp.linear_solver, μ, ∇gₓ, jx)
-            jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
+            LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jx)
+            # jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
+            mul!(ju, transpose(∇gᵤ), μ, -v[cnt], v[cnt])
+            jv .+= ju
         end
         cnt += 1
     end
@@ -236,5 +223,4 @@ function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
     @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
             err_sup, n_sup, err_inf, n_inf)
 end
-
 
