@@ -1,93 +1,4 @@
 
-import Base: show
-
-# WIP: definition of AD factory
-abstract type AbstractADFactory end
-
-struct ADFactory <: AbstractADFactory
-    Jgₓ::AD.StateJacobianAD
-    Jgᵤ::AD.DesignJacobianAD
-    ∇f::AD.ObjectiveAD
-end
-
-
-"""
-    AbstractNLPEvaluator
-
-AbstractNLPEvaluator implements the bridge between the
-problem formulation (see `AbstractFormulation`) and the optimization
-solver. Once the problem formulation bridged, the evaluator allows
-to evaluate in a straightfoward fashion the objective and the different
-constraints, but also the corresponding gradient and Jacobian objects.
-
-"""
-abstract type AbstractNLPEvaluator end
-
-"""
-    n_variables(nlp::AbstractNLPEvaluator)
-Get the number of variables in the problem.
-"""
-function n_variables end
-
-"""
-    n_constraints(nlp::AbstractNLPEvaluator)
-Get the number of constraints in the problem.
-"""
-function n_constraints end
-
-"""
-    objective(nlp::AbstractNLPEvaluator, u)::Float64
-
-Evaluate the objective at point `u`.
-"""
-function objective end
-
-"""
-    gradient!(nlp::AbstractNLPEvaluator, g, u)
-
-Evaluate the gradient of the objective at point `u`. Store
-the result inplace in the vector `g`, which should have the same
-dimension as `u`.
-
-"""
-function gradient! end
-
-"""
-    constraint!(nlp::AbstractNLPEvaluator, cons, u)
-
-Evaluate the constraints of the problem at point `u`. Store
-the result inplace, in the vector `cons`.
-The vector `cons` should have the same dimension as the result
-returned by `n_constraints(nlp)`.
-
-"""
-function constraint! end
-
-"""
-    jacobian_structure!(nlp::AbstractNLPEvaluator, rows, cols)
-
-Return the sparsity pattern of the Jacobian matrix.
-"""
-function jacobian_structure! end
-
-"""
-    jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
-
-Evaluate the Jacobian of the problem at point `u`. Store
-the result inplace, in the vector `jac`.
-"""
-function jacobian! end
-
-"""
-    hessian!(nlp::AbstractNLPEvaluator, hess, u)
-
-Evaluate the Hessian of the problem at point `u`. Store
-the result inplace, in the vector `hess`.
-
-"""
-function hessian! end
-
-
 """
     ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 
@@ -165,6 +76,14 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
                      solver=nlp.linear_solver, verbose_level=verbose_level)
+    if !conv.has_converged
+        println(conv.norm_residuals)
+        cons = zeros(n_constraints(nlp))
+        constraint!(nlp, cons, u)
+        sanity_check(nlp, u, cons)
+        error("Failure")
+    end
+
     # Update value of nlp.x with new network state
     get!(nlp.model, State(), nlp.x, nlp.buffer)
     # Refresh value of the active power of the generators
@@ -234,7 +153,6 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
     end
 end
 
-#TODO: return sparsity pattern there, currently return dense pattern
 function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     m, n = n_constraints(nlp), n_variables(nlp)
     idx = 1
@@ -247,26 +165,76 @@ function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
 end
 
 function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
+    model = nlp.model
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     ∇gᵤ = nlp.ad.Jgᵤ.J
     nₓ = length(xₖ)
     MT = nlp.model.AT
+    μ = similar(nlp.λ)
+    ∂obj = nlp.ad.∇f
     cnt = 1
-    λ = nlp.λ
+
     for cons in nlp.constraints
         mc_ = size_constraint(nlp.model, cons)
-        g = MT{eltype(u), 1}(undef, mc_)
-        fill!(g, 0)
-        cons_x(g, x_) = cons(nlp.model, g, x_, u, nlp.p; V=eltype(x_))
-        cons_u(g, u_) = cons(nlp.model, g, xₖ, u_, nlp.p; V=eltype(u_))
-        Jₓ = ForwardDiff.jacobian(cons_x, g, xₖ)
-        Jᵤ = ForwardDiff.jacobian(cons_u, g, u)
-        for ix in 1:mc_
-            rhs = Jₓ[ix, :]
-            _adjoint!(nlp.linear_solver, λ, ∇gₓ, rhs)
-            jac[cnt, :] .= Jᵤ[ix, :] - ∇gᵤ' * λ
+        for i_cons in 1:mc_
+            # Get adjoint
+            jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
+            jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
+            _adjoint!(nlp.linear_solver, μ, ∇gₓ, jx)
+            jac[cnt, :] .= (ju .- ∇gᵤ' * μ)
             cnt += 1
         end
     end
 end
+
+function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1, start=1)
+    model = nlp.model
+    xₖ = nlp.x
+    ∇gₓ = nlp.ad.Jgₓ.J
+    ∇gᵤ = nlp.ad.Jgᵤ.J
+    nₓ = length(xₖ)
+    cnt::Int = shift
+    μ = similar(nlp.λ)
+
+    ∂obj = nlp.ad.∇f
+    mc_ = size_constraint(nlp.model, cons)
+    for i_cons in 1:mc_
+        # If v_i is equal to 0, there is no need to evaluate the adjoint
+        if !iszero(v[cnt])
+            jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
+            jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
+            # Get adjoint
+            _adjoint!(nlp.linear_solver, μ, ∇gₓ, jx)
+            jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
+        end
+        cnt += 1
+    end
+end
+function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    cnt = 1
+    for cons in nlp.constraints
+        jtprod!(nlp, cons, jv, u, v; shift=cnt)
+        cnt += size_constraint(nlp.model, cons)
+    end
+end
+
+# Utils function
+
+function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
+    println("Check violation of constraints")
+    print("Control  \t")
+    (n_inf, err_inf, n_sup, err_sup) = _check(u, nlp.u_min, nlp.u_max)
+    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
+            err_sup, n_sup, err_inf, n_inf)
+    print("State    \t")
+    (n_inf, err_inf, n_sup, err_sup) = _check(nlp.x, nlp.x_min, nlp.x_max)
+    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
+            err_sup, n_sup, err_inf, n_inf)
+    print("Constraints\t")
+    (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
+    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
+            err_sup, n_sup, err_inf, n_inf)
+end
+
+

@@ -26,18 +26,8 @@ end
 norm2(x::AbstractVector) = norm(x, 2)
 norm2(x::CuVector) = CUBLAS.nrm2(x)
 
-function project_constraints!(u::AbstractArray, grad::AbstractArray, u_min::AbstractArray,
-                              u_max::AbstractArray)
-    dim = length(u)
-    for i in 1:dim
-        if u[i] > u_max[i]
-            u[i] = u_max[i]
-            grad[i] = 0.0
-        elseif u[i] < u_min[i]
-            u[i] = u_min[i]
-            grad[i] = 0.0
-        end
-    end
+function project!(w::VT, u::VT, u♭::VT, u♯::VT) where VT<:AbstractArray
+    w .= max.(min.(u, u♯), u♭)
 end
 
 # Utils function to solve transposed linear system  A' x = y

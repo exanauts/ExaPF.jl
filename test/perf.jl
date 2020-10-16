@@ -50,6 +50,11 @@ function run_level2(datafile; device=CPU())
     fill!(cons, 0)
     print("Constrt \t")
     CUDA.@time ExaPF.constraint!(nlp, cons, u)
+
+    print("Jac-prod \t")
+    jv = copy(g) ; fill!(jv, 0)
+    v = copy(cons) ; fill!(v, 1)
+    CUDA.@time ExaPF.jtprod!(nlp, jv, u, v)
 end
 
 datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
