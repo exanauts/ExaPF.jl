@@ -30,6 +30,16 @@ function jacobian(polar::PolarForm, ::typeof(state_constraint), i_cons, ∂jac, 
     # Adjoint / Control
     fill!(∂jac.∇fᵤ, 0)
 end
+function jtprod(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, v)
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    fr_ = npq + npv + 1
+    # Adjoint / Control
+    fill!(∂jac.∇fᵤ, 0)
+    # Adjoint / State
+    fill!(∂jac.∇fₓ, 0)
+    ∂jac.∇fₓ[fr_:end] .= v
+end
 
 # Here, the power constraints are ordered as:
 # g = [P_ref; Q_ref; Q_pv]
@@ -90,7 +100,7 @@ function bounds(polar::PolarForm{T, IT, VT, AT}, ::typeof(power_constraints)) wh
     pq_max = [p_max[ref_to_gen]; q_max[ref_to_gen]; q_max[pv_to_gen]]
     return convert(MT, pq_min), convert(MT, pq_max)
 end
-# State Jacobian: Jx_i = [0, ..., 1, ... 0] where
+# Jacobian
 function jacobian(
     polar::PolarForm,
     ::typeof(power_constraints),
@@ -131,5 +141,27 @@ function jacobian(
     end
     put!(polar, Control(), adj_u, adj_vmag, adj_vang)
     put!(polar, State(), adj_x, adj_vmag, adj_vang)
+end
+# Jacobian-transpose vector product
+function jtprod(
+    polar::PolarForm,
+    ::typeof(power_constraints),
+    ∂jac,
+    buffer,
+    v::AbstractVector,
+)
+    m = size_constraint(polar, power_constraints)
+    jvx = similar(∂jac.∇fₓ) ; fill!(jvx, 0)
+    jvu = similar(∂jac.∇fᵤ) ; fill!(jvu, 0)
+    for i_cons in 1:m
+        if !iszero(v[i_cons])
+            jacobian(polar, power_constraints, i_cons, ∂jac, buffer)
+            jx, ju = ∂jac.∇fₓ, ∂jac.∇fᵤ
+            jvx .+= jx .* v[i_cons]
+            jvu .+= ju .* v[i_cons]
+        end
+    end
+    ∂jac.∇fₓ .= jvx
+    ∂jac.∇fᵤ .= jvu
 end
 

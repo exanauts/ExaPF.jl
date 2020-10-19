@@ -163,9 +163,9 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     for cons in nlp.constraints
         mc_ = size_constraint(nlp.model, cons)
         for i_cons in 1:mc_
-            # Get adjoint
             jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
             jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
+            # Get adjoint
             LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jx)
             jac[cnt, :] .= (ju .- ∇gᵤ' * μ)
             cnt += 1
@@ -173,36 +173,31 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     end
 end
 
-function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; shift=1, start=1)
+function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
     model = nlp.model
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     ∇gᵤ = nlp.ad.Jgᵤ.J
     nₓ = length(xₖ)
-    cnt::Int = shift
     μ = nlp.λ
 
     ∂obj = nlp.ad.∇f
-    mc_ = size_constraint(nlp.model, cons)
-    for i_cons in 1:mc_
-        # If v_i is equal to 0, there is no need to evaluate the adjoint
-        if !iszero(v[cnt])
-            jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
-            jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
-            # Get adjoint
-            LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jx)
-            # jv .+= (ju .- ∇gᵤ' * μ) * v[cnt]
-            mul!(ju, transpose(∇gᵤ), μ, -v[cnt], v[cnt])
-            jv .+= ju
-        end
-        cnt += 1
-    end
+    # Get adjoint
+    jtprod(model, cons, ∂obj, nlp.buffer, v)
+    jvx, jvu = ∂obj.∇fₓ, ∂obj.∇fᵤ
+    # jv .+= (ju .- ∇gᵤ' * μ)
+    LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jvx)
+    jv .+= jvu
+    mul!(jv, transpose(∇gᵤ), μ, -1.0, 1.0)
 end
 function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
-    cnt = 1
+    fr_ = 0
     for cons in nlp.constraints
-        jtprod!(nlp, cons, jv, u, v; shift=cnt)
-        cnt += size_constraint(nlp.model, cons)
+        n = size_constraint(nlp.model, cons)
+        mask = fr_+1:fr_+n
+        vv = @view v[mask]
+        jtprod!(nlp, cons, jv, u, vv)
+        fr_ += n
     end
 end
 

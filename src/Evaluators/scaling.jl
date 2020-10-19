@@ -63,10 +63,10 @@ function jacobian!(ev::ScalingEvaluator, jac, u)
     jac .= Diagonal(ev.scale_cons) * jac
 end
 
-function jtprod!(ev::ScalingEvaluator, cons, jv, u, v; shift=1, start=1)
+function jtprod!(ev::ScalingEvaluator, cons, jv, u, v; start=1)
     fr_, to_ = start, start + size_constraint(ev.model, cons) - 1
     w = v .* ev.scale_cons[fr_:to_]
-    jtprod!(ev.inner, cons, jv, u, w; shift=shift)
+    jtprod!(ev.inner, cons, jv, u, w)
 end
 function jtprod!(ev::ScalingEvaluator, jv, u, v)
     w = v .* ev.scale_cons
