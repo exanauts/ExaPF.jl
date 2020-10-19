@@ -191,14 +191,29 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
     mul!(jv, transpose(∇gᵤ), μ, -1.0, 1.0)
 end
 function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    μ = nlp.λ
+    ∇gᵤ = nlp.ad.Jgᵤ.J
+    ∂obj = nlp.ad.∇f
+    jvx = ∂obj.jvₓ
+    jvu = ∂obj.jvᵤ
+    fill!(jvx, 0)
+    fill!(jvu, 0)
+
     fr_ = 0
     for cons in nlp.constraints
         n = size_constraint(nlp.model, cons)
         mask = fr_+1:fr_+n
         vv = @view v[mask]
-        jtprod!(nlp, cons, jv, u, vv)
+        # Compute jtprod of current constraint
+        jtprod(nlp.model, cons, ∂obj, nlp.buffer, vv)
+        jvx .+= ∂obj.∇fₓ
+        jvu .+= ∂obj.∇fᵤ
         fr_ += n
     end
+    LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jvx)
+    jv .+= jvu
+    mul!(jv, transpose(∇gᵤ), μ, -1.0, 1.0)
+    return
 end
 
 # Utils function

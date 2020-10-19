@@ -558,6 +558,8 @@ struct ObjectiveAD{VT}
     ∂pg::VT
     ∂vm::VT
     ∂va::VT
+    jvₓ::VT
+    jvᵤ::VT
 end
 
 end
