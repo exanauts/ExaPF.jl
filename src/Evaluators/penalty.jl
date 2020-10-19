@@ -59,14 +59,36 @@ end
 
 function gradient!(pen::PenaltyEvaluator, grad, u)
     base_nlp = pen.inner
-    gradient!(base_nlp, grad, u)
+    model = base_nlp.model
+    λ = base_nlp.λ
+    # Import buffer (has been updated previously in update!)
+    buffer = base_nlp.buffer
+    # Import AD objects
+    ∇gᵤ = jacobian(model, base_nlp.ad.Jgᵤ, buffer)
+    ∂obj = base_nlp.ad.∇f
+    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
+    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
+
+    # compute gradient of objective
+    ∂cost(model, ∂obj, buffer)
+    jvx .+= ∂obj.∇fₓ
+    jvu .+= ∂obj.∇fᵤ
+
+    # compute gradient of penalties
     fr_ = 0
     for (penalty, cons) in zip(pen.penalties, base_nlp.constraints)
         n = size(penalty)
         mask = fr_+1:fr_+n
         cx = @view pen.infeasibility[mask]
-        gradient!(base_nlp, grad, penalty, cons, u, cx; start=fr_+1)
+        v = cx .* penalty.coefs
+        jtprod(model, cons, ∂obj, buffer, v)
+        jvx .+= ∂obj.∇fₓ
+        jvu .+= ∂obj.∇fᵤ
         fr_ += n
     end
+    # evaluate reduced gradient
+    LinearSolvers.ldiv!(base_nlp.linear_solver, λ, base_nlp.∇gᵗ, jvx)
+    grad .= jvu
+    mul!(grad, transpose(∇gᵤ), λ, -1.0, 1.0)
 end
 

@@ -191,6 +191,7 @@ end
     end
 end
 
+# Transfer values in (x, u, p) to buffer
 function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u, p)
     if isa(x, Array)
         kernel! = transfer_kernel!(CPU(), 1)
@@ -221,10 +222,12 @@ end
     i = @index(Global, Linear)
     npv = length(pv)
     nref = length(ref)
+    # Evaluate active power at PV nodes
     if i <= npv
         bus = pv[i]
         i_gen = pv_to_gen[i]
         pg[i_gen] = pinj[bus] + pload[bus]
+    # Evaluate active power at slack nodes
     elseif i <= npv + nref
         i_ = i - npv
         bus = ref[i_]
@@ -245,6 +248,7 @@ end
     end
 end
 
+# Refresh active power (needed to evaluate objective)
 function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
         kernel! = active_power_kernel!(CPU(), 1)
@@ -270,29 +274,61 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::Po
     wait(ev)
 end
 
-function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::PolarNetworkState)
-    ngen = PS.get(polar.network, PS.NumberOfGenerators())
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+@kernel function reactive_power_kernel!(
+    qg, vmag, vang, pinj, qinj,
+    pv, ref, pv_to_gen, ref_to_gen,
+    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
+    ybus_im_nzval, qload
+)
+    i = @index(Global, Linear)
+    npv = length(pv)
+    nref = length(ref)
+    # Evaluate reactive power at PV nodes
+    if i <= npv
+        bus = pv[i]
+        i_gen = pv_to_gen[i]
+    # Evaluate reactive power at slack nodes
+    elseif i <= npv + nref
+        i_ = i - npv
+        bus = ref[i_]
+        i_gen = ref_to_gen[i_]
+    end
+    inj = 0
+    @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
+        to = ybus_re_rowval[c]
+        aij = vang[bus] - vang[to]
+        # f_re = a * cos + b * sin
+        # f_im = a * sin - b * cos
+        coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
+        coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
+        cos_val = cos(aij)
+        sin_val = sin(aij)
+        inj += coef_cos * sin_val - coef_sin * cos_val
+    end
+    qg[i_gen] = inj + qload[bus]
+end
 
-    index_gen = polar.indexing.index_generators
-    index_ref = polar.indexing.index_ref
-    index_pv = polar.indexing.index_pv
+function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::PolarNetworkState)
+    if isa(buffer.vmag, Array)
+        kernel! = reactive_power_kernel!(CPU(), 1)
+    else
+        kernel! = reactive_power_kernel!(CUDADevice(), 256)
+    end
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ref = polar.indexing.index_ref
     pv_to_gen = polar.indexing.index_pv_to_gen
     ref_to_gen = polar.indexing.index_ref_to_gen
 
-    for i in 1:npv
-        bus = index_pv[i]
-        qinj = get_react_injection(bus, buffer.vmag, buffer.vang, polar.ybus_re, polar.ybus_im)
-        i_gen = pv_to_gen[i]
-        buffer.qg[i_gen] = qinj + polar.reactive_load[bus]
-    end
-    for i in 1:nref
-        bus = index_ref[i]
-        i_gen = ref_to_gen[i]
-        qinj = get_react_injection(bus, buffer.vmag, buffer.vang, polar.ybus_re, polar.ybus_im)
-        buffer.qg[i_gen] = qinj + polar.reactive_load[bus]
-    end
+    range_ = length(pv) + length(ref)
+    ev = kernel!(
+        buffer.qg,
+        buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
+        pv, ref, pv_to_gen, ref_to_gen,
+        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
+        polar.ybus_im.nzval, polar.reactive_load,
+        ndrange=range_
+    )
+    wait(ev)
 end
+

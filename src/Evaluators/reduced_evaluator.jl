@@ -113,7 +113,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     # Evaluate Jacobian of power flow equation on current u
     ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, buffer)
     # Evaluate adjoint of cost function and update inplace ObjectiveAD
-    cost_production_adjoint(nlp.model, nlp.ad.∇f, buffer)
+    ∂cost(nlp.model, nlp.ad.∇f, buffer)
 
     ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ
     # Update (negative) adjoint

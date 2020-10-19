@@ -124,7 +124,7 @@ function put(
     return
 end
 
-function cost_production_adjoint(polar::PolarForm, ∂obj::AD.ObjectiveAD, buffer::PolarNetworkState)
+function ∂cost(polar::PolarForm, ∂obj::AD.ObjectiveAD, buffer::PolarNetworkState)
     pg = buffer.pg
     coefs = polar.costs_coefficients
     # Return adjoint of quadratic cost
