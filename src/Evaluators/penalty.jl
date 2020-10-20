@@ -4,10 +4,10 @@ mutable struct PenaltyEvaluator{T} <: AbstractNLPEvaluator
     inner::AbstractNLPEvaluator
     cons::AbstractVector{T}
     infeasibility::AbstractVector{T}
-    penalties::Vector{AbstractPenalty}
+    penalties::AbstractVector{T}
 end
 function PenaltyEvaluator(nlp::AbstractNLPEvaluator;
-                          penalties=AbstractPenalty[],
+                          penalties=Float64[],
                           c₀=0.1)
 
     if n_constraints(nlp) == 0
@@ -15,6 +15,7 @@ function PenaltyEvaluator(nlp::AbstractNLPEvaluator;
     end
     if length(penalties) != length(nlp.constraints)
         penalties = AbstractPenalty[QuadraticPenalty(size_constraint(nlp.model, cons); c₀=c₀) for cons in nlp.constraints]
+        penalties = Float64[c₀=c₀ for cons in nlp.constraints]
     end
 
     cons = similar(nlp.g_min)
@@ -35,23 +36,20 @@ end
 
 function update_penalty!(pen::PenaltyEvaluator; η=10.0)
     fr_ = 0
-    for penalty in pen.penalties
-        n = size(penalty)
-        mask = fr_+1:fr_+n
-        update!(penalty, view(pen.infeasibility, mask), η)
-        fr_ += n
-    end
+    pen.penalties = min.(η * pen.penalties, 10e12)
 end
 
 function objective(pen::PenaltyEvaluator, u)
+    base_nlp = pen.inner
     # Internal objective
-    obj = objective(pen.inner, u)
+    obj = objective(base_nlp, u)
     # Add penalty terms
     fr_ = 0
-    for penalty in pen.penalties
-        n = size(penalty)
+    for (πp, cons) in zip(pen.penalties, base_nlp.constraints)
+        n = size_constraint(base_nlp.model, cons)
         mask = fr_+1:fr_+n
-        obj += penalty(@view pen.infeasibility[mask])
+        cx = pen.infeasibility[mask]
+        obj += 0.5 * πp * dot(cx, cx)
         fr_ += n
     end
     return obj
@@ -76,11 +74,11 @@ function gradient!(pen::PenaltyEvaluator, grad, u)
 
     # compute gradient of penalties
     fr_ = 0
-    for (penalty, cons) in zip(pen.penalties, base_nlp.constraints)
-        n = size(penalty)
+    for (πp, cons) in zip(pen.penalties, base_nlp.constraints)
+        n = size_constraint(base_nlp.model, cons)
         mask = fr_+1:fr_+n
         cx = @view pen.infeasibility[mask]
-        v = cx .* penalty.coefs
+        v = cx .* πp
         jtprod(model, cons, ∂obj, buffer, v)
         jvx .+= ∂obj.∇fₓ
         jvu .+= ∂obj.∇fᵤ
