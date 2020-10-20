@@ -50,7 +50,7 @@ const PS = PowerSystem
             ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
-            ExaPF.cost_production_adjoint(polar, ∂obj, cache)
+            ExaPF.∂cost(polar, ∂obj, cache)
             ∇fₓ = ∂obj.∇fₓ
             ∇fᵤ = ∂obj.∇fᵤ
 
