@@ -120,9 +120,12 @@ function jacobian(
     ∂jac,
     buffer
 )
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    index_pv = polar.network.pv
-    index_ref = polar.network.ref
+    index_pv = polar.indexing.index_pv
+    index_pq = polar.indexing.index_pq
+    index_ref = polar.indexing.index_ref
+    pv_to_gen = polar.indexing.index_pv_to_gen
 
     vmag = buffer.vmag
     vang = buffer.vang
@@ -130,29 +133,36 @@ function jacobian(
     adj_u = ∂jac.∇fᵤ
     adj_vmag = ∂jac.∂vm
     adj_vang = ∂jac.∂va
+    adj_pg = ∂jac.∂pg
+    fill!(adj_pg, 0.0)
     fill!(adj_vmag, 0.0)
     fill!(adj_vang, 0.0)
     fill!(adj_x, 0.0)
     fill!(adj_u, 0.0)
 
+    adj_inj = 1.0
     if i_cons <= nref
         # Constraint on P_ref (generator) (P_inj = P_g - P_load)
         bus = index_ref[i_cons]
-        adj_inj = 1.0
         put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
     elseif i_cons <= 2*nref
         # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
         bus = index_ref[i_cons - nref]
-        adj_inj = 1.0
         put_reactive_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
     else
         # Constraint on Q_pv (generator) (Q_inj = Q_g - Q_load)
-        adj_inj = 1.0
         bus = index_pv[i_cons - 2* nref]
         put_reactive_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
     end
-    put!(polar, Control(), adj_u, adj_vmag, adj_vang)
-    put!(polar, State(), adj_x, adj_vmag, adj_vang)
+    if isa(adj_x, Array)
+        kernel! = put_adjoint_kernel!(CPU(), 1)
+    else
+        kernel! = put_adjoint_kernel!(CUDADevice(), 256)
+    end
+    ev = kernel!(adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
+                 index_pv, index_pq, index_ref, pv_to_gen,
+                 ndrange=nbus)
+    wait(ev)
 end
 # Jacobian-transpose vector product
 function jtprod(
