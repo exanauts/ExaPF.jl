@@ -1,5 +1,6 @@
 # Adjoints needed in polar formulation
 #
+
 function put_active_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, ybus_im)
     @inbounds for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
         to = ybus_re.rowval[c]
@@ -9,8 +10,8 @@ function put_active_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus
         adj_v_m[fr] += v_m[to] * (cθ + sθ) * adj_P
         adj_v_m[to] += v_m[fr] * (cθ + sθ) * adj_P
 
-        adj_aij = -(v_m[fr]*v_m[to]*(ybus_re.nzval[c]*(sin(aij))))
-        adj_aij += v_m[fr]*v_m[to]*(ybus_im.nzval[c]*(cos(aij)))
+        adj_aij = -(v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij)))
+        adj_aij += v_m[fr]*v_m[to]*(ybus_im.nzval[c]*cos(aij))
         adj_aij *= adj_P
         adj_v_a[to] += -adj_aij
         adj_v_a[fr] += adj_aij
@@ -72,6 +73,36 @@ function put!(
     end
 end
 
+@kernel function put_adjoint_kernel!(
+    adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
+    index_pv, index_pq, index_ref, pv_to_gen,
+)
+    i = @index(Global, Linear)
+    npv = length(index_pv)
+    npq = length(index_pq)
+    nref = length(index_ref)
+
+    # PQ buses
+    if i <= npq
+        bus = index_pq[i]
+        adj_x[npv+i] =  adj_vang[bus]
+        adj_x[npv+npq+i] = adj_vmag[bus]
+    # PV buses
+    elseif i <= npq + npv
+        i_ = i - npq
+        bus = index_pv[i_]
+        i_gen = pv_to_gen[i_]
+        adj_u[nref + npv + i_] = adj_vmag[bus]
+        adj_u[nref + i_] += adj_pg[i_gen]
+        adj_x[i_] = adj_vang[bus]
+    # SLACK buses
+    elseif i <= npq + npv + nref
+        i_ = i - npq - npv
+        bus = index_ref[i_]
+        adj_u[i_] = adj_vmag[bus]
+    end
+end
+
 function put(
     polar::PolarForm{T, VT, AT},
     ::PS.Generator,
@@ -85,9 +116,9 @@ function put(
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
 
-    index_gen = PS.get(polar.network, PS.GeneratorIndexes())
-    index_pv = polar.network.pv
-    index_ref = polar.network.ref
+    index_pv = polar.indexing.index_pv
+    index_ref = polar.indexing.index_ref
+    index_pq = polar.indexing.index_pq
     pv_to_gen = polar.indexing.index_pv_to_gen
     ref_to_gen = polar.indexing.index_ref_to_gen
 
@@ -112,14 +143,15 @@ function put(
         adj_inj = adj_pg[i_gen]
         put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
     end
-    put!(polar, Control(), adj_u, adj_vmag, adj_vang)
-    put!(polar, State(), adj_x, adj_vmag, adj_vang)
-    for i in 1:npv
-        bus = index_pv[i]
-        i_gen = pv_to_gen[i]
-        # pg[i] = u[nref + ipv]
-        adj_u[nref + i] += adj_pg[i_gen]
+    if isa(adj_x, Array)
+        kernel! = put_adjoint_kernel!(CPU(), 1)
+    else
+        kernel! = put_adjoint_kernel!(CUDADevice(), 256)
     end
+    ev = kernel!(adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
+                 index_pv, index_pq, index_ref, pv_to_gen,
+                 ndrange=nbus)
+    wait(ev)
 
     return
 end
@@ -127,10 +159,10 @@ end
 function ∂cost(polar::PolarForm, ∂obj::AD.ObjectiveAD, buffer::PolarNetworkState)
     pg = buffer.pg
     coefs = polar.costs_coefficients
+    c3 = @view coefs[:, 3]
+    c4 = @view coefs[:, 4]
     # Return adjoint of quadratic cost
-    @inbounds for i in eachindex(pg)
-        ∂obj.∂pg[i] = coefs[i, 3] + 2.0 * coefs[i, 4] * pg[i]
-    end
+    ∂obj.∂pg .= c3 .+ 2.0 .* c4 .* pg
     put(polar, PS.Generator(), PS.ActivePower(), ∂obj, buffer)
 end
 
