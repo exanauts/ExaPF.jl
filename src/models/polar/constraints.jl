@@ -50,24 +50,36 @@ function power_constraints(polar::PolarForm, g, buffer)
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
+    ref_to_gen = polar.indexing.index_ref_to_gen
+    pv_to_gen = polar.indexing.index_pv_to_gen
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
 
     cnt = 1
     # Constraint on P_ref (generator) (P_inj = P_g - P_load)
-    for bus in ref
-        g[cnt] = get_power_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.active_load[bus]
-        cnt += 1
-    end
+    # NB: Active power generation has been updated previously inside buffer
+    g[cnt] = buffer.pg[ref_to_gen[1]]
+    cnt += 1
+    # Refresh reactive power generation in buffer
+    refresh!(polar, PS.Generator(), PS.ReactivePower(), buffer)
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
-    for bus in ref
-        g[cnt] = get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
-        cnt += 1
+    # Careful: g could be a view
+    if isa(g, SubArray)
+        gg = g.parent
+        shift = nref + g.indices[1].start - 1
+    else
+        gg = g
+        shift = nref
     end
-    # Constraint on Q_pv (generator) (Q_inj = Q_g - Q_load)
-    for bus in pv
-        g[cnt] = get_react_injection(bus, Vm, Va, polar.ybus_re, polar.ybus_im) + polar.reactive_load[bus]
-        cnt += 1
+    if isa(gg, Array)
+        kernel! = load_power_constraint_kernel!(CPU(), 4)
+    else
+        kernel! = load_power_constraint_kernel!(CUDADevice(), 256)
     end
+    ev = kernel!(
+        gg, buffer.qg, ref_to_gen, pv_to_gen, nref, npv, shift,
+        ndrange=nref+npv,
+    )
+    wait(ev)
     return
 end
 is_constraint(::typeof(power_constraints)) = true
