@@ -5,8 +5,12 @@ mutable struct PenaltyEvaluator{T} <: AbstractNLPEvaluator
     cons::AbstractVector{T}
     infeasibility::AbstractVector{T}
     penalties::AbstractVector{T}
+    # Scaling
+    scaler::AbstractScaler
 end
-function PenaltyEvaluator(nlp::AbstractNLPEvaluator;
+
+function PenaltyEvaluator(nlp::AbstractNLPEvaluator, u0;
+                          scale=false,
                           penalties=Float64[],
                           c₀=0.1)
 
@@ -14,23 +18,30 @@ function PenaltyEvaluator(nlp::AbstractNLPEvaluator;
         @warn("Original model has no inequality constraint")
     end
     if length(penalties) != length(nlp.constraints)
-        penalties = AbstractPenalty[QuadraticPenalty(size_constraint(nlp.model, cons); c₀=c₀) for cons in nlp.constraints]
         penalties = Float64[c₀=c₀ for cons in nlp.constraints]
     end
 
     cons = similar(nlp.g_min)
     cx = similar(nlp.g_min)
 
-    return PenaltyEvaluator(nlp, cons, cx, penalties)
+    if scale
+        scaler = MaxScaler(nlp, u0)
+    else
+        scaler = MaxScaler(nlp.g_min, nlp.g_max)
+    end
+
+    return PenaltyEvaluator(nlp, cons, cx, penalties, scaler)
 end
 
 function update!(pen::PenaltyEvaluator, u)
     update!(pen.inner, u)
     # Update constraints
     constraint!(pen.inner, pen.cons, u)
+    # Rescale
+    pen.cons .*= pen.scaler.scale_cons
     # Update infeasibility error
-    g♭ = pen.inner.g_min
-    g♯ = pen.inner.g_max
+    g♭ = pen.scaler.g_min
+    g♯ = pen.scaler.g_max
     pen.infeasibility .= max.(0, pen.cons .- g♯) + min.(0, pen.cons .- g♭)
 end
 
@@ -42,7 +53,7 @@ end
 function objective(pen::PenaltyEvaluator, u)
     base_nlp = pen.inner
     # Internal objective
-    obj = objective(base_nlp, u)
+    obj = pen.scaler.scale_obj * objective(base_nlp, u)
     # Add penalty terms
     fr_ = 0
     for (πp, cons) in zip(pen.penalties, base_nlp.constraints)
@@ -58,6 +69,7 @@ end
 function gradient!(pen::PenaltyEvaluator, grad, u)
     base_nlp = pen.inner
     model = base_nlp.model
+    scaler = pen.scaler
     λ = base_nlp.λ
     # Import buffer (has been updated previously in update!)
     buffer = base_nlp.buffer
@@ -69,8 +81,8 @@ function gradient!(pen::PenaltyEvaluator, grad, u)
 
     # compute gradient of objective
     ∂cost(model, ∂obj, buffer)
-    jvx .+= ∂obj.∇fₓ
-    jvu .+= ∂obj.∇fᵤ
+    jvx .+= scaler.scale_obj .* ∂obj.∇fₓ
+    jvu .+= scaler.scale_obj .* ∂obj.∇fᵤ
 
     # compute gradient of penalties
     fr_ = 0
@@ -78,7 +90,7 @@ function gradient!(pen::PenaltyEvaluator, grad, u)
         n = size_constraint(base_nlp.model, cons)
         mask = fr_+1:fr_+n
         cx = @view pen.infeasibility[mask]
-        v = cx .* πp
+        v = cx .* πp .* scaler.scale_cons[mask]
         jtprod(model, cons, ∂obj, buffer, v)
         jvx .+= ∂obj.∇fₓ
         jvu .+= ∂obj.∇fᵤ
