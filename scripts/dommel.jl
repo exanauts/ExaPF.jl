@@ -3,14 +3,12 @@ using ExaPF
 using FiniteDiff
 using ForwardDiff
 using LinearAlgebra
-using LinearOperators
 using LineSearches
 using Printf
 using KernelAbstractions
 using UnicodePlots
 using Statistics
 
-include("armijo.jl")
 
 reldiff(a, b) = abs(a - b) / max(1, a)
 function active_set(x, x♭, x♯; tol=1e-8)
@@ -98,22 +96,18 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
                                       ε_tol=1e-10)
     # Init a penalty evaluator with initial penalty c₀
     c0 = 10.0
-    nq1 = ExaPF.size_constraint(polar, constraints[1])
-    nq2 = ExaPF.size_constraint(polar, constraints[2])
-    q1 = ExaPF.QuadraticPenalty(nq1; c₀=0.10)
-    q2 = ExaPF.QuadraticPenalty(nq2; c₀=0.10)
-    penalties = ExaPF.AbstractPenalty[q1, q2]
 
-    ev = ExaPF.ScalingEvaluator(nlp, u0)
-    println(ev.scale_obj)
-    pen = ExaPF.PenaltyEvaluator(ev; c₀=c0, penalties=penalties)
-    ωtol = 1 / c0
+    pen = ExaPF.PenaltyEvaluator(nlp, u0; c₀=c0, penalties=[c0, c0], scale=true)
+    ωtol = 1e-5 #1 / c0
 
     # initialize arrays
     grad = similar(uk)
+    # ut for line search
+    ut = similar(uk)
     fill!(grad, 0)
     grad_prev = copy(grad)
     obj_prev = Inf
+    norm_grad = Inf
 
     outer_costs = Float64[]
     cost_history = Float64[]
@@ -125,10 +119,15 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
         α0 = 1.0
     else
         H = I
-        α0 = 1e-4
-        # α0 = 1e-12
+        α0 = 1e-6 # REF
+        # α0 = 1e-4
     end
     αi = α0
+    u♭ = nlp.u_min
+    u♯ = nlp.u_max
+    ls_itermax = 30
+    β = 0.4
+    τ = 1e-4
 
     for i_out in 1:itout_max
         iter = 1
@@ -146,15 +145,26 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
             # evaluate cost
             c = ExaPF.objective(pen, uk)
             # Evaluate cost of problem without penalties
-            c_ref = ExaPF.objective(pen.inner, uk)
+            c_ref = pen.scaler.scale_obj * ExaPF.objective(pen.inner, uk)
             ExaPF.gradient!(pen, grad, uk)
 
             # compute control step
-            # step = sample_ls(pen, uk, -grad, αi; sample_max=10)
-            step = armijo_ls(pen, uk, c, grad; t0=αi)
+            # Armijo line-search (Bertsekas, 1976)
+            dk = H * grad
+            step = αi
+            for j_ls in 1:ls_itermax
+                step *= β
+                ExaPF.project!(ut, uk .- step .* dk, u♭, u♯)
+                ExaPF.update!(pen, ut)
+                ft = ExaPF.objective(pen, ut)
+                if ft <= c - τ * dot(dk, ut .- uk)
+                    break
+                end
+            end
+
             # step = αi
-            wk .= uk .- step * H * grad
-            ExaPF.project!(uk, wk, pen.inner.u_min, pen.inner.u_max)
+            wk .= uk .- step * dk
+            ExaPF.project!(uk, wk, u♭, u♯)
 
             # Stopping criteration: uₖ₊₁ - uₖ
             ## Dual infeasibility
@@ -164,7 +174,7 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
 
             # check convergence
             if (iter%100 == 0)
-                @printf("%6d %.6e %.3e %.2e %.2e %.2e\n", iter, c, c - c_ref, norm_grad, inf_pr, step)
+                @printf("%6d %.6e %.3e %.2e %.2e %.2e\n", i, c, c - c_ref, norm_grad, inf_pr, step)
             end
             iter += 1
             push!(grad_history, norm_grad)
@@ -176,7 +186,7 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
             u_prev .= uk
             # Check whether we have converged nicely
             if (norm_grad < ωtol
-                || (iter >= 4 && reldiff(c, mean(cost_history[end-2:end])) < 1e-5)
+                || (iter >= 4 && reldiff(c, mean(cost_history[end-2:end])) < 1e-7)
             )
                 converged = true
                 break
@@ -188,10 +198,10 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
             ρ = 1e-6
             η = 10.0
         else
-            ρ = 0.001
+            ρ = 1e-6
             η = 2.0
         end
-        αi *= 2.0 / η
+        # αi = max(2.0 / η * αi, 1e-8)
         u_start .= ρ * u0 .+ (1 - ρ) .* uk
         ωtol *= 1 / η
         ωtol = max(ωtol, 1e-6)
@@ -204,6 +214,9 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
         push!(outer_costs, obj)
         @printf("#Outer %d %-4d %.3e %.3e \n",
                 i_out, n_iter, obj, inf_pr)
+        if (norm_grad < 1e-6) && (inf_pr < 1e-8)
+            break
+        end
         ExaPF.update_penalty!(pen; η=η)
     end
     # uncomment to plot cost evolution
@@ -219,5 +232,5 @@ end
 
 datafile = joinpath(dirname(@__FILE__), "..", "test", "data", "case57.m")
 
-u_opt, ch = dommel_method(datafile; bfgs=false, itout_max=15, feasible_start=false,
-                   iter_max=1000)
+u_opt, ch = dommel_method(datafile; bfgs=false, itout_max=10, feasible_start=false,
+                          iter_max=1000)
