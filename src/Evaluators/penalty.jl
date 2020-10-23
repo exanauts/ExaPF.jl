@@ -42,7 +42,7 @@ function update!(pen::PenaltyEvaluator, u)
     # Update infeasibility error
     g♭ = pen.scaler.g_min
     g♯ = pen.scaler.g_max
-    pen.infeasibility .= max.(0, pen.cons .- g♯) + min.(0, pen.cons .- g♭)
+    pen.infeasibility .= max.(0, pen.cons .- g♯) .+ min.(0, pen.cons .- g♭)
 end
 
 function update_penalty!(pen::PenaltyEvaluator; η=10.0)

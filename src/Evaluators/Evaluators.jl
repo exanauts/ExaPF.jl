@@ -80,4 +80,5 @@ function hessian! end
 include("common.jl")
 include("reduced_evaluator.jl")
 include("penalty.jl")
+include("auglag.jl")
 

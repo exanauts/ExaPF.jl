@@ -23,6 +23,13 @@ function primal_infeasibility(nlp::AbstractNLPEvaluator, cons)
     return max(err_inf, err_sup)
 end
 
+function active_set(c, c♭, c♯; tol=1e-8)
+    @assert length(c) == length(c♭) == length(c♯)
+    active_lb = findall(c .< c♭ .+ tol)
+    active_ub = findall(c .> c♯ .- tol)
+    return active_lb, active_ub
+end
+
 abstract type AbstractScaler end
 
 scale_factor(h, tol, η) = max(tol, η / max(1.0, h))
@@ -39,9 +46,8 @@ function MaxScaler(g_min, g_max)
     sc = similar(g_min) ; fill!(sc, 1.0)
     return MaxScaler(1.0, sc, g_min, g_max)
 end
-function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector)
-    η = 100.0
-    tol = 1e-8
+function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
+                   η=100.0, tol=1e-8)
     n = n_variables(nlp)
     m = n_constraints(nlp)
     update!(nlp, u0)
