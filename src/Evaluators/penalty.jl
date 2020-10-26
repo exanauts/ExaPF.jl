@@ -34,7 +34,7 @@ function PenaltyEvaluator(nlp::AbstractNLPEvaluator, u0;
 end
 
 function update!(pen::PenaltyEvaluator, u)
-    update!(pen.inner, u)
+    conv = update!(pen.inner, u)
     # Update constraints
     constraint!(pen.inner, pen.cons, u)
     # Rescale
@@ -43,6 +43,7 @@ function update!(pen::PenaltyEvaluator, u)
     g♭ = pen.scaler.g_min
     g♯ = pen.scaler.g_max
     pen.infeasibility .= max.(0, pen.cons .- g♯) .+ min.(0, pen.cons .- g♭)
+    return conv
 end
 
 function update_penalty!(pen::PenaltyEvaluator; η=10.0)

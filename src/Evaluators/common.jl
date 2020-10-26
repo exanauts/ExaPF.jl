@@ -7,6 +7,17 @@ struct ADFactory <: AbstractADFactory
     ∇f::AD.ObjectiveAD
 end
 
+abstract type AbstractCounter end
+
+mutable struct NLPCounter <: AbstractCounter
+    objective::Int
+    gradient::Int
+    hessian::Int
+    jacobian::Int
+    jtprod::Int
+    hprod::Int
+end
+NLPCounter() = NLPCounter(0, 0, 0, 0, 0, 0)
 
 function _check(val, val_min, val_max)
     violated_inf = findall(val .< val_min)

@@ -78,11 +78,15 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
                      solver=nlp.linear_solver, verbose_level=verbose_level)
     if !conv.has_converged
-        println(conv.norm_residuals)
-        error("Failure")
+        error("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
+        return conv
     end
     ∇gₓ = nlp.ad.Jgₓ.J
     nlp.∇gᵗ = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
+    # Switch preconditioner to transpose mode
+    if isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
+        LinearSolvers.update!(nlp.linear_solver, nlp.∇gᵗ)
+    end
 
     # Update value of nlp.x with new network state
     get!(nlp.model, State(), nlp.x, nlp.buffer)

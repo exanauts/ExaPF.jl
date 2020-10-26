@@ -1,5 +1,7 @@
 
 # Ref: https://github.com/JuliaSmoothOptimizers/Percival.jl/blob/master/src/AugLagModel.jl
+# TODO:
+# - check case when lb = ub for inequality constraints
 # Two-sided Lagrangian
 mutable struct AugLagEvaluator{T} <: AbstractNLPEvaluator
     inner::AbstractNLPEvaluator
@@ -10,6 +12,8 @@ mutable struct AugLagEvaluator{T} <: AbstractNLPEvaluator
     λc::AbstractVector{T}
     # Scaling
     scaler::AbstractScaler
+    # Stats
+    counter::AbstractCounter
 end
 function AugLagEvaluator(nlp::AbstractNLPEvaluator, u0;
                          penalties=Float64[],
@@ -26,11 +30,11 @@ function AugLagEvaluator(nlp::AbstractNLPEvaluator, u0;
     λ = similar(nlp.g_min) ; fill!(λ, 0)
 
     scaler = scale ?  MaxScaler(nlp, u0) : MaxScaler(nlp.g_min, nlp.g_max)
-    return AugLagEvaluator(nlp, cons, cx, λc, c₀, λ, scaler)
+    return AugLagEvaluator(nlp, cons, cx, c₀, λ, λc, scaler, NLPCounter())
 end
 
 function update!(ag::AugLagEvaluator, u)
-    update!(ag.inner, u)
+    conv = update!(ag.inner, u)
     # Update constraints
     constraint!(ag.inner, ag.cons, u)
     # Rescale
@@ -42,7 +46,7 @@ function update!(ag::AugLagEvaluator, u)
     ag.λc = max.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♯)) .+
             min.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♭))
     ag.infeasibility .= max.(0, ag.cons .- g♯) .+ min.(0, ag.cons .- g♭)
-    # ag.infeasibility[iszero.(ag.λc)] .= 0
+    return conv
 end
 
 function update_penalty!(ag::AugLagEvaluator; η=10.0)
@@ -54,6 +58,7 @@ function update_multipliers!(ag::AugLagEvaluator)
 end
 
 function objective(ag::AugLagEvaluator, u)
+    ag.counter.objective += 1
     base_nlp = ag.inner
     cx = ag.infeasibility
     # TODO: add multiplier
@@ -61,8 +66,12 @@ function objective(ag::AugLagEvaluator, u)
         0.5 * ag.ρ * dot(cx, cx) + dot(ag.λ, cx)
     return obj
 end
+function inner_objective(ag::AugLagEvaluator, u)
+    return ag.scaler.scale_obj * objective(ag.inner, u)
+end
 
 function gradient!(ag::AugLagEvaluator, grad, u)
+    ag.counter.gradient += 1
     base_nlp = ag.inner
     scaler = ag.scaler
     model = base_nlp.model
