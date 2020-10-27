@@ -16,7 +16,6 @@ Preconditioners for the iterative solvers mostly focused on GPUs
 
 """
 abstract type AbstractPreconditioner end
-struct NoPreconditioner <: AbstractPreconditioner end
 
 """
     BlockJacobiPreconditioner
@@ -188,19 +187,7 @@ function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
 end
 
 
-"""
-    function update(J::CuSparseMatrixCSR, p, to)
-
-Update the preconditioner `p` from the sparse Jacobian `J` in CSR format for the GPU
-
-1) The dense blocks `cuJs` are filled from the sparse Jacobian `J`
-2) To a batch inversion of the dense blocks using CUBLAS
-3) Extract the preconditioner matrix `p.P` from the dense blocks `cuJs`
-
-"""
-function update(J::CuSparseMatrixCSR, p, to)
-    m = size(J, 1)
-    n = size(J, 2)
+function _update_gpu(j_rowptr, j_colval, j_nzval, p, to)
     nblocks = length(p.partitions)
     for el in p.cuJs
         el .= p.id
@@ -208,7 +195,7 @@ function update(J::CuSparseMatrixCSR, p, to)
     @timeit to "Fill Block Jacobi" begin
         CUDA.@sync begin
             for b in 1:nblocks
-                @cuda threads=16 blocks=16 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, J.rowPtr, J.colVal, J.nzVal, p.cupart, b)
+                @cuda threads=16 blocks=16 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, b)
             end
         end
     end
@@ -226,23 +213,32 @@ function update(J::CuSparseMatrixCSR, p, to)
     end
     return p.P
 end
-
 """
     function update(J::CuSparseMatrixCSR, p, to)
 
-Update the preconditioner `p` from the sparse Jacobian `J` in CSC format for the CPU
+Update the preconditioner `p` from the sparse Jacobian `J` in CSR format for the GPU
 
-Note that this implements the same algorithm as for the GPU and becomes very slow on CPU with growing number of blocks.
+1) The dense blocks `cuJs` are filled from the sparse Jacobian `J`
+2) To a batch inversion of the dense blocks using CUBLAS
+3) Extract the preconditioner matrix `p.P` from the dense blocks `cuJs`
 
 """
-function update(J::SparseMatrixCSC, p, to)
+function update(J::CuSparseMatrixCSR, p, to)
+    _update_gpu(J.rowPtr, J.colVal, J.nzVal, p, to)
+end
+function update(J::Transpose{T, CuSparseMatrixCSR{T}}, p, to) where T
+    Jt = CuSparseMatrixCSC(J.parent)
+    _update_gpu(Jt.colPtr, Jt.rowVal, Jt.nzVal, p, to)
+end
+
+function _update_cpu(colptr, rowval, nzval, p, to)
     nblocks = length(p.partitions)
     @timeit to "Fill Block Jacobi" begin
         @inbounds for b in 1:nblocks
             for i in p.partitions[b]
-                for j in J.colptr[i]:J.colptr[i+1]-1
-                    if b == p.part[J.rowval[j]]
-                        p.Js[b][p.map[J.rowval[j]], p.map[i]] = J.nzval[j]
+                for j in colptr[i]:colptr[i+1]-1
+                    if b == p.part[rowval[j]]
+                        p.Js[b][p.map[rowval[j]], p.map[i]] = nzval[j]
                     end
                 end
             end
@@ -266,6 +262,22 @@ function update(J::SparseMatrixCSC, p, to)
         end
     end
     return p.P
+end
+
+"""
+    function update(J::SparseMatrixCSC, p, to)
+
+Update the preconditioner `p` from the sparse Jacobian `J` in CSC format for the CPU
+
+Note that this implements the same algorithm as for the GPU and becomes very slow on CPU with growing number of blocks.
+
+"""
+function update(J::SparseMatrixCSC, p, to)
+    _update_cpu(J.colptr, J.rowval, J.nzval, p, to)
+end
+function update(J::Transpose{T, SparseMatrixCSC{T, I}}, p, to) where {T, I}
+    ix, jx, zx = findnz(J.parent)
+    update(sparse(jx, ix, zx), p, to)
 end
 
 is_valid(precond::BlockJacobiPreconditioner) = _check_nan(precond.P)
