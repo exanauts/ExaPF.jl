@@ -52,7 +52,7 @@ function auglag(datafile; bfgs=false, iter_max=200, itout_max=1,
     outer_costs = Float64[]
     cost_history = Float64[]
     grad_history = Float64[]
-    alpha_history = Float64[]
+    feas_history = Float64[]
 
     ls_algo = BackTracking()
     if bfgs
@@ -60,7 +60,8 @@ function auglag(datafile; bfgs=false, iter_max=200, itout_max=1,
         α0 = 1.0
     else
         H = I
-        α0 = 1e-3
+        α0 = 1e-4
+        α0 = 1.0
     end
     αi = α0
     u♭ = nlp.u_min
@@ -72,15 +73,21 @@ function auglag(datafile; bfgs=false, iter_max=200, itout_max=1,
         uk .= u_start
         converged = false
         # Inner iteration: projected gradient algorithm
-        uk, norm_grad, n_iter = projected_gradient(aug, uk; α0=α0)
+        # uk, norm_grad, n_iter = projected_gradient(aug, uk; α0=α0)
+        uk, norm_grad, n_iter, h_costs, h_grads, h_feas = ngpa(aug, uk; α_bb=α0, α♯=α0)
 
         # Evaluate current position in the original space
         cons = zeros(ExaPF.n_constraints(nlp))
         ExaPF.constraint!(nlp, cons, uk)
         obj = ExaPF.objective(nlp, uk)
         inf_pr = ExaPF.primal_infeasibility(nlp, cons)
-        push!(outer_costs, obj)
         @printf("#Outer %d %-4d %.3e %.3e \n", i_out, n_iter, obj, inf_pr)
+
+        # History
+        push!(outer_costs, obj)
+        append!(cost_history, h_costs)
+        append!(grad_history, h_grads)
+        append!(feas_history, h_feas)
 
         if (norm_grad < 1e-6) && (inf_pr < 1e-8)
             break
@@ -105,12 +112,14 @@ function auglag(datafile; bfgs=false, iter_max=200, itout_max=1,
     cons = zeros(ExaPF.n_constraints(nlp))
     ExaPF.constraint!(nlp, cons, uk)
     ExaPF.sanity_check(nlp, uk, cons)
+    println("  #objective ", aug.counter.objective)
+    println("  #gradient  ", aug.counter.gradient)
 
-    return uk, cost_history
+    return uk, cost_history, feas_history, grad_history
 end
 
 datafile = joinpath(dirname(@__FILE__), "..", "test", "data", "case57.m")
 
-u_opt, ch = auglag(datafile; bfgs=false, itout_max=10, feasible_start=false,
+u_opt, ch, fh, gh = @time auglag(datafile; bfgs=false, itout_max=10, feasible_start=false,
                    iter_max=1000)
 
