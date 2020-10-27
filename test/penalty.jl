@@ -11,7 +11,7 @@
         # Build reference evaluator
         nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
         # Build penalty evaluator
-        pen = ExaPF.PenaltyEvaluator(nlp)
+        pen = ExaPF.PenaltyEvaluator(nlp, u0)
 
         u = u0
         # Update nlp to stay on manifold
@@ -47,31 +47,32 @@
         # Build reference evaluator
         nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
         # Build penalty evaluator
-        pen = ExaPF.PenaltyEvaluator(nlp)
+        for scaling in [true, false]
+            pen = ExaPF.PenaltyEvaluator(nlp, u0; scale=scaling)
+            u = nlp.u_min
+            # Update nlp to stay on manifold
+            ExaPF.update!(pen, u)
+            # Compute objective
+            c = ExaPF.objective(pen, u)
+            c_ref = ExaPF.objective(nlp, u)
+            @test isa(c, Real)
+            # For case57.m some constraints are active, so penalty are >= 0
+            @test c > c_ref
 
-        u = u0
-        # Update nlp to stay on manifold
-        ExaPF.update!(pen, u)
-        # Compute objective
-        c = ExaPF.objective(pen, u)
-        c_ref = ExaPF.objective(nlp, u)
-        @test isa(c, Real)
-        # For case57.m some constraints are active, so penalty are >= 0
-        @test c > c_ref
-
-        # Update penalty weigth with a large factor to have
-        # a meaningful derivative check
-        ExaPF.update_penalty!(pen, η=100.)
-        # Compute gradient of objective
-        g = similar(u)
-        fill!(g, 0)
-        ExaPF.gradient!(pen, g, u)
-        # Compare with finite differences
-        function reduced_cost(u_)
-            ExaPF.update!(pen, u_)
-            return ExaPF.objective(pen, u_)
+            # Update penalty weigth with a large factor to have
+            # a meaningful derivative check
+            ExaPF.update_penalty!(pen, η=100.)
+            # Compute gradient of objective
+            g = similar(u)
+            fill!(g, 0)
+            ExaPF.gradient!(pen, g, u)
+            # Compare with finite differences
+            function reduced_cost(u_)
+                ExaPF.update!(pen, u_)
+                return ExaPF.objective(pen, u_)
+            end
+            grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
+            @test isapprox(grad_fd, g, rtol=1e-6)
         end
-        grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
-        @test isapprox(grad_fd, g, rtol=1e-4)
     end
 end
