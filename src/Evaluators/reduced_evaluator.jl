@@ -87,7 +87,8 @@ n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
 initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
-bounds(nlp::ReducedSpaceEvaluator) = nlp.u_min, nlp.u_max
+bounds(nlp::ReducedSpaceEvaluator, ::Variables) = nlp.u_min, nlp.u_max
+bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.g_min, nlp.g_max
 
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x

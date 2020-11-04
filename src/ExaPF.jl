@@ -16,11 +16,13 @@ using IterativeSolvers
 using KernelAbstractions
 using Krylov
 using LinearAlgebra
+using MathOptInterface
 using Printf
 using SparseArrays
 using SparseDiffTools
 using TimerOutputs
 
+const MOI = MathOptInterface
 const TIMER = TimerOutput()
 
 const VERBOSE_LEVEL_HIGH = 3

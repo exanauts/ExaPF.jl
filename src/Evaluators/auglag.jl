@@ -33,6 +33,12 @@ function AugLagEvaluator(nlp::AbstractNLPEvaluator, u0;
     return AugLagEvaluator(nlp, cons, cx, c₀, λ, λc, scaler, NLPCounter())
 end
 
+initial(ag::AugLagEvaluator) = initial(ag.inner)
+bounds(ag::AugLagEvaluator, ::Variables) = ag.inner.u_min, ag.inner.u_max
+bounds(ag::AugLagEvaluator, ::Constraints) = Float64[], Float64[]
+n_variables(ag::AugLagEvaluator) = n_variables(ag.inner)
+n_constraints(ag::AugLagEvaluator) = 0
+
 function update!(ag::AugLagEvaluator, u)
     conv = update!(ag.inner, u)
     # Update constraints
@@ -107,6 +113,19 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     mul!(grad, transpose(∇gᵤ), λ, -1.0, 1.0)
 end
 
+function constraint!(ag::AugLagEvaluator, cons, u)
+    @assert length(cons) == 0
+    return
+end
+
+function jacobian!(ag::AugLagEvaluator, jac, u)
+    @assert length(jac) == 0
+    return
+end
+
+function jacobian_structure!(ag::AugLagEvaluator, rows, cols)
+    @assert length(rows) == length(cols) == 0
+end
+
 primal_infeasibility!(ag::AugLagEvaluator, cons, u) = primal_infeasibility!(ag.inner, cons, u)
 primal_infeasibility(ag::AugLagEvaluator, u) = primal_infeasibility(ag.inner, u)
-

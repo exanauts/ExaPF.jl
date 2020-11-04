@@ -95,8 +95,13 @@ at control `u`. Modify vector `cons` inplace.
 """
 function primal_infeasibility! end
 
+abstract type AbstractNLPAttribute end
+struct Variables <: AbstractNLPAttribute end
+struct Constraints <: AbstractNLPAttribute end
+
 include("common.jl")
 include("reduced_evaluator.jl")
 include("penalty.jl")
 include("auglag.jl")
+include("MOI_wrapper.jl")
 
