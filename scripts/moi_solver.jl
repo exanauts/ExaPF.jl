@@ -9,7 +9,7 @@ function moi_solve(
     nlp::ExaPF.AbstractNLPEvaluator,
 )
     block_data = MOI.NLPBlockData(nlp)
-    u♭, u♯ = ExaPF.bounds(nlp)
+    u♭, u♯ = ExaPF.bounds(nlp, ExaPF.Variables())
     u0 = ExaPF.initial(nlp)
     n = ExaPF.n_variables(nlp)
     vars = MOI.add_variables(optimizer, n)
@@ -35,8 +35,9 @@ end
 datafile = joinpath(dirname(@__FILE__), "..", "test", "data", "case57.m")
 
 nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+aug = ExaPF.AugLagEvaluator(nlp, ExaPF.initial(nlp); c₀=0.1, scale=true)
 # optimizer = KNITRO.Optimizer(hessopt=3)
 optimizer = Ipopt.Optimizer(limited_memory_max_history=50, tol=1e-2)
 
-moi_solve(optimizer, nlp)
+moi_solve(optimizer, aug)
 

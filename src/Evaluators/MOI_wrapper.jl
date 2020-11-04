@@ -24,7 +24,7 @@ function MOI.jacobian_structure(ev::ExaEvaluator)
     rows = zeros(Int, jnnz)
     cols = zeros(Int, jnnz)
     jacobian_structure!(ev.nlp, rows, cols)
-    return [(r, c) for (r, c) in zip(rows, cols)]
+    return Tuple{Int, Int}[(r, c) for (r, c) in zip(rows, cols)]
 end
 
 function MOI.eval_objective(ev::ExaEvaluator, x)
@@ -59,7 +59,7 @@ function MOI.eval_constraint_jacobian(ev::ExaEvaluator, ∂cons, x)
 end
 
 function MOI.NLPBlockData(nlp::AbstractNLPEvaluator)
-    lb, ub = nlp.g_min, nlp.g_max
+    lb, ub = bounds(nlp, Constraints())
     ev = ExaEvaluator(nlp)
     return MOI.NLPBlockData(MOI.NLPBoundsPair.(lb, ub), ev, true)
 end

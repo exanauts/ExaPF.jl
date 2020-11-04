@@ -77,6 +77,10 @@ the result inplace, in the vector `hess`.
 """
 function hessian! end
 
+abstract type AbstractNLPAttribute end
+struct Variables <: AbstractNLPAttribute end
+struct Constraints <: AbstractNLPAttribute end
+
 include("common.jl")
 include("reduced_evaluator.jl")
 include("penalty.jl")
