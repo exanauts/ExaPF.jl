@@ -65,9 +65,29 @@ function ReducedSpaceEvaluator(model, x, u, p;
                                  buffer,
                                  ad, jx.J, linear_solver, ε_tol)
 end
+function ReducedSpaceEvaluator(
+    datafile;
+    device=CPU(),
+    constraints=Function[state_constraint, power_constraints],
+)
+    # Load problem.
+    pf = PowerSystem.PowerNetwork(datafile, 1)
+    polar = PolarForm(pf, CPU())
+
+    x0 = initial(polar, State())
+    p = initial(polar, Parameters())
+    uk = initial(polar, Control())
+
+    return ReducedSpaceEvaluator(
+        polar, x0, uk, p; constraints=constraints, ε_tol=1e-10
+    )
+end
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
+
+initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
+bounds(nlp::ReducedSpaceEvaluator) = nlp.u_min, nlp.u_max
 
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x
