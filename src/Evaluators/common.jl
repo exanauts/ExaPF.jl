@@ -1,0 +1,80 @@
+
+abstract type AbstractADFactory end
+
+struct ADFactory <: AbstractADFactory
+    Jgₓ::AD.StateJacobianAD
+    Jgᵤ::AD.DesignJacobianAD
+    ∇f::AD.ObjectiveAD
+end
+
+abstract type AbstractCounter end
+
+mutable struct NLPCounter <: AbstractCounter
+    objective::Int
+    gradient::Int
+    hessian::Int
+    jacobian::Int
+    jtprod::Int
+    hprod::Int
+end
+NLPCounter() = NLPCounter(0, 0, 0, 0, 0, 0)
+
+function _check(val, val_min, val_max)
+    violated_inf = findall(val .< val_min)
+    violated_sup = findall(val .> val_max)
+    n_inf = length(violated_inf)
+    n_sup = length(violated_sup)
+    err_inf = norm(val_min[violated_inf] .- val[violated_inf], Inf)
+    err_sup = norm(val[violated_sup] .- val_max[violated_sup] , Inf)
+    return (n_inf, err_inf, n_sup, err_sup)
+end
+
+function primal_infeasibility(nlp::AbstractNLPEvaluator, cons)
+    (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
+    return max(err_inf, err_sup)
+end
+
+function active_set(c, c♭, c♯; tol=1e-8)
+    @assert length(c) == length(c♭) == length(c♯)
+    active_lb = findall(c .< c♭ .+ tol)
+    active_ub = findall(c .> c♯ .- tol)
+    return active_lb, active_ub
+end
+
+abstract type AbstractScaler end
+
+scale_factor(h, tol, η) = max(tol, η / max(1.0, h))
+
+struct MaxScaler{T} <: AbstractScaler
+    scale_obj::T
+    scale_cons::AbstractVector{T}
+    g_min::AbstractVector{T}
+    g_max::AbstractVector{T}
+end
+function MaxScaler(g_min, g_max)
+    @assert length(g_min) == length(g_max)
+    m = length(g_min)
+    sc = similar(g_min) ; fill!(sc, 1.0)
+    return MaxScaler(1.0, sc, g_min, g_max)
+end
+function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
+                   η=100.0, tol=1e-8)
+    n = n_variables(nlp)
+    m = n_constraints(nlp)
+    update!(nlp, u0)
+    ∇g = similar(u0) ; fill!(∇g, 0)
+    gradient!(nlp, ∇g, u0)
+    s_obj = scale_factor(norm(∇g, Inf), tol, η)
+
+    # TODO: avoid forming whole Jacobian
+    jac = similar(u0, (m, n))
+    s_cons = similar(u0, m)
+    jacobian!(nlp, jac, u0)
+    for i in eachindex(s_cons)
+        ∇c = @view jac[i, :]
+        s_cons[i] = scale_factor(norm(∇c, Inf), tol, η)
+    end
+
+    return MaxScaler(s_obj, s_cons, s_cons .* nlp.g_min, s_cons .* nlp.g_max)
+end
+

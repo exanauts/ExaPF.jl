@@ -33,8 +33,8 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
         M = SparseMatrixCSC
         AT = Array
     elseif isa(device, CUDADevice)
-        IT = CuArray{Int64, 1, Nothing}
-        VT = CuVector{Float64, Nothing}
+        IT = CuVector{Int64}
+        VT = CuVector{Float64}
         M = CuSparseMatrixCSR
         AT = CuArray
     end
@@ -210,7 +210,10 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkSt
     adjoint_pg = similar(buffer.pg)
     adjoint_vm = similar(Vm)
     adjoint_va = similar(Va)
-    objectiveAD = AD.ObjectiveAD(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va)
+    # Build cache for Jacobian vector-product
+    jvₓ = VT(undef, nₓ)
+    jvᵤ = VT(undef, nᵤ)
+    objectiveAD = AD.ObjectiveAD(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ)
     return stateJacobianAD, designJacobianAD, objectiveAD
 end
 

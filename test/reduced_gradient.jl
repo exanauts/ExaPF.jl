@@ -50,7 +50,7 @@ const PS = PowerSystem
             ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
-            ExaPF.cost_production_adjoint(polar, ∂obj, cache)
+            ExaPF.∂cost(polar, ∂obj, cache)
             ∇fₓ = ∂obj.∇fₓ
             ∇fᵤ = ∂obj.∇fᵤ
 
@@ -74,6 +74,14 @@ const PS = PowerSystem
 
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, uk)
             @test isapprox(grad_fd, grad_adjoint, rtol=1e-4)
+        end
+        @testset "Reduced Jacobian" begin
+            for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
+                m = ExaPF.size_constraint(polar, cons)
+                for icons in 1:m
+                    ExaPF.jacobian(polar, cons, icons, ∂obj, cache)
+                end
+            end
         end
     end
 end

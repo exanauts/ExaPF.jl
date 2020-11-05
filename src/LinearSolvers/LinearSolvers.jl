@@ -9,13 +9,15 @@ using Printf
 using SparseArrays
 using TimerOutputs
 
-import ..ExaPF: norm2, TIMER
+import ..ExaPF: norm2, TIMER, csclsvqr!
 import Base: show
 
 export bicgstab, list_solvers
 export DirectSolver, BICGSTAB, EigenBICGSTAB
+export get_transpose
 
-@enum(SolveStatus,
+@enum(
+    SolveStatus,
     Unsolved,
     MaxIterations,
     NotANumber,
@@ -29,6 +31,8 @@ include("bicgstab_eigen.jl")
 
 abstract type AbstractLinearSolver end
 abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
+
+get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 
 """
     ldiv!(solver, y, J, x)
@@ -46,7 +50,7 @@ function ldiv! end
 struct DirectSolver <: AbstractLinearSolver end
 DirectSolver(precond) = DirectSolver()
 function ldiv!(::DirectSolver,
-    y::Vector, J::AbstractSparseMatrix, x::Vector,
+    y::Vector, J::AbstractMatrix, x::Vector,
 )
     y .= J \ x
     return 0
@@ -57,6 +61,13 @@ function ldiv!(::DirectSolver,
     CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
+function ldiv!(::DirectSolver,
+    y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSC, x::CuVector,
+)
+    csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
+    return 0
+end
+get_transpose(::DirectSolver, M::CUDA.CUSPARSE.CuSparseMatrixCSR) = CuSparseMatrixCSC(M)
 
 function update!(solver::AbstractIterativeLinearSolver, J)
     @timeit solver.timer "Preconditioner"  update(J, solver.precond, solver.timer)
@@ -80,7 +91,7 @@ function ldiv!(solver::BICGSTAB,
                                          verbose=solver.verbose, tol=solver.tol)
     end
     if status != Converged
-        error("BICGSTAB failed to converge. Final status is $(status)")
+        @warn("BICGSTAB failed to converge. Final status is $(status)")
     end
     return n_iters
 end
@@ -92,7 +103,7 @@ struct EigenBICGSTAB <: AbstractIterativeLinearSolver
     verbose::Bool
     timer::TimerOutput
 end
-EigenBICGSTAB(precond; maxiter=10_000, tol=1e-8, verbose=false) = EigenBICGSTAB(precond, maxiter, tol, verbose, TIMER)
+EigenBICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = EigenBICGSTAB(precond, maxiter, tol, verbose, TIMER)
 function ldiv!(solver::EigenBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
