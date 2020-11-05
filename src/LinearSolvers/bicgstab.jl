@@ -1,5 +1,5 @@
 """
-    bicgstab 
+    bicgstab
 
 BiCGSTAB implementation according to
 Van der Vorst, Henk A.
@@ -45,7 +45,8 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
                 rhoi1 = dot(br0, ri) ;
                 if abs(rhoi1) < 1e-20
                     restarts += 1
-                    ri .= b - A * xi
+                    ri .= b
+                    mul!(ri, A, xi, -1.0, 1.0)
                     br0 .= ri
                     residual .= b
                     rho0 = 1.0
@@ -75,10 +76,7 @@ function bicgstab(A, b, P, xi, to::TimerOutput;
             end
 
             @timeit to "End stage" begin
-                # TODO: should update to five arguments mul!
-                #       once CUDA.jl 1.4 is released
-                # mul!(residual, A, xi, 1.0, -1.0)
-                residual .= A * xi .- b
+                mul!(residual, A, xi, 1.0, -1.0)
                 anorm = norm2(residual)
 
                 if verbose

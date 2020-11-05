@@ -21,7 +21,7 @@ function run_level1(datafile; device=CPU())
     return
 end
 
-function run_level2(datafile; device=CPU())
+function build_nlp(datafile, device)
     pf = PowerSystem.PowerNetwork(datafile, 1)
     polar = PolarForm(pf, device)
     x0 = ExaPF.initial(polar, State())
@@ -30,27 +30,55 @@ function run_level2(datafile; device=CPU())
 
     constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
     print("Constructor\t")
-    nlp = @time ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
-    u = u0
+    nlp = @time ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints ,
+                                            ε_tol=1e-10)
+    return nlp, u0
+end
+
+function run_level2(datafile; device=CPU())
+    nlp, u = build_nlp(datafile, device)
     # Update nlp to stay on manifold
     print("Update   \t")
-    CUDA.@time ExaPF.update!(nlp, u)
+    @time ExaPF.update!(nlp, u)
     # Compute objective
     print("Objective\t")
-    c = CUDA.@time ExaPF.objective(nlp, u)
+    c = @time ExaPF.objective(nlp, u)
     # Compute gradient of objective
     g = similar(u)
     fill!(g, 0)
     print("Gradient \t")
-    CUDA.@time ExaPF.gradient!(nlp, g, u)
+    @time ExaPF.gradient!(nlp, g, u)
 
     # Constraint
     ## Evaluation of the constraints
     cons = similar(nlp.g_min)
     fill!(cons, 0)
     print("Constrt \t")
-    CUDA.@time ExaPF.constraint!(nlp, cons, u)
+    @time ExaPF.constraint!(nlp, cons, u)
+
+    print("Jac-prod \t")
+    jv = copy(g) ; fill!(jv, 0)
+    v = copy(cons) ; fill!(v, 1)
+    @time ExaPF.jtprod!(nlp, jv, u, v)
+end
+
+function run_penalty(datafile; device=CPU())
+    nlp, u = build_nlp(datafile, device)
+    pen = ExaPF.PenaltyEvaluator(nlp)
+    print("Update   \t")
+    @time ExaPF.update!(pen, u)
+    print("Objective\t")
+    c = @time ExaPF.objective(pen, u)
+    g = similar(u)
+    fill!(g, 0)
+    print("Gradient \t")
+    @time ExaPF.gradient!(pen, g, u)
+    return
 end
 
 datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
-run_level2(datafile, device=CUDADevice())
+
+@info("ReducedSpaceEvaluator")
+run_level2(datafile, device=CPU())
+@info("PenaltyEvaluator")
+run_penalty(datafile, device=CPU())

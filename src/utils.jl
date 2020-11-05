@@ -26,16 +26,30 @@ end
 norm2(x::AbstractVector) = norm(x, 2)
 norm2(x::CuVector) = CUBLAS.nrm2(x)
 
-function project_constraints!(u::AbstractArray, grad::AbstractArray, u_min::AbstractArray,
-                              u_max::AbstractArray)
-    dim = length(u)
-    for i in 1:dim
-        if u[i] > u_max[i]
-            u[i] = u_max[i]
-            grad[i] = 0.0
-        elseif u[i] < u_min[i]
-            u[i] = u_min[i]
-            grad[i] = 0.0
-        end
+function project!(w::VT, u::VT, u♭::VT, u♯::VT) where VT<:AbstractArray
+    w .= max.(min.(u, u♯), u♭)
+end
+
+# Utils function to solve transposed linear system  A' x = y
+# Source code taken from:
+# https://github.com/JuliaGPU/CUDA.jl/blob/master/lib/cusolver/wrappers.jl#L78L111
+function csclsvqr!(A::CuSparseMatrixCSC{Float64},
+                    b::CuVector{Float64},
+                    x::CuVector{Float64},
+                    tol::Float64,
+                    reorder::Cint,
+                    inda::Char)
+    n = size(A,1)
+    desca = CUSPARSE.CuMatrixDescriptor(
+        CUSPARSE.CUSPARSE_MATRIX_TYPE_GENERAL,
+        CUSPARSE.CUSPARSE_FILL_MODE_LOWER,
+        CUSPARSE.CUSPARSE_DIAG_TYPE_NON_UNIT, inda)
+    singularity = Ref{Cint}(1)
+    CUSOLVER.cusolverSpDcsrlsvqr(CUSOLVER.sparse_handle(), n, A.nnz, desca, A.nzVal, A.colPtr, A.rowVal, b, tol, reorder, x, singularity)
+
+    if singularity[] != -1
+        throw(SingularException(singularity[]))
     end
+
+    x
 end

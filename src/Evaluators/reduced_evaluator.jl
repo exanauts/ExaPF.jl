@@ -1,97 +1,4 @@
 
-import Base: show
-
-# WIP: definition of AD factory
-abstract type AbstractADFactory end
-
-struct ADFactory <: AbstractADFactory
-    Jgₓ::AD.StateJacobianAD
-    Jgᵤ::AD.DesignJacobianAD
-    ∇f::AD.ObjectiveAD
-    # Workaround before CUDA.jl 1.4: keep a cache for the transpose
-    # matrix of the State Jacobian matrix, and update it inplace
-    # when we need to solve the system Jₓ' \ y
-    Jᵗ::Union{Nothing, AbstractMatrix}
-end
-
-
-"""
-    AbstractNLPEvaluator
-
-AbstractNLPEvaluator implements the bridge between the
-problem formulation (see `AbstractFormulation`) and the optimization
-solver. Once the problem formulation bridged, the evaluator allows
-to evaluate in a straightfoward fashion the objective and the different
-constraints, but also the corresponding gradient and Jacobian objects.
-
-"""
-abstract type AbstractNLPEvaluator end
-
-"""
-    n_variables(nlp::AbstractNLPEvaluator)
-Get the number of variables in the problem.
-"""
-function n_variables end
-
-"""
-    n_constraints(nlp::AbstractNLPEvaluator)
-Get the number of constraints in the problem.
-"""
-function n_constraints end
-
-"""
-    objective(nlp::AbstractNLPEvaluator, u)::Float64
-
-Evaluate the objective at point `u`.
-"""
-function objective end
-
-"""
-    gradient!(nlp::AbstractNLPEvaluator, g, u)
-
-Evaluate the gradient of the objective at point `u`. Store
-the result inplace in the vector `g`, which should have the same
-dimension as `u`.
-
-"""
-function gradient! end
-
-"""
-    constraint!(nlp::AbstractNLPEvaluator, cons, u)
-
-Evaluate the constraints of the problem at point `u`. Store
-the result inplace, in the vector `cons`.
-The vector `cons` should have the same dimension as the result
-returned by `n_constraints(nlp)`.
-
-"""
-function constraint! end
-
-"""
-    jacobian_structure!(nlp::AbstractNLPEvaluator, rows, cols)
-
-Return the sparsity pattern of the Jacobian matrix.
-"""
-function jacobian_structure! end
-
-"""
-    jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
-
-Evaluate the Jacobian of the problem at point `u`. Store
-the result inplace, in the vector `jac`.
-"""
-function jacobian! end
-
-"""
-    hessian!(nlp::AbstractNLPEvaluator, hess, u)
-
-Evaluate the Hessian of the problem at point `u`. Store
-the result inplace, in the vector `hess`.
-
-"""
-function hessian! end
-
-
 """
     ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 
@@ -124,6 +31,7 @@ mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 
     buffer::AbstractNetworkBuffer
     ad::ADFactory
+    ∇gᵗ::AbstractMatrix
     linear_solver::LinearSolvers.AbstractLinearSolver
     ε_tol::Float64
 end
@@ -138,18 +46,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
     λ = similar(x)
     # Build up AD factory
     jx, ju, adjoint_f = init_ad_factory(model, buffer)
-    if isa(x, CuArray)
-        nₓ = length(x)
-        ind_rows, ind_cols, nzvals = _sparsity_pattern(model)
-        ind_rows = convert(CuVector{Cint}, ind_rows)
-        ind_cols = convert(CuVector{Cint}, ind_cols)
-        nzvals = convert(CuVector{Float64}, nzvals)
-        # Get transpose of Jacobian
-        Jt = CuSparseMatrixCSR(sparse(ind_cols, ind_rows, nzvals))
-        ad = ADFactory(jx, ju, adjoint_f, Jt)
-    else
-        ad = ADFactory(jx, ju, adjoint_f, nothing)
-    end
+    ad = ADFactory(jx, ju, adjoint_f)
 
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
@@ -166,7 +63,7 @@ function ReducedSpaceEvaluator(model, x, u, p;
     return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
                                  buffer,
-                                 ad, linear_solver, ε_tol)
+                                 ad, jx.J, linear_solver, ε_tol)
 end
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
@@ -180,6 +77,17 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
                      solver=nlp.linear_solver, verbose_level=verbose_level)
+    if !conv.has_converged
+        error("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
+        return conv
+    end
+    ∇gₓ = nlp.ad.Jgₓ.J
+    nlp.∇gᵗ = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
+    # Switch preconditioner to transpose mode
+    if isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
+        LinearSolvers.update!(nlp.linear_solver, nlp.∇gᵗ)
+    end
+
     # Update value of nlp.x with new network state
     get!(nlp.model, State(), nlp.x, nlp.buffer)
     # Refresh value of the active power of the generators
@@ -194,30 +102,12 @@ function objective(nlp::ReducedSpaceEvaluator, u)
     return cost
 end
 
-# Private function to compute adjoint (should be inlined)
-function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J, y)
-    λ .= J' \ y
-end
-function _adjoint!(nlp::ReducedSpaceEvaluator, λ, J::CuSparseMatrixCSR{T}, y::CuVector{T}) where T
-    # # TODO: fix this hack once CUDA.jl 1.4 is released
-    Jt = nlp.ad.Jᵗ
-    Jt.nzVal .= J.nzVal
-    LinearSolvers.ldiv!(nlp.linear_solver, λ, Jt, y)
-end
-
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
 # equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
 # (take λₖ_neg to avoid computing an intermediate array)
 function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
     g .= ∇fᵤ
     mul!(g, transpose(∇gᵤ), λₖ_neg, -1.0, 1.0)
-end
-# TODO: For some reason, this operation is slow on the GPU
-# because mul! does not dispatch on CUSPARSE.mv!
-# Use the allocating version currently, but should update to mul!
-# once the code is ported to CUDA.jl 1.4
-function _reduced_gradient!(g::CuVector, ∇fᵤ, ∇gᵤ, λₖ_neg)
-    g .= ∇fᵤ .- transpose(∇gᵤ) * λₖ_neg
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
@@ -227,12 +117,12 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     # Evaluate Jacobian of power flow equation on current u
     ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, buffer)
     # Evaluate adjoint of cost function and update inplace ObjectiveAD
-    cost_production_adjoint(nlp.model, nlp.ad.∇f, buffer)
+    ∂cost(nlp.model, nlp.ad.∇f, buffer)
 
     ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ
     # Update (negative) adjoint
     λₖ_neg = nlp.λ
-    _adjoint!(nlp, λₖ_neg, ∇gₓ, ∇fₓ)
+    LinearSolvers.ldiv!(nlp.linear_solver, λₖ_neg, nlp.∇gᵗ, ∇fₓ)
     _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
     return nothing
 end
@@ -252,7 +142,6 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
     end
 end
 
-#TODO: return sparsity pattern there, currently return dense pattern
 function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     m, n = n_constraints(nlp), n_variables(nlp)
     idx = 1
@@ -265,26 +154,87 @@ function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
 end
 
 function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
+    model = nlp.model
     xₖ = nlp.x
     ∇gₓ = nlp.ad.Jgₓ.J
     ∇gᵤ = nlp.ad.Jgᵤ.J
     nₓ = length(xₖ)
     MT = nlp.model.AT
+    μ = similar(nlp.λ)
+    ∂obj = nlp.ad.∇f
     cnt = 1
-    λ = nlp.λ
+
     for cons in nlp.constraints
         mc_ = size_constraint(nlp.model, cons)
-        g = MT{eltype(u), 1}(undef, mc_)
-        fill!(g, 0)
-        cons_x(g, x_) = cons(nlp.model, g, x_, u, nlp.p; V=eltype(x_))
-        cons_u(g, u_) = cons(nlp.model, g, xₖ, u_, nlp.p; V=eltype(u_))
-        Jₓ = ForwardDiff.jacobian(cons_x, g, xₖ)
-        Jᵤ = ForwardDiff.jacobian(cons_u, g, u)
-        for ix in 1:mc_
-            rhs = Jₓ[ix, :]
-            _adjoint!(nlp, λ, ∇gₓ, rhs)
-            jac[cnt, :] .= Jᵤ[ix, :] - ∇gᵤ' * λ
+        for i_cons in 1:mc_
+            jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
+            jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
+            # Get adjoint
+            LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jx)
+            jac[cnt, :] .= (ju .- ∇gᵤ' * μ)
             cnt += 1
         end
     end
 end
+
+function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
+    model = nlp.model
+    xₖ = nlp.x
+    ∇gₓ = nlp.ad.Jgₓ.J
+    ∇gᵤ = nlp.ad.Jgᵤ.J
+    nₓ = length(xₖ)
+    μ = nlp.λ
+
+    ∂obj = nlp.ad.∇f
+    # Get adjoint
+    jtprod(model, cons, ∂obj, nlp.buffer, v)
+    jvx, jvu = ∂obj.∇fₓ, ∂obj.∇fᵤ
+    # jv .+= (ju .- ∇gᵤ' * μ)
+    LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jvx)
+    jv .+= jvu
+    mul!(jv, transpose(∇gᵤ), μ, -1.0, 1.0)
+end
+function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    μ = nlp.λ
+    ∇gᵤ = nlp.ad.Jgᵤ.J
+    ∂obj = nlp.ad.∇f
+    jvx = ∂obj.jvₓ
+    jvu = ∂obj.jvᵤ
+    fill!(jvx, 0)
+    fill!(jvu, 0)
+
+    fr_ = 0
+    for cons in nlp.constraints
+        n = size_constraint(nlp.model, cons)
+        mask = fr_+1:fr_+n
+        vv = @view v[mask]
+        # Compute jtprod of current constraint
+        jtprod(nlp.model, cons, ∂obj, nlp.buffer, vv)
+        jvx .+= ∂obj.∇fₓ
+        jvu .+= ∂obj.∇fᵤ
+        fr_ += n
+    end
+    LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jvx)
+    jv .+= jvu
+    mul!(jv, transpose(∇gᵤ), μ, -1.0, 1.0)
+    return
+end
+
+# Utils function
+
+function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
+    println("Check violation of constraints")
+    print("Control  \t")
+    (n_inf, err_inf, n_sup, err_sup) = _check(u, nlp.u_min, nlp.u_max)
+    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
+            err_sup, n_sup, err_inf, n_inf)
+    print("State    \t")
+    (n_inf, err_inf, n_sup, err_sup) = _check(nlp.x, nlp.x_min, nlp.x_max)
+    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
+            err_sup, n_sup, err_inf, n_inf)
+    print("Constraints\t")
+    (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
+    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
+            err_sup, n_sup, err_inf, n_inf)
+end
+
