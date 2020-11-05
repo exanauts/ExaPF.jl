@@ -2,8 +2,26 @@ using CUDA
 using ExaPF
 using KernelAbstractions
 using Test
+using Printf
 
-import ExaPF: PowerSystem, LinearSolvers
+import ExaPF: PowerSystem, LinearSolvers, TimerOutputs
+
+# We do need the time in ms
+function ExaPF.TimerOutputs.prettytime(t)
+    value, units = t / 1e6, "ms"
+
+    if round(value) >= 100
+        str = string(@sprintf("%.0f", value), units)
+    elseif round(value * 10) >= 100
+        str = string(@sprintf("%.1f", value), units)
+    elseif round(value * 100) >= 100
+        str = string(@sprintf("%.2f", value), units)
+    else
+        str = string(@sprintf("%.3f", value), units)
+    end
+    return lpad(str, 6, " ")
+end
+
 
 @show case = ARGS[1]
 setup = parse(Int, ARGS[2])

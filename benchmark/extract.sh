@@ -1,7 +1,7 @@
 #!/bin/bash
 
 logfolder=logs
-for i in `ls ./test/data/paper` 
+for i in `ls case*` 
 do
   for j in 1 2 3
   do
