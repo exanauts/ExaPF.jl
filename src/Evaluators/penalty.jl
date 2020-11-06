@@ -103,3 +103,6 @@ function gradient!(pen::PenaltyEvaluator, grad, u)
     mul!(grad, transpose(∇gᵤ), λ, -1.0, 1.0)
 end
 
+primal_infeasibility!(pen::PenaltyEvaluator, cons, u) = primal_infeasibility!(pen.inner, cons, u)
+primal_infeasibility(pen::PenaltyEvaluator, u) = primal_infeasibility(pen.inner, u)
+

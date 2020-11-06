@@ -107,3 +107,6 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     mul!(grad, transpose(∇gᵤ), λ, -1.0, 1.0)
 end
 
+primal_infeasibility!(ag::AugLagEvaluator, cons, u) = primal_infeasibility!(ag.inner, cons, u)
+primal_infeasibility(ag::AugLagEvaluator, u) = primal_infeasibility(ag.inner, u)
+
