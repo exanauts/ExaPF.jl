@@ -1,6 +1,6 @@
 @testset "AugLagEvaluators" begin
     @testset "Inactive constraints" begin
-        datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
+        datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
         pf = PowerSystem.PowerNetwork(datafile, 1)
         polar = PolarForm(pf, CPU())
         x0 = ExaPF.initial(polar, State())
