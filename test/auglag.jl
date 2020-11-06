@@ -34,6 +34,9 @@
         @test isequal(g_ref, g)
         # Update penalty weigth
         ExaPF.update_penalty!(pen)
+        # Utils
+        inf_pr1 = ExaPF.primal_infeasibility(nlp, u)
+        @test inf_pr1 == 0.0
     end
     @testset "Active constraints" begin
         datafile = joinpath(dirname(@__FILE__), "data", "case57.m")
@@ -59,6 +62,8 @@
             @test isa(c, Real)
             # For case57.m some constraints are active, so penalty are >= 0
             @test c > c_ref
+            inf_pr2 = ExaPF.primal_infeasibility(pen, u)
+            @test inf_pr2 > 0.0
 
             # Update penalty weigth with a large factor to have
             # a meaningful derivative check

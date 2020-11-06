@@ -31,8 +31,9 @@ end
     # Reduced gradient
     include("reduced_gradient.jl")
     # ReducedSpaceEvaluator API
-    include("evaluators.jl")
+    include("reduced_evaluator.jl")
     include("penalty.jl")
+    include("auglag.jl")
 end
 
 @testset "Reduced space algorithms" begin

@@ -67,6 +67,11 @@
         fill!(v, 1) ; fill!(g, 0)
         ExaPF.jtprod!(nlp, g, u, v)
         @test isapprox(g, transpose(jac) * v)
+
+        # Utils
+        inf_pr1 = ExaPF.primal_infeasibility(nlp, u)
+        inf_pr2 = ExaPF.primal_infeasibility!(nlp, v, u)
+        @test inf_pr1 == inf_pr2
     end
 end
 
