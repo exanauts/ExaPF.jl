@@ -27,8 +27,7 @@ const LS = ExaPF.LinearSolvers
     precond = LS.BlockJacobiPreconditioner(spA, nblocks, CPU())
     LS.update(spA, precond, to)
     @testset "BICGSTAB" begin
-        P = precond.P
-        x, n_iters = ExaPF.bicgstab(spA, b, P, x, to)
+        LS.ldiv!(LS.BICGSTAB(precond), x, spA, b)
         r = b - spA * x
         resid = norm(r) / norm(b)
         @test(resid ≤ 1e-6)
@@ -77,12 +76,10 @@ end
         @testset "BICGSTAB" begin
             # Need to update preconditioner before resolution
             LS.update(As, precond, to)
-            P = precond.P
             fill!(x0, 0.0)
-            x_sol, n_iters, status = ExaPF.bicgstab(As, bs, P, x0, to)
-            @test status == LS.Converged
+            n_iters = LS.ldiv!(LS.BICGSTAB(precond), x0, As, bs)
             @test n_iters <= m
-            @test x_sol ≈ xs♯ atol=1e-6
+            @test x0 ≈ xs♯ atol=1e-6
         end
         @testset "Interface for iterative algorithm ($LinSolver)" for LinSolver in ExaPF.list_solvers(device)
             algo = LinSolver(precond)
