@@ -1,11 +1,12 @@
 #!/bin/bash
 
+JULIA_BIN=julia
 # CPU Solvers
 for i in `ls case*` 
 do
   for j in DirectSolver
   do
-    julia --project=.. benchmarks.jl $j CPU $i | tail -1 >> cpu.log
+    $JULIA_BIN --project=.. benchmarks.jl $j CPU $i | tail -1 >> cpu.log
   done
 done
 
@@ -14,6 +15,6 @@ for i in `ls case*`
 do
   for j in KrylovBICGSTAB DQGMRES BICGSTAB EigenBICGSTAB DirectSolver
   do
-    julia --project=.. benchmarks.jl $j CUDADevice $i | tail -1 >> gpu.log
+    $JULIA_BIN --project=.. benchmarks.jl $j CUDADevice $i | tail -1 >> gpu.log
   done
 done
