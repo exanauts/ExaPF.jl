@@ -12,7 +12,7 @@ const PS = PowerSystem
     local_case = "case14.raw"
     # read data
     to = TimerOutputs.TimerOutput()
-    datafile = joinpath(dirname(@__FILE__), "data", local_case)
+    datafile = joinpath(dirname(@__FILE__), "..", "data", local_case)
     data_raw = ParsePSSE.parse_raw(datafile)
     data, bus_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
 
@@ -121,14 +121,14 @@ end
 
     # Test constructor
     @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
-        datafile = joinpath(dirname(@__FILE__), "data", name)
+        datafile = joinpath(dirname(@__FILE__), "..", "data", name)
         switch = endswith(name, ".m") ? 1 : 0
         pf = PS.PowerNetwork(datafile, switch)
         @test isa(pf, PS.PowerNetwork)
     end
 
     # From now on, test with "case9.m"
-    datafile = joinpath(dirname(@__FILE__), "data", matpower_datafile)
+    datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
     pf = PS.PowerNetwork(datafile, 1)
 
     @testset "Computing cost coefficients" begin

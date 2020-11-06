@@ -76,7 +76,7 @@ function run_penalty(datafile; device=CPU())
     return
 end
 
-datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
+datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
 
 @info("ReducedSpaceEvaluator")
 run_level2(datafile, device=CPU())

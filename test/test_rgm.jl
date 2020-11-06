@@ -9,7 +9,7 @@ using KernelAbstractions
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "RGM Optimal Power flow 9 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
     pf = PowerSystem.PowerNetwork(datafile, 1)
     polar = PolarForm(pf, CPU())
 
