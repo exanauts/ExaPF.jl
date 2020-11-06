@@ -14,7 +14,7 @@ function _update!(ev::ExaEvaluator, x)
     end
 end
 
-MOI.features_available(::ExaEvaluator) = [:Grad]
+MOI.features_available(::ExaEvaluator) = [:Grad, :Hess]
 MOI.initialize(ev::ExaEvaluator, features) = nothing
 
 function MOI.jacobian_structure(ev::ExaEvaluator)
@@ -25,6 +25,11 @@ function MOI.jacobian_structure(ev::ExaEvaluator)
     cols = zeros(Int, jnnz)
     jacobian_structure!(ev.nlp, rows, cols)
     return Tuple{Int, Int}[(r, c) for (r, c) in zip(rows, cols)]
+end
+
+function MOI.hessian_lagrangian_structure(ev::ExaEvaluator)
+    n = n_variables(ev.nlp)
+    return Tuple{Int, Int}[(i, i) for i in 1:n]
 end
 
 function MOI.eval_objective(ev::ExaEvaluator, x)
@@ -56,6 +61,10 @@ function MOI.eval_constraint_jacobian(ev::ExaEvaluator, ∂cons, x)
             k += 1
         end
     end
+end
+
+function MOI.eval_hessian_lagrangian(ev::ExaEvaluator, H, x, σ, μ)
+    fill!(H, 1.0)
 end
 
 function MOI.NLPBlockData(nlp::AbstractNLPEvaluator)
