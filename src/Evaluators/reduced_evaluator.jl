@@ -221,6 +221,15 @@ function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
 end
 
 # Utils function
+function primal_infeasibility!(nlp::ReducedSpaceEvaluator, cons, u)
+    constraint!(nlp, cons, u) # Evaluate constraints
+    (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
+    return max(err_inf, err_sup)
+end
+function primal_infeasibility(nlp::ReducedSpaceEvaluator, u)
+    cons = similar(nlp.g_min) ; fill!(cons, 0)
+    return primal_infeasibility!(nlp, cons, u)
+end
 
 function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
     println("Check violation of constraints")

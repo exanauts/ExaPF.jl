@@ -1,3 +1,16 @@
+using CUDA
+using CUDA.CUSPARSE
+using ExaPF
+using KernelAbstractions
+using LinearAlgebra
+using Random
+using SparseArrays
+using Test
+using TimerOutputs
+using FiniteDiff
+
+import ExaPF: ParsePSSE, PowerSystem, IndexSet
+
 @testset "PenaltyEvaluators" begin
     @testset "Inactive constraints" begin
         datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
