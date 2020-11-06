@@ -122,8 +122,8 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianA
         Yim = SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
         Y = Yre .+ 1im .* Yim
         # Randomized inputs
-        Vre = rand(n)
-        Vim = rand(n)
+        Vre = Float64.([i for i in 1:n])
+        Vim = Float64.([i for i in n+1:2*n])
         V = Vre .+ 1im .* Vim
         J = residualJacobian(V, Y, pv, pq)
         coloring = VI(matrix_colors(J))
@@ -232,8 +232,8 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
         Yim = SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
         Y = Yre .+ 1im .* Yim
         # Randomized inputs
-        Vre = rand(n)
-        Vim = rand(n)
+        Vre = Float64.([i for i in 1:n])
+        Vim = Float64.([i for i in n+1:2*n])
         V = Vre .+ 1im .* Vim
         J = residualJacobian(V, Y, pinj, qinj, ref, pv, pq)
         coloring = VI(matrix_colors(J))
@@ -407,6 +407,8 @@ the CPU.
 function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
     # CSC is column oriented: nmap is equal to number of columns
     nmap = size(J, 2)
+    # TODO: coloring[i] leads to an out of bounds access here. Added the @assert here to observe. 
+    @assert(maximum(coloring) == size(compressedJ,1))
     for i in 1:nmap
         for j in J.colptr[i]:J.colptr[i+1]-1
             @inbounds J.nzval[j] = compressedJ[coloring[i], J.rowval[j]]
