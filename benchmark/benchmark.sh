@@ -2,7 +2,6 @@
 
 # CPU Solvers
 for i in `ls case*` 
-# for i in case300.m 
 do
   for j in DirectSolver
   do
@@ -12,7 +11,6 @@ done
 
 # GPU Solver
 for i in `ls case*` 
-# for i in case300.m 
 do
   for j in KrylovBICGSTAB DQGMRES BICGSTAB EigenBICGSTAB DirectSolver
   do
