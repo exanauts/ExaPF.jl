@@ -408,7 +408,15 @@ function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
     # CSC is column oriented: nmap is equal to number of columns
     nmap = size(J, 2)
     # TODO: coloring[i] leads to an out of bounds access here. Added the @assert here to observe. 
-    @assert(maximum(coloring) == size(compressedJ,1))
+    if maximum(coloring) != size(compressedJ,1)
+        @show coloring
+        @show J.colptr
+        @show J.rowval
+        @show J.nzval
+        @show length(J.nzval)
+        @show size(J)
+        @assert(maximum(coloring) == size(compressedJ,1))
+    end
     for i in 1:nmap
         for j in J.colptr[i]:J.colptr[i+1]-1
             @inbounds J.nzval[j] = compressedJ[coloring[i], J.rowval[j]]

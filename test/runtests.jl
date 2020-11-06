@@ -7,6 +7,7 @@ using Random
 using SparseArrays
 using Test
 using TimerOutputs
+using FiniteDiff
 
 import ExaPF: ParsePSSE, PowerSystem, IndexSet
 
