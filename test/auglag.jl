@@ -39,7 +39,7 @@
         @test inf_pr1 == 0.0
     end
     @testset "Active constraints" begin
-        datafile = joinpath(dirname(@__FILE__), "data", "case57.m")
+        datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
         pf = PowerSystem.PowerNetwork(datafile, 1)
         polar = PolarForm(pf, CPU())
         x0 = ExaPF.initial(polar, State())
