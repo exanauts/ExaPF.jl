@@ -1,10 +1,21 @@
 #!/bin/bash
 
-logfolder=logs
+# CPU Solvers
 for i in `ls case*` 
+# for i in case300.m 
 do
-  for j in 1 2 3
+  for j in DirectSolver
   do
-    julia --project=.. benchmarks.jl $i $j > $logfolder/${i}_${j}.log
+    julia --project=.. benchmarks.jl $j CPU $i | tail -1 >> cpu.log
+  done
+done
+
+# GPU Solver
+for i in `ls case*` 
+# for i in case300.m 
+do
+  for j in KrylovBICGSTAB DQGMRES BICGSTAB EigenBICGSTAB DirectSolver
+  do
+    julia --project=.. benchmarks.jl $j CUDADevice $i | tail -1 >> gpu.log
   done
 done

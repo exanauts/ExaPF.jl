@@ -86,10 +86,8 @@ function ldiv!(solver::BICGSTAB,
 )
     P = solver.precond.P
 
-    @timeit solver.timer "BICGSTAB" begin
-        y[:], n_iters, status = bicgstab(J, x, P, y, solver.timer; maxiter=solver.maxiter,
-                                         verbose=solver.verbose, tol=solver.tol)
-    end
+    y[:], n_iters, status = bicgstab(J, x, P, y; maxiter=solver.maxiter,
+                                        verbose=solver.verbose, tol=solver.tol)
     if status != Converged
         @warn("BICGSTAB failed to converge. Final status is $(status)")
     end
@@ -109,10 +107,8 @@ function ldiv!(solver::EigenBICGSTAB,
 )
     P = solver.precond.P
 
-    @timeit solver.timer "BICGSTAB" begin
-        y[:], n_iters, status = bicgstab_eigen(J, x, P, y, solver.timer; maxiter=solver.maxiter,
-                                               verbose=solver.verbose, tol=solver.tol)
-    end
+    y[:], n_iters, status = bicgstab_eigen(J, x, P, y; maxiter=solver.maxiter,
+                                            verbose=solver.verbose, tol=solver.tol)
     if status != Converged
         error("EigenBICGSTAB failed to converge. Final status is $(status)")
     end
@@ -130,9 +126,7 @@ function ldiv!(solver::RefBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    @timeit solver.timer "CPU-BICGSTAB" begin
-        y[:], history = IterativeSolvers.bicgstabl(P*J, P*x, log=solver.verbose)
-    end
+    y[:], history = IterativeSolvers.bicgstabl(P*J, P*x, log=solver.verbose)
     return history.iters
 end
 
@@ -147,9 +141,7 @@ function ldiv!(solver::RefGMRES,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    @timeit solver.timer "CPU-GMRES" begin
-        y[:], history = IterativeSolvers.gmres(P*J, P*x, restart=solver.restart, log=solver.verbose)
-    end
+    y[:], history = IterativeSolvers.gmres(P*J, P*x, restart=solver.restart, log=solver.verbose)
     return history.iters
 end
 
@@ -164,14 +156,26 @@ function ldiv!(solver::DQGMRES,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    @timeit solver.timer "GPU-DQGMRES" begin
-        (y[:], status) = Krylov.dqgmres(J, x, M=P, memory=solver.memory)
-    end
+    (y[:], status) = Krylov.dqgmres(J, x, N=P, memory=solver.memory)
+    return length(status.residuals)
+end
+
+struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
+    precond::AbstractPreconditioner
+    verbose::Bool
+    timer::TimerOutput
+end
+KrylovBICGSTAB(precond; verbose=false) = KrylovBICGSTAB(precond, verbose, TIMER)
+function ldiv!(solver::KrylovBICGSTAB,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+)
+    P = solver.precond.P
+    (y[:], status) = Krylov.bicgstab(J, x, N=P)
     return length(status.residuals)
 end
 
 
 list_solvers(::CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver]
-list_solvers(::CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver]
+list_solvers(::CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
 
 end

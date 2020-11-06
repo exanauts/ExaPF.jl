@@ -6,39 +6,35 @@ using Printf
 
 import ExaPF: PowerSystem, LinearSolvers, TimerOutputs
 
-# We do need the time in ms
+# For debugging in REPL use the following lines
+# empty!(ARGS)
+# push!(ARGS, "BICGSTAB")
+# push!(ARGS, "CUDADevice")
+# push!(ARGS, "caseGO30R-025.raw")
+
+# We do need the time in ms, and not with time units all over the place
 function ExaPF.TimerOutputs.prettytime(t)
-    value, units = t / 1e6, "ms"
+    value = t / 1e6 # "ms"
 
     if round(value) >= 100
-        str = string(@sprintf("%.0f", value), units)
+        str = string(@sprintf("%.0f", value))
     elseif round(value * 10) >= 100
-        str = string(@sprintf("%.1f", value), units)
+        str = string(@sprintf("%.1f", value))
     elseif round(value * 100) >= 100
-        str = string(@sprintf("%.2f", value), units)
+        str = string(@sprintf("%.2f", value))
     else
-        str = string(@sprintf("%.3f", value), units)
+        str = string(@sprintf("%.3f", value))
     end
     return lpad(str, 6, " ")
 end
 
-
-@show case = ARGS[1]
-setup = parse(Int, ARGS[2])
-if setup == 1
-    device = CPU()
-    linsolver = LinearSolvers.DirectSolver
-elseif setup == 2
-    device = CUDADevice()
-    linsolver = LinearSolvers.DirectSolver
-elseif setup == 3
-    device = CUDADevice()
-    linsolver = LinearSolvers.BICGSTAB
-else
-    error("No valid setup selected")
+function printtimer(timers, key::String)
+   prettytime(timers[key].accumulated_data.time)
 end
 
-datafile = joinpath(dirname(@__FILE__), case)
+linsolver = eval(Meta.parse("LinearSolvers.$(ARGS[1])"))
+device = eval(Meta.parse("$(ARGS[2])()"))
+datafile = joinpath(dirname(@__FILE__), ARGS[3])
 if endswith(datafile, ".m")
     pf = PowerSystem.PowerNetwork(datafile, 1)
 else
@@ -64,5 +60,17 @@ convergence = ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_HIGH)
 nlp.x .= x0                                   
 convergence = ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_HIGH)
 nlp.x .= x0                                   
+ExaPF.reset_timer!(ExaPF.TIMER)
 convergence = ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_HIGH)
-@show convergence
+
+# Make sure we are converged
+@assert(convergence.has_converged)
+
+# Output
+prettytime = ExaPF.TimerOutputs.prettytime
+timers = ExaPF.TIMER.inner_timers
+inner_timer = timers["Newton"]
+println("$(ARGS[1]), $(ARGS[2]), $(ARGS[3]),", 
+        printtimer(timers, "Newton"),",",
+        printtimer(inner_timer, "Jacobian"),",",
+        printtimer(inner_timer, "Linear Solver"))
