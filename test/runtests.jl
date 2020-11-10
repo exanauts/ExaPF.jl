@@ -35,6 +35,7 @@ end
     include("reduced_evaluator.jl")
     include("penalty.jl")
     include("auglag.jl")
+    include("MOI_wrapper.jl")
 end
 
 @testset "Reduced space algorithms" begin
