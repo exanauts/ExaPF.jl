@@ -66,5 +66,5 @@ end
     )
     solution = moi_solve(optimizer, nlp)
     @test solution.minimum ≈ 3.7589338e+04
-    @test solution.minimizer == CASE57_SOLUTION
+    @test solution.minimizer ≈ CASE57_SOLUTION atol=1e-6
 end
