@@ -77,6 +77,24 @@ the result inplace, in the vector `hess`.
 """
 function hessian! end
 
+"""
+    primal_infeasibility(nlp::AbstractNLPEvaluator, u)
+
+Return primal infeasibility associated to current model `nlp` evaluated
+at control `u`.
+
+"""
+function primal_infeasibility end
+
+"""
+    primal_infeasibility!(nlp::AbstractNLPEvaluator, cons, u)
+
+Return primal infeasibility associated to current model `nlp` evaluated
+at control `u`. Modify vector `cons` inplace.
+
+"""
+function primal_infeasibility! end
+
 abstract type AbstractNLPAttribute end
 struct Variables <: AbstractNLPAttribute end
 struct Constraints <: AbstractNLPAttribute end

@@ -1,6 +1,19 @@
+using CUDA
+using CUDA.CUSPARSE
+using ExaPF
+using KernelAbstractions
+using LinearAlgebra
+using Random
+using SparseArrays
+using Test
+using TimerOutputs
+using FiniteDiff
+
+import ExaPF: ParsePSSE, PowerSystem, IndexSet
+
 @testset "PenaltyEvaluators" begin
     @testset "Inactive constraints" begin
-        datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
+        datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
         pf = PowerSystem.PowerNetwork(datafile, 1)
         polar = PolarForm(pf, CPU())
         x0 = ExaPF.initial(polar, State())
@@ -36,7 +49,7 @@
         ExaPF.update_penalty!(pen)
     end
     @testset "Active constraints" begin
-        datafile = joinpath(dirname(@__FILE__), "data", "case57.m")
+        datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
         pf = PowerSystem.PowerNetwork(datafile, 1)
         polar = PolarForm(pf, CPU())
         x0 = ExaPF.initial(polar, State())

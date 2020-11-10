@@ -32,7 +32,7 @@ function moi_solve(
     MOI.optimize!(optimizer)
 end
 
-datafile = joinpath(dirname(@__FILE__), "..", "test", "data", "case57.m")
+datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
 
 nlp = ExaPF.ReducedSpaceEvaluator(datafile)
 aug = ExaPF.AugLagEvaluator(nlp, ExaPF.initial(nlp); c₀=0.1, scale=true)

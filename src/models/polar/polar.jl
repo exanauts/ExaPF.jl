@@ -323,7 +323,7 @@ function powerflow(
         if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
             LinearSolvers.update!(solver, J)
         end
-        n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
+        @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
         push!(linsol_iters, n_iters)
 
         # update voltage
@@ -370,7 +370,6 @@ function powerflow(
     if verbose_level >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
         println("")
-        reset_timer!(TIMER)
     end
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
     return conv

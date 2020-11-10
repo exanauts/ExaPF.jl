@@ -7,7 +7,7 @@
 
 BiCGSTAB implementation exactly corresponding to the implementation in Eigen
 """
-function bicgstab_eigen(A, b, P, x, to::TimerOutput;
+function bicgstab_eigen(A, b, P, x;
                   tol=1e-8, maxiter=size(A, 1), verbose=false)
 
     mul!(x, P, b)

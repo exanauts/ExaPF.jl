@@ -125,4 +125,9 @@ end
 
 function jacobian_structure!(ag::AugLagEvaluator, rows, cols)
     @assert length(rows) == length(cols) == 0
+    return
 end
+
+primal_infeasibility!(ag::AugLagEvaluator, cons, u) = primal_infeasibility!(ag.inner, cons, u)
+primal_infeasibility(ag::AugLagEvaluator, u) = primal_infeasibility(ag.inner, u)
+
