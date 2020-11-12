@@ -9,7 +9,7 @@ using Printf
 using SparseArrays
 using TimerOutputs
 
-import ..ExaPF: norm2, TIMER, csclsvqr!
+import ..ExaPF: xnorm, TIMER, csclsvqr!
 import Base: show
 
 export bicgstab, list_solvers

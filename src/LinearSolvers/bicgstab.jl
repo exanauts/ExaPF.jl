@@ -71,7 +71,7 @@ function bicgstab(A, b, P, xi;
         xi .= xi .+ alpha .* y .+ omegai1 .* z
 
         mul!(residual, A, xi, 1.0, -1.0)
-        anorm = norm2(residual)
+        anorm = xnorm(residual)
 
         if verbose
             @printf("%4d %10.4e\n", iter, anorm)

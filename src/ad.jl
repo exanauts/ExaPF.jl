@@ -9,7 +9,7 @@ using SparseArrays
 using TimerOutputs
 using SparsityDetection
 using SparseDiffTools
-using ..ExaPF: Spmat
+using ..ExaPF: Spmat, xzeros
 
 import Base: show
 
@@ -242,8 +242,7 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
             J = CuSparseMatrixCSR(J)
         end
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-        # x = T{Float64}(undef, nv_m + nv_a)
-        x = VT(zeros(Float64, npbus + nv_a))
+        x = xzeros(VT, npbus + nv_a)
         t1sx = A{t1s{ncolor}}(x)
         # t1sF = T{t1s{ncolor}}(undef, nmap)
         t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
@@ -407,7 +406,7 @@ the CPU.
 function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
     # CSC is column oriented: nmap is equal to number of columns
     nmap = size(J, 2)
-    # TODO: coloring[i] leads to an out of bounds access here. Added the @assert here to observe. 
+    # TODO: coloring[i] leads to an out of bounds access here. Added the @assert here to observe.
     if maximum(coloring) != size(compressedJ,1)
         @show coloring
         @show J.colptr

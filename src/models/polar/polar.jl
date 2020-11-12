@@ -152,13 +152,13 @@ function get(form::PolarForm{T, IT, VT, AT}, ::PhysicalState) where {T, IT, VT, 
     vmag = abs.(form.network.vbus) |> VT
     vang = angle.(form.network.vbus) |> VT
     ngen = PS.get(form.network, PS.NumberOfGenerators())
-    pg = VT(undef, ngen)
-    qg = VT(undef, ngen)
+    pg = xzeros(VT, ngen)
+    qg = xzeros(VT, ngen)
 
     npv = PS.get(form.network, PS.NumberOfPVBuses())
     npq = PS.get(form.network, PS.NumberOfPQBuses())
-    balance = VT(undef, 2*npq+npv)
-    dx = VT(undef, 2*npq+npv)
+    balance = xzeros(VT, 2*npq+npv)
+    dx = xzeros(VT, 2*npq+npv)
     return PolarNetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx)
 end
 
@@ -205,14 +205,14 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkSt
     )
 
     # Build the AD structure for the objective
-    ∇fₓ = VT(undef, nₓ)
-    ∇fᵤ = VT(undef, nᵤ)
+    ∇fₓ = xzeros(VT, nₓ)
+    ∇fᵤ = xzeros(VT, nᵤ)
     adjoint_pg = similar(buffer.pg)
     adjoint_vm = similar(Vm)
     adjoint_va = similar(Va)
     # Build cache for Jacobian vector-product
-    jvₓ = VT(undef, nₓ)
-    jvᵤ = VT(undef, nᵤ)
+    jvₓ = xzeros(VT, nₓ)
+    jvᵤ = xzeros(VT, nᵤ)
     objectiveAD = AD.ObjectiveAD(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ)
     return stateJacobianAD, designJacobianAD, objectiveAD
 end
@@ -229,22 +229,6 @@ function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, buffer::PolarNet
     AD.residualJacobianAD!(jac, residualFunction_polar!, Vm, Va,
                            polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     return jac.J
-end
-
-function powerflow(
-    polar::PolarForm{T, IT, VT, AT},
-    jacobian::AD.StateJacobianAD,
-    x::VT,
-    u::VT,
-    p::VT;
-    kwargs...
-) where {T, IT, VT, AT}
-    Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
-    n_state = get(polar, NumberOfState())
-    network = PolarNetworkState{VT}(
-        Vm, Va, pbus, qbus, VT(undef, 0), VT(undef, 0), VT(undef, n_state), VT(undef, n_state)
-    )
-    return powerflow(polar, jacobian, network; kwargs...)
 end
 
 function powerflow(
@@ -348,7 +332,7 @@ function powerflow(
                 pbus, qbus, pv, pq, nbus)
         end
 
-        @timeit TIMER "Norm" normF = norm2(F)
+        @timeit TIMER "Norm" normF = xnorm(F)
         if verbose_level >= VERBOSE_LEVEL_LOW
             @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
         end
