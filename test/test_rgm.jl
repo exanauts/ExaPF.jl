@@ -10,15 +10,9 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "RGM Optimal Power flow 9 bus case" begin
     datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
-    pf = PowerSystem.PowerNetwork(datafile, 1)
-    polar = PolarForm(pf, CPU())
 
-    xk = ExaPF.initial(polar, State())
-    uk = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
-
-    constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-    nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; constraints=constraints)
+    nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+    uk = ExaPF.initial(nlp)
 
     # solve power flow
     ExaPF.update!(nlp, uk)

@@ -36,10 +36,13 @@ mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     ε_tol::Float64
 end
 
-function ReducedSpaceEvaluator(model, x, u, p;
-                               constraints=Function[state_constraint],
-                               ε_tol=1e-12, linear_solver=DirectSolver(), npartitions=2,
-                               verbose_level=VERBOSE_LEVEL_NONE)
+function ReducedSpaceEvaluator(
+    model, x, u, p;
+    constraints=Function[state_constraint, power_constraints],
+    linear_solver=DirectSolver(),
+    ε_tol=1e-12,
+    verbose_level=VERBOSE_LEVEL_NONE,
+)
     # First, build up a network buffer
     buffer = get(model, PhysicalState())
     # Initiate adjoint
@@ -68,18 +71,18 @@ end
 function ReducedSpaceEvaluator(
     datafile;
     device=CPU(),
-    constraints=Function[state_constraint, power_constraints],
+    options...
 )
     # Load problem.
-    pf = PowerSystem.PowerNetwork(datafile, 1)
-    polar = PolarForm(pf, CPU())
+    pf = PS.PowerNetwork(datafile)
+    polar = PolarForm(pf, device)
 
     x0 = initial(polar, State())
     p = initial(polar, Parameters())
     uk = initial(polar, Control())
 
     return ReducedSpaceEvaluator(
-        polar, x0, uk, p; constraints=constraints, ε_tol=1e-10
+        polar, x0, uk, p; options...
     )
 end
 

@@ -72,6 +72,17 @@ struct PowerNetwork <: AbstractPowerSystem
         new(vbus, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
     end
 end
+function PowerNetwork(datafile::String)
+    if endswith(datafile, ".raw")
+        data_format = 0
+    elseif endswith(datafile, ".m")
+        data_format = 1
+    else
+        error("Unsupported format in file $(datafile): supported extensions are " *
+              "Matpower (.m) or PSSE (.raw)")
+    end
+    return PowerNetwork(datafile, data_format)
+end
 
 # Getters
 ## Network attributes
