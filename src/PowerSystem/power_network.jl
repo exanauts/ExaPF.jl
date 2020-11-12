@@ -32,7 +32,7 @@ struct PowerNetwork <: AbstractPowerSystem
     sbus::Vector{Complex{Float64}}
     sload::Vector{Complex{Float64}}
 
-    function PowerNetwork(datafile::String, data_format::Int64=0)
+    function PowerNetwork(datafile::String, data_format::Int64)
 
         if data_format == 0
             println("Reading PSSE format")
