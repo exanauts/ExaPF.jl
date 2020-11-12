@@ -1,15 +1,9 @@
 @testset "AugLagEvaluators" begin
     @testset "Inactive constraints" begin
         datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
-        pf = PowerSystem.PowerNetwork(datafile, 1)
-        polar = PolarForm(pf, CPU())
-        x0 = ExaPF.initial(polar, State())
-        u0 = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
-
-        constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
         # Build reference evaluator
-        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+        nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+        u0 = ExaPF.initial(nlp)
         # Build penalty evaluator
         pen = ExaPF.AugLagEvaluator(nlp, u0)
 
@@ -42,16 +36,9 @@
     end
     @testset "Active constraints" begin
         datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
-        pf = PowerSystem.PowerNetwork(datafile, 1)
-        polar = PolarForm(pf, CPU())
-        x0 = ExaPF.initial(polar, State())
-        u0 = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
-
-        constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
         # Build reference evaluator
-        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints,
-                                          ε_tol=1e-13)
+        nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+        u0 = ExaPF.initial(nlp)
         # Build penalty evaluator
         for scaling in [true, false]
             pen = ExaPF.AugLagEvaluator(nlp, u0; scale=scaling)

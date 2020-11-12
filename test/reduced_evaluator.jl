@@ -5,8 +5,20 @@
         ITERATORS = zip([CPU()], [Array])
     end
     datafile = joinpath(dirname(@__FILE__), "..", "data", case)
-    pf = PowerSystem.PowerNetwork(datafile, 1)
+    @testset "Constructor" for (device, M) in ITERATORS
+        tol = 1e-11
+        nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device, ε_tol=tol)
+        TNLP = typeof(nlp)
+        for (fn, ft) in zip(fieldnames(TNLP), fieldtypes(TNLP))
+            if ft <: AbstractArray{Float64, P} where P
+                @test isa(getfield(nlp, fn), M)
+            end
+        end
+        # Test that arguments are passed as expected in the constructor:
+        @test nlp.ε_tol == tol
+    end
 
+    pf = PowerSystem.PowerNetwork(datafile, 1)
     @testset "Test API on $device" for (device, M) in ITERATORS
         polar = PolarForm(pf, device)
         x0 = ExaPF.initial(polar, State())
