@@ -15,6 +15,7 @@
 
         constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
         nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+        # Test printing
         println(nlp)
 
         # Test evaluator is well instantiated on target device
@@ -73,6 +74,11 @@
         inf_pr1 = ExaPF.primal_infeasibility(nlp, u)
         inf_pr2 = ExaPF.primal_infeasibility!(nlp, v, u)
         @test inf_pr1 == inf_pr2
+
+        # test reset!
+        ExaPF.reset!(nlp)
+        @test nlp.x == x0
+        @test iszero(nlp.λ)
     end
 end
 

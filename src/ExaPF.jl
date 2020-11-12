@@ -22,6 +22,8 @@ using SparseArrays
 using SparseDiffTools
 using TimerOutputs
 
+import Base: show, get
+
 const MOI = MathOptInterface
 const TIMER = TimerOutput()
 

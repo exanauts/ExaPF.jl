@@ -129,3 +129,13 @@ end
 
 primal_infeasibility!(ag::AugLagEvaluator, cons, u) = primal_infeasibility!(ag.inner, cons, u)
 primal_infeasibility(ag::AugLagEvaluator, u) = primal_infeasibility(ag.inner, u)
+
+function reset!(ag::AugLagEvaluator)
+    reset!(ag.inner)
+    empty!(ag.counter)
+    fill!(ag.cons, 0)
+    fill!(ag.infeasibility, 0)
+    fill!(ag.λ, 0)
+    fill!(ag.λc, 0)
+end
+

@@ -106,3 +106,10 @@ end
 primal_infeasibility!(pen::PenaltyEvaluator, cons, u) = primal_infeasibility!(pen.inner, cons, u)
 primal_infeasibility(pen::PenaltyEvaluator, u) = primal_infeasibility(pen.inner, u)
 
+function reset!(pen::PenaltyEvaluator)
+    reset!(pen.inner)
+    fill!(pen.cons, 0)
+    fill!(pen.infeasibility, 0)
+    fill!(pen.penalties, 0)
+end
+

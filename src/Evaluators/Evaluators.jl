@@ -95,6 +95,14 @@ at control `u`. Modify vector `cons` inplace.
 """
 function primal_infeasibility! end
 
+"""
+    reset!(nlp::AbstractNLPEvaluator)
+
+Reset evaluator `nlp` to default configuration.
+
+"""
+function reset! end
+
 abstract type AbstractNLPAttribute end
 struct Variables <: AbstractNLPAttribute end
 struct Constraints <: AbstractNLPAttribute end

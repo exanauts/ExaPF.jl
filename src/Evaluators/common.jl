@@ -1,4 +1,5 @@
 
+# AD Factory
 abstract type AbstractADFactory end
 
 struct ADFactory <: AbstractADFactory
@@ -7,6 +8,7 @@ struct ADFactory <: AbstractADFactory
     ∇f::AD.ObjectiveAD
 end
 
+# Counters
 abstract type AbstractCounter end
 
 mutable struct NLPCounter <: AbstractCounter
@@ -19,6 +21,13 @@ mutable struct NLPCounter <: AbstractCounter
 end
 NLPCounter() = NLPCounter(0, 0, 0, 0, 0, 0)
 
+function Base.empty!(c::NLPCounter)
+    for attr in fieldnames(NLPCounter)
+        setfield!(c, attr, 0)
+    end
+end
+
+# Active set utils
 function _check(val, val_min, val_max)
     violated_inf = findall(val .< val_min)
     violated_sup = findall(val .> val_max)
@@ -41,6 +50,7 @@ function active_set(c, c♭, c♯; tol=1e-8)
     return active_lb, active_ub
 end
 
+# Scaler utils
 abstract type AbstractScaler end
 
 scale_factor(h, tol, η) = max(tol, η / max(1.0, h))

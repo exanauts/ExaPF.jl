@@ -47,6 +47,9 @@ import ExaPF: ParsePSSE, PowerSystem, IndexSet
         @test isequal(g_ref, g)
         # Update penalty weigth
         ExaPF.update_penalty!(pen)
+
+        # Test reset
+        ExaPF.reset!(pen)
     end
     @testset "Active constraints" begin
         datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")

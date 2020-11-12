@@ -282,3 +282,14 @@ function Base.show(io::IO, nlp::ReducedSpaceEvaluator)
     end
     print(io, "    * linear solver: ", nlp.linear_solver)
 end
+
+function reset!(nlp::ReducedSpaceEvaluator)
+    # Reset adjoint
+    fill!(nlp.λ, 0)
+    # Reset initial state
+    x0 = initial(nlp.model, State())
+    copy!(nlp.x, x0)
+    # Reset buffer
+    nlp.buffer = get(nlp.model, PhysicalState())
+end
+

@@ -37,6 +37,8 @@
         # Utils
         inf_pr1 = ExaPF.primal_infeasibility(nlp, u)
         @test inf_pr1 == 0.0
+        # Test reset
+        ExaPF.reset!(pen)
     end
     @testset "Active constraints" begin
         datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
