@@ -378,3 +378,27 @@ function cost_production(polar::PolarForm, pg)
     cost = sum(c2 .+ c3 .* pg .+ c4 .* pg.^2)
     return cost
 end
+
+# Utils
+function Base.show(io::IO, polar::PolarForm)
+    # Network characteristics
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    nlines = PS.get(polar.network, PS.NumberOfLines())
+    # Polar formulation characteristics
+    n_states = get(polar, NumberOfState())
+    n_controls = get(polar, NumberOfControl())
+    print(io,   "Polar formulation model")
+    println(io, " (instantiated on device $(polar.device))")
+    println(io, "Network characteristics:")
+    @printf(io, "    #buses:      %d  (#slack: %d  #PV: %d  #PQ: %d)\n", nbus, nref, npv, npq)
+    println(io, "    #generators: ", ngen)
+    println(io, "    #lines:      ", nlines)
+    println(io, "giving a mathematical formulation with:")
+    println(io, "    #controls:   ", n_controls)
+    print(io,   "    #states  :   ", n_states)
+end
+

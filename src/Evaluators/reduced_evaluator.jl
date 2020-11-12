@@ -252,6 +252,7 @@ function primal_infeasibility(nlp::ReducedSpaceEvaluator, u)
     return primal_infeasibility!(nlp, cons, u)
 end
 
+# Printing
 function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
     println("Check violation of constraints")
     print("Control  \t")
@@ -268,3 +269,16 @@ function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
             err_sup, n_sup, err_inf, n_inf)
 end
 
+function Base.show(io::IO, nlp::ReducedSpaceEvaluator)
+    n = n_variables(nlp)
+    m = n_constraints(nlp)
+    println(io, "A ReducedSpaceEvaluator object")
+    println(io, "    * device: ", nlp.model.device)
+    println(io, "    * #vars: ", n)
+    println(io, "    * #cons: ", m)
+    println(io, "    * constraints:")
+    for cons in nlp.constraints
+        println("        - ", cons)
+    end
+    print(io, "    * linear solver: ", nlp.linear_solver)
+end

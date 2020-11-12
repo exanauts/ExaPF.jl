@@ -15,6 +15,7 @@
 
         constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
         nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+        println(nlp)
 
         # Test evaluator is well instantiated on target device
         TNLP = typeof(nlp)

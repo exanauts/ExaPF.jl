@@ -209,27 +209,3 @@ include("caches.jl")
 # Polar formulation
 include("polar/polar.jl")
 
-
-Base.show(model::AbstractFormulation, x, u, p) = Base.show(stdout, model, x, u, p)
-function Base.show(io::IO, model::AbstractFormulation, x, u, p)
-    nbus = PS.get(model.network, PS.NumberOfBuses())
-    npv = PS.get(model.network, PS.NumberOfPVBuses())
-    npq = PS.get(model.network, PS.NumberOfPQBuses())
-    nref = PS.get(model.network, PS.NumberOfSlackBuses())
-    ngen = PS.get(model.network, PS.NumberOfGenerators())
-    println(io, "Power Network characteristics:")
-    @printf(io, "\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", nbus, nref, npv, npq)
-    println(io, "\tGenerators: ", ngen, ".")
-    # Print system status
-    @printf(io, "\t==============================================\n")
-    @printf(io, "\tBUS \t TYPE \t VMAG \t VANG \t P \t Q\n")
-    @printf(io, "\t==============================================\n")
-
-    vmag, vang, pinj, qinj = get_network_state(model, x, u, p)
-
-    for i=1:nbus
-        type = model.network.bustype[i]
-        @printf(io, "\t%d \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
-                type, vmag[i], vang[i]*(180.0/pi), pinj[i], qinj[i])
-    end
-end

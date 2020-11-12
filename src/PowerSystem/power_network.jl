@@ -76,7 +76,7 @@ end
 # Getters
 ## Network attributes
 get(pf::PowerNetwork, ::NumberOfBuses) = pf.nbus
-get(pf::PowerNetwork, ::NumberOfLines) = size(pf.data["branch"], 1)
+get(pf::PowerNetwork, ::NumberOfLines) = size(pf.data["branch"], 2)
 get(pf::PowerNetwork, ::NumberOfGenerators) = pf.ngen
 get(pf::PowerNetwork, ::NumberOfPVBuses) = length(pf.pv)
 get(pf::PowerNetwork, ::NumberOfPQBuses) = length(pf.pq)
