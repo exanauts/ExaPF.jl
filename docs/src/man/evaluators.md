@@ -78,25 +78,52 @@ an initial state `x0` and a vector of parameters `p`:
 julia> nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p)
 
 ```
-By default, `nlp` has no inequality constraint. The user could
-specified them in the constructor:
+or we could alternatively instantiate the evaluator directly from
+a MATPOWER (or PSSE) instance:
 ```julia-repl
-julia> constraints = Function[ExaPF.state_constraints, ExaPF.power_constraints]
-julia> nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p, constraints=constraints)
+julia> datafile = "case9.m"
+julia> nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+A ReducedSpaceEvaluator object
+    * device: KernelAbstractions.CPU()
+    * #vars: 5
+    * #cons: 10
+    * constraints:
+        - state_constraint
+        - power_constraints
+    * linear solver: ExaPF.LinearSolvers.DirectSolver()
 
 ```
 
-!!! note
-    If `form` is defined on the GPU, `ReducedSpaceNLPEvaluator`
-    will work automatically on the GPU too.
+Let's describe the output of the last command.
+
+* `device: KernelAbstractions.CPU()`: the evaluator is instantiated on the CPU ;
+* `#vars: 5`: it has 5 optimization variables ;
+* `#cons: 10`: the problem has 10 inequality constraints ;
+* `constraints:` by default, `nlp` has two inequality constraints: `state_constraint` (specifying the bounds $x_L \leq x(u) \leq x_U$ on the state $x$) and `power_constraints` (bounding the active and reactive power of the generators) ;
+* `linear solver: ExaPF.LinearSolvers.DirectSolver()`: to solve the linear systems, the evaluator uses a direct linear algebra solver.
+
+Of course, these settings are only specified by default, and the user is free
+to choose the parameters she wants. For instance,
+
+* we could remove all constraints by passing an empty array of constraints
+  to the evaluator:
+  ```julia-repl
+  julia> constraints = Function[]
+  julia> nlp = ExaPF.ReducedSpaceEvaluator(datafile; constraints=constraints)
+  ```
+* we could load the evaluator on the GPU simply by changing the device:
+  ```julia-repl
+  julia> nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=CUDADevice())
+  ```
+
 
 
 #### Caching
 
 To juggle between the mathematical description (characterized
 by a state $x$ and a control $u$) and the physical description (characterized
-by the voltage and the power injection at each bus), the evaluator `nlp`
-stores internally a cache `nlp.network_cache`, with type `AbstractPhysicalCache`.
+by the voltage and power injection at each bus), the evaluator `nlp`
+stores internally a cache `nlp.buffer`, with type `AbstractNetworkBuffer`.
 
 #### Evaluation of the callbacks
 
@@ -108,24 +135,92 @@ in the powerflow manifold. In the evaluator's API, this sums up to:
 ExaPF.update!(nlp, uk)
 ```
 The function `update!` will
-- Feed the physical description `nlp.network_cache` with the values stored in the new control `uk`.
+- Feed the physical description `nlp.buffer` with the values stored in the new control `uk`.
 - Solve the powerflow equations corresponding to the formulation specified in `form`. This operation
-  updates the cache `nlp.network_cache` inplace.
+  updates the cache `nlp.buffer` inplace.
 - Update internally the state `x`.
 
 Once the function `update!` called (and only once), we could evaluate
 all the different callbacks independently from one other.
-```julia-repl
-julia> cost = ExaPF.objective(nlp, uk)
-# Evaluate objective's gradient
-julia> g = similar(uk)
-julia> fill!(g, 0)
-julia> ExaPF.gradient!(nlp, g, uk)
-# Evaluate constraints
-julia> cons = zeros(n_constraints(nlp))
-julia> ExaPF.constraint!(nlp, cons, uk)
-## Evaluate Jacobian
-julia> ExaPF.jacobian!(nlp, jac, uk)
+
+* Objective
+  ```julia-repl
+  julia> cost = ExaPF.objective(nlp, uk)
+  ```
+* Objective's gradient
+  ```julia-repl
+  julia> g = zeros(n_variables(nlp))
+  julia> ExaPF.gradient!(nlp, g, uk)
+  ```
+* Constraints
+  ```julia-repl
+  # Evaluate constraints
+  julia> cons = zeros(n_constraints(nlp))
+  julia> ExaPF.constraint!(nlp, cons, uk)
+  ```
+* Constraints' Jacobian
+  ```julia-repl
+  ## Evaluate Jacobian
+  julia> ExaPF.jacobian!(nlp, jac, uk)
+  ```
+* Constraints' transpose Jacobian-vector product
+  ```julia-repl
+  ## Evaluate transpose Jacobian-vector product
+  julia> v = zeros(n_constraints(nlp))
+  julia> jv = zeros(n_variables(nlp))
+  julia> ExaPF.jtprod!(nlp, jv, uk, v)
+  ```
+
+!!! note
+    Once the powerflow equations solved in a `update!` call, the solution `x` is stored in memory in the attribute `nlp.x`. The state `x` will be used as a starting point for the next resolution of powerflow equations.
+
+
+## Passing the problem to an optimization solver with MathOptInterface
+
+`ExaPF.jl` provides a utility to pass the non-linear structure
+specified by a `AbstractNLPEvaluator` to a `MathOptInterface` (MOI)
+optimization problem. That allows to solve the corresponding
+optimal power flow problem using any non-linear optimization solver compatible
+with MOI.
+
+For instance, we could solve the reduced problem specified
+in `nlp` with Ipopt in a few lines of code:
+
+```julia
+using Ipopt
+optimizer = Ipopt.Optimizer()
+
+block_data = MOI.NLPBlockData(nlp)
+
+u♭, u♯ = ExaPF.bounds(nlp, ExaPF.Variables())
+u0 = ExaPF.initial(nlp)
+n = ExaPF.n_variables(nlp)
+vars = MOI.add_variables(optimizer, n)
+
+# Set bounds and initial values
+for i in 1:n
+    MOI.add_constraint(
+        optimizer,
+        MOI.SingleVariable(vars[i]),
+        MOI.LessThan(u♯[i])
+    )
+    MOI.add_constraint(
+        optimizer,
+        MOI.SingleVariable(vars[i]),
+        MOI.GreaterThan(u♭[i])
+    )
+    MOI.set(optimizer, MOI.VariablePrimalStart(), vars[i], u0[i])
+end
+
+MOI.set(optimizer, MOI.NLPBlock(), block_data)
+MOI.set(optimizer, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+MOI.optimize!(optimizer)
+
+solution = (
+    minimum=MOI.get(optimizer, MOI.ObjectiveValue()),
+    minimizer=[MOI.get(optimizer, MOI.VariablePrimal(), v) for v in vars],
+)
+MOI.empty!(optimizer)
 ```
 
 
