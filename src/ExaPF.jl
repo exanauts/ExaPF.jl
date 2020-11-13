@@ -35,7 +35,7 @@ const VERBOSE_LEVEL_NONE = 0
 include("utils.jl")
 # Import submodules
 include("ad.jl")
-using .AD
+using .AutoDiff
 include("indexes.jl")
 using .IndexSet
 include("LinearSolvers/LinearSolvers.jl")

@@ -6,13 +6,13 @@ using LinearAlgebra
 using BenchmarkTools
 using SparseArrays
 using TimerOutputs
-import ExaPF: PowerSystem, IndexSet, AD
+import ExaPF: PowerSystem, IndexSet, AutoDiff
 
 function run_level1(datafile; device=CPU())
     pf = PowerSystem.PowerNetwork(datafile, 1)
     polar = PolarForm(pf, device)
     cache = ExaPF.NetworkState(polar)
-    jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
+    jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
     @btime begin
         cache = ExaPF.NetworkState($polar)

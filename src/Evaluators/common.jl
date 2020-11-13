@@ -1,11 +1,11 @@
 
-# AD Factory
-abstract type AbstractADFactory end
+# AutoDiff Factory
+abstract type AbstractAutoDiffFactory end
 
-struct ADFactory <: AbstractADFactory
-    Jgₓ::AD.StateJacobianAD
-    Jgᵤ::AD.DesignJacobianAD
-    ∇f::AD.ObjectiveAD
+struct AutoDiffFactory <: AbstractAutoDiffFactory
+    Jgₓ::AutoDiff.StateJacobian
+    Jgᵤ::AutoDiff.ControlJacobian
+    ∇f::AdjointStackObjective
 end
 
 # Counters
