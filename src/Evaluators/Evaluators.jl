@@ -13,6 +13,24 @@ constraints, but also the corresponding gradient and Jacobian objects.
 """
 abstract type AbstractNLPEvaluator end
 
+abstract type AbstractNLPAttribute end
+
+"""
+    Variables <: AbstractNLPAttribute end
+
+Attribute corresponding to the optimization variables attached
+to a given `AbstractNLPEvaluator`.
+"""
+struct Variables <: AbstractNLPAttribute end
+
+"""
+    Constraints <: AbstractNLPAttribute end
+
+Attribute corresponding to the constraints  attached
+to a given `AbstractNLPEvaluator`.
+"""
+struct Constraints <: AbstractNLPAttribute end
+
 """
     n_variables(nlp::AbstractNLPEvaluator)
 Get the number of variables in the problem.
@@ -25,6 +43,7 @@ Get the number of constraints in the problem.
 """
 function n_constraints end
 
+# Callbacks
 """
     objective(nlp::AbstractNLPEvaluator, u)::Float64
 
@@ -47,6 +66,8 @@ function gradient! end
 
 Evaluate the constraints of the problem at point `u`. Store
 the result inplace, in the vector `cons`.
+
+## Note
 The vector `cons` should have the same dimension as the result
 returned by `n_constraints(nlp)`.
 
@@ -63,10 +84,25 @@ function jacobian_structure! end
 """
     jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
 
-Evaluate the Jacobian of the problem at point `u`. Store
-the result inplace, in the vector `jac`.
+Evaluate the Jacobian of the constraints at position `u`. Store
+the result inplace, in the array `jac`.
 """
 function jacobian! end
+
+"""
+    jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+
+Evaluate the transpose Jacobian-vector product ``J^{T} v``.
+The vector `jv` is modified inplace.
+
+Let `(n, m) = n_variables(nlp), n_constraints(nlp)`.
+
+* `u` is a vector with dimension `n`
+* `v` is a vector with dimension `m`
+* `jv` is a vector with dimension `n`
+
+"""
+function jtprod! end
 
 """
     hessian!(nlp::AbstractNLPEvaluator, hess, u)
@@ -77,6 +113,7 @@ the result inplace, in the vector `hess`.
 """
 function hessian! end
 
+# Utilities
 """
     primal_infeasibility(nlp::AbstractNLPEvaluator, u)
 
@@ -102,10 +139,6 @@ Reset evaluator `nlp` to default configuration.
 
 """
 function reset! end
-
-abstract type AbstractNLPAttribute end
-struct Variables <: AbstractNLPAttribute end
-struct Constraints <: AbstractNLPAttribute end
 
 include("common.jl")
 include("reduced_evaluator.jl")

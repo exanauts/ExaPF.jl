@@ -33,33 +33,6 @@ initial
 
 ```
 
-### Powerflow solver
-
-```@docs
-powerflow
-
-```
-
-### Constraints
-
-```@docs
-state_constraints
-power_constraints
-thermal_limit_constraints
-
-```
-
-Admissible range for variables and constraints:
-```@docs
-bounds
-```
-
-### Costs
-
-```@docs
-cost_production
-```
-
 ### Attributes
 
 ```@docs
@@ -68,3 +41,35 @@ NumberOfState
 NumberOfControl
 
 ```
+
+### Powerflow solver
+
+```@docs
+powerflow
+
+```
+
+### Costs
+
+```@docs
+cost_production
+```
+
+### Constraints
+
+Current supported constraints are:
+```@docs
+state_constraints
+power_constraints
+thermal_limit_constraints
+
+```
+
+These functions allow to query constraints' attributes:
+```@docs
+is_constraint
+size_constraint
+bounds
+
+```
+

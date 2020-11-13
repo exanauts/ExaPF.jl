@@ -165,7 +165,7 @@ abstract type AbstractNetworkValues end
 """
     VoltageMagnitude <: AbstractNetworkValues
 
-Magnitude `|v|` of the voltage ``v = |v| exp(i θ)``.
+Magnitude `|v|` of the voltage `v = |v| exp(i θ)`.
 """
 struct VoltageMagnitude <: AbstractNetworkValues end
 

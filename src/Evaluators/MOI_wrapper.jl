@@ -1,5 +1,17 @@
 # MOI wrapper
 
+"""
+    MOIEvaluator <: MOI.AbstractNLPEvaluator
+
+Bridge from a `ExaPF.AbstractNLPEvaluator` to a `MOI.AbstractNLPEvaluator`.
+
+## Attributes
+
+* `nlp::AbstractNLPEvaluator`: the underlying `ExaPF` problem.
+* `hash_x::UInt`: hash of the last evaluated variable `x`
+* `has_hess::Bool` (default: `false`): if `true`, pass a Hessian structure to MOI.
+
+"""
 mutable struct MOIEvaluator <: MOI.AbstractNLPEvaluator
     nlp::AbstractNLPEvaluator
     hash_x::UInt

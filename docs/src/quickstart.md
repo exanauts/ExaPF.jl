@@ -4,8 +4,8 @@ This page introduces the first steps to set up `ExaPF.jl`.
 We show how to load a power network instance and how to solve
 the power flow equations both on the CPU and on the GPU.
 
-### How to load a Matpower instance?
-We start by importing into `ExaPF` an instance specified in the Matpower format.
+### How to load a MATPOWER instance?
+We start by importing into `ExaPF` an instance specified in the MATPOWER format.
 
 First, you could load the package with
 ```julia-repl
@@ -21,7 +21,7 @@ julia> pglib_instance = "pglib_opf_case1354_pegase.m"
 `ExaPF.jl` allows you to load directly the instance as a `PowerNetwork`
 object:
 ```julia-repl
-julia> pf = PS.PowerNetwork(pglib_instance, 1)
+julia> pf = PS.PowerNetwork(pglib_instance)
 ```
 The different fields of the object `pf` specify the characteristics
 of the network. For instance, we could retrieve the number of buses
