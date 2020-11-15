@@ -294,7 +294,7 @@ function seed_kernel_gpu!(
 end
 
 """
-    seed_kernel!(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+    seed_kernel!
 
 Calling the GPU seeding kernel
 
@@ -416,7 +416,7 @@ end
     uncompress_kernel!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
-the GPU by calling the kernel [`_uncompress`](@ref).
+the GPU by calling the kernel [`uncompress_kernel_gpu!`](@ref).
 """
 function uncompress_kernel!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
     # CSR is row oriented: nmap is equal to number of rows

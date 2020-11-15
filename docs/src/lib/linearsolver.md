@@ -1,21 +1,17 @@
 ```@meta
-CurrentModule = ExaPF
-DocTestSetup = quote
-    using ExaPF
-end
-DocTestFilters = [r"ExaPF"]
+CurrentModule = ExaPF.LinearSolvers
 ```
 
 ## Description
 ```@docs
-ExaPF.LinearSolvers.AbstractPreconditioner
+AbstractPreconditioner
 ```
 
 ## API Reference
 ```@docs
-ExaPF.LinearSolvers.BlockJacobiPreconditioner
-ExaPF.LinearSolvers.update
-ExaPF.LinearSolvers.build_adjmatrix
-ExaPF.LinearSolvers.fillblock_gpu!
-ExaPF.LinearSolvers.fillP_gpu!
+BlockJacobiPreconditioner
+update
+build_adjmatrix
+fillblock_gpu!
+fillP_gpu!
 ```

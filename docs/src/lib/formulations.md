@@ -1,9 +1,5 @@
 ```@meta
 CurrentModule = ExaPF
-DocTestSetup = quote
-    using ExaPF
-end
-DocTestFilters = [r"ExaPF"]
 ```
 
 # Formulations

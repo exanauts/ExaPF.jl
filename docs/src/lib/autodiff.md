@@ -1,28 +1,23 @@
 ```@meta
-CurrentModule = ExaPF
-DocTestSetup = quote
-    using ExaPF
-    const AD = ExaPF.AD
-end
-DocTestFilters = [r"ExaPF"]
+CurrentModule = ExaPF.AutoDiff
 ```
 
 ## Description
 ```@docs
-AD.AbstractADFramework
+AbstractJacobian
 ```
 
 ## API Reference
 ```@docs
-AD.StateJacobianAD
-AD.DesignJacobianAD
-AD.myseed_kernel_cpu
-AD.myseed_kernel_gpu
-AD.seeding
-AD.getpartials_cpu
-AD.getpartials_gpu
-AD.getpartials
-AD._uncompress
-AD.uncompress!
-AD.residualJacobianAD!
+StateJacobian
+ControlJacobian
+seed_kernel_cpu!
+seed_kernel_gpu!
+seed_kernel!
+getpartials_kernel_cpu!
+getpartials_kernel_gpu!
+getpartials_kernel!
+uncompress_kernel_gpu!
+uncompress_kernel!
+residual_jacobian!
 ```
