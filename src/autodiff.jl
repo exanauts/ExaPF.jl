@@ -1,5 +1,5 @@
 
-module AD
+module AutoDiff
 
 using CUDA
 using CUDA.CUSPARSE
@@ -14,7 +14,7 @@ using ..ExaPF: Spmat, xzeros
 import Base: show
 
 """
-    AbstractADFramework
+    AbstractJacobian
 
 Automatic differentiation for the compressed Jacobians of the
 constraints `g(x,u)` with respect to the state `x` and the control `u`
@@ -24,9 +24,7 @@ TODO: Use dispatch to unify the code of the state and control Jacobian.
 This is currently not done because the abstraction of the indexing is not yet resolved.
 
 """
-abstract type AbstractADFramework end
-abstract type AbstractObjectiveAD <: AbstractADFramework end
-abstract type AbstractJacobianAD end
+abstract type AbstractJacobian end
 
 function _init_seed!(t1sseeds, coloring, ncolor, nmap)
     t1sseedvec = zeros(Float64, ncolor)
@@ -42,7 +40,7 @@ function _init_seed!(t1sseeds, coloring, ncolor, nmap)
 end
 
 """
-    StateJacobianAD
+    StateJacobian
 
 Creates an object for the state Jacobian
 
@@ -57,7 +55,7 @@ Creates an object for the state Jacobian
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianAD
+struct StateJacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
     J::SMT
     compressedJ::MT
     coloring::VI
@@ -69,7 +67,7 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianA
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t1svarx::SubD
-    function StateJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    function StateJacobian(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
         if F isa Array
@@ -95,7 +93,7 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianA
         nmap = size(map,1)
 
         # Used for sparsity detection with randomized inputs
-        function residualJacobian(V, Ybus, pv, pq)
+        function residual_jacobian(V, Ybus, pv, pq)
             n = size(V, 1)
             Ibus = Ybus*V
             diagV       = sparse(1:n, 1:n, V, n, n)
@@ -125,7 +123,7 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianA
         Vre = Float64.([i for i in 1:n])
         Vim = Float64.([i for i in n+1:2*n])
         V = Vre .+ 1im .* Vim
-        J = residualJacobian(V, Y, pv, pq)
+        J = residual_jacobian(V, Y, pv, pq)
         coloring = VI(matrix_colors(J))
         ncolor = size(unique(coloring),1)
         if F isa CuArray
@@ -154,7 +152,7 @@ struct StateJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianA
 end
 
 """
-    DesignJacobianAD
+    ControlJacobian
 
 Creates an object for the control Jacobian.
 
@@ -169,7 +167,7 @@ Creates an object for the control Jacobian.
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobianAD
+struct ControlJacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
     J::SMT
     compressedJ::MT
     coloring::VI
@@ -181,7 +179,7 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t1svarx::SubD
-    function DesignJacobianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    function ControlJacobian(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
         npbus = size(pinj, 1)
@@ -208,7 +206,7 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
         nmap = size(map,1)
 
         # Used for sparsity detection with randomized inputs
-        function residualJacobian(V, Ybus, pinj, qinj, ref, pv, pq)
+        function residual_jacobian(V, Ybus, pinj, qinj, ref, pv, pq)
             n = size(V, 1)
             Ibus = Ybus*V
             diagV       = sparse(1:n, 1:n, V, n, n)
@@ -235,7 +233,7 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
         Vre = Float64.([i for i in 1:n])
         Vim = Float64.([i for i in n+1:2*n])
         V = Vre .+ 1im .* Vim
-        J = residualJacobian(V, Y, pinj, qinj, ref, pv, pq)
+        J = residual_jacobian(V, Y, pinj, qinj, ref, pv, pq)
         coloring = VI(matrix_colors(J))
         ncolor = size(unique(coloring),1)
         if F isa CuArray
@@ -264,12 +262,12 @@ struct DesignJacobianAD{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
 end
 
 """
-    myseed_kernel_cpu
+    seed_kernel_cpu!
 
 Seeding on the CPU, not parallelized.
 
 """
-function myseed_kernel_cpu(
+function seed_kernel_cpu!(
     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
 ) where {T,V,N}
@@ -279,12 +277,12 @@ function myseed_kernel_cpu(
 end
 
 """
-    myseed_kernel_gpu
+    seed_kernel_gpu!
 
 Seeding on GPU parallelized over the `ncolor` number of duals
 
 """
-function myseed_kernel_gpu(
+function seed_kernel_gpu!(
     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
 ) where {T,V,N}
@@ -296,16 +294,16 @@ function myseed_kernel_gpu(
 end
 
 """
-    seeding(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+    seed_kernel!
 
 Calling the GPU seeding kernel
 
 """
-function seeding(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+function seed_kernel!(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
     nthreads = 256
     nblocks = div(nbus, nthreads, RoundUp)
     CUDA.@sync begin
-        @cuda threads=nthreads blocks=nblocks myseed_kernel_gpu(
+        @cuda threads=nthreads blocks=nblocks seed_kernel_gpu!(
             t1svarx,
             varx,
             t1sseeds,
@@ -314,36 +312,36 @@ function seeding(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, n
 end
 
 """
-    seeding(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+    seed_kernel!(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
 
 Calling the CPU seeding kernel
 
 """
-function seeding(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
-    myseed_kernel_cpu(t1svarx, varx, t1sseeds)
+function seed_kernel!(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+    seed_kernel_cpu!(t1svarx, varx, t1sseeds)
 end
 
 """
-    getpartials_cpu(compressedJ, t1sF)
+    getpartials_kernel_cpu!(compressedJ, t1sF)
 
-Extract the partials from the AD dual type on the CPU and put it in the
+Extract the partials from the AutoDiff dual type on the CPU and put it in the
 compressed Jacobian
 
 """
-function getpartials_cpu(compressedJ, t1sF)
+function getpartials_kernel_cpu!(compressedJ, t1sF)
     for i in 1:size(t1sF,1) # Go over outputs
         compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
     end
 end
 
 """
-    getpartials_gpu(compressedJ, t1sF)
+    getpartials_kernel_gpu!(compressedJ, t1sF)
 
-Extract the partials from the AD dual type on the GPU and put it in the
+Extract the partials from the AutoDiff dual type on the GPU and put it in the
 compressed Jacobian
 
 """
-function getpartials_gpu(compressedJ, t1sF)
+function getpartials_kernel_gpu!(compressedJ, t1sF)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
     for i in index:stride:size(t1sF, 1) # Go over outputs
@@ -354,16 +352,16 @@ function getpartials_gpu(compressedJ, t1sF)
 end
 
 """
-    getpartials(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
+    getpartials_kernel!(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
 
 Calling the GPU partial extraction kernel
 
 """
-function getpartials(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
+function getpartials_kernel!(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
     nthreads = 256
     nblocks = div(nbus, nthreads, RoundUp)
     CUDA.@sync begin
-        @cuda threads=nthreads blocks=nblocks getpartials_gpu(
+        @cuda threads=nthreads blocks=nblocks getpartials_kernel_gpu!(
             compressedJ,
             t1sF
         )
@@ -371,23 +369,23 @@ function getpartials(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
 end
 
 """
-    getpartials(compressedJ::Array{T, 2}, t1sF, nbus) where T
+    getpartials_kernel!(compressedJ::Array{T, 2}, t1sF, nbus) where T
 
-Calling the GPU partial extraction kernel
+Calling the CPU partial extraction kernel
 
 """
-function getpartials(compressedJ::Array{T, 2}, t1sF, nbus) where T
-    getpartials_cpu(compressedJ, t1sF)
+function getpartials_kernel!(compressedJ::Array{T, 2}, t1sF, nbus) where T
+    getpartials_kernel_cpu!(compressedJ, t1sF)
 end
 
 """
-    _uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
+    uncompress_kernel_gpu(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSR on
 the GPU. Only bitarguments are allowed for the kernel.
 (for GPU only) TODO: should convert to @kernel
 """
-function _uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
+function uncompress_kernel_gpu!(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     stride = blockDim().x * gridDim().x
     for i in index:stride:nmap
@@ -398,24 +396,15 @@ function _uncompress(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
 end
 
 """
-    uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
+    uncompress_kernel!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
 the CPU.
 """
-function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
+function uncompress_kernel!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
     # CSC is column oriented: nmap is equal to number of columns
     nmap = size(J, 2)
-    # TODO: coloring[i] leads to an out of bounds access here. Added the @assert here to observe.
-    if maximum(coloring) != size(compressedJ,1)
-        @show coloring
-        @show J.colptr
-        @show J.rowval
-        @show J.nzval
-        @show length(J.nzval)
-        @show size(J)
-        @assert(maximum(coloring) == size(compressedJ,1))
-    end
+    @assert(maximum(coloring) == size(compressedJ,1))
     for i in 1:nmap
         for j in J.colptr[i]:J.colptr[i+1]-1
             @inbounds J.nzval[j] = compressedJ[coloring[i], J.rowval[j]]
@@ -424,18 +413,18 @@ function uncompress!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
 end
 
 """
-    uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
+    uncompress_kernel!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
-the GPU by calling the kernel [`_uncompress`](@ref).
+the GPU by calling the kernel [`uncompress_kernel_gpu!`](@ref).
 """
-function uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
+function uncompress_kernel!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
     # CSR is row oriented: nmap is equal to number of rows
     nmap = size(J, 1)
     nthreads = 256
     nblocks = div(nmap, nthreads, RoundUp)
     CUDA.@sync begin
-        @cuda threads=nthreads blocks=nblocks _uncompress(
+        @cuda threads=nthreads blocks=nblocks uncompress_kernel_gpu!(
                 J.nzVal,
                 J.rowPtr,
                 J.colVal,
@@ -446,21 +435,21 @@ function uncompress!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
 end
 
 """
-    residualJacobianAD!(arrays::StateJacobianAD,
-                        residualFunction_polar!,
+    residual_jacobian!(arrays::StateJacobian,
+                        residual_polar!,
                         v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                         timer = nothing)
 
-Update the sparse Jacobian entries using AD. No allocations are taking place in this function.
+Update the sparse Jacobian entries using AutoDiff. No allocations are taking place in this function.
 
-* `arrays::StateJacobianAD`: Factory created Jacobian object to update
-* `residualFunction_polar`: Primal function
+* `arrays::StateJacobian`: Factory created Jacobian object to update
+* `residual_polar`: Primal function
 * `v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both
   active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
 
 """
-function residualJacobianAD!(arrays::StateJacobianAD,
-                             residualFunction_polar!,
+function residual_jacobian!(arrays::StateJacobian,
+                             residual_polar!,
                              v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                              timer = nothing)
     @timeit timer "Before" begin
@@ -478,11 +467,11 @@ function residualJacobianAD!(arrays::StateJacobianAD,
         end
     end
     @timeit timer "Seeding" begin
-        seeding(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
+        seed_kernel!(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
     end
 
     @timeit timer "Function" begin
-        residualFunction_polar!(
+        residual_polar!(
             arrays.t1sF,
             view(arrays.t1sx, 1:nv_m),
             view(arrays.t1sx, nv_m+1:nv_m+nv_a),
@@ -493,29 +482,29 @@ function residualJacobianAD!(arrays::StateJacobianAD,
     end
 
     @timeit timer "Get partials" begin
-        getpartials(arrays.compressedJ, arrays.t1sF, nbus)
+        getpartials_kernel!(arrays.compressedJ, arrays.t1sF, nbus)
     end
     @timeit timer "Uncompress" begin
-        uncompress!(arrays.J, arrays.compressedJ, arrays.coloring)
+        uncompress_kernel!(arrays.J, arrays.compressedJ, arrays.coloring)
     end
     return nothing
 end
 
 """
-    residualJacobianAD!(arrays::DesignJacobianAD,
-                        residualFunction_polar!,
+    residual_jacobian!(arrays::ControlJacobian,
+                        residual_polar!,
                         v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                         timer = nothing)
 
-Update the sparse Jacobian entries using AD. No allocations are taking place in this function.
+Update the sparse Jacobian entries using AutoDiff. No allocations are taking place in this function.
 
-* `arrays::DesignJacobianAD`: Factory created Jacobian object to update
-* `residualFunction_polar`: Primal function
+* `arrays::ControlJacobian`: Factory created Jacobian object to update
+* `residual_polar`: Primal function
 * `v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
 
 """
-function residualJacobianAD!(arrays::DesignJacobianAD,
-                             residualFunction_polar!,
+function residual_jacobian!(arrays::ControlJacobian,
+                             residual_polar!,
                              v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                              timer = nothing)
 
@@ -534,10 +523,10 @@ function residualJacobianAD!(arrays::DesignJacobianAD,
         end
     end
     @timeit timer "Seeding" begin
-        seeding(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
+        seed_kernel!(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
     end
     @timeit timer "Function" begin
-        residualFunction_polar!(
+        residual_polar!(
             arrays.t1sF,
             view(arrays.t1sx, 1:nv_m),
             v_a,
@@ -548,27 +537,18 @@ function residualJacobianAD!(arrays::DesignJacobianAD,
     end
 
     @timeit timer "Get partials" begin
-        getpartials(arrays.compressedJ, arrays.t1sF, nbus)
+        getpartials_kernel!(arrays.compressedJ, arrays.t1sF, nbus)
     end
     @timeit timer "Uncompress" begin
         # Uncompress matrix. Sparse matrix elements have different names with CUDA
-        uncompress!(arrays.J, arrays.compressedJ, arrays.coloring)
+        uncompress_kernel!(arrays.J, arrays.compressedJ, arrays.coloring)
     end
 end
 
-function Base.show(io::IO, ad::AbstractJacobianAD)
-    ncolor = size(unique(ad.coloring), 1)
+function Base.show(io::IO, jacobian::AbstractJacobian)
+    ncolor = size(unique(jacobian.coloring), 1)
     print(io, "Number of Jacobian colors: ", ncolor)
 end
 
-struct ObjectiveAD{VT}
-    ∇fₓ::VT
-    ∇fᵤ::VT
-    ∂pg::VT
-    ∂vm::VT
-    ∂va::VT
-    jvₓ::VT
-    jvᵤ::VT
-end
 
 end

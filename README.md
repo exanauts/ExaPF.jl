@@ -12,7 +12,7 @@ Its main features are:
 
 * Using [CUDA.jl](https://juliagpu.gitlab.io/CUDA.jl/) CuArrays arrays for generating CUDA kernels using the broadcast '.' operator.
 * Using [ForwardDiff.jl](https://github.com/JuliaDiff/ForwardDiff.jl) and Jacobian coloring to generate the compressed Jacobian of the PF equations. The Jacobian evaluation is taking place fully on the GPU.
-* Preconditioned BICGSTAB implemented in CuArrays as the iterative solver.
+* Preconditioned BICGSTAB with support for [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl).
 * A block Jacobi preconditioner that updates on the GPU.
 
 This code will serve as the basis for OPF on GPUs using the reduced gradient method. A similar abstraction than CuArrays will be used to port the code to AMD ROCm and Intel oneAPI.

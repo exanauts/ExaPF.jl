@@ -25,7 +25,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
-    jx, ju = ExaPF.init_ad_factory(polar, cache)
+    jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
     convergence = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
     ExaPF.get!(polar, State(), x, cache)
@@ -51,7 +51,7 @@ end
     p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
-    jx, ju = ExaPF.init_ad_factory(polar, cache)
+    jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
     ExaPF.get!(polar, State(), x, cache)
@@ -76,7 +76,7 @@ end
     p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
-    jx, ju = ExaPF.init_ad_factory(polar, cache)
+    jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
     ExaPF.get!(polar, State(), x, cache)
@@ -99,7 +99,7 @@ end
     p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
-    jx, ju = ExaPF.init_ad_factory(polar, cache)
+    jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
     ExaPF.get!(polar, State(), x, cache)

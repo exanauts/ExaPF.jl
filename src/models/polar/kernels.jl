@@ -15,7 +15,7 @@ function residualFunction(V, Ybus, Sbus, pv, pq)
     return F
 end
 
-function residualJacobian(V, Ybus, pv, pq)
+function residual_jacobian(V, Ybus, pv, pq)
     n = size(V, 1)
     Ibus = Ybus*V
     diagV       = sparse(1:n, 1:n, V, n, n)
@@ -45,7 +45,7 @@ function _state_jacobian(polar::PolarForm)
     Vre = rand(n)
     Vim = rand(n)
     V = Vre .+ 1im .* Vim
-    return residualJacobian(V, Y, pv, pq)
+    return residual_jacobian(V, Y, pv, pq)
 end
 _sparsity_pattern(polar::PolarForm) = findnz(_state_jacobian(polar))
 
@@ -112,7 +112,7 @@ end
     end
 end
 
-function residualFunction_polar!(F, v_m, v_a,
+function residual_polar!(F, v_m, v_a,
                                  ybus_re, ybus_im,
                                  pinj, qinj, pv, pq, nbus)
     npv = length(pv)

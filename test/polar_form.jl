@@ -11,7 +11,7 @@ using SparseArrays
 using Test
 using TimerOutputs
 using ExaPF
-import ExaPF: PowerSystem, AD
+import ExaPF: PowerSystem, AutoDiff
 
 const PS = PowerSystem
 
@@ -57,7 +57,7 @@ const PS = PowerSystem
         @testset "Polar model API" begin
             xₖ = copy(x0)
             # Init AD factory
-            jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
+            jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
             # Test powerflow with cache signature
             conv = powerflow(polar, jx, cache, tol=tolerance)

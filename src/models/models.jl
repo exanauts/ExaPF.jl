@@ -120,7 +120,7 @@ function initial end
 
 """
     powerflow(form::AbstractFormulation,
-              jacobian::AD.StateJacobianAD,
+              jacobian::AutoDiff.StateJacobian,
               buffer::AbstractNetworkBuffer;
               kwargs...) where VT <: AbstractVector
 
@@ -136,7 +136,7 @@ irations `maxiter` are reached.
 ## Arguments
 
 * `form::AbstractFormulation`: formulation of the power flow equation
-* `jacobian::AD.StateJacobianAD`: Jacobian
+* `jacobian::AutoDiff.StateJacobian`: Jacobian
 * `buffer::AbstractNetworkBuffer`: buffer storing current state `x` and control `u`
 
 ## Optional arguments

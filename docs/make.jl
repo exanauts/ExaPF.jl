@@ -1,3 +1,8 @@
+using Pkg
+
+Pkg.add(PackageSpec(path=joinpath(dirname(@__FILE__), "..")))
+Pkg.instantiate()
+
 using Documenter, ExaPF
 
 makedocs(
@@ -6,6 +11,8 @@ makedocs(
         prettyurls = Base.get(ENV, "CI", nothing) == "true",
         mathengine = Documenter.KaTeX()
     ),
+    modules = [ExaPF],
+    repo = "https://github.com/exanauts/ExaPF.jl/blob/{commit}{path}#{line}",
     strict = true,
     pages = [
         "Home" => "index.md",
