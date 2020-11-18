@@ -137,8 +137,6 @@ struct StateJacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
         _init_seed!(t1sseeds, coloring, ncolor, nmap)
 
         compressedJ = MT(zeros(Float64, ncolor, nmap))
-        nthreads=256
-        nblocks=ceil(Int64, nmap/nthreads)
         # Views
         varx = view(x, map)
         t1svarx = view(t1sx, map)
@@ -183,7 +181,6 @@ struct ControlJacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
         nv_a = size(v_a, 1)
         npbus = size(pinj, 1)
         nref = size(ref, 1)
-        # ncolor = size(unique(coloring),1)
         if F isa Array
             VI = Vector{Int}
             VT = Vector{Float64}
@@ -241,14 +238,11 @@ struct ControlJacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
         x = xzeros(VT, npbus + nv_a)
         t1sx = A{t1s{ncolor}}(x)
-        # t1sF = T{t1s{ncolor}}(undef, nmap)
         t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
         t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
         _init_seed!(t1sseeds, coloring, ncolor, nmap)
 
         compressedJ = MT(zeros(Float64, ncolor, length(F)))
-        nthreads=256
-        nblocks=ceil(Int64, nmap/nthreads)
         # Views
         varx = view(x, map)
         t1svarx = view(t1sx, map)
@@ -378,7 +372,7 @@ function getpartials_kernel!(compressedJ::Array{T, 2}, t1sF, nbus) where T
 end
 
 """
-    uncompress_kernel_gpu(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
+    uncompress_kernel_gpu!(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSR on
 the GPU. Only bitarguments are allowed for the kernel.
