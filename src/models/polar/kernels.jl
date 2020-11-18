@@ -1,11 +1,11 @@
 # Implement kernels for polar formulation
 
 """
-residualFunction
+power_balance
 
 Assembly residual function for N-R power flow
 """
-function residualFunction(V, Ybus, Sbus, pv, pq)
+function power_balance(V, Ybus, Sbus, pv, pq)
     # form mismatch vector
     mis = V .* conj(Ybus * V) - Sbus
     # form residual vector

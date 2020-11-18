@@ -1,6 +1,4 @@
 
-import Base: show
-
 """
     AbstractNLPEvaluator
 

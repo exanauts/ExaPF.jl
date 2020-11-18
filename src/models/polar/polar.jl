@@ -175,9 +175,11 @@ function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
 
     F = buffer.balance
     fill!(F, 0.0)
-    residual_polar!(F, Vm, Va,
-                            polar.ybus_re, polar.ybus_im,
-                            pbus, qbus, pv, pq, nbus)
+    residual_polar!(
+        F, Vm, Va,
+        polar.ybus_re, polar.ybus_im,
+        pbus, qbus, pv, pq, nbus
+    )
 end
 
 # TODO: find better naming

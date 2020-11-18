@@ -90,7 +90,7 @@ const PS = PowerSystem
     @testset "Computing residuals" begin
         F = zeros(Float64, npv + 2*npq)
         # First compute a reference value for resisual computed at V
-        F♯ = ExaPF.residualFunction(V, Ybus, Sbus, pv, pq)
+        F♯ = ExaPF.power_balance(V, Ybus, Sbus, pv, pq)
         # residual_polar! uses only binary types as this function is meant
         # to be deported on the GPU
         ExaPF.residual_polar!(F, Vm, Va,
