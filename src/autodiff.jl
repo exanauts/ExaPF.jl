@@ -7,7 +7,6 @@ using ForwardDiff
 using KernelAbstractions
 using SparseArrays
 using TimerOutputs
-using SparsityDetection
 using SparseDiffTools
 using ..ExaPF: Spmat, xzeros
 

@@ -170,7 +170,7 @@ function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    (y[:], status) = Krylov.bicgstab(J, x, N=P)
+    (y[:], status) = Krylov.bicgstab(J, x, N=P, atol=1e-10, verbose=false)
     return length(status.residuals)
 end
 

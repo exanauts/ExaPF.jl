@@ -102,7 +102,7 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
                      solver=nlp.linear_solver, verbose_level=verbose_level)
     if !conv.has_converged
-        error("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
+        @warn("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
         return conv
     end
     ∇gₓ = nlp.autodiff.Jgₓ.J

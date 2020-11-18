@@ -3,7 +3,6 @@ using CUDA.CUSPARSE
 using Printf
 using FiniteDiff
 using ForwardDiff
-using BenchmarkTools
 using KernelAbstractions
 using LinearAlgebra
 using Random
