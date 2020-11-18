@@ -90,8 +90,8 @@ Return the bounds attached to the variable `var`.
 
     bounds(form::AbstractFormulation, func::Function)
 
-Return the lower and upper bounds attached to a given constraint
-functional.
+Return a tuple of vectors `(lb, ub)` specifying the admissible range
+of the constraints specified by the function `cons_func`.
 
 ## Examples
 
@@ -182,14 +182,6 @@ Get number of constraints specified by the function `cons_func`
 in the formulation `form`.
 """
 function size_constraint end
-
-"""
-    bounds(form::AbstractFormulation, cons_func::Function)
-
-Return a tuple of vectors `(lb, ub)` specifying the admissible range
-of the constraints specified by the function `cons_func`.
-"""
-function bounds end
 
 """
     state_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
