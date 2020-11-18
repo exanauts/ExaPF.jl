@@ -281,7 +281,7 @@ function Base.show(io::IO, nlp::ReducedSpaceEvaluator)
     println(io, "    * #cons: ", m)
     println(io, "    * constraints:")
     for cons in nlp.constraints
-        println("        - ", cons)
+        println(io, "        - ", cons)
     end
     print(io, "    * linear solver: ", nlp.linear_solver)
 end
