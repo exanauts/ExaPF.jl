@@ -175,9 +175,11 @@ function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
 
     F = buffer.balance
     fill!(F, 0.0)
-    residual_polar!(F, Vm, Va,
-                            polar.ybus_re, polar.ybus_im,
-                            pbus, qbus, pv, pq, nbus)
+    residual_polar!(
+        F, Vm, Va,
+        polar.ybus_re, polar.ybus_im,
+        pbus, qbus, pv, pq, nbus
+    )
 end
 
 # TODO: find better naming
@@ -305,7 +307,7 @@ function powerflow(
 
         # Find descent direction
         if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
-            LinearSolvers.update!(solver, J)
+            @timeit TIMER "Preconditioner" LinearSolvers.update!(solver, J)
         end
         @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
         push!(linsol_iters, n_iters)
@@ -353,6 +355,7 @@ function powerflow(
     # Timer outputs display
     if verbose_level >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
+        reset_timer!(TIMER)
         println("")
     end
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))

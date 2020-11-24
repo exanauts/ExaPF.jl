@@ -42,6 +42,7 @@ NumberOfControl
 
 ```@docs
 powerflow
+power_balance!
 
 ```
 

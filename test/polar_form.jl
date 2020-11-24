@@ -3,7 +3,6 @@ using CUDA.CUSPARSE
 using Printf
 using FiniteDiff
 using ForwardDiff
-using BenchmarkTools
 using KernelAbstractions
 using LinearAlgebra
 using Random
@@ -29,7 +28,7 @@ const PS = PowerSystem
     @testset "Initiate polar formulation on device $device" for (device, M) in ITERATORS
         polar = PolarForm(pf, device)
         # Test printing
-        println(polar)
+        println(devnull, polar)
 
         b = bounds(polar, State())
         b = bounds(polar, Control())

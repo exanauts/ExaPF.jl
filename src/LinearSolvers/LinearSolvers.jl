@@ -7,13 +7,12 @@ using Krylov
 using LinearAlgebra
 using Printf
 using SparseArrays
-using TimerOutputs
 
-import ..ExaPF: xnorm, TIMER, csclsvqr!
+import ..ExaPF: xnorm, csclsvqr!
 import Base: show
 
 export bicgstab, list_solvers
-export DirectSolver, BICGSTAB, EigenBICGSTAB
+export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
 export get_transpose
 
 @enum(
@@ -70,7 +69,7 @@ end
 get_transpose(::DirectSolver, M::CUDA.CUSPARSE.CuSparseMatrixCSR) = CuSparseMatrixCSC(M)
 
 function update!(solver::AbstractIterativeLinearSolver, J)
-    @timeit solver.timer "Preconditioner"  update(J, solver.precond, solver.timer)
+    update(J, solver.precond)
 end
 
 struct BICGSTAB <: AbstractIterativeLinearSolver
@@ -78,9 +77,8 @@ struct BICGSTAB <: AbstractIterativeLinearSolver
     maxiter::Int
     tol::Float64
     verbose::Bool
-    timer::TimerOutput
 end
-BICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = BICGSTAB(precond, maxiter, tol, verbose, TIMER)
+BICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = BICGSTAB(precond, maxiter, tol, verbose)
 function ldiv!(solver::BICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -99,9 +97,8 @@ struct EigenBICGSTAB <: AbstractIterativeLinearSolver
     maxiter::Int
     tol::Float64
     verbose::Bool
-    timer::TimerOutput
 end
-EigenBICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = EigenBICGSTAB(precond, maxiter, tol, verbose, TIMER)
+EigenBICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = EigenBICGSTAB(precond, maxiter, tol, verbose)
 function ldiv!(solver::EigenBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -119,9 +116,8 @@ end
 struct RefBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
     verbose::Bool
-    timer::TimerOutput
 end
-RefBICGSTAB(precond; verbose=true) = RefBICGSTAB(precond, verbose, TIMER)
+RefBICGSTAB(precond; verbose=true) = RefBICGSTAB(precond, verbose)
 function ldiv!(solver::RefBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -134,9 +130,8 @@ struct RefGMRES <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
     restart::Int
     verbose::Bool
-    timer::TimerOutput
 end
-RefGMRES(precond; restart=4, verbose=true) = RefGMRES(precond, restart, verbose, TIMER)
+RefGMRES(precond; restart=4, verbose=true) = RefGMRES(precond, restart, verbose)
 function ldiv!(solver::RefGMRES,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -149,9 +144,8 @@ struct DQGMRES <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
     memory::Int
     verbose::Bool
-    timer::TimerOutput
 end
-DQGMRES(precond; memory=4, verbose=false) = DQGMRES(precond, memory, verbose, TIMER)
+DQGMRES(precond; memory=4, verbose=false) = DQGMRES(precond, memory, verbose)
 function ldiv!(solver::DQGMRES,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -163,14 +157,13 @@ end
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
     verbose::Bool
-    timer::TimerOutput
 end
-KrylovBICGSTAB(precond; verbose=false) = KrylovBICGSTAB(precond, verbose, TIMER)
+KrylovBICGSTAB(precond; verbose=false) = KrylovBICGSTAB(precond, verbose)
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    (y[:], status) = Krylov.bicgstab(J, x, N=P)
+    (y[:], status) = Krylov.bicgstab(J, x, N=P, atol=1e-10, verbose=false)
     return length(status.residuals)
 end
 
