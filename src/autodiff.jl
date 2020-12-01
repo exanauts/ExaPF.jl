@@ -8,7 +8,7 @@ using KernelAbstractions
 using SparseArrays
 using TimerOutputs
 using SparseDiffTools
-using ..ExaPF: Spmat, xzeros
+using ..ExaPF: Spmat, xzeros, State, Control
 
 import Base: show
 
@@ -56,7 +56,7 @@ Creates an object for the Jacobian
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} 
+struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
     J::SMT
     compressedJ::MT
     coloring::VI
@@ -103,14 +103,19 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
         Vre = Float64.([i for i in 1:n])
         Vim = Float64.([i for i in n+1:2*n])
         V = Vre .+ 1im .* Vim
-        J = structure.sparsity(V, Y, ref, pv, pq)
+        if isa(type, StateJacobian)
+            variable = State()
+        else
+            variable = Control()
+        end
+        J = structure.sparsity(variable, V, Y, pv, pq, ref)
         coloring = VI(matrix_colors(J))
         ncolor = size(unique(coloring),1)
         if F isa CuArray
             J = CuSparseMatrixCSR(J)
         end
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-        if isa(type, StateJacobian) 
+        if isa(type, StateJacobian)
             x = VT(zeros(Float64, nv_m + nv_a))
             t1sx = A{t1s{ncolor}}(x)
             t1sF = A{t1s{ncolor}}(zeros(Float64, nmap))
@@ -119,7 +124,7 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
             compressedJ = MT(zeros(Float64, ncolor, nmap))
             varx = view(x, map)
             t1svarx = view(t1sx, map)
-        elseif isa(type, ControlJacobian) 
+        elseif isa(type, ControlJacobian)
             x = VT(zeros(Float64, npbus + nv_a))
             t1sx = A{t1s{ncolor}}(x)
             t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
@@ -333,7 +338,7 @@ function residual_jacobian!(arrays::Jacobian,
                              type::AbstractJacobian)
     nvbus = length(v_m)
     ninj = length(pinj)
-    if isa(type, StateJacobian) 
+    if isa(type, StateJacobian)
         arrays.x[1:nvbus] .= v_m
         arrays.x[nvbus+1:2*nvbus] .= v_a
         arrays.t1sx .= arrays.x
