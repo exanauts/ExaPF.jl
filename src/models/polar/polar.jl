@@ -35,6 +35,8 @@ struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
 end
 
 include("kernels.jl")
+include("gradients.jl")
+include("hessians.jl")
 include("getters.jl")
 include("adjoints.jl")
 include("constraints.jl")
@@ -124,47 +126,16 @@ function PolarForm(pf::PS.PowerNetwork, device)
     u_max[nref+1:nref+npv] .= p_max[gpv_to_gen]
 
     indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen)
-    function state_jacobian(V, Ybus, ref, pv, pq)
-        n = size(V, 1)
-        Ibus = Ybus*V
-        diagV       = sparse(1:n, 1:n, V, n, n)
-        diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
-        diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
-
-        dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-        dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
-
-        j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-        j12 = real(dSbus_dVm[[pv; pq], pq])
-        j21 = imag(dSbus_dVa[pq, [pv; pq]])
-        j22 = imag(dSbus_dVm[pq, pq])
-
-        J = [j11 j12; j21 j22]
-    end
     nvbus = length(pf.vbus)
     mappv = [i + nvbus for i in idx_pv]
     mappq = [i + nvbus for i in idx_pq]
     # Ordering for x is (θ_pv, θ_pq, v_pq)
     statemap = vcat(mappv, mappq, idx_pq)
-    state_jacobian_structure = StateJacobianStructure(state_jacobian, IT(statemap))
+    state_jacobian_structure = StateJacobianStructure(residual_jacobian, IT(statemap))
 
-    function control_jacobian(V, Ybus, ref, pv, pq)
-        n = size(V, 1)
-        Ibus = Ybus*V
-        diagV       = sparse(1:n, 1:n, V, n, n)
-        diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
-        diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
-
-        dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-        dSbus_dpbus = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-
-        j11 = real(dSbus_dVm[[pv; pq], [ref; pv; pv]])
-        j21 = imag(dSbus_dVm[pq, [ref; pv; pv]])
-        J = [j11; j21]
-    end
     mappv =  [i + nvbus for i in idx_pv]
     controlmap = vcat(idx_ref, mappv, idx_pv)
-    control_jacobian_structure = ControlJacobianStructure{IT}(control_jacobian, IT(controlmap))
+    control_jacobian_structure = ControlJacobianStructure{IT}(residual_jacobian, IT(controlmap))
 
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
