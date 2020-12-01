@@ -14,6 +14,7 @@ makedocs(
     modules = [ExaPF],
     repo = "https://github.com/exanauts/ExaPF.jl/blob/{commit}{path}#{line}",
     strict = true,
+    checkdocs = :exports,
     pages = [
         "Home" => "index.md",
         "Quick start" => "quickstart.md",
