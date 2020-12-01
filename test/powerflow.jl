@@ -19,7 +19,7 @@ import ExaPF: PowerSystem
 
     @testset "Deport computation on device $device" for device in DEVICES
         polar = PolarForm(pf, device)
-        jac = ExaPF._state_jacobian(polar)
+        jac = ExaPF.residual_jacobian(State(), polar)
         precond = ExaPF.LinearSolvers.BlockJacobiPreconditioner(jac, npartitions, device)
         # Retrieve initial state of network
         x0 = ExaPF.initial(polar, State())

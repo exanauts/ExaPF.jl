@@ -24,49 +24,6 @@ function power_balance(V, Ybus, Sbus, pv, pq)
 end
 
 """
-    residual_jacobian(V, Ybus, pv, pq)
-
-Compute the Jacobian w.r.t. the state `x` of the power
-balance function [`power_balance`](@ref).
-
-# Note
-Code adapted from MATPOWER.
-"""
-function residual_jacobian(V, Ybus, ref, pv, pq)
-    n = size(V, 1)
-    Ibus = Ybus*V
-    diagV       = sparse(1:n, 1:n, V, n, n)
-    diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
-    diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
-
-    dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-    dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
-
-    j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-    j12 = real(dSbus_dVm[[pv; pq], pq])
-    j21 = imag(dSbus_dVa[pq, [pv; pq]])
-    j22 = imag(dSbus_dVm[pq, pq])
-
-    J = [j11 j12; j21 j22]
-end
-
-function _state_jacobian(polar::PolarForm)
-    pf = polar.network
-    ref = polar.network.ref
-    pv = polar.network.pv
-    pq = polar.network.pq
-    n = PS.get(pf, PS.NumberOfBuses())
-
-    Y = pf.Ybus
-    # Randomized inputs
-    Vre = rand(n)
-    Vim = rand(n)
-    V = Vre .+ 1im .* Vim
-    return residual_jacobian(V, Y, ref, pv, pq)
-end
-_sparsity_pattern(polar::PolarForm) = findnz(_state_jacobian(polar))
-
-"""
     get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
 
 Computes the power injection at node `fr`.

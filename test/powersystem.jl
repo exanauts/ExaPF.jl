@@ -103,7 +103,7 @@ const PS = PowerSystem
     @testset "Computing Jacobian of residuals" begin
         F = zeros(Float64, npv + 2*npq)
         # Compute Jacobian at point V manually and use it as reference
-        J = ExaPF.residual_jacobian(V, Ybus, ref, pv, pq)
+        J = ExaPF.residual_jacobian(State(), V, Ybus, pv, pq, ref)
         J♯ = copy(J)
         # Build the Jacobian structure
         mappv = [i + nbus for i in pv]
