@@ -355,7 +355,6 @@ function powerflow(
     # Timer outputs display
     if verbose_level >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
-        reset_timer!(TIMER)
         println("")
     end
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
