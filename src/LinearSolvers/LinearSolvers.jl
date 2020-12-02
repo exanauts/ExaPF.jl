@@ -31,6 +31,15 @@ include("bicgstab_eigen.jl")
 abstract type AbstractLinearSolver end
 abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
 
+"""
+    list_solvers(::KernelAbstractions.Device)
+
+List linear solvers available on current device. Currently,
+only `CPU()` and `CUDADevice()` are supported.
+
+"""
+function list_solvers end
+
 get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 
 """
@@ -46,6 +55,15 @@ Solve the linear system `J * y = Fx
 """
 function ldiv! end
 
+"""
+    DirectSolver <: AbstractLinearSolver
+
+Solve linear system ``A * x = y`` with direct linear algebra.
+
+* On the CPU, `DirectSolver` uses UMFPACK to solve the linear system
+* On CUDA GPU, `DirectSolver` redirects the resolution to the method `CUSOLVER.csrlsvqr`
+
+"""
 struct DirectSolver <: AbstractLinearSolver end
 DirectSolver(precond) = DirectSolver()
 function ldiv!(::DirectSolver,
@@ -72,6 +90,13 @@ function update!(solver::AbstractIterativeLinearSolver, J)
     update(J, solver.precond)
 end
 
+"""
+    BICGSTAB <: AbstractIterativeLinearSolver
+    BICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false)
+
+Custom BICGSTAB implementation to solve iteratively the linear system
+``A * x = y``.
+"""
 struct BICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
     maxiter::Int
@@ -92,6 +117,13 @@ function ldiv!(solver::BICGSTAB,
     return n_iters
 end
 
+"""
+    EigenBICGSTAB <: AbstractIterativeLinearSolver
+    EigenBICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false)
+
+Julia's port of Eigen's BICGSTAB to solve iteratively the linear system
+``A * x = y``.
+"""
 struct EigenBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
     maxiter::Int
@@ -154,16 +186,26 @@ function ldiv!(solver::DQGMRES,
     return length(status.residuals)
 end
 
+"""
+    KrylovBICGSTAB <: AbstractIterativeLinearSolver
+    KrylovBICGSTAB(precond; verbose=false, rtol=1e-10, atol=1e-10)
+
+Wrap `Krylov.jl` BICGSTAB algorithm to solve iteratively the linear system
+``A * x = y``.
+"""
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
     verbose::Bool
 end
-KrylovBICGSTAB(precond; verbose=false) = KrylovBICGSTAB(precond, verbose)
+KrylovBICGSTAB(precond; verbose=false, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(precond, verbose)
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    (y[:], status) = Krylov.bicgstab(J, x, N=P, atol=1e-10, verbose=false)
+    (y[:], status) = Krylov.bicgstab(J, x, N=P,
+                                     atol=solver.atol,
+                                     rtol=solver.rtol,
+                                     verbose=solver.verbose)
     return length(status.residuals)
 end
 
