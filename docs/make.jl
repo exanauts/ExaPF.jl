@@ -1,6 +1,7 @@
 using Pkg
 
-Pkg.add(PackageSpec(path=joinpath(dirname(@__FILE__), "..")))
+Pkg.develop(PackageSpec(path=joinpath(dirname(@__FILE__), "..")))
+# when first running instantiate
 Pkg.instantiate()
 
 using Documenter, ExaPF
