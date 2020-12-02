@@ -196,8 +196,10 @@ Wrap `Krylov.jl` BICGSTAB algorithm to solve iteratively the linear system
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
     verbose::Bool
+    atol::Float64
+    rtol::Float64
 end
-KrylovBICGSTAB(precond; verbose=false, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(precond, verbose)
+KrylovBICGSTAB(precond; verbose=false, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(precond, verbose, atol, rtol)
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -210,7 +212,7 @@ function ldiv!(solver::KrylovBICGSTAB,
 end
 
 
-list_solvers(::CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver]
+list_solvers(::CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
 list_solvers(::CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
 
 end
