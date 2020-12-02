@@ -1,4 +1,4 @@
-export PolarForm, get, bounds, powerflow
+export PolarForm, bounds, powerflow
 export State, Control, Parameters, NumberOfState, NumberOfControl
 
 """
@@ -62,6 +62,10 @@ struct Parameters <: AbstractVariable end
 
 All physical variables describing the current physical state
 of the underlying network.
+
+`PhysicalState` variables are encoded in a `AbstractNetworkBuffer`,
+storing all the physical values needed to describe the current
+state of the network.
 
 """
 struct PhysicalState <: AbstractVariable end

@@ -49,6 +49,15 @@ NumberOfSlackBuses
 BaseMVA
 ```
 
+Query the indexing of the different elements in a given network:
+```@docs
+PVIndexes
+PQIndexes
+SlackIndexes
+GeneratorIndexes
+
+```
+
 ### Network values
 
 ```@docs

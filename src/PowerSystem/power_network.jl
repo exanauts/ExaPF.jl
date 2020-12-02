@@ -174,9 +174,8 @@ end
 """
     get_costs_coefficients(pf::PowerNetwork)
 
-Return coefficients for costs function
+Return coefficients for costs function.
 
-TODO: how to deal with piecewise polynomial function?
 """
 function get_costs_coefficients(pf::PowerNetwork)
     # indexes

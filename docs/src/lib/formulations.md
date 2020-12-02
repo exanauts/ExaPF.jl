@@ -20,6 +20,7 @@ AbstractVariable
 State
 Control
 Parameters
+PhysicalState
 
 ```
 
@@ -35,6 +36,12 @@ initial
 AbstractFormAttribute
 NumberOfState
 NumberOfControl
+
+```
+`ExaPF` extends `Base.get` to query the different attributes
+of a model:
+```@docs
+get
 
 ```
 
@@ -68,5 +75,22 @@ is_constraint
 size_constraint
 bounds
 
+```
+
+### Utils
+
+To ease the integration, the following functions have been
+imported from MATPOWER. Note that these functions work
+exclusively on the CPU.
+
+```@docs
+power_balance
+residual_jacobian
+
+```
+
+```@docs
+get_power_injection
+get_react_injection
 ```
 
