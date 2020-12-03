@@ -37,10 +37,10 @@ struct PowerNetwork <: AbstractPowerSystem
         if data_format == 0
             println("Reading PSSE format")
             data_raw = ParsePSSE.parse_raw(datafile)
-            data, bus_id_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
+            data = ParsePSSE.raw_to_exapf(data_raw)
         elseif data_format == 1
             data_mat = ParseMAT.parse_mat(datafile)
-            data, bus_id_to_indexes = ParseMAT.mat_to_exapf(data_mat)
+            data = ParseMAT.mat_to_exapf(data_mat)
         end
         # Parsed data indexes
         BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -50,6 +50,8 @@ struct PowerNetwork <: AbstractPowerSystem
         bus = data["bus"]
         gen = data["gen"]
         SBASE = data["baseMVA"][1]
+
+        bus_id_to_indexes = get_bus_id_to_indexes(data["bus"])
 
         # size of the system
         nbus = size(bus, 1)
@@ -223,9 +225,9 @@ function get_costs_coefficients(pf::PowerNetwork)
 
         # polynomial coefficients
         # TODO: currently scale by baseMVA. Is it a good idea?
-        c0 = cost_data[i, COST][3]
-        c1 = cost_data[i, COST][2] * baseMVA
-        c2 = cost_data[i, COST][1] * baseMVA^2
+        c0 = cost_data[i, COST+2]
+        c1 = cost_data[i, COST+1] * baseMVA
+        c2 = cost_data[i, COST] * baseMVA^2
         coefficients[i, :] .= (bustype, c0, c1, c2)
     end
     return coefficients

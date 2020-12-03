@@ -14,7 +14,7 @@ const PS = PowerSystem
     to = TimerOutputs.TimerOutput()
     datafile = joinpath(dirname(@__FILE__), "..", "data", local_case)
     data_raw = ParsePSSE.parse_raw(datafile)
-    data, bus_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
+    data = ParsePSSE.raw_to_exapf(data_raw)
 
     # Parsed data indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -24,6 +24,8 @@ const PS = PowerSystem
     bus = data["bus"]
     gen = data["gen"]
     SBASE = data["baseMVA"][1]
+
+    bus_to_indexes = PS.get_bus_id_to_indexes(bus)
     nbus = size(bus, 1)
 
     # obtain V0 from raw data
