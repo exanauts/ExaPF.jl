@@ -229,6 +229,34 @@ v_min, v_max = bounds(pf, Buses(), VoltageMagnitude())
 """
 function bounds end
 
+# Utils
+function get_bus_id_to_indexes(bus)
+    BUS_I = IndexSet.idx_bus()[1]
+    nbus = size(bus, 1)
+
+    bus_id_to_indexes = Dict{Int,Int}()
+    for i in 1:nbus
+        busn = bus[i, BUS_I]
+        bus_id_to_indexes[busn] = i
+    end
+    return bus_id_to_indexes
+end
+
+function get_bus_generators(buses, gens, bus_id_to_indexes)
+    bus_gen = Dict{Int, Array{Int}}()
+    GEN_BUS = IndexSet.idx_gen()[1]
+    for g in 1:size(gens, 1)
+        bus_id = gens[g, GEN_BUS]
+        bus_index = bus_id_to_indexes[bus_id]
+        if haskey(bus_gen, bus_index)
+            push!(bus_gen[bus_index], g)
+        else
+            bus_gen[bus_index] = Int[g]
+        end
+    end
+    return bus_gen
+end
+
 include("topology.jl")
 include("power_network.jl")
 
