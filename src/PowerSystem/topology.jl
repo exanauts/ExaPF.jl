@@ -21,6 +21,10 @@ function makeYbus(data, bus_to_indexes)
     baseMVA = data["baseMVA"]
     bus     = data["bus"]
     branch  = data["branch"]
+    return makeYbus(bus, branch, baseMVA, bus_to_indexes)
+end
+
+function makeYbus(bus, branch, baseMVA, bus_to_indexes)
     F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C, TAP, SHIFT, BR_STATUS,
     ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IndexSet.idx_branch()
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -74,7 +78,6 @@ function makeYbus(data, bus_to_indexes)
     Ybus = Cf' * Yf + Ct' * Yt + sparse(1:nb, 1:nb, Ysh, nb, nb)
 
     return Ybus
-
 end
 
 """
