@@ -1,10 +1,8 @@
 using CUDA
 using CUDA.CUSPARSE
-using Revise
 using Printf
 using FiniteDiff
 using ForwardDiff
-using BenchmarkTools
 using KernelAbstractions
 using LinearAlgebra
 using Random
@@ -12,12 +10,12 @@ using SparseArrays
 using Test
 using TimerOutputs
 using ExaPF
-import ExaPF: PowerSystem, AD
+import ExaPF: PowerSystem, AutoDiff
 
 const PS = PowerSystem
 
 @testset "Polar formulation" begin
-    datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
     tolerance = 1e-8
     pf = PS.PowerNetwork(datafile, 1)
 
@@ -29,6 +27,8 @@ const PS = PowerSystem
 
     @testset "Initiate polar formulation on device $device" for (device, M) in ITERATORS
         polar = PolarForm(pf, device)
+        # Test printing
+        println(devnull, polar)
 
         b = bounds(polar, State())
         b = bounds(polar, Control())
@@ -56,7 +56,7 @@ const PS = PowerSystem
         @testset "Polar model API" begin
             xₖ = copy(x0)
             # Init AD factory
-            jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
+            jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
             # Test powerflow with cache signature
             conv = powerflow(polar, jx, cache, tol=tolerance)

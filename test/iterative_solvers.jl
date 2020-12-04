@@ -12,7 +12,6 @@ using Krylov
 const LS = ExaPF.LinearSolvers
 
 @testset "Iterative linear solvers with custom block Jacobi" begin
-    to = TimerOutputs.TimerOutput()
     # Square and preconditioned problems.
     function square_preconditioned(n :: Int=10)
         A   = ones(n, n) + (n-1) * Matrix(I, n, n)
@@ -25,10 +24,9 @@ const LS = ExaPF.LinearSolvers
     spA = sparse(A)
     nblocks = 2
     precond = LS.BlockJacobiPreconditioner(spA, nblocks, CPU())
-    LS.update(spA, precond, to)
+    LS.update(spA, precond)
     @testset "BICGSTAB" begin
-        P = precond.P
-        x, n_iters = ExaPF.bicgstab(spA, b, P, x, to)
+        LS.ldiv!(LS.BICGSTAB(precond), x, spA, b)
         r = b - spA * x
         resid = norm(r) / norm(b)
         @test(resid ≤ 1e-6)
@@ -46,7 +44,6 @@ end
 @testset "Wrapping of iterative solvers" begin
     nblocks = 2
     n, m = 32, 32
-    to = TimerOutputs.TimerOutput()
 
     # Add a diagonal term for conditionning
     A = randn(n, m) + 15I
@@ -76,13 +73,11 @@ end
         # First test the custom implementation of BICGSTAB
         @testset "BICGSTAB" begin
             # Need to update preconditioner before resolution
-            LS.update(As, precond, to)
-            P = precond.P
+            LS.update(As, precond)
             fill!(x0, 0.0)
-            x_sol, n_iters, status = ExaPF.bicgstab(As, bs, P, x0, to)
-            @test status == LS.Converged
+            n_iters = LS.ldiv!(LS.BICGSTAB(precond), x0, As, bs)
             @test n_iters <= m
-            @test x_sol ≈ xs♯ atol=1e-6
+            @test x0 ≈ xs♯ atol=1e-6
         end
         @testset "Interface for iterative algorithm ($LinSolver)" for LinSolver in ExaPF.list_solvers(device)
             algo = LinSolver(precond)

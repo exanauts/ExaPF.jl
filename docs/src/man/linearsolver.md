@@ -20,15 +20,11 @@ dx .= jacobian(x)\f(x)
 Our package supports the following linear solvers:
 
 * [`CUSOLVER`](https://docs.nvidia.com/cuda/cusolver/index.html) with `csrlsvqr` (GPU),
-* [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) with `dqgmres` (CPU/GPU),
+* [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) with `dqgmres` and `bicgstab` (CPU/GPU),
 * [`IterativeSolvers.jl`](https://github.com/JuliaMath/IterativeSolvers.jl) with `bicgstab` (CPU),
 * UMFPACK through the default Julia `\` operator (CPU),
 * and a generic BiCGSTAB implementation [^Vorst1992] \(CPU/GPU\).
 
-The last custom implementation was necessary as BiCGSTAB showed much better
-performance than GMRES and at the time of this writing both [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) and
-[`IterativeSolvers.jl`](https://github.com/JuliaMath/IterativeSolvers.jl) did not provide an implementation that supported
-[`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl).
 
 ## Preconditioning
 

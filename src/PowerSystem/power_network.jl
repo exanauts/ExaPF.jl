@@ -32,7 +32,7 @@ struct PowerNetwork <: AbstractPowerSystem
     sbus::Vector{Complex{Float64}}
     sload::Vector{Complex{Float64}}
 
-    function PowerNetwork(datafile::String, data_format::Int64=0)
+    function PowerNetwork(datafile::String, data_format::Int64)
 
         if data_format == 0
             println("Reading PSSE format")
@@ -72,11 +72,22 @@ struct PowerNetwork <: AbstractPowerSystem
         new(vbus, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
     end
 end
+function PowerNetwork(datafile::String)
+    if endswith(datafile, ".raw")
+        data_format = 0
+    elseif endswith(datafile, ".m")
+        data_format = 1
+    else
+        error("Unsupported format in file $(datafile): supported extensions are " *
+              "Matpower (.m) or PSSE (.raw)")
+    end
+    return PowerNetwork(datafile, data_format)
+end
 
 # Getters
 ## Network attributes
 get(pf::PowerNetwork, ::NumberOfBuses) = pf.nbus
-get(pf::PowerNetwork, ::NumberOfLines) = size(pf.data["branch"], 1)
+get(pf::PowerNetwork, ::NumberOfLines) = size(pf.data["branch"], 2)
 get(pf::PowerNetwork, ::NumberOfGenerators) = pf.ngen
 get(pf::PowerNetwork, ::NumberOfPVBuses) = length(pf.pv)
 get(pf::PowerNetwork, ::NumberOfPQBuses) = length(pf.pq)
@@ -163,9 +174,8 @@ end
 """
     get_costs_coefficients(pf::PowerNetwork)
 
-Return coefficients for costs function
+Return coefficients for costs function.
 
-TODO: how to deal with piecewise polynomial function?
 """
 function get_costs_coefficients(pf::PowerNetwork)
     # indexes

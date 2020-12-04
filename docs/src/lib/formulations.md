@@ -1,9 +1,5 @@
 ```@meta
 CurrentModule = ExaPF
-DocTestSetup = quote
-    using ExaPF
-end
-DocTestFilters = [r"ExaPF"]
 ```
 
 # Formulations
@@ -24,6 +20,7 @@ AbstractVariable
 State
 Control
 Parameters
+PhysicalState
 
 ```
 
@@ -31,33 +28,6 @@ Get default values attached to a given variable:
 ```@docs
 initial
 
-```
-
-### Powerflow solver
-
-```@docs
-powerflow
-
-```
-
-### Constraints
-
-```@docs
-state_constraints
-power_constraints
-thermal_limit_constraints
-
-```
-
-Admissible range for variables and constraints:
-```@docs
-bounds
-```
-
-### Costs
-
-```@docs
-cost_production
 ```
 
 ### Attributes
@@ -68,3 +38,59 @@ NumberOfState
 NumberOfControl
 
 ```
+`ExaPF` extends `Base.get` to query the different attributes
+of a model:
+```@docs
+get
+
+```
+
+### Powerflow solver
+
+```@docs
+powerflow
+power_balance!
+
+```
+
+### Costs
+
+```@docs
+cost_production
+```
+
+### Constraints
+
+Current supported constraints are:
+```@docs
+state_constraints
+power_constraints
+thermal_limit_constraints
+
+```
+
+These functions allow to query constraints' attributes:
+```@docs
+is_constraint
+size_constraint
+bounds
+
+```
+
+### Utils
+
+To ease the integration, the following functions have been
+imported from MATPOWER. Note that these functions work
+exclusively on the CPU.
+
+```@docs
+power_balance
+residual_jacobian
+
+```
+
+```@docs
+get_power_injection
+get_react_injection
+```
+

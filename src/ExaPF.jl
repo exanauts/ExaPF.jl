@@ -16,11 +16,15 @@ using IterativeSolvers
 using KernelAbstractions
 using Krylov
 using LinearAlgebra
+using MathOptInterface
 using Printf
 using SparseArrays
 using SparseDiffTools
 using TimerOutputs
 
+import Base: show, get
+
+const MOI = MathOptInterface
 const TIMER = TimerOutput()
 
 const VERBOSE_LEVEL_HIGH = 3
@@ -30,8 +34,8 @@ const VERBOSE_LEVEL_NONE = 0
 
 include("utils.jl")
 # Import submodules
-include("ad.jl")
-using .AD
+include("autodiff.jl")
+using .AutoDiff
 include("indexes.jl")
 using .IndexSet
 include("LinearSolvers/LinearSolvers.jl")
@@ -47,8 +51,7 @@ const PS = PowerSystem
 
 # Modeling
 include("models/models.jl")
-include("evaluators.jl")
-
-
+# Evaluators
+include("Evaluators/Evaluators.jl")
 
 end

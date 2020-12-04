@@ -9,16 +9,10 @@ using KernelAbstractions
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "RGM Optimal Power flow 9 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "data", "case9.m")
-    pf = PowerSystem.PowerNetwork(datafile, 1)
-    polar = PolarForm(pf, CPU())
+    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
 
-    xk = ExaPF.initial(polar, State())
-    uk = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
-
-    constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-    nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; constraints=constraints)
+    nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+    uk = ExaPF.initial(nlp)
 
     # solve power flow
     ExaPF.update!(nlp, uk)
@@ -34,6 +28,8 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
     # initial gradient
     grad = similar(uk)
+    wk = similar(uk)
+    up = copy(uk)
     fill!(grad, 0)
 
     while norm_grad > norm_tol && iter < iter_max
@@ -41,12 +37,13 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         c = ExaPF.objective(nlp, uk)
         ExaPF.gradient!(nlp, grad, uk)
         # compute control step
-        uk = uk - step*grad
-        ExaPF.project_constraints!(uk, grad, nlp.u_min, nlp.u_max)
-        norm_grad = norm(grad)
+        wk = uk - step*grad
+        ExaPF.project!(uk, wk, nlp.u_min, nlp.u_max)
+        norm_grad = norm(uk .- up, Inf)
         iter += 1
+        up .= uk
     end
-    @test iter == 79
-    @test isapprox(uk, [1.1, 1.343109921105559, 0.9421135274454701, 1.1, 1.1])
+    @test iter == 39
+    @test isapprox(uk, [1.1, 1.343109921105559, 0.9421135274454701, 1.1, 1.1], atol=1e-4)
 end
 

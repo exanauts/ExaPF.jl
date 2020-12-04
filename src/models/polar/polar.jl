@@ -33,8 +33,8 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
         M = SparseMatrixCSC
         AT = Array
     elseif isa(device, CUDADevice)
-        IT = CuArray{Int64, 1, Nothing}
-        VT = CuVector{Float64, Nothing}
+        IT = CuVector{Int64}
+        VT = CuVector{Float64}
         M = CuSparseMatrixCSR
         AT = CuArray
     end
@@ -152,13 +152,13 @@ function get(form::PolarForm{T, IT, VT, AT}, ::PhysicalState) where {T, IT, VT, 
     vmag = abs.(form.network.vbus) |> VT
     vang = angle.(form.network.vbus) |> VT
     ngen = PS.get(form.network, PS.NumberOfGenerators())
-    pg = VT(undef, ngen)
-    qg = VT(undef, ngen)
+    pg = xzeros(VT, ngen)
+    qg = xzeros(VT, ngen)
 
     npv = PS.get(form.network, PS.NumberOfPVBuses())
     npq = PS.get(form.network, PS.NumberOfPQBuses())
-    balance = VT(undef, 2*npq+npv)
-    dx = VT(undef, 2*npq+npv)
+    balance = xzeros(VT, 2*npq+npv)
+    dx = xzeros(VT, 2*npq+npv)
     return PolarNetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx)
 end
 
@@ -175,20 +175,22 @@ function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
 
     F = buffer.balance
     fill!(F, 0.0)
-    residualFunction_polar!(F, Vm, Va,
-                            polar.ybus_re, polar.ybus_im,
-                            pbus, qbus, pv, pq, nbus)
+    residual_polar!(
+        F, Vm, Va,
+        polar.ybus_re, polar.ybus_im,
+        pbus, qbus, pv, pq, nbus
+    )
 end
 
 # TODO: find better naming
-function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
+function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nₓ = get(polar, NumberOfState())
     nᵤ = get(polar, NumberOfControl())
-    # Take indexing on the CPU as we initiate AD on the CPU
+    # Take indexing on the CPU as we initiate AutoDiff on the CPU
     ref = polar.network.ref
     pv = polar.network.pv
     pq = polar.network.pq
@@ -196,25 +198,28 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkSt
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
     F = buffer.balance
     fill!(F, zero(T))
-    # Build the AD Jacobian structure
-    stateJacobianAD = AD.StateJacobianAD(F, Vm, Va,
+    # Build the AutoDiff Jacobian structure
+    statejacobian = AutoDiff.StateJacobian(F, Vm, Va,
         polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus
     )
-    designJacobianAD = AD.DesignJacobianAD(F, Vm, Va,
+    controljacobian = AutoDiff.ControlJacobian(F, Vm, Va,
         polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus
     )
 
-    # Build the AD structure for the objective
-    ∇fₓ = VT(undef, nₓ)
-    ∇fᵤ = VT(undef, nᵤ)
+    # Build the AutoDiff structure for the objective
+    ∇fₓ = xzeros(VT, nₓ)
+    ∇fᵤ = xzeros(VT, nᵤ)
     adjoint_pg = similar(buffer.pg)
     adjoint_vm = similar(Vm)
     adjoint_va = similar(Va)
-    objectiveAD = AD.ObjectiveAD(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va)
-    return stateJacobianAD, designJacobianAD, objectiveAD
+    # Build cache for Jacobian vector-product
+    jvₓ = xzeros(VT, nₓ)
+    jvᵤ = xzeros(VT, nᵤ)
+    objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ)
+    return statejacobian, controljacobian, objectiveAD
 end
 
-function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, buffer::PolarNetworkState)
+function jacobian(polar::PolarForm, jac::AutoDiff.AbstractJacobian, buffer::PolarNetworkState)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     # Indexing
@@ -223,30 +228,14 @@ function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, buffer::PolarNet
     pq = polar.indexing.index_pq
     # Network state
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
-    AD.residualJacobianAD!(jac, residualFunction_polar!, Vm, Va,
+    AutoDiff.residual_jacobian!(jac, residual_polar!, Vm, Va,
                            polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     return jac.J
 end
 
 function powerflow(
     polar::PolarForm{T, IT, VT, AT},
-    jacobian::AD.StateJacobianAD,
-    x::VT,
-    u::VT,
-    p::VT;
-    kwargs...
-) where {T, IT, VT, AT}
-    Vm, Va, pbus, qbus = get_network_state(polar, x, u, p)
-    n_state = get(polar, NumberOfState())
-    network = PolarNetworkState{VT}(
-        Vm, Va, pbus, qbus, VT(undef, 0), VT(undef, 0), VT(undef, n_state), VT(undef, n_state)
-    )
-    return powerflow(polar, jacobian, network; kwargs...)
-end
-
-function powerflow(
-    polar::PolarForm{T, IT, VT, AT},
-    jacobian::AD.StateJacobianAD,
+    jacobian::AutoDiff.StateJacobian,
     buffer::PolarNetworkState{VT};
     solver=DirectSolver(),
     tol=1e-7,
@@ -285,7 +274,7 @@ function powerflow(
     fill!(dx, zero(T))
 
     # Evaluate residual function
-    residualFunction_polar!(F, Vm, Va,
+    residual_polar!(F, Vm, Va,
                             polar.ybus_re, polar.ybus_im,
                             pbus, qbus, pv, pq, nbus)
 
@@ -311,16 +300,16 @@ function powerflow(
         iter += 1
 
         @timeit TIMER "Jacobian" begin
-            AD.residualJacobianAD!(jacobian, residualFunction_polar!, Vm, Va,
+            AutoDiff.residual_jacobian!(jacobian, residual_polar!, Vm, Va,
                                    polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
         J = jacobian.J
 
         # Find descent direction
         if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
-            LinearSolvers.update!(solver, J)
+            @timeit TIMER "Preconditioner" LinearSolvers.update!(solver, J)
         end
-        n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
+        @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
         push!(linsol_iters, n_iters)
 
         # update voltage
@@ -340,12 +329,12 @@ function powerflow(
 
         fill!(F, zero(T))
         @timeit TIMER "Residual function" begin
-            residualFunction_polar!(F, Vm, Va,
+            residual_polar!(F, Vm, Va,
                 polar.ybus_re, polar.ybus_im,
                 pbus, qbus, pv, pq, nbus)
         end
 
-        @timeit TIMER "Norm" normF = norm2(F)
+        @timeit TIMER "Norm" normF = xnorm(F)
         if verbose_level >= VERBOSE_LEVEL_LOW
             @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
         end
@@ -367,7 +356,6 @@ function powerflow(
     if verbose_level >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
         println("")
-        reset_timer!(TIMER)
     end
     conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
     return conv
@@ -392,3 +380,27 @@ function cost_production(polar::PolarForm, pg)
     cost = sum(c2 .+ c3 .* pg .+ c4 .* pg.^2)
     return cost
 end
+
+# Utils
+function Base.show(io::IO, polar::PolarForm)
+    # Network characteristics
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    nlines = PS.get(polar.network, PS.NumberOfLines())
+    # Polar formulation characteristics
+    n_states = get(polar, NumberOfState())
+    n_controls = get(polar, NumberOfControl())
+    print(io,   "Polar formulation model")
+    println(io, " (instantiated on device $(polar.device))")
+    println(io, "Network characteristics:")
+    @printf(io, "    #buses:      %d  (#slack: %d  #PV: %d  #PQ: %d)\n", nbus, nref, npv, npq)
+    println(io, "    #generators: ", ngen)
+    println(io, "    #lines:      ", nlines)
+    println(io, "giving a mathematical formulation with:")
+    println(io, "    #controls:   ", n_controls)
+    print(io,   "    #states  :   ", n_states)
+end
+

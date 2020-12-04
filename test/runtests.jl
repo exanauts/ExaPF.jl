@@ -7,6 +7,7 @@ using Random
 using SparseArrays
 using Test
 using TimerOutputs
+using FiniteDiff
 
 import ExaPF: ParsePSSE, PowerSystem, IndexSet
 
@@ -31,7 +32,10 @@ end
     # Reduced gradient
     include("reduced_gradient.jl")
     # ReducedSpaceEvaluator API
-    include("evaluators.jl")
+    include("reduced_evaluator.jl")
+    include("penalty.jl")
+    include("auglag.jl")
+    include("MOI_wrapper.jl")
 end
 
 @testset "Reduced space algorithms" begin

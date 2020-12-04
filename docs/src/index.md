@@ -23,7 +23,7 @@ implementations to get a design overview of `ExaPF.jl` targeted for GPUs.
 
 The user API is separated into three layers:
 
-* First layer or physical layer: Power network topology in [powersystem](man/powersystem.md)
+* First layer: Physical layer, specify the power network topology in [powersystem](man/powersystem.md)
 * Second layer: Interface between power network and NLE or NLP in [formulations](lib/formulations.md)
 * Third layer: Evaluators for non-linear problems
 
@@ -57,6 +57,7 @@ Pages = [
 ]
 Depth = 1
 ```
+
 ## Funding
 
-This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy’s Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation’s exascale computing imperative. 
+This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy’s Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation’s exascale computing imperative.

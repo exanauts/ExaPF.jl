@@ -1,7 +1,5 @@
-export PolarForm, get, bounds, powerflow
+export PolarForm, bounds, powerflow
 export State, Control, Parameters, NumberOfState, NumberOfControl
-
-import Base: show, get
 
 """
     AbstractFormulation
@@ -65,6 +63,10 @@ struct Parameters <: AbstractVariable end
 All physical variables describing the current physical state
 of the underlying network.
 
+`PhysicalState` variables are encoded in a `AbstractNetworkBuffer`,
+storing all the physical values needed to describe the current
+state of the network.
+
 """
 struct PhysicalState <: AbstractVariable end
 
@@ -92,8 +94,8 @@ Return the bounds attached to the variable `var`.
 
     bounds(form::AbstractFormulation, func::Function)
 
-Return the lower and upper bounds attached to a given constraint
-functional.
+Return a tuple of vectors `(lb, ub)` specifying the admissible range
+of the constraints specified by the function `cons_func`.
 
 ## Examples
 
@@ -122,13 +124,13 @@ function initial end
 
 """
     powerflow(form::AbstractFormulation,
-              jacobian::AD.StateJacobianAD,
-              buffer::AbstractNetworkBuffer,
+              jacobian::AutoDiff.StateJacobian,
+              buffer::AbstractNetworkBuffer;
               kwargs...) where VT <: AbstractVector
 
 Solve the power flow equations `g(x, u) = 0` w.r.t. the state `x`,
 using a Newton-Raphson algorithm.
-The power flow equations are specified in the formulation `form`.
+The powerflow equations are specified in the formulation `form`.
 The current state `x` and control `u` are specified in
 `buffer`. The object `buffer` is modified inplace.
 
@@ -138,45 +140,55 @@ irations `maxiter` are reached.
 ## Arguments
 
 * `form::AbstractFormulation`: formulation of the power flow equation
-* `jacobian::AD.StateJacobianAD`: Jacobian
+* `jacobian::AutoDiff.StateJacobian`: Jacobian
 * `buffer::AbstractNetworkBuffer`: buffer storing current state `x` and control `u`
 
 ## Optional arguments
 
+* `linear_solver::AbstractLinearSolver` (default `DirectSolver()`): solver to solve the linear systems `J x = y` arising at each iteration of the Newton-Raphson algorithm.
 * `tol::Float64` (default `1e-7`): tolerance of the Newton-Raphson algorithm.
 * `maxiter::Int` (default `20`): maximum number of iterations.
-* `verbose_level::Int` (default `O`, max value: `3`): verbose level
+* `verbose_level::Int` (default `O`, max value: `3`): verbose level.
 
 """
 function powerflow end
 
 """
-    power_balance(form::AbstractFormulation, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
+    power_balance!(form::AbstractFormulation, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
 
 Get power balance at buses, depending on the state `x` and the control `u`.
 
 """
-function power_balance end
+function power_balance! end
 
 # Cost function
 """
-    cost_production(form::AbstractFormulation, x, u, p)::Float64
+    cost_production(form::AbstractFormulation, pg::AbstractVector)::Float64
 
-Get operational cost for given state `x` and control `u`.
+Get operational cost corresponding to the active power generation
+specified in the vector `pg`.
+
 """
 function cost_production end
 
 # Generic constraints
 """
-    size_constraint(form::AbstractFormulation, cons_func)::Int
+    size_constraint(cons_func::Function)::Bool
+Return whether the function `cons_func` is a supported constraint
+in the powerflow model.
+"""
+function is_constraint end
 
-Get dimension of the constraint specified by the function `cons_func`
+"""
+    size_constraint(form::AbstractFormulation, cons_func::Function)::Int
+
+Get number of constraints specified by the function `cons_func`
 in the formulation `form`.
 """
 function size_constraint end
 
 """
-    state_constraints(form::AbstractFormulation, g::VT, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
+    state_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
 
 Evaluate the constraints porting on the state `x`, as a
 function of `x` and `u`. The result is stored inplace, inside `g`.
@@ -184,7 +196,7 @@ function of `x` and `u`. The result is stored inplace, inside `g`.
 function state_constraints end
 
 """
-    power_constraints(form::AbstractFormulation, g::VT, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
+    power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer) where {VT<:AbstractVector}
 
 Evaluate the constraints on the **power production** that are not taken into
 account in
@@ -197,7 +209,7 @@ The result is stored inplace, inside `g`.
 function power_constraints end
 
 """
-    thermal_limit_constraints(form::AbstractFormulation, g::VT, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
+    thermal_limit_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer) where {VT<:AbstractVector}
 
 Evaluate the thermal limit constraints porting on the lines of the network.
 
@@ -209,27 +221,3 @@ include("caches.jl")
 # Polar formulation
 include("polar/polar.jl")
 
-
-Base.show(model::AbstractFormulation, x, u, p) = Base.show(stdout, model, x, u, p)
-function Base.show(io::IO, model::AbstractFormulation, x, u, p)
-    nbus = PS.get(model.network, PS.NumberOfBuses())
-    npv = PS.get(model.network, PS.NumberOfPVBuses())
-    npq = PS.get(model.network, PS.NumberOfPQBuses())
-    nref = PS.get(model.network, PS.NumberOfSlackBuses())
-    ngen = PS.get(model.network, PS.NumberOfGenerators())
-    println(io, "Power Network characteristics:")
-    @printf(io, "\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", nbus, nref, npv, npq)
-    println(io, "\tGenerators: ", ngen, ".")
-    # Print system status
-    @printf(io, "\t==============================================\n")
-    @printf(io, "\tBUS \t TYPE \t VMAG \t VANG \t P \t Q\n")
-    @printf(io, "\t==============================================\n")
-
-    vmag, vang, pinj, qinj = get_network_state(model, x, u, p)
-
-    for i=1:nbus
-        type = model.network.bustype[i]
-        @printf(io, "\t%d \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
-                type, vmag[i], vang[i]*(180.0/pi), pinj[i], qinj[i])
-    end
-end

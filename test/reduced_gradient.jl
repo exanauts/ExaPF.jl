@@ -1,7 +1,6 @@
 using Printf
 using FiniteDiff
 using ForwardDiff
-using BenchmarkTools
 using KernelAbstractions
 using LinearAlgebra
 using Random
@@ -9,13 +8,13 @@ using SparseArrays
 using Test
 using TimerOutputs
 using ExaPF
-import ExaPF: PowerSystem, AD
+import ExaPF: PowerSystem, AutoDiff
 
 const PS = PowerSystem
 
 @testset "Compute reduced gradient on CPU" begin
     @testset "Case $case" for case in ["case9.m", "case30.m"]
-        datafile = joinpath(dirname(@__FILE__), "data", case)
+        datafile = joinpath(dirname(@__FILE__), "..", "data", case)
         tolerance = 1e-8
         pf = PS.PowerNetwork(datafile, 1)
 
@@ -26,7 +25,7 @@ const PS = PowerSystem
         u = ExaPF.initial(polar, Control())
         p = ExaPF.initial(polar, Parameters())
 
-        jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
+        jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
         # solve power flow
         conv = powerflow(polar, jx, cache, tol=1e-12)
@@ -41,7 +40,7 @@ const PS = PowerSystem
         # Test with Matpower's Jacobian
         V = cache.vmag .* exp.(im * cache.vang)
         Ybus = pf.Ybus
-        J = ExaPF.residualJacobian(V, Ybus, pf.pv, pf.pq)
+        J = ExaPF.residual_jacobian(V, Ybus, pf.pv, pf.pq)
         @test isapprox(∇gₓ, J)
 
         # Test gradients
@@ -50,7 +49,7 @@ const PS = PowerSystem
             ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
-            ExaPF.cost_production_adjoint(polar, ∂obj, cache)
+            ExaPF.∂cost(polar, ∂obj, cache)
             ∇fₓ = ∂obj.∇fₓ
             ∇fᵤ = ∂obj.∇fᵤ
 
@@ -74,6 +73,14 @@ const PS = PowerSystem
 
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, uk)
             @test isapprox(grad_fd, grad_adjoint, rtol=1e-4)
+        end
+        @testset "Reduced Jacobian" begin
+            for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
+                m = ExaPF.size_constraint(polar, cons)
+                for icons in 1:m
+                    ExaPF.jacobian(polar, cons, icons, ∂obj, cache)
+                end
+            end
         end
     end
 end

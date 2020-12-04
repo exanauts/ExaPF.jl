@@ -9,12 +9,11 @@ DocTestFilters = [r"ExaPF"]
 
 # PowerSystem
 
-The main goal of ExaPF.jl is the solution of optimization problems for electrical power systems in the steady state. The first step in this process is the creation of an object that describes the physics and topology of the power system which ultimatelly will be mapped into an abstract mathematical optimization problem. In this section we briefly review the power system in the steady state and describe the tools to create and examine power systems in ExaPF.jl.
+The main goal of ExaPF.jl is the solution of optimization problems for electrical power systems in the steady state. The first step in this process is the creation of an object that describes the physics and topology of the power system which ultimately will be mapped into an abstract mathematical optimization problem. In this section we briefly review the power system in the steady state and describe the tools to create and examine power systems in ExaPF.jl.
 
 ## Description
 
-The electrical power system is represented as a linear, lumped network which has to satisfy the Kirchoff laws:
-
+The electrical power system is represented as a linear, lumped network which has to satisfy the Kirchhoff laws:
 
 ```math
     \bm{i} = \bm{Y}\bm{v} \,,
@@ -22,8 +21,7 @@ The electrical power system is represented as a linear, lumped network which has
 
 where $\bm{i}, \bm{v} \in \mathbb{C}^{N_B}$ are the current and voltage
 vectors associated to the system and $\bm{Y} \in \mathbb{C}^{N_B \times N_B}$
-is the admittance matrix. These equations are often rewritten in terms of aparent powers:
-
+is the admittance matrix. These equations are often rewritten in terms of apparent powers:
 
 ```math
     \bm{s} = \bm{p} + j\bm{q} = \textit{diag}(\bm{v^*}) \bm{Y}\bm{v}
@@ -45,10 +43,14 @@ two buses $i$ and $j$, $y_{ij} = g_{ij} + ib_{ij}$.
 
 ## The PowerNetwork object
 
-Currently we can create a PowerNetwork object by parsing a MatPower datafile.
+Currently we can create a PowerNetwork object by parsing a MATPOWER datafile.
 
 ```julia-repl
-julia> ps = PowerSystem.PowerNetwork("test/case9.m", 1)
+julia> ps = PowerSystem.PowerNetwork("data/case9.m")
+```
+Apart of MATPOWER datafile, PSSE datafile are also supported:
+```julia-repl
+julia> ps = PowerSystem.PowerNetwork("data/case14.raw")
 ```
 
 If we print the object, we will obtain bus information and initial voltage and power that we read from the datafile.
@@ -56,20 +58,20 @@ If we print the object, we will obtain bus information and initial voltage and p
 ```julia-repl
 julia> println(ps)
 Power Network characteristics:
-	Buses: 9. Slack: 1. PV: 2. PQ: 6
-	Generators: 3.
-	==============================================
-	BUS 	 TYPE 	 VMAG 	 VANG 	 P 	 Q
-	==============================================
-	1 	  3 	 1.000	0.00	0.000	0.000
-	2 	  2 	 1.000	0.00	1.630	0.000
-	3 	  2 	 1.000	0.00	0.850	0.000
-	4 	  1 	 1.000	0.00	0.000	0.000
-	5 	  1 	 1.000	0.00	-0.900	-0.300
-	6 	  1 	 1.000	0.00	0.000	0.000
-	7 	  1 	 1.000	0.00	-1.000	-0.350
-	8 	  1 	 1.000	0.00	0.000	0.000
-	9 	  1 	 1.000	0.00	-1.250	-0.500
+    Buses: 9. Slack: 1. PV: 2. PQ: 6
+    Generators: 3.
+    ==============================================
+    BUS      TYPE    VMAG    VANG    P   Q
+    ==============================================
+    1     3      1.000  0.00    0.000   0.000
+    2     2      1.000  0.00    1.630   0.000
+    3     2      1.000  0.00    0.850   0.000
+    4     1      1.000  0.00    0.000   0.000
+    5     1      1.000  0.00    -0.900  -0.300
+    6     1      1.000  0.00    0.000   0.000
+    7     1      1.000  0.00    -1.000  -0.350
+    8     1      1.000  0.00    0.000   0.000
+    9     1      1.000  0.00    -1.250  -0.500
 ```
 
 then, using multiple dispatch, we have defined a set of abstract datatypes and getter functions which allow us to retrieve information from the PowerNetwork object

@@ -1,10 +1,5 @@
 ```@meta
-CurrentModule = ExaPF
-DocTestSetup = quote
-    using ExaPF
-    const PS = ExaPF.PowerSystem
-end
-DocTestFilters = [r"ExaPF"]
+CurrentModule = ExaPF.PowerSystem
 ```
 
 # PowerSystem
@@ -12,8 +7,8 @@ DocTestFilters = [r"ExaPF"]
 ## Description
 
 ```@docs
-PS.AbstractPowerSystem
-PS.PowerNetwork
+AbstractPowerSystem
+PowerNetwork
 ```
 
 ## API Reference
@@ -21,55 +16,64 @@ PS.PowerNetwork
 ### Network elements
 
 ```@docs
-PS.AbstractNetworkElement
+AbstractNetworkElement
 ```
 
 List of elements:
 
 ```@docs
-PS.Buses
-PS.Lines
-PS.Generator
+Buses
+Lines
+Generator
 ```
 
 ### Network attributes
 
 ```@docs
-PS.AbstractNetworkAttribute
+AbstractNetworkAttribute
 ```
 
 Function for getting attributes from a network:
 ```@docs
-PS.get
+get
 ```
 
 List of attributes:
 ```@docs
-PS.NumberOfBuses
-PS.NumberOfLines
-PS.NumberOfGenerators
-PS.NumberOfPVBuses
-PS.NumberOfPQBuses
-PS.NumberOfSlackBuses
-PS.BaseMVA
+NumberOfBuses
+NumberOfLines
+NumberOfGenerators
+NumberOfPVBuses
+NumberOfPQBuses
+NumberOfSlackBuses
+BaseMVA
+```
+
+Query the indexing of the different elements in a given network:
+```@docs
+PVIndexes
+PQIndexes
+SlackIndexes
+GeneratorIndexes
+
 ```
 
 ### Network values
 
 ```@docs
-PS.AbstractNetworkValues
+AbstractNetworkValues
 ```
 
 List of values:
 ```@docs
-PS.VoltageMagnitude
-PS.VoltageAngle
-PS.ActivePower
-PS.ReactivePower
+VoltageMagnitude
+VoltageAngle
+ActivePower
+ReactivePower
 
 ```
 
 Function to get the range of a given value:
 ```@docs
-PS.bounds
+bounds
 ```
