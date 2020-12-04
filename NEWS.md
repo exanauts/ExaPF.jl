@@ -1,4 +1,4 @@
-JuMP release notes
+ExaPF release notes
 ==================
 
 Version 0.4.0 (December 4, 2020)
