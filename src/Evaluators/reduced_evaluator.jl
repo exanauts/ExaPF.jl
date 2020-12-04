@@ -9,7 +9,7 @@ state `x(u)` satisfying the equilibrium equation `g(x(u), u) = 0`.
 
 Taking as input a given `AbstractFormulation`, the reduced evaluator
 builds the bounds corresponding to the control `u` and the state `x`,
-and initiate an `ADFactory` tailored to the problem. The reduced evaluator
+and initiate an `AutoDiffFactory` tailored to the problem. The reduced evaluator
 could be instantiated on the main memory, or on a specific device (currently,
 only CUDA is supported).
 
@@ -30,7 +30,7 @@ mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     g_max::AbstractVector{T}
 
     buffer::AbstractNetworkBuffer
-    ad::ADFactory
+    autodiff::AutoDiffFactory
     ∇gᵗ::AbstractMatrix
     linear_solver::LinearSolvers.AbstractLinearSolver
     ε_tol::Float64
@@ -47,9 +47,9 @@ function ReducedSpaceEvaluator(
     buffer = get(model, PhysicalState())
     # Initiate adjoint
     λ = similar(x)
-    # Build up AD factory
-    jx, ju, adjoint_f = init_ad_factory(model, buffer)
-    ad = ADFactory(jx, ju, adjoint_f)
+    # Build up AutoDiff factory
+    jx, ju, adjoint_f = init_autodiff_factory(model, buffer)
+    ad = AutoDiffFactory(jx, ju, adjoint_f)
 
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
@@ -95,17 +95,17 @@ bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.g_min, nlp.g_max
 
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x
-    jac_x = nlp.ad.Jgₓ
+    jac_x = nlp.autodiff.Jgₓ
     # Transfer x, u, p into the network cache
     transfer!(nlp.model, nlp.buffer, nlp.x, u, nlp.p)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
                      solver=nlp.linear_solver, verbose_level=verbose_level)
     if !conv.has_converged
-        error("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
+        @warn("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
         return conv
     end
-    ∇gₓ = nlp.ad.Jgₓ.J
+    ∇gₓ = nlp.autodiff.Jgₓ.J
     nlp.∇gᵗ = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
     # Switch preconditioner to transpose mode
     if isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
@@ -137,13 +137,13 @@ end
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     buffer = nlp.buffer
     xₖ = nlp.x
-    ∇gₓ = nlp.ad.Jgₓ.J
+    ∇gₓ = nlp.autodiff.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
-    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, buffer)
-    # Evaluate adjoint of cost function and update inplace ObjectiveAD
-    ∂cost(nlp.model, nlp.ad.∇f, buffer)
+    ∇gᵤ = jacobian(nlp.model, nlp.autodiff.Jgᵤ, buffer)
+    # Evaluate adjoint of cost function and update inplace AdjointStackObjective
+    ∂cost(nlp.model, nlp.autodiff.∇f, buffer)
 
-    ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ
+    ∇fₓ, ∇fᵤ = nlp.autodiff.∇f.∇fₓ, nlp.autodiff.∇f.∇fᵤ
     # Update (negative) adjoint
     λₖ_neg = nlp.λ
     LinearSolvers.ldiv!(nlp.linear_solver, λₖ_neg, nlp.∇gᵗ, ∇fₓ)
@@ -180,12 +180,12 @@ end
 function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     model = nlp.model
     xₖ = nlp.x
-    ∇gₓ = nlp.ad.Jgₓ.J
-    ∇gᵤ = nlp.ad.Jgᵤ.J
+    ∇gₓ = nlp.autodiff.Jgₓ.J
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J
     nₓ = length(xₖ)
     MT = nlp.model.AT
     μ = similar(nlp.λ)
-    ∂obj = nlp.ad.∇f
+    ∂obj = nlp.autodiff.∇f
     cnt = 1
 
     for cons in nlp.constraints
@@ -204,12 +204,12 @@ end
 function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
     model = nlp.model
     xₖ = nlp.x
-    ∇gₓ = nlp.ad.Jgₓ.J
-    ∇gᵤ = nlp.ad.Jgᵤ.J
+    ∇gₓ = nlp.autodiff.Jgₓ.J
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J
     nₓ = length(xₖ)
     μ = nlp.λ
 
-    ∂obj = nlp.ad.∇f
+    ∂obj = nlp.autodiff.∇f
     # Get adjoint
     jtprod(model, cons, ∂obj, nlp.buffer, v)
     jvx, jvu = ∂obj.∇fₓ, ∂obj.∇fᵤ
@@ -220,8 +220,8 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
 end
 function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     μ = nlp.λ
-    ∇gᵤ = nlp.ad.Jgᵤ.J
-    ∂obj = nlp.ad.∇f
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J
+    ∂obj = nlp.autodiff.∇f
     jvx = ∂obj.jvₓ
     jvu = ∂obj.jvᵤ
     fill!(jvx, 0)
@@ -281,7 +281,7 @@ function Base.show(io::IO, nlp::ReducedSpaceEvaluator)
     println(io, "    * #cons: ", m)
     println(io, "    * constraints:")
     for cons in nlp.constraints
-        println("        - ", cons)
+        println(io, "        - ", cons)
     end
     print(io, "    * linear solver: ", nlp.linear_solver)
 end

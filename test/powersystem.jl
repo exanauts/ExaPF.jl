@@ -90,10 +90,10 @@ const PS = PowerSystem
     @testset "Computing residuals" begin
         F = zeros(Float64, npv + 2*npq)
         # First compute a reference value for resisual computed at V
-        F♯ = ExaPF.residualFunction(V, Ybus, Sbus, pv, pq)
+        F♯ = ExaPF.power_balance(V, Ybus, Sbus, pv, pq)
         # residual_polar! uses only binary types as this function is meant
         # to be deported on the GPU
-        ExaPF.residualFunction_polar!(F, Vm, Va,
+        ExaPF.residual_polar!(F, Vm, Va,
             ybus_re, ybus_im,
             pbus, qbus, pv, pq, nbus)
         @test F ≈ F♯
@@ -101,15 +101,15 @@ const PS = PowerSystem
     @testset "Computing Jacobian of residuals" begin
         F = zeros(Float64, npv + 2*npq)
         # Compute Jacobian at point V manually and use it as reference
-        J = ExaPF.residualJacobian(V, Ybus, pv, pq)
+        J = ExaPF.residual_jacobian(V, Ybus, pv, pq)
         J♯ = copy(J)
 
-        # Then, create a JacobianAD object
-        jacobianAD = ExaPF.AD.StateJacobianAD(F, Vm, Va,
+        # Then, create a Jacobian object
+        jacobianAD = ExaPF.AutoDiff.StateJacobian(F, Vm, Va,
                                               ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
         # and compute Jacobian with ForwardDiff
-        ExaPF.AD.residualJacobianAD!(
-            jacobianAD, ExaPF.residualFunction_polar!, Vm, Va,
+        ExaPF.AutoDiff.residual_jacobian!(
+            jacobianAD, ExaPF.residual_polar!, Vm, Va,
             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
         @test jacobianAD.J ≈ J♯
     end

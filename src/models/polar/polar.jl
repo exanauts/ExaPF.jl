@@ -175,20 +175,22 @@ function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
 
     F = buffer.balance
     fill!(F, 0.0)
-    residualFunction_polar!(F, Vm, Va,
-                            polar.ybus_re, polar.ybus_im,
-                            pbus, qbus, pv, pq, nbus)
+    residual_polar!(
+        F, Vm, Va,
+        polar.ybus_re, polar.ybus_im,
+        pbus, qbus, pv, pq, nbus
+    )
 end
 
 # TODO: find better naming
-function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
+function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nₓ = get(polar, NumberOfState())
     nᵤ = get(polar, NumberOfControl())
-    # Take indexing on the CPU as we initiate AD on the CPU
+    # Take indexing on the CPU as we initiate AutoDiff on the CPU
     ref = polar.network.ref
     pv = polar.network.pv
     pq = polar.network.pq
@@ -196,15 +198,15 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkSt
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
     F = buffer.balance
     fill!(F, zero(T))
-    # Build the AD Jacobian structure
-    stateJacobianAD = AD.StateJacobianAD(F, Vm, Va,
+    # Build the AutoDiff Jacobian structure
+    statejacobian = AutoDiff.StateJacobian(F, Vm, Va,
         polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus
     )
-    designJacobianAD = AD.DesignJacobianAD(F, Vm, Va,
+    controljacobian = AutoDiff.ControlJacobian(F, Vm, Va,
         polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus
     )
 
-    # Build the AD structure for the objective
+    # Build the AutoDiff structure for the objective
     ∇fₓ = xzeros(VT, nₓ)
     ∇fᵤ = xzeros(VT, nᵤ)
     adjoint_pg = similar(buffer.pg)
@@ -213,11 +215,11 @@ function init_ad_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkSt
     # Build cache for Jacobian vector-product
     jvₓ = xzeros(VT, nₓ)
     jvᵤ = xzeros(VT, nᵤ)
-    objectiveAD = AD.ObjectiveAD(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ)
-    return stateJacobianAD, designJacobianAD, objectiveAD
+    objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ)
+    return statejacobian, controljacobian, objectiveAD
 end
 
-function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, buffer::PolarNetworkState)
+function jacobian(polar::PolarForm, jac::AutoDiff.AbstractJacobian, buffer::PolarNetworkState)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     # Indexing
@@ -226,14 +228,14 @@ function jacobian(polar::PolarForm, jac::AD.AbstractJacobianAD, buffer::PolarNet
     pq = polar.indexing.index_pq
     # Network state
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
-    AD.residualJacobianAD!(jac, residualFunction_polar!, Vm, Va,
+    AutoDiff.residual_jacobian!(jac, residual_polar!, Vm, Va,
                            polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
     return jac.J
 end
 
 function powerflow(
     polar::PolarForm{T, IT, VT, AT},
-    jacobian::AD.StateJacobianAD,
+    jacobian::AutoDiff.StateJacobian,
     buffer::PolarNetworkState{VT};
     solver=DirectSolver(),
     tol=1e-7,
@@ -272,7 +274,7 @@ function powerflow(
     fill!(dx, zero(T))
 
     # Evaluate residual function
-    residualFunction_polar!(F, Vm, Va,
+    residual_polar!(F, Vm, Va,
                             polar.ybus_re, polar.ybus_im,
                             pbus, qbus, pv, pq, nbus)
 
@@ -298,14 +300,14 @@ function powerflow(
         iter += 1
 
         @timeit TIMER "Jacobian" begin
-            AD.residualJacobianAD!(jacobian, residualFunction_polar!, Vm, Va,
+            AutoDiff.residual_jacobian!(jacobian, residual_polar!, Vm, Va,
                                    polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
         J = jacobian.J
 
         # Find descent direction
         if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
-            LinearSolvers.update!(solver, J)
+            @timeit TIMER "Preconditioner" LinearSolvers.update!(solver, J)
         end
         @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
         push!(linsol_iters, n_iters)
@@ -327,7 +329,7 @@ function powerflow(
 
         fill!(F, zero(T))
         @timeit TIMER "Residual function" begin
-            residualFunction_polar!(F, Vm, Va,
+            residual_polar!(F, Vm, Va,
                 polar.ybus_re, polar.ybus_im,
                 pbus, qbus, pv, pq, nbus)
         end

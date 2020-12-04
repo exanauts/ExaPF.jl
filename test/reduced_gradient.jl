@@ -1,7 +1,6 @@
 using Printf
 using FiniteDiff
 using ForwardDiff
-using BenchmarkTools
 using KernelAbstractions
 using LinearAlgebra
 using Random
@@ -9,7 +8,7 @@ using SparseArrays
 using Test
 using TimerOutputs
 using ExaPF
-import ExaPF: PowerSystem, AD
+import ExaPF: PowerSystem, AutoDiff
 
 const PS = PowerSystem
 
@@ -26,7 +25,7 @@ const PS = PowerSystem
         u = ExaPF.initial(polar, Control())
         p = ExaPF.initial(polar, Parameters())
 
-        jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
+        jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
         # solve power flow
         conv = powerflow(polar, jx, cache, tol=1e-12)
@@ -41,7 +40,7 @@ const PS = PowerSystem
         # Test with Matpower's Jacobian
         V = cache.vmag .* exp.(im * cache.vang)
         Ybus = pf.Ybus
-        J = ExaPF.residualJacobian(V, Ybus, pf.pv, pf.pq)
+        J = ExaPF.residual_jacobian(V, Ybus, pf.pv, pf.pq)
         @test isapprox(∇gₓ, J)
 
         # Test gradients

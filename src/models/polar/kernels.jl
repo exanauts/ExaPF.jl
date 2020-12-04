@@ -1,11 +1,19 @@
 # Implement kernels for polar formulation
 
 """
-residualFunction
+    power_balance(V, Ybus, Sbus, pv, pq)
 
-Assembly residual function for N-R power flow
+Assembly residual function for N-R power flow.
+In complex form, the balance equations writes
+
+``
+g(V) = V * (Y_{bus} * V)^* - S_{bus}
+``
+
+# Note
+Code adapted from MATPOWER.
 """
-function residualFunction(V, Ybus, Sbus, pv, pq)
+function power_balance(V, Ybus, Sbus, pv, pq)
     # form mismatch vector
     mis = V .* conj(Ybus * V) - Sbus
     # form residual vector
@@ -15,7 +23,16 @@ function residualFunction(V, Ybus, Sbus, pv, pq)
     return F
 end
 
-function residualJacobian(V, Ybus, pv, pq)
+"""
+    residual_jacobian(V, Ybus, pv, pq)
+
+Compute the Jacobian w.r.t. the state `x` of the power
+balance function [`power_balance`](@ref).
+
+# Note
+Code adapted from MATPOWER.
+"""
+function residual_jacobian(V, Ybus, pv, pq)
     n = size(V, 1)
     Ibus = Ybus*V
     diagV       = sparse(1:n, 1:n, V, n, n)
@@ -45,14 +62,18 @@ function _state_jacobian(polar::PolarForm)
     Vre = rand(n)
     Vim = rand(n)
     V = Vre .+ 1im .* Vim
-    return residualJacobian(V, Y, pv, pq)
+    return residual_jacobian(V, Y, pv, pq)
 end
 _sparsity_pattern(polar::PolarForm) = findnz(_state_jacobian(polar))
 
 """
     get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
 
-Computes the power injection at node "fr".
+Computes the power injection at node `fr`.
+In polar form, the power injection at node `i` satisfies
+```math
+p_{i} = \\sum_{j} v_{i} v_{j} (g_{ij} \\cos(\\theta_i - \\theta_j) + b_{ij} \\sin(\\theta_i - \\theta_j))
+```
 """
 function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
     P = 0.0
@@ -67,7 +88,11 @@ end
 """
     get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
 
-Computes the reactive power injection at node "fr".
+Computes the reactive power injection at node `fr`.
+In polar form, the power injection at node `i` satisfies
+```math
+q_{i} = \\sum_{j} v_{i} v_{j} (g_{ij} \\sin(\\theta_i - \\theta_j) - b_{ij} \\cos(\\theta_i - \\theta_j))
+```
 """
 function get_react_injection(fr::Int, v_m, v_a, ybus_re::Spmat{VI,VT}, ybus_im::Spmat{VI,VT}) where {VT <: AbstractVector, VI<:AbstractVector}
     Q = zero(eltype(v_m))
@@ -112,9 +137,9 @@ end
     end
 end
 
-function residualFunction_polar!(F, v_m, v_a,
-                                 ybus_re, ybus_im,
-                                 pinj, qinj, pv, pq, nbus)
+function residual_polar!(F, v_m, v_a,
+                         ybus_re, ybus_im,
+                         pinj, qinj, pv, pq, nbus)
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
