@@ -18,7 +18,7 @@
         @test nlp.ε_tol == tol
     end
 
-    pf = PowerSystem.PowerNetwork(datafile, 1)
+    pf = PowerSystem.PowerNetwork(datafile)
     @testset "Test API on $device" for (device, M) in ITERATORS
         polar = PolarForm(pf, device)
         x0 = ExaPF.initial(polar, State())

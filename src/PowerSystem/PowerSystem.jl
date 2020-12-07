@@ -4,7 +4,7 @@ using Printf
 using SparseArrays
 using ..ExaPF: ParsePSSE, ParseMAT, IndexSet, Spmat
 
-import Base: show
+import Base: show, get
 
 const PQ_BUS_TYPE = 1
 const PV_BUS_TYPE = 2
@@ -256,6 +256,29 @@ function get_bus_generators(buses, gens, bus_id_to_indexes)
     end
     return bus_gen
 end
+
+function get_active_branches(lines, remove_lines)
+    if isempty(remove_lines)
+        return lines
+    else
+        lines = lines[1:end .!= remove_lines, :]
+        return lines
+    end
+end
+
+function import_dataset(datafile::String)
+    if endswith(datafile, ".raw")
+        data_raw = ParsePSSE.parse_raw(datafile)
+        return ParsePSSE.raw_to_exapf(data_raw)
+    elseif endswith(datafile, ".m")
+        data_mat = ParseMAT.parse_mat(datafile)
+        return ParseMAT.mat_to_exapf(data_mat)
+    else
+        error("Unsupported format in file $(datafile): supported extensions are " *
+              "Matpower (.m) or PSSE (.raw)")
+    end
+end
+
 
 include("topology.jl")
 include("power_network.jl")
