@@ -88,6 +88,21 @@ get(form, NumberOfControl())
 function get end
 
 """
+    setvalues!(form::AbstractFormulation, attr::PS.AbstractNetworkAttribute, values)
+
+Update inplace the attribute's values specified by `attr`.
+
+## Examples
+
+```julia
+setvalues!(form, ActiveLoad(), new_ploads)
+setvalues!(form, ReactiveLoad(), new_qloads)
+
+```
+"""
+function setvalues! end
+
+"""
     bounds(form::AbstractFormulation, var::AbstractVariable)
 
 Return the bounds attached to the variable `var`.

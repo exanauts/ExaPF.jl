@@ -120,6 +120,7 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     )
 end
 
+# Getters
 function get(polar::PolarForm, ::NumberOfState)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
@@ -131,6 +132,17 @@ function get(polar::PolarForm, ::NumberOfControl)
     return nref + 2*npv
 end
 
+# Setters
+function setvalues!(polar::PolarForm, ::PS.ActiveLoad, values)
+    @assert length(polar.active_load) == length(values)
+    copyto!(polar.active_load, values)
+end
+function setvalues!(polar::PolarForm, ::PS.ReactiveLoad, values)
+    @assert length(polar.reactive_load) == length(values)
+    copyto!(polar.reactive_load, values)
+end
+
+## Bounds
 function bounds(polar::PolarForm{T, IT, VT, AT}, ::State) where {T, IT, VT, AT}
     return polar.x_min, polar.x_max
 end
