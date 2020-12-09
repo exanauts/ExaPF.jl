@@ -48,8 +48,8 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
     # Move load to the target device
-    pload = convert(VT, real.(pf.sload))
-    qload = convert(VT, imag.(pf.sload))
+    pload = convert(VT, PS.get(pf, PS.ActiveLoad()))
+    qload = convert(VT, PS.get(pf, PS.ReactiveLoad()))
 
     # Move the indexing to the target device
     idx_gen = PS.get(pf, PS.GeneratorIndexes())

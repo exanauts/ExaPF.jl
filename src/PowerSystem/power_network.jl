@@ -91,6 +91,10 @@ get(pf::PowerNetwork, ::NumberOfPVBuses) = length(pf.pv)
 get(pf::PowerNetwork, ::NumberOfPQBuses) = length(pf.pq)
 get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
 
+## Loads
+get(pf::PowerNetwork, ::ActiveLoad) = real.(pf.sload)
+get(pf::PowerNetwork, ::ReactiveLoad) = imag.(pf.sload)
+
 ## Indexing
 function get(pf::PowerNetwork, ::GeneratorIndexes)
     GEN_BUS = IndexSet.idx_gen()[1]

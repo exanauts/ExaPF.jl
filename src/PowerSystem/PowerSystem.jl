@@ -190,6 +190,19 @@ Reactive power `Q` of the complex power `S = P + iQ`.
 """
 struct ReactivePower <: AbstractNetworkValues end
 
+"""
+    ActiveLoad <: AbstractNetworkValues
+
+Active load `Pd` at buses.
+"""
+struct ActiveLoad <: AbstractNetworkValues end
+
+"""
+    ReactiveLoad <: AbstractNetworkValues
+
+Reactive load `Qd` at buses.
+"""
+struct ReactiveLoad <: AbstractNetworkValues end
 
 # Templating
 """
