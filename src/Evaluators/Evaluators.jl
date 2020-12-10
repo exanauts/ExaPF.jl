@@ -30,6 +30,14 @@ to a given `AbstractNLPEvaluator`.
 struct Constraints <: AbstractNLPAttribute end
 
 """
+    AutoDiffBackend <: AbstractNLPAttribute end
+
+Attribute corresponding to the autodiff backend used
+inside the `AbstractNLPEvaluator`.
+"""
+struct AutoDiffBackend <: AbstractNLPAttribute end
+
+"""
     n_variables(nlp::AbstractNLPEvaluator)
 Get the number of variables in the problem.
 """
