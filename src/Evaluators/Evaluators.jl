@@ -148,6 +148,7 @@ function reset! end
 
 include("common.jl")
 include("reduced_evaluator.jl")
+include("proxal_evaluators.jl")
 include("penalty.jl")
 include("auglag.jl")
 include("MOI_wrapper.jl")

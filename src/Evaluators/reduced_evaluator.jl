@@ -88,6 +88,8 @@ end
 
 # TODO: add constructor from PowerNetwork
 
+type_array(nlp::ReducedSpaceEvaluator) = typeof(nlp.u_min)
+
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
@@ -101,6 +103,9 @@ get(nlp::ReducedSpaceEvaluator, ::PS.VoltageMagnitude) = nlp.buffer.vmag
 get(nlp::ReducedSpaceEvaluator, ::PS.VoltageAngle) = nlp.buffer.vang
 get(nlp::ReducedSpaceEvaluator, ::PS.ActivePower) = nlp.buffer.pg
 get(nlp::ReducedSpaceEvaluator, ::PS.ReactivePower) = nlp.buffer.qg
+function get(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkAttribute)
+    return get(nlp.model, attr)
+end
 
 # Initial position
 initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())

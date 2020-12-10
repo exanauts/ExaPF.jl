@@ -1,4 +1,10 @@
 
+@enum(ProxALTime,
+    Origin,
+    Final,
+    Normal,
+)
+
 """
     ProxALEvaluator{T} <: AbstractNLPEvaluator
 
@@ -13,7 +19,7 @@ mutable struct ProxALEvaluator{T} <: AbstractNLPEvaluator
     nu::Int
     ng::Int
     # Augmented penalties parameters
-    time::Int
+    time::ProxALTime
     τ::T
     λf::AbstractVector{T}
     λt::AbstractVector{T}
@@ -27,6 +33,34 @@ mutable struct ProxALEvaluator{T} <: AbstractNLPEvaluator
     ramp_link_next::AbstractVector{T}
 end
 
+function ProxALEvaluator(
+    nlp::ReducedSpaceEvaluator,
+    time::ProxALTime;
+    τ=0.1, ρf=0.1, ρt=0.1,
+)
+    S = type_array(nlp)
+
+    nu = n_variables(nlp)
+    ng = get(nlp, PS.NumberOfGenerators())
+
+    s_min = xzeros(S, ng)
+    s_max = xzeros(S, ng)
+    λf = xzeros(S, ng)
+    λt = xzeros(S, ng)
+
+    pgf = xzeros(S, ng)
+    pgc = xzeros(S, ng)
+    pgt = xzeros(S, ng)
+
+    ramp_link_prev = xzeros(S, ng)
+    ramp_link_next = xzeros(S, ng)
+
+    return ProxALEvaluator(
+        nlp, s_min, s_max, nu, ng, time, τ, λf, λt, ρf, ρt,
+        pgf, pgc, pgt, ramp_link_prev, ramp_link_next,
+    )
+end
+
 # TODO: add constructor from PowerNetwork
 
 n_variables(nlp::ProxALEvaluator) = n_variables(nlp.inner) + length(nlp.s_min)
@@ -37,17 +71,17 @@ get(nlp::ProxALEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
 
 # Initial position
 function initial(nlp::ProxALEvaluator)
-    u0 = initial(nlp.model, Control())
+    u0 = initial(nlp.inner)
     s0 = copy(nlp.s_min)
     return [u0; s0]
 end
 
 # Bounds
-function bounds(nlp::ReducedSpaceEvaluator, ::Variables)
+function bounds(nlp::ProxALEvaluator, ::Variables)
     u♭, u♯ = bounds(nlp.inner, Variables())
     return [u♭; nlp.s_min], [u♯; nlp.s_max]
 end
-bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = bounds(nlp.inner, Constraints())
+bounds(nlp::ProxALEvaluator, ::Constraints) = bounds(nlp.inner, Constraints())
 
 function update!(nlp::ProxALEvaluator, w)
     @assert length(w) == nlp.nu + nlp.ng
@@ -56,7 +90,7 @@ function update!(nlp::ProxALEvaluator, w)
     conv = update!(nlp.inner, u)
     pg = get(nlp.inner, PS.ActivePower())
     # Update terms for augmented penalties
-    nlp.ramp_link_prev .= nlp.pg_t .- pg .+ s
+    nlp.ramp_link_prev .= nlp.pg_f .- pg .+ s
     nlp.ramp_link_next .= pg .- nlp.pg_t
     return conv
 end
@@ -80,15 +114,15 @@ function objective(nlp::ProxALEvaluator, w)
     @assert length(w) == nlp.nu + nlp.ng
     u = w[1:nlp.nu]
     s = w[nlp.nu+1:end]
-    pg = get(nlp, PS.ActivePower())
+    pg = get(nlp.inner, PS.ActivePower())
     # Operational costs
     cost = cost_production(nlp.inner.model, pg)
     # Augmented Lagrangian penalty
     cost += 0.5 * nlp.τ * xnorm(pg .- nlp.pg_ref)^2
     cost += dot(nlp.λf, nlp.ramp_link_prev)
-    cost += dot(nlp.λt, ramp_link_next)
-    cost += 0.5 * nlp.ρf * xnorm(ramp_link_prev)^2
-    cost += 0.5 * nlp.ρt * xnorm(ramp_link_next)^2
+    cost += dot(nlp.λt, nlp.ramp_link_next)
+    cost += 0.5 * nlp.ρf * xnorm(nlp.ramp_link_prev)^2
+    cost += 0.5 * nlp.ρt * xnorm(nlp.ramp_link_next)^2
 
     return cost
 end
@@ -107,6 +141,9 @@ function gradient!(nlp::ProxALEvaluator, g, w)
     # Import model
     model = nlp.inner.model
 
+    # Start to update Control Jacobian in reduced model
+    update_jacobian!(nlp.inner, Control(), buffer)
+
     # Reduced gradient wrt u
     g_u = @view g[1:nlp.nu]
     ## Objective's coefficients
@@ -121,8 +158,10 @@ function gradient!(nlp::ProxALEvaluator, g, w)
     ∂obj.∂pg .+= nlp.τ .* (pg .- nlp.pg_ref)
 
     ## Evaluate conjointly
-    # ∇fₓ = v' J,  with J = ∂pg / ∂x
-    # ∇fᵤ = v' J,  with J = ∂pg / ∂u
+    # ∇fₓ = v' * J,  with J = ∂pg / ∂x
+    # ∇fᵤ = v' * J,  with J = ∂pg / ∂u
+    fill!(∂obj.∇fᵤ, 0)
+    fill!(∂obj.∇fₓ, 0)
     put(model, PS.Generator(), PS.ActivePower(), ∂obj, buffer)
 
     ## Evaluation of reduced gradient
@@ -130,7 +169,7 @@ function gradient!(nlp::ProxALEvaluator, g, w)
 
     # Gradient wrt s
     g_s = @view g[nlp.nu+1:end]
-    g_s .+= nlp.λf .+ nlp.ρf .* (nlp.pg_t .- pg .+ s)
+    g_s .+= nlp.λf .+ nlp.ρf .* nlp.ramp_link_prev
     return nothing
 end
 
@@ -155,12 +194,14 @@ end
 function jtprod!(nlp::ProxALEvaluator, cons, jv, w, v; start=1)
     @assert length(w) == nlp.nu + nlp.ng
     u = w[1:nlp.nu]
-    jtprod!(nlp.inner, cons, jv, u, v; start=start)
+    jvu = jv[1:nlp.nu]
+    jtprod!(nlp.inner, cons, jvu, u, v; start=start)
 end
 function jtprod!(nlp::ProxALEvaluator, jv, w, v)
     @assert length(w) == nlp.nu + nlp.ng
     u = w[1:nlp.nu]
-    jtprod!(nlp.inner, jv, u, v)
+    jvu = jv[1:nlp.nu]
+    jtprod!(nlp.inner, jvu, u, v)
 end
 
 

@@ -132,6 +132,10 @@ function get(polar::PolarForm, ::NumberOfControl)
     return nref + 2*npv
 end
 
+function get(polar::PolarForm, attr::PS.AbstractNetworkAttribute)
+    return get(polar.network, attr)
+end
+
 # Setters
 function setvalues!(polar::PolarForm, ::PS.ActiveLoad, values)
     @assert length(polar.active_load) == length(values)
