@@ -44,6 +44,7 @@ function ProxALEvaluator(
     ng = get(nlp, PS.NumberOfGenerators())
 
     s_min = xzeros(S, ng)
+    # TODO: fix s_max properly
     s_max = xzeros(S, ng)
     λf = xzeros(S, ng)
     λt = xzeros(S, ng)
@@ -68,6 +69,11 @@ n_constraints(nlp::ProxALEvaluator) = n_constraints(nlp.inner)
 
 # Getters
 get(nlp::ProxALEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
+
+# Setters
+function setvalues!(nlp::ProxALEvaluator, attr::PS.AbstractNetworkValues, values)
+    setvalues!(nlp.inner, attr, values)
+end
 
 # Initial position
 function initial(nlp::ProxALEvaluator)
@@ -142,7 +148,7 @@ function gradient!(nlp::ProxALEvaluator, g, w)
     model = nlp.inner.model
 
     # Start to update Control Jacobian in reduced model
-    update_jacobian!(nlp.inner, Control(), buffer)
+    update_jacobian!(nlp.inner, Control())
 
     # Reduced gradient wrt u
     g_u = @view g[1:nlp.nu]

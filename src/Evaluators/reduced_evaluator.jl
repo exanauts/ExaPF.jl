@@ -107,6 +107,11 @@ function get(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkAttribute)
     return get(nlp.model, attr)
 end
 
+# Setters
+function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkValues, values)
+    setvalues!(nlp.model, attr, values)
+end
+
 # Initial position
 initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
 
@@ -148,18 +153,13 @@ function objective(nlp::ReducedSpaceEvaluator, u)
     return cost
 end
 
+function update_jacobian!(nlp::ReducedSpaceEvaluator, ::Control)
+    jacobian(nlp.model, nlp.autodiff.Jgᵤ, nlp.buffer)
+end
+
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
 # equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
 # (take λₖ_neg to avoid computing an intermediate array)
-function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
-    g .= ∇fᵤ
-    mul!(g, transpose(∇gᵤ), λₖ_neg, -1.0, 1.0)
-end
-
-function update_jacobian!(nlp::ReducedSpaceEvaluator, ::Control, buffer)
-    jacobian(nlp.model, nlp.autodiff.Jgᵤ, buffer)
-end
-
 function reduced_gradient!(
     nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ,
 )
@@ -173,12 +173,12 @@ end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     buffer = nlp.buffer
-    # Evaluate Jacobian of power flow equation on current u
-    update_jacobian!(nlp, Control(), buffer)
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
     ∂cost(nlp.model, nlp.autodiff.∇f, buffer)
-
     ∇fₓ, ∇fᵤ = nlp.autodiff.∇f.∇fₓ, nlp.autodiff.∇f.∇fᵤ
+
+    # Evaluate Jacobian of power flow equation on current u
+    update_jacobian!(nlp, Control())
     reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ)
     return nothing
 end
@@ -235,24 +235,14 @@ end
 
 function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
     model = nlp.model
-    xₖ = nlp.x
-    ∇gₓ = nlp.autodiff.Jgₓ.J
-    ∇gᵤ = nlp.autodiff.Jgᵤ.J
-    nₓ = length(xₖ)
-    μ = nlp.λ
-
     ∂obj = nlp.autodiff.∇f
     # Get adjoint
     jtprod(model, cons, ∂obj, nlp.buffer, v)
     jvx, jvu = ∂obj.∇fₓ, ∂obj.∇fᵤ
-    # jv .+= (ju .- ∇gᵤ' * μ)
-    LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jvx)
-    jv .+= jvu
-    mul!(jv, transpose(∇gᵤ), μ, -1.0, 1.0)
+    reduced_gradient!(nlp, jv, jvx, jvu)
 end
+
 function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
-    μ = nlp.λ
-    ∇gᵤ = nlp.autodiff.Jgᵤ.J
     ∂obj = nlp.autodiff.∇f
     jvx = ∂obj.jvₓ
     jvu = ∂obj.jvᵤ
@@ -270,9 +260,7 @@ function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
         jvu .+= ∂obj.∇fᵤ
         fr_ += n
     end
-    LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jvx)
-    jv .+= jvu
-    mul!(jv, transpose(∇gᵤ), μ, -1.0, 1.0)
+    reduced_gradient!(nlp, jv, jvx, jvu)
     return
 end
 
