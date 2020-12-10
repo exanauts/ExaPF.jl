@@ -86,10 +86,21 @@ function ReducedSpaceEvaluator(
     )
 end
 
+# TODO: add constructor from PowerNetwork
+
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
+# Getters
+get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints
+get(nlp::ReducedSpaceEvaluator, ::State) = nlp.x
+get(nlp::ReducedSpaceEvaluator, ::PhysicalState) = nlp.buffer
+get(nlp::ReducedSpaceEvaluator, ::AutoDiffBackend) = nlp.autodiff
+
+# Initial position
 initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
+
+# Bounds
 bounds(nlp::ReducedSpaceEvaluator, ::Variables) = nlp.u_min, nlp.u_max
 bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.g_min, nlp.g_max
 
@@ -134,20 +145,30 @@ function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
     mul!(g, transpose(∇gᵤ), λₖ_neg, -1.0, 1.0)
 end
 
+function update_jacobian!(nlp::ReducedSpaceEvaluator, ::Control, buffer)
+    jacobian(nlp.model, nlp.autodiff.Jgᵤ, buffer, AutoDiff.ControlJacobian())
+end
+
+function reduced_gradient!(
+    nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ,
+)
+    λₖ = nlp.λ
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J
+    # Compute adjoint and store value inside λₖ
+    LinearSolvers.ldiv!(nlp.linear_solver, λₖ, nlp.∇gᵗ, ∂fₓ)
+    grad .= ∂fᵤ
+    mul!(grad, transpose(∇gᵤ), λₖ, -1.0, 1.0)
+end
+
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     buffer = nlp.buffer
-    xₖ = nlp.x
-    ∇gₓ = nlp.autodiff.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
-    ∇gᵤ = jacobian(nlp.model, nlp.autodiff.Jgᵤ, buffer, AutoDiff.ControlJacobian())
+    update_jacobian!(nlp, Control(), buffer)
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
     ∂cost(nlp.model, nlp.autodiff.∇f, buffer)
 
     ∇fₓ, ∇fᵤ = nlp.autodiff.∇f.∇fₓ, nlp.autodiff.∇f.∇fᵤ
-    # Update (negative) adjoint
-    λₖ_neg = nlp.λ
-    LinearSolvers.ldiv!(nlp.linear_solver, λₖ_neg, nlp.∇gᵗ, ∇fₓ)
-    _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
+    reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ)
     return nothing
 end
 
