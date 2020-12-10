@@ -24,20 +24,28 @@ function AugLagEvaluator(nlp::AbstractNLPEvaluator, u0;
         @warn("Original model has no inequality constraint")
     end
 
-    cons = similar(nlp.g_min)
-    cx = similar(nlp.g_min)
-    λc = similar(nlp.g_min) ; fill!(λc, 0)
-    λ = similar(nlp.g_min) ; fill!(λ, 0)
+    g_min, g_max = bounds(nlp, Constraints())
+    cons = similar(g_min)
+    cx = similar(g_min)
+    λc = similar(g_min) ; fill!(λc, 0)
+    λ = similar(g_min) ; fill!(λ, 0)
 
-    scaler = scale ?  MaxScaler(nlp, u0) : MaxScaler(nlp.g_min, nlp.g_max)
+    scaler = scale ?  MaxScaler(nlp, u0) : MaxScaler(g_min, g_max)
     return AugLagEvaluator(nlp, cons, cx, c₀, λ, λc, scaler, NLPCounter())
 end
 
-initial(ag::AugLagEvaluator) = initial(ag.inner)
-bounds(ag::AugLagEvaluator, ::Variables) = ag.inner.u_min, ag.inner.u_max
-bounds(ag::AugLagEvaluator, ::Constraints) = Float64[], Float64[]
 n_variables(ag::AugLagEvaluator) = n_variables(ag.inner)
 n_constraints(ag::AugLagEvaluator) = 0
+
+# Getters
+get(ag::AugLagEvaluator, attr::AbstractNLPAttribute) = get(ag.inner, attr)
+
+# Initial position
+initial(ag::AugLagEvaluator) = initial(ag.inner)
+
+# Bounds
+bounds(ag::AugLagEvaluator, ::Variables) = bounds(ag.inner, Variables())
+bounds(ag::AugLagEvaluator, ::Constraints) = Float64[], Float64[]
 
 function update!(ag::AugLagEvaluator, u)
     conv = update!(ag.inner, u)
@@ -58,6 +66,7 @@ end
 function update_penalty!(ag::AugLagEvaluator; η=10.0)
     ag.ρ = min(η * ag.ρ, 10e12)
 end
+
 function update_multipliers!(ag::AugLagEvaluator)
     ag.λ .= ag.λc
     return
@@ -81,12 +90,15 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     base_nlp = ag.inner
     scaler = ag.scaler
     model = base_nlp.model
-    λ = base_nlp.λ
     # Import buffer (has been updated previously in update!)
-    buffer = base_nlp.buffer
+    buffer = get(base_nlp, PhysicalState())
     # Import AutoDiff objects
-    ∇gᵤ = jacobian(model, base_nlp.autodiff.Jgᵤ, buffer, AutoDiff.ControlJacobian())
-    ∂obj = base_nlp.autodiff.∇f
+    autodiff = get(base_nlp, AutoDiffBackend())
+
+    # Evaluate Jacobian of power flow equation on current u
+    update_jacobian!(base_nlp, Control(), buffer)
+
+    ∂obj = autodiff.∇f
     jvx = ∂obj.jvₓ ; fill!(jvx, 0)
     jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
 
@@ -96,9 +108,10 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     jvu .+= scaler.scale_obj .* ∂obj.∇fᵤ
 
     # compute gradient of penalties
+    constraints = get(base_nlp, Constraints())
     fr_ = 0
-    for cons in base_nlp.constraints
-        n = size_constraint(base_nlp.model, cons)
+    for cons in constraints
+        n = size_constraint(model, cons)
         mask = fr_+1:fr_+n
         cx = @view ag.λc[mask]
         v = cx .* scaler.scale_cons[mask]
@@ -107,10 +120,8 @@ function gradient!(ag::AugLagEvaluator, grad, u)
         jvu .+= ∂obj.∇fᵤ
         fr_ += n
     end
-    # evaluate reduced gradient
-    LinearSolvers.ldiv!(base_nlp.linear_solver, λ, base_nlp.∇gᵗ, jvx)
-    grad .= jvu
-    mul!(grad, transpose(∇gᵤ), λ, -1.0, 1.0)
+    # Evaluate reduced gradient
+    reduced_gradient!(base_nlp, grad, jvx, jvu)
 end
 
 function constraint!(ag::AugLagEvaluator, cons, u)

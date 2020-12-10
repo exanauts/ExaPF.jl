@@ -47,6 +47,13 @@
         @test isless(nlp.g_min, nlp.g_max)
         @test length(nlp.g_min) == m
 
+        # Test API
+        @test isa(get(nlp, ExaPF.Constraints()), Array{Function})
+        @test get(nlp, State()) == x0
+        @test isa(get(nlp, ExaPF.PhysicalState()), ExaPF.AbstractBuffer)
+        @test isa(get(nlp, ExaPF.AutoDiffBackend()), ExaPF.AutoDiffFactory)
+        @test ExaPF.initial(nlp) == u0
+
         u = u0
         # Update nlp to stay on manifold
         ExaPF.update!(nlp, u)
