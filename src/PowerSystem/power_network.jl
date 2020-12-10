@@ -224,7 +224,6 @@ function get_costs_coefficients(pf::PowerNetwork)
         bustype = bus[genbus, BUS_TYPE]
 
         # polynomial coefficients
-        # TODO: currently scale by baseMVA. Is it a good idea?
         c0 = cost_data[i, COST+2]
         c1 = cost_data[i, COST+1] * baseMVA
         c2 = cost_data[i, COST] * baseMVA^2

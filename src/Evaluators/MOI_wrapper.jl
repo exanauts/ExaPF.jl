@@ -31,12 +31,7 @@ MOI.features_available(ev::MOIEvaluator) = ev.has_hess ? [:Grad, :Hess] : [:Grad
 MOI.initialize(ev::MOIEvaluator, features) = nothing
 
 function MOI.jacobian_structure(ev::MOIEvaluator)
-    n = n_variables(ev.nlp)
-    m = n_constraints(ev.nlp)
-    jnnz = n * m
-    rows = zeros(Int, jnnz)
-    cols = zeros(Int, jnnz)
-    jacobian_structure!(ev.nlp, rows, cols)
+    rows, cols = jacobian_structure(ev.nlp)
     return Tuple{Int, Int}[(r, c) for (r, c) in zip(rows, cols)]
 end
 
@@ -65,14 +60,15 @@ function MOI.eval_constraint_jacobian(ev::MOIEvaluator, ∂cons, x)
     _update!(ev, x)
     n = n_variables(ev.nlp)
     m = n_constraints(ev.nlp)
+    # Build up a dense Jacobian
     jac = zeros(m, n)
     jacobian!(ev.nlp, jac, x)
+    # Copy back to the MOI arrray
+    rows, cols = jacobian_structure(ev.nlp)
     k = 1
-    for i = 1:m
-        for j = 1:n
-            ∂cons[k] = jac[i, j]
-            k += 1
-        end
+    for (i, j) in zip(rows, cols)
+        ∂cons[k] = jac[i, j]
+        k += 1
     end
 end
 
