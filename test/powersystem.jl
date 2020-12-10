@@ -4,11 +4,10 @@ using KernelAbstractions
 using Test
 using TimerOutputs
 
-import ExaPF: ParsePSSE, PowerSystem
+import ExaPF: ParsePSSE, PowerSystem, IndexSet
 
 const PS = PowerSystem
 
-@testset "Powerflow residuals and Jacobian" begin
     local_case = "case14.raw"
     # read data
     to = TimerOutputs.TimerOutput()
@@ -87,85 +86,22 @@ const PS = PowerSystem
     npv = size(pv, 1)
     npq = size(pq, 1)
 
-    @testset "Computing residuals" begin
-        F = zeros(Float64, npv + 2*npq)
-        # First compute a reference value for resisual computed at V
-        F♯ = ExaPF.residualFunction(V, Ybus, Sbus, pv, pq)
-        # residual_polar! uses only binary types as this function is meant
-        # to be deported on the GPU
-        ExaPF.residualFunction_polar!(F, Vm, Va,
-            ybus_re, ybus_im,
-            pbus, qbus, pv, pq, nbus)
-        @test F ≈ F♯
-    end
-    @testset "Computing Jacobian of residuals" begin
-        F = zeros(Float64, npv + 2*npq)
-        # Compute Jacobian at point V manually and use it as reference
-        J = ExaPF.residualJacobian(V, Ybus, pv, pq)
-        J♯ = copy(J)
+    F = zeros(Float64, npv + 2*npq)
+    # Compute Jacobian at point V manually and use it as reference
+    J = ExaPF.residualJacobian(V, Ybus, pv, pq)
+    J♯ = copy(J)
 
-        # Then, create a JacobianAD object
-        jacobianAD = ExaPF.AD.StateJacobianAD(F, Vm, Va,
-                                              ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
-        # and compute Jacobian with ForwardDiff
-        ExaPF.AD.residualJacobianAD!(
-            jacobianAD, ExaPF.residualFunction_polar!, Vm, Va,
-            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
-        @test jacobianAD.J ≈ J♯
-    end
-end
+    # Then, create a JacobianAD object
+    jacobianAD = ExaPF.AD.StateJacobianAD(F, Vm, Va,
+                                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
+    # and compute Jacobian with ForwardDiff
+    ExaPF.AD.residualJacobianAD!(
+        jacobianAD, ExaPF.residualFunction_polar!, Vm, Va,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
+    @test jacobianAD.J ≈ J♯
+    hessianAD = ExaPF.AD.StateHessianAD(F, Vm, Va,
+                                                ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
+    ExaPF.AD.residualHessianAD!(
+        hessianAD, ExaPF.residualFunction_polar!, Vm, Va,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
 
-@testset "PowerNetwork object" begin
-    psse_datafile = "case14.raw"
-    matpower_datafile = "case9.m"
-
-    # Test constructor
-    @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
-        datafile = joinpath(dirname(@__FILE__), "..", "data", name)
-        switch = endswith(name, ".m") ? 1 : 0
-        pf = PS.PowerNetwork(datafile, switch)
-        @test isa(pf, PS.PowerNetwork)
-    end
-
-    # From now on, test with "case9.m"
-    datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
-    pf = PS.PowerNetwork(datafile, 1)
-
-    @testset "Computing cost coefficients" begin
-        coefs = PS.get_costs_coefficients(pf)
-        @test size(coefs) == (3, 4)
-        @test isequal(coefs[:, 1], [3.0, 2.0, 2.0])
-    end
-
-    @testset "Getters" for Attr in [
-        PS.NumberOfBuses,
-        PS.NumberOfPVBuses,
-        PS.NumberOfPQBuses,
-        PS.NumberOfSlackBuses,
-        PS.NumberOfLines,
-        PS.NumberOfGenerators,
-    ]
-        res = PS.get(pf, Attr())
-        @test isa(res, Int)
-    end
-
-    @testset "Indexing" begin
-        idx = PS.get(pf, PS.GeneratorIndexes())
-        @test isequal(idx, [1, 2, 3])
-    end
-
-    @testset "Bounds" begin
-        n_bus = PS.get(pf, PS.NumberOfBuses())
-        v_min, v_max = PS.bounds(pf, PS.Buses(), PS.VoltageMagnitude())
-        @test length(v_min) == n_bus
-        @test length(v_max) == n_bus
-
-        n_gen = PS.get(pf, PS.NumberOfGenerators())
-        p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
-        @test length(p_min) == n_gen
-        @test length(p_max) == n_gen
-        q_min, q_max = PS.bounds(pf, PS.Generator(), PS.ReactivePower())
-        @test length(q_min) == n_gen
-        @test length(q_max) == n_gen
-    end
-end
