@@ -85,6 +85,7 @@ function inner_objective(ag::AugLagEvaluator, u)
     return ag.scaler.scale_obj * objective(ag.inner, u)
 end
 
+# TODO
 function gradient!(ag::AugLagEvaluator, grad, u)
     ag.counter.gradient += 1
     base_nlp = ag.inner

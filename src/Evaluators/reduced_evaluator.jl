@@ -96,6 +96,11 @@ get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints
 get(nlp::ReducedSpaceEvaluator, ::State) = nlp.x
 get(nlp::ReducedSpaceEvaluator, ::PhysicalState) = nlp.buffer
 get(nlp::ReducedSpaceEvaluator, ::AutoDiffBackend) = nlp.autodiff
+# Physics
+get(nlp::ReducedSpaceEvaluator, ::PS.VoltageMagnitude) = nlp.buffer.vmag
+get(nlp::ReducedSpaceEvaluator, ::PS.VoltageAngle) = nlp.buffer.vang
+get(nlp::ReducedSpaceEvaluator, ::PS.ActivePower) = nlp.buffer.pg
+get(nlp::ReducedSpaceEvaluator, ::PS.ReactivePower) = nlp.buffer.qg
 
 # Initial position
 initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
@@ -132,7 +137,8 @@ end
 
 function objective(nlp::ReducedSpaceEvaluator, u)
     # Take as input the current cache, updated previously in `update!`.
-    cost = cost_production(nlp.model, nlp.buffer.pg)
+    pg = get(nlp, PS.ActivePower())
+    cost = cost_production(nlp.model, pg)
     # TODO: determine if we should include λ' * g(x, u), even if ≈ 0
     return cost
 end
