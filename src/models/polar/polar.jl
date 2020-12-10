@@ -40,7 +40,7 @@ include("getters.jl")
 include("adjoints.jl")
 include("constraints.jl")
 
-function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
+function PolarForm(pf::PS.PowerNetwork, device)
     if isa(device, CPU)
         IT = Vector{Int}
         VT = Vector{Float64}
@@ -186,6 +186,10 @@ function get(polar::PolarForm, ::NumberOfControl)
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     return nref + 2*npv
+end
+
+function get(polar::PolarForm, attr::PS.AbstractNetworkAttribute)
+    return get(polar.network, attr)
 end
 
 # Setters

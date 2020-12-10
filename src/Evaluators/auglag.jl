@@ -76,7 +76,6 @@ function objective(ag::AugLagEvaluator, u)
     ag.counter.objective += 1
     base_nlp = ag.inner
     cx = ag.infeasibility
-    # TODO: add multiplier
     obj = ag.scaler.scale_obj * objective(base_nlp, u) +
         0.5 * ag.ρ * dot(cx, cx) + dot(ag.λ, cx)
     return obj
@@ -85,6 +84,7 @@ function inner_objective(ag::AugLagEvaluator, u)
     return ag.scaler.scale_obj * objective(ag.inner, u)
 end
 
+# TODO
 function gradient!(ag::AugLagEvaluator, grad, u)
     ag.counter.gradient += 1
     base_nlp = ag.inner
@@ -96,7 +96,7 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     autodiff = get(base_nlp, AutoDiffBackend())
 
     # Evaluate Jacobian of power flow equation on current u
-    update_jacobian!(base_nlp, Control(), buffer)
+    update_jacobian!(base_nlp, Control())
 
     ∂obj = autodiff.∇f
     jvx = ∂obj.jvₓ ; fill!(jvx, 0)
