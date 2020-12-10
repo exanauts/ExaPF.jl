@@ -63,6 +63,20 @@ function ProxALEvaluator(
 end
 
 # TODO: add constructor from PowerNetwork
+function ProxALEvaluator(
+    pf::PS.PowerNetwork,
+    time::ProxALTime;
+    device=CPU(),
+)
+    # Build network polar formulation
+    model = PolarForm(pf, device)
+    # Build reduced space evaluator
+    x = initial(model, State())
+    p = initial(model, Parameters())
+    u = initial(model, Control())
+    nlp = ReducedSpaceEvaluator(model, x, u, p)
+    return ProxALEvaluator(nlp, time)
+end
 
 n_variables(nlp::ProxALEvaluator) = n_variables(nlp.inner) + length(nlp.s_min)
 n_constraints(nlp::ProxALEvaluator) = n_constraints(nlp.inner)
@@ -109,10 +123,10 @@ function update_multipliers!(nlp::ProxALEvaluator, λf, λt)
 end
 
 function update_primal!(nlp::ProxALEvaluator, pgf, pgc, pgt)
-    @assert length(pgf) == length(pft) == length(pgc) == nlp.ng
-    copyto!(nlp.pg_f, pfg)
-    copyto!(nlp.pg_ref, pfc)
-    copyto!(nlp.pg_t, pft)
+    @assert length(pgf) == length(pgc) == length(pgt) == nlp.ng
+    copyto!(nlp.pg_f, pgf)
+    copyto!(nlp.pg_ref, pgc)
+    copyto!(nlp.pg_t, pgt)
 end
 
 ## Objective

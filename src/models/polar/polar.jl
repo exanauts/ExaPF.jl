@@ -26,7 +26,7 @@ include("getters.jl")
 include("adjoints.jl")
 include("constraints.jl")
 
-function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
+function PolarForm(pf::PS.PowerNetwork, device)
     if isa(device, CPU)
         IT = Vector{Int}
         VT = Vector{Float64}
