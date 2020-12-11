@@ -198,6 +198,16 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
     end
 end
 
+function jacobian_structure(nlp::ReducedSpaceEvaluator)
+    S = type_array(nlp)
+    m, n = n_constraints(nlp), n_variables(nlp)
+    nnzj = m * n
+    rows = zeros(Int, nnzj)
+    cols = zeros(Int, nnzj)
+    jacobian_structure!(nlp, rows, cols)
+    return rows, cols
+end
+
 function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     m, n = n_constraints(nlp), n_variables(nlp)
     idx = 1

@@ -45,7 +45,7 @@ function ProxALEvaluator(
 
     s_min = xzeros(S, ng)
     # TODO: fix s_max properly
-    s_max = xzeros(S, ng)
+    s_max = xones(S, ng)
     λf = xzeros(S, ng)
     λt = xzeros(S, ng)
 
@@ -78,7 +78,7 @@ function ProxALEvaluator(
     return ProxALEvaluator(nlp, time)
 end
 
-n_variables(nlp::ProxALEvaluator) = n_variables(nlp.inner) + length(nlp.s_min)
+n_variables(nlp::ProxALEvaluator) = nlp.nu + nlp.ng
 n_constraints(nlp::ProxALEvaluator) = n_constraints(nlp.inner)
 
 # Getters
@@ -104,7 +104,6 @@ end
 bounds(nlp::ProxALEvaluator, ::Constraints) = bounds(nlp.inner, Constraints())
 
 function update!(nlp::ProxALEvaluator, w)
-    @assert length(w) == nlp.nu + nlp.ng
     u = w[1:nlp.nu]
     s = w[nlp.nu+1:end]
     conv = update!(nlp.inner, u)
@@ -131,7 +130,6 @@ end
 
 ## Objective
 function objective(nlp::ProxALEvaluator, w)
-    @assert length(w) == nlp.nu + nlp.ng
     u = w[1:nlp.nu]
     s = w[nlp.nu+1:end]
     pg = get(nlp.inner, PS.ActivePower())
@@ -149,7 +147,6 @@ end
 
 ## Gradient
 function gradient!(nlp::ProxALEvaluator, g, w)
-    @assert length(w) == nlp.nu + nlp.ng
     u = w[1:nlp.nu]
     s = w[nlp.nu+1:end]
     pg = get(nlp.inner, PS.ActivePower())
@@ -189,14 +186,22 @@ function gradient!(nlp::ProxALEvaluator, g, w)
 
     # Gradient wrt s
     g_s = @view g[nlp.nu+1:end]
-    g_s .+= nlp.λf .+ nlp.ρf .* nlp.ramp_link_prev
+    g_s .= nlp.λf .+ nlp.ρf .* nlp.ramp_link_prev
     return nothing
 end
 
 function constraint!(nlp::ProxALEvaluator, cons, w)
-    @assert length(w) == nlp.nu + nlp.ng
     u = w[1:nlp.nu]
     constraint!(nlp.inner, cons, u)
+end
+
+function jacobian_structure(nlp::ProxALEvaluator)
+    m, nu = n_constraints(nlp), nlp.nu
+    nnzj = m * nu
+    rows = zeros(Int, nnzj)
+    cols = zeros(Int, nnzj)
+    jacobian_structure!(nlp.inner, rows, cols)
+    return rows, cols
 end
 
 ## Jacobian
@@ -205,20 +210,18 @@ function jacobian_structure!(nlp::ProxALEvaluator, rows, cols)
 end
 
 function jacobian!(nlp::ProxALEvaluator, jac, w)
-    @assert length(w) == nlp.nu + nlp.ng
-    u = w[1:nlp.nu]
-    jacobian!(nlp, jac, u)
+    u = @view w[1:nlp.nu]
+    Jᵤ = @view jac[:, 1:nlp.nu]
+    jacobian!(nlp.inner, Jᵤ, u)
 end
 
 ## Transpose Jacobian-vector product
 function jtprod!(nlp::ProxALEvaluator, cons, jv, w, v; start=1)
-    @assert length(w) == nlp.nu + nlp.ng
     u = w[1:nlp.nu]
     jvu = jv[1:nlp.nu]
     jtprod!(nlp.inner, cons, jvu, u, v; start=start)
 end
 function jtprod!(nlp::ProxALEvaluator, jv, w, v)
-    @assert length(w) == nlp.nu + nlp.ng
     u = w[1:nlp.nu]
     jvu = jv[1:nlp.nu]
     jtprod!(nlp.inner, jvu, u, v)

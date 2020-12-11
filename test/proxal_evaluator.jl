@@ -1,3 +1,6 @@
+using FiniteDiff
+using Test
+
 @testset "AugLagEvaluators" begin
     datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
     # Build reference evaluator
@@ -52,6 +55,17 @@
         v = ExaPF.xzeros(S, m_I)
         jv = ExaPF.xzeros(S, n)
         ExaPF.jtprod!(prox, jv, w, v)
+
+        # Jacobian structure
+        rows, cols = ExaPF.jacobian_structure(prox)
+        println(cols)
+        # Evaluation
+        M = Array
+        jac = M{Float64, 2}(undef, m_I, n)
+        fill!(jac, 0)
+        ExaPF.jacobian!(prox, jac, w)
+        # Check correctness of transpose Jacobian vector product
+        @test jv == jac' * v
     end
 end
 
