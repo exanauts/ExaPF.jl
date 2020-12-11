@@ -22,3 +22,23 @@ struct PolarNetworkState{VT} <: AbstractNetworkBuffer
     dx::VT
 end
 
+function PolarNetworkState(state::PolarNetworkState, device = nothing)
+    if device == CUDADevice()
+        VT = CuVector{Float64}
+    elseif device == CPU()
+        VT = Vector{Float64}
+    else
+        VT = typeof(state.vmag)
+    end
+    return PolarNetworkState{VT}(
+        state.vmag,
+        state.vang,
+        state.pinj,
+        state.qinj,
+        state.pg,
+        state.qg,
+        state.balance,
+        state.dx
+        )
+end
+

@@ -86,6 +86,43 @@ function ReducedSpaceEvaluator(
     )
 end
 
+function ReducedSpaceEvaluator(nlp::ReducedSpaceEvaluator, device = nothing) 
+    if device == CUDADevice()
+        VT = CuVector 
+        MT = CuMatrix
+    elseif device == CPU()
+        buffer = PolarNetworkState(nlp.buffer, device)
+        VT = Vector 
+        MT = Matrix
+    else
+        VT = typeof(nlp.x)
+        MT = typeof(nlp.∇gᵗ)
+    end
+    buffer = PolarNetworkState(nlp.buffer, device)
+    jac_x = AutoDiff.StateJacobian(nlp.autodiff.Jgₓ, device)
+    jac_u = AutoDiff.ControlJacobian(nlp.autodiff.Jgᵤ, device)
+    ad = AutoDiffFactory(jac_x, jac_u, nlp.autodiff.∇f)
+    model = PolarForm(nlp.model.network, device)
+    return ReducedSpaceEvaluator(
+        model,
+        VT(nlp.x),
+        VT(nlp.p),
+        VT(nlp.λ),
+        VT(nlp.x_min),
+        VT(nlp.x_max),
+        VT(nlp.u_min),
+        VT(nlp.u_max),
+        nlp.constraints,
+        VT(nlp.g_min),
+        VT(nlp.g_max),
+        buffer,
+        ad,
+        MT(nlp.∇gᵗ),
+        nlp.linear_solver,
+        nlp.ε_tol
+    )
+end
+
 # TODO: add constructor from PowerNetwork
 
 type_array(nlp::ReducedSpaceEvaluator) = typeof(nlp.u_min)
@@ -119,14 +156,21 @@ initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
 bounds(nlp::ReducedSpaceEvaluator, ::Variables) = nlp.u_min, nlp.u_max
 bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.g_min, nlp.g_max
 
-function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
+function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0, device = nothing)
     x₀ = nlp.x
     jac_x = nlp.autodiff.Jgₓ
     # Transfer x, u, p into the network cache
     transfer!(nlp.model, nlp.buffer, nlp.x, u, nlp.p)
     # Get corresponding point on the manifold
+    if !(device === nothing)
+        jac_x = AutoDiff.StateJacobian(jac_x, device)
+        nlp  = ReducedSpaceEvaluator(nlp, device)
+    end
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
-                     solver=nlp.linear_solver, verbose_level=verbose_level)
+                     solver=nlp.linear_solver, verbose_level=VERBOSE_LEVEL_HIGH)
+    if !(device === nothing)
+        nlp = ReducedSpaceEvaluator(nlp, CPU())
+    end
     if !conv.has_converged
         @warn("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
         return conv
