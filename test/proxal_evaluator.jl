@@ -1,7 +1,7 @@
 using FiniteDiff
 using Test
 
-@testset "AugLagEvaluators" begin
+@testset "ProxALEvaluators ($time)" for time in [ExaPF.Origin, ExaPF.Normal, ExaPF.Final]
     datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
     # Build reference evaluator
     nlp = ExaPF.ReducedSpaceEvaluator(datafile)
@@ -9,7 +9,6 @@ using Test
 
     u0 = ExaPF.initial(nlp)
     # Build ProxAL evaluator
-    time = ExaPF.Normal
     prox = ExaPF.ProxALEvaluator(nlp, time)
 
     n = ExaPF.n_variables(prox)
@@ -38,7 +37,8 @@ using Test
         # Test gradient with non-trivial penalties
         λf = 0.5 * rand(prox.ng)
         λt = 1.5 * rand(prox.ng)
-        ExaPF.update_multipliers!(prox, λf, λt)
+        ExaPF.update_multipliers!(prox, ExaPF.Next(), λt)
+        ExaPF.update_multipliers!(prox, ExaPF.Current(), λf)
 
         fill!(g, 0)
         ExaPF.gradient!(prox, g, w)
@@ -58,7 +58,6 @@ using Test
 
         # Jacobian structure
         rows, cols = ExaPF.jacobian_structure(prox)
-        println(cols)
         # Evaluation
         M = Array
         jac = M{Float64, 2}(undef, m_I, n)
