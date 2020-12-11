@@ -84,6 +84,8 @@ n_constraints(nlp::ProxALEvaluator) = n_constraints(nlp.inner)
 
 # Getters
 get(nlp::ProxALEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
+get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkValues) = get(nlp.inner, attr)
+get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkAttribute) = get(nlp.inner, attr)
 
 # Setters
 function setvalues!(nlp::ProxALEvaluator, attr::PS.AbstractNetworkValues, values)
