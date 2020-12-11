@@ -5,6 +5,12 @@
     Normal,
 )
 
+abstract type AbstractTime end
+struct Current <: AbstractTime end
+struct Previous <: AbstractTime end
+struct Next <: AbstractTime end
+
+
 """
     ProxALEvaluator{T} <: AbstractNLPEvaluator
 
@@ -84,6 +90,8 @@ n_constraints(nlp::ProxALEvaluator) = n_constraints(nlp.inner)
 
 # Getters
 get(nlp::ProxALEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
+get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkValues) = get(nlp.inner, attr)
+get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkAttribute) = get(nlp.inner, attr)
 
 # Setters
 function setvalues!(nlp::ProxALEvaluator, attr::PS.AbstractNetworkValues, values)
@@ -110,23 +118,31 @@ function update!(nlp::ProxALEvaluator, w)
     conv = update!(nlp.inner, u)
     pg = get(nlp.inner, PS.ActivePower())
     # Update terms for augmented penalties
-    nlp.ramp_link_prev .= nlp.pg_f .- pg .+ s
-    nlp.ramp_link_next .= pg .- nlp.pg_t
+    if nlp.time != Origin
+        nlp.ramp_link_prev .= nlp.pg_f .- pg .+ s
+    end
+    if nlp.time != Final
+        nlp.ramp_link_next .= pg .- nlp.pg_t
+    end
     return conv
 end
 
 ## Update penalty terms
-function update_multipliers!(nlp::ProxALEvaluator, λf, λt)
-    @assert length(λf) == length(λt) == nlp.ng
-    copyto!(nlp.λf, λf)
+function update_multipliers!(nlp::ProxALEvaluator, ::Current, λt)
+    copyto!(nlp.λf, λt)
+end
+function update_multipliers!(nlp::ProxALEvaluator, ::Next, λt)
     copyto!(nlp.λt, λt)
 end
 
-function update_primal!(nlp::ProxALEvaluator, pgf, pgc, pgt)
-    @assert length(pgf) == length(pgc) == length(pgt) == nlp.ng
-    copyto!(nlp.pg_f, pgf)
-    copyto!(nlp.pg_ref, pgc)
-    copyto!(nlp.pg_t, pgt)
+function update_primal!(nlp::ProxALEvaluator, ::Previous, pgk)
+    copyto!(nlp.pg_f, pgk)
+end
+function update_primal!(nlp::ProxALEvaluator, ::Current, pgk)
+    copyto!(nlp.pg_ref, pgk)
+end
+function update_primal!(nlp::ProxALEvaluator, ::Next, pgk)
+    copyto!(nlp.pg_t, pgk)
 end
 
 ## Objective
@@ -138,10 +154,14 @@ function objective(nlp::ProxALEvaluator, w)
     cost = nlp.scale_objective * cost_production(nlp.inner.model, pg)
     # Augmented Lagrangian penalty
     cost += 0.5 * nlp.τ * xnorm(pg .- nlp.pg_ref)^2
-    cost += dot(nlp.λf, nlp.ramp_link_prev)
-    cost += dot(nlp.λt, nlp.ramp_link_next)
-    cost += 0.5 * nlp.ρf * xnorm(nlp.ramp_link_prev)^2
-    cost += 0.5 * nlp.ρt * xnorm(nlp.ramp_link_next)^2
+    if nlp.time != Origin
+        cost += dot(nlp.λf, nlp.ramp_link_prev)
+        cost += 0.5 * nlp.ρf * xnorm(nlp.ramp_link_prev)^2
+    end
+    if nlp.time != Final
+        cost += dot(nlp.λt, nlp.ramp_link_next)
+        cost += 0.5 * nlp.ρt * xnorm(nlp.ramp_link_next)^2
+    end
 
     return cost
 end
@@ -172,9 +192,14 @@ function gradient!(nlp::ProxALEvaluator, g, w)
     c4 = @view coefs[:, 4]
     ## Seed left-hand side vector
     ∂obj.∂pg .= scale_obj .* (c3 .+ 2.0 .* c4 .* pg)
-    ∂obj.∂pg .+= (nlp.λt .- nlp.λf)
-    ∂obj.∂pg .-= nlp.ρf .* nlp.ramp_link_prev
-    ∂obj.∂pg .+= nlp.ρt .* nlp.ramp_link_next
+    if nlp.time != Origin
+        ∂obj.∂pg .-= nlp.λf
+        ∂obj.∂pg .-= nlp.ρf .* nlp.ramp_link_prev
+    end
+    if nlp.time != Final
+        ∂obj.∂pg .+= nlp.λt
+        ∂obj.∂pg .+= nlp.ρt .* nlp.ramp_link_next
+    end
     ∂obj.∂pg .+= nlp.τ .* (pg .- nlp.pg_ref)
 
     ## Evaluate conjointly
@@ -189,7 +214,9 @@ function gradient!(nlp::ProxALEvaluator, g, w)
 
     # Gradient wrt s
     g_s = @view g[nlp.nu+1:end]
-    g_s .= nlp.λf .+ nlp.ρf .* nlp.ramp_link_prev
+    if nlp.time != Origin
+        g_s .= nlp.λf .+ nlp.ρf .* nlp.ramp_link_prev
+    end
     return nothing
 end
 
