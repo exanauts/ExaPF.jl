@@ -20,6 +20,7 @@ mutable struct ProxALEvaluator{T} <: AbstractNLPEvaluator
     ng::Int
     # Augmented penalties parameters
     time::ProxALTime
+    scale_objective::T
     τ::T
     λf::AbstractVector{T}
     λt::AbstractVector{T}
@@ -36,7 +37,7 @@ end
 function ProxALEvaluator(
     nlp::ReducedSpaceEvaluator,
     time::ProxALTime;
-    τ=0.1, ρf=0.1, ρt=0.1,
+    τ=0.1, ρf=0.1, ρt=0.1, scale_obj=1.0,
 )
     S = type_array(nlp)
 
@@ -57,7 +58,7 @@ function ProxALEvaluator(
     ramp_link_next = xzeros(S, ng)
 
     return ProxALEvaluator(
-        nlp, s_min, s_max, nu, ng, time, τ, λf, λt, ρf, ρt,
+        nlp, s_min, s_max, nu, ng, time, scale_obj, τ, λf, λt, ρf, ρt,
         pgf, pgc, pgt, ramp_link_prev, ramp_link_next,
     )
 end
@@ -134,7 +135,7 @@ function objective(nlp::ProxALEvaluator, w)
     s = w[nlp.nu+1:end]
     pg = get(nlp.inner, PS.ActivePower())
     # Operational costs
-    cost = cost_production(nlp.inner.model, pg)
+    cost = nlp.scale_objective * cost_production(nlp.inner.model, pg)
     # Augmented Lagrangian penalty
     cost += 0.5 * nlp.τ * xnorm(pg .- nlp.pg_ref)^2
     cost += dot(nlp.λf, nlp.ramp_link_prev)
@@ -157,6 +158,8 @@ function gradient!(nlp::ProxALEvaluator, g, w)
     ∂obj = autodiff.∇f
     # Import model
     model = nlp.inner.model
+    # Scaling
+    scale_obj = nlp.scale_objective
 
     # Start to update Control Jacobian in reduced model
     update_jacobian!(nlp.inner, Control())
@@ -168,7 +171,7 @@ function gradient!(nlp::ProxALEvaluator, g, w)
     c3 = @view coefs[:, 3]
     c4 = @view coefs[:, 4]
     ## Seed left-hand side vector
-    ∂obj.∂pg .= c3 .+ 2.0 .* c4 .* pg
+    ∂obj.∂pg .= scale_obj .* (c3 .+ 2.0 .* c4 .* pg)
     ∂obj.∂pg .+= (nlp.λt .- nlp.λf)
     ∂obj.∂pg .-= nlp.ρf .* nlp.ramp_link_prev
     ∂obj.∂pg .+= nlp.ρt .* nlp.ramp_link_next
