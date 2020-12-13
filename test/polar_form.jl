@@ -51,7 +51,7 @@ const PS = PowerSystem
         cache = ExaPF.get(polar, ExaPF.PhysicalState())
         @testset "NetworkState cache" begin
             @test isa(cache.vmag, M)
-            ExaPF.transfer!(polar, cache, x0, u0, p)
+            ExaPF.transfer!(polar, cache, x0, u0)
         end
         @testset "Polar model API" begin
             xₖ = copy(x0)
