@@ -156,9 +156,9 @@ function residual_polar!(F, v_m, v_a,
 end
 
 @kernel function transfer_kernel!(vmag, vang, pinj, qinj,
-                        x, u, p, pv, pq, ref,
+                        x, u, pv, pq, ref,
                         ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                        ybus_im_nzval, pload)
+                        ybus_im_nzval, pload, qload)
     i = @index(Global, Linear)
     npv = length(pv)
     npq = length(pq)
@@ -189,8 +189,8 @@ end
         bus = pq[i_pq]
         vang[bus] = x[npv+i_pq]
         vmag[bus] = x[npv+npq+i_pq]
-        pinj[bus] = p[nref + i_pq]
-        qinj[bus] = p[nref + npq + i_pq]
+        pinj[bus] = - pload[bus]
+        qinj[bus] = - qload[bus]
     # REF bus
     else i <= npv + npq + nref
         i_ref = i - npv - npq
@@ -212,12 +212,12 @@ end
         pinj[bus] = pacc
         qinj[bus] = qacc
         vmag[bus] = u[i_ref]
-        vang[bus] = p[i_ref]
+        vang[bus] = 0.0  # reference angle set to 0 by default
     end
 end
 
-# Transfer values in (x, u, p) to buffer
-function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u, p)
+# Transfer values in (x, u) to buffer
+function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u)
     if isa(x, Array)
         kernel! = transfer_kernel!(CPU(), 1)
     else
@@ -229,10 +229,10 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u, p)
     ref = polar.indexing.index_ref
     ev = kernel!(
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
-        x, u, p,
+        x, u,
         pv, pq, ref,
         polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
-        polar.ybus_im.nzval, polar.active_load,
+        polar.ybus_im.nzval, polar.active_load, polar.reactive_load,
         ndrange=nbus
     )
     wait(ev)

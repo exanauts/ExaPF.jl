@@ -123,12 +123,12 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x
     jac_x = nlp.autodiff.Jgₓ
     # Transfer x, u, p into the network cache
-    transfer!(nlp.model, nlp.buffer, nlp.x, u, nlp.p)
+    transfer!(nlp.model, nlp.buffer, nlp.x, u)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
                      solver=nlp.linear_solver, verbose_level=verbose_level)
     if !conv.has_converged
-        @warn("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
+        error("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
         return conv
     end
     ∇gₓ = nlp.autodiff.Jgₓ.J
@@ -320,8 +320,7 @@ function reset!(nlp::ReducedSpaceEvaluator)
     # Reset adjoint
     fill!(nlp.λ, 0)
     # Reset initial state
-    x0 = initial(nlp.model, State())
-    copy!(nlp.x, x0)
+    copy!(nlp.x, initial(nlp.model, State()))
     # Reset buffer
     nlp.buffer = get(nlp.model, PhysicalState())
 end
