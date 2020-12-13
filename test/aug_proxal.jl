@@ -7,7 +7,7 @@
     w0 = ExaPF.initial(proxal)
     w♭, w♯ = ExaPF.bounds(proxal, ExaPF.Variables())
     # Build penalty evaluator
-    for scaling in [false]
+    for scaling in [false, true]
         pen = ExaPF.AugLagEvaluator(proxal, w0; scale=scaling)
         w = w♭
         # Update nlp to stay on manifold

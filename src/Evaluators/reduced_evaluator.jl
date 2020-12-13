@@ -161,7 +161,7 @@ end
 # equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
 # (take λₖ_neg to avoid computing an intermediate array)
 function reduced_gradient!(
-    nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ,
+    nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, u,
 )
     λₖ = nlp.λ
     ∇gᵤ = nlp.autodiff.Jgᵤ.J
@@ -189,7 +189,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
 
     # Evaluate Jacobian of power flow equation on current u
     update_jacobian!(nlp, Control())
-    reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ)
+    reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ, u)
     return nothing
 end
 
@@ -284,7 +284,7 @@ function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     fill!(jvx, 0)
     fill!(jvu, 0)
     jtprod_full!(nlp, jvx, jvu, u, v)
-    reduced_gradient!(nlp, jv, jvx, jvu)
+    reduced_gradient!(nlp, jv, jvx, jvu, u)
     return
 end
 

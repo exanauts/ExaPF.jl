@@ -222,7 +222,7 @@ end
 
 function reduced_gradient!(nlp::ProxALEvaluator, grad, jvx, jvu, w)
     g = @view grad[1:nlp.nu]
-    reduced_gradient!(nlp.inner, g, jvx, jvu)
+    reduced_gradient!(nlp.inner, g, jvx, jvu, w)
     gradient_slack!(nlp, grad, w)
 end
 
