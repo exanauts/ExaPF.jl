@@ -113,8 +113,8 @@ end
 bounds(nlp::ProxALEvaluator, ::Constraints) = bounds(nlp.inner, Constraints())
 
 function update!(nlp::ProxALEvaluator, w)
-    u = w[1:nlp.nu]
-    s = w[nlp.nu+1:end]
+    u = @view w[1:nlp.nu]
+    s = @view w[nlp.nu+1:end]
     conv = update!(nlp.inner, u)
     pg = get(nlp.inner, PS.ActivePower())
     # Update terms for augmented penalties
@@ -147,8 +147,8 @@ end
 
 ## Objective
 function objective(nlp::ProxALEvaluator, w)
-    u = w[1:nlp.nu]
-    s = w[nlp.nu+1:end]
+    u = @view w[1:nlp.nu]
+    s = @view w[nlp.nu+1:end]
     pg = get(nlp.inner, PS.ActivePower())
     # Operational costs
     cost = nlp.scale_objective * cost_production(nlp.inner.model, pg)
@@ -244,7 +244,7 @@ function gradient!(nlp::ProxALEvaluator, g, w)
 end
 
 function constraint!(nlp::ProxALEvaluator, cons, w)
-    u = w[1:nlp.nu]
+    u = @view w[1:nlp.nu]
     constraint!(nlp.inner, cons, u)
 end
 
@@ -271,13 +271,13 @@ end
 ## Transpose Jacobian-vector product
 ## ProxAL does not add any constraint to the reduced model
 function jtprod!(nlp::ProxALEvaluator, cons, jv, w, v; start=1)
-    u = w[1:nlp.nu]
-    jvu = jv[1:nlp.nu]
+    u = @view w[1:nlp.nu]
+    jvu = @view jv[1:nlp.nu]
     jtprod!(nlp.inner, cons, jvu, u, v; start=start)
 end
 function jtprod!(nlp::ProxALEvaluator, jv, w, v)
-    u = w[1:nlp.nu]
-    jvu = jv[1:nlp.nu]
+    u = @view w[1:nlp.nu]
+    jvu = @view jv[1:nlp.nu]
     jtprod!(nlp.inner, jvu, u, v)
 end
 function jtprod_full!(nlp::ProxALEvaluator, jvx, jvu, w, v)
@@ -293,11 +293,11 @@ end
 
 function primal_infeasibility!(nlp::ProxALEvaluator, cons, w)
     @assert length(w) == nlp.nu + nlp.ng
-    u = w[1:nlp.nu]
+    u = @view w[1:nlp.nu]
     return primal_infeasibility(nlp.inner, cons, u)
 end
 function primal_infeasibility(nlp::ProxALEvaluator, w)
     @assert length(w) == nlp.nu + nlp.ng
-    u = w[1:nlp.nu]
+    u = @view w[1:nlp.nu]
     return primal_infeasibility(nlp.inner, u)
 end
