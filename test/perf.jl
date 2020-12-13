@@ -9,7 +9,7 @@ using TimerOutputs
 import ExaPF: PowerSystem, IndexSet, AutoDiff
 
 function run_level1(datafile; device=CPU())
-    pf = PowerSystem.PowerNetwork(datafile, 1)
+    pf = PowerSystem.PowerNetwork(datafile)
     polar = PolarForm(pf, device)
     cache = ExaPF.NetworkState(polar)
     jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
@@ -22,7 +22,7 @@ function run_level1(datafile; device=CPU())
 end
 
 function build_nlp(datafile, device)
-    pf = PowerSystem.PowerNetwork(datafile, 1)
+    pf = PowerSystem.PowerNetwork(datafile)
     polar = PolarForm(pf, device)
     x0 = ExaPF.initial(polar, State())
     u0 = ExaPF.initial(polar, Control())
@@ -35,8 +35,7 @@ function build_nlp(datafile, device)
     return nlp, u0
 end
 
-function run_level2(datafile; device=CPU())
-    nlp, u = build_nlp(datafile, device)
+function run_level2(nlp, u; device=CPU())
     # Update nlp to stay on manifold
     print("Update   \t")
     @time ExaPF.update!(nlp, u)
@@ -62,9 +61,8 @@ function run_level2(datafile; device=CPU())
     @time ExaPF.jtprod!(nlp, jv, u, v)
 end
 
-function run_penalty(datafile; device=CPU())
-    nlp, u = build_nlp(datafile, device)
-    pen = ExaPF.PenaltyEvaluator(nlp)
+function run_penalty(nlp, u; device=CPU())
+    pen = ExaPF.AugLagEvaluator(nlp, u)
     print("Update   \t")
     @time ExaPF.update!(pen, u)
     print("Objective\t")
@@ -76,9 +74,49 @@ function run_penalty(datafile; device=CPU())
     return
 end
 
+function run_proxal(nlp, u; device=CPU())
+    pen = ExaPF.ProxALEvaluator(nlp, ExaPF.Normal)
+    w = ExaPF.initial(pen)
+    print("Update   \t")
+    @time ExaPF.update!(pen, w)
+    print("Objective\t")
+    c = @time ExaPF.objective(pen, w)
+    g = similar(w)
+    fill!(g, 0)
+    print("Gradient \t")
+    @time ExaPF.gradient!(pen, g, w)
+    return
+end
+
+function run_proxaug(nlp, u; device=CPU())
+    pen = ExaPF.ProxALEvaluator(nlp, ExaPF.Normal)
+    w = ExaPF.initial(pen)
+    aug = ExaPF.AugLagEvaluator(pen, w)
+    print("Update   \t")
+    @time ExaPF.update!(aug, w)
+    print("Objective\t")
+    c = @time ExaPF.objective(aug, w)
+    g = similar(w)
+    fill!(g, 0)
+    print("Gradient \t")
+    @time ExaPF.gradient!(aug, g, w)
+    return
+end
+
 datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+# device = CPU()
+# nlp, u = build_nlp(datafile, CPU())
 
 @info("ReducedSpaceEvaluator")
-run_level2(datafile, device=CPU())
-@info("PenaltyEvaluator")
-run_penalty(datafile, device=CPU())
+run_level2(nlp, u, device=CPU())
+ExaPF.reset!(nlp)
+@info("AugLagEvaluator")
+run_penalty(nlp, u, device=CPU())
+ExaPF.reset!(nlp)
+@info("ProxALEvaluator")
+run_proxal(nlp, u, device=CPU())
+ExaPF.reset!(nlp)
+@info("ProxAugEvaluator")
+run_proxaug(nlp, u, device=CPU())
+ExaPF.reset!(nlp)
+
