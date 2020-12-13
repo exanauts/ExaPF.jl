@@ -171,6 +171,16 @@ function reduced_gradient!(
     mul!(grad, transpose(∇gᵤ), λₖ, -1.0, 1.0)
 end
 
+# Compute only full gradient wrt x and u
+function gradient_full!(nlp::ReducedSpaceEvaluator, gx, gu, u)
+    buffer = nlp.buffer
+    ∂obj = nlp.autodiff.∇f
+    # Evaluate adjoint of cost function and update inplace AdjointStackObjective
+    ∂cost(nlp.model, ∂obj, buffer)
+    copyto!(gx, ∂obj.∇fₓ)
+    copyto!(gu, ∂obj.∇fᵤ)
+end
+
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     buffer = nlp.buffer
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
@@ -252,13 +262,8 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
     reduced_gradient!(nlp, jv, jvx, jvu)
 end
 
-function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+function jtprod_full!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
     ∂obj = nlp.autodiff.∇f
-    jvx = ∂obj.jvₓ
-    jvu = ∂obj.jvᵤ
-    fill!(jvx, 0)
-    fill!(jvu, 0)
-
     fr_ = 0
     for cons in nlp.constraints
         n = size_constraint(nlp.model, cons)
@@ -270,6 +275,15 @@ function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
         jvu .+= ∂obj.∇fᵤ
         fr_ += n
     end
+end
+
+function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    ∂obj = nlp.autodiff.∇f
+    jvx = ∂obj.jvₓ
+    jvu = ∂obj.jvᵤ
+    fill!(jvx, 0)
+    fill!(jvu, 0)
+    jtprod_full!(nlp, jvx, jvu, u, v)
     reduced_gradient!(nlp, jv, jvx, jvu)
     return
 end
