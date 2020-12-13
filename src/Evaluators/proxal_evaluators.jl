@@ -216,6 +216,8 @@ function gradient!(nlp::ProxALEvaluator, g, w)
     g_s = @view g[nlp.nu+1:end]
     if nlp.time != Origin
         g_s .= nlp.λf .+ nlp.ρf .* nlp.ramp_link_prev
+    else
+        g_s .= 0.0
     end
     return nothing
 end
