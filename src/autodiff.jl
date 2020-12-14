@@ -39,6 +39,99 @@ function _init_seed!(t1sseeds, coloring, ncolor, nmap)
 end
 
 """
+    Jacobian
+
+Creates an object for the Jacobian
+
+* `J::SMT`: Sparse uncompressed Jacobian to be used by linear solver. This is either of type `SparseMatrixCSC` or `CuSparseMatrixCSR`.
+* `compressedJ::MT`: Dense compressed Jacobian used for updating values through AD either of type `Matrix` or `CuMatrix`.
+* `coloring::VI`: Row coloring of the Jacobian.
+* `t1sseeds::VP`: The seeding vector for AD built based on the coloring.
+* `t1sF::VD`: Output array of active (AD) type.
+* `x::VT`: Input array of passive type. This includes both state and control.
+* `t1sx::VD`: Input array of active type.
+* `map::VI`: State and control mapping to array `x`
+* `varx::SubT`: View of `map` on `x`
+* `t1svarx::SubD`: Active (AD) view of `map` on `x`
+"""
+struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
+    J::SMT
+    compressedJ::MT
+    coloring::VI
+    t1sseeds::VP
+    t1sF::VD
+    x::VT
+    t1sx::VD
+    map::VI
+    # Cache views on x and its dual vector to avoid reallocating on the GPU
+    varx::SubT
+    t1svarx::SubD
+    function Jacobian(structure, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+        nv_m = size(v_m, 1)
+        nv_a = size(v_a, 1)
+        if F isa Array
+            VI = Vector{Int}
+            VT = Vector{Float64}
+            MT = Matrix{Float64}
+            SMT = SparseMatrixCSC
+            A = Vector
+        elseif F isa CuArray
+            VI = CuVector{Int}
+            VT = CuVector{Float64}
+            MT = CuMatrix{Float64}
+            SMT = CuSparseMatrixCSR
+            A = CuVector
+        else
+            error("Wrong array type ", typeof(F))
+        end
+
+        mappv = [i + nv_m for i in pv]
+        mappq = [i + nv_m for i in pq]
+        # Ordering for x is (θ_pv, θ_pq, v_pq)
+        map = VI(structure.map)
+        nmap = size(map,1)
+
+        # Used for sparsity detection with randomized inputs
+
+        # Need a host arrays for the sparsity detection below
+        spmap = Vector(map)
+        hybus_re = Spmat{Vector{Int}, Vector{Float64}}(ybus_re)
+        hybus_im = Spmat{Vector{Int}, Vector{Float64}}(ybus_im)
+        n = nv_a
+        Yre = SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
+        Yim = SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
+        Y = Yre .+ 1im .* Yim
+        # Randomized inputs
+        Vre = Float64.([i for i in 1:n])
+        Vim = Float64.([i for i in n+1:2*n])
+        V = Vre .+ 1im .* Vim
+        J = structure.sparsity(V, Y, pv, pq)
+        coloring = VI(matrix_colors(J))
+        ncolor = size(unique(coloring),1)
+        if F isa CuArray
+            J = CuSparseMatrixCSR(J)
+        end
+        t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
+        x = VT(zeros(Float64, nv_m + nv_a))
+        t1sx = A{t1s{ncolor}}(x)
+        t1sF = A{t1s{ncolor}}(zeros(Float64, nmap))
+
+        t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
+        _init_seed!(t1sseeds, coloring, ncolor, nmap)
+
+        compressedJ = MT(zeros(Float64, ncolor, nmap))
+        # Views
+        varx = view(x, map)
+        t1svarx = view(t1sx, map)
+        VP = typeof(t1sseeds)
+        VD = typeof(t1sx)
+        return new{VI, VT, MT, SMT, VP, VD, typeof(varx), typeof(t1svarx)}(
+            J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+        )
+    end
+end
+
+"""
     StateJacobian
 
 Creates an object for the state Jacobian
@@ -427,6 +520,62 @@ function uncompress_kernel!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, col
     end
 end
 
+"""
+    residual_jacobian!(arrays::StateJacobian,
+                        residual_polar!,
+                        v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
+                        timer = nothing)
+
+Update the sparse Jacobian entries using AutoDiff. No allocations are taking place in this function.
+
+* `arrays::StateJacobian`: Factory created Jacobian object to update
+* `residual_polar`: Primal function
+* `v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both
+  active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
+
+"""
+function residual_jacobian!(arrays::Jacobian,
+                             residual_polar!,
+                             range1, range2,
+                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
+                             timer = nothing)
+    @timeit timer "Before" begin
+        @timeit timer "Setup" begin
+            nv_m = size(v_m, 1)
+            nv_a = size(v_a, 1)
+            nmap = size(arrays.map, 1)
+            n = nv_m + nv_a
+        end
+        @timeit timer "Arrays" begin
+            arrays.x[range1] .= v_m
+            arrays.x[range2] .= v_a
+            arrays.t1sx .= arrays.x
+            arrays.t1sF .= 0.0
+        end
+    end
+    @timeit timer "Seeding" begin
+        seed_kernel!(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
+    end
+
+    @timeit timer "Function" begin
+        residual_polar!(
+            arrays.t1sF,
+            view(arrays.t1sx, range1),
+            view(arrays.t1sx, range2),
+            ybus_re, ybus_im,
+            pinj, qinj,
+            pv, pq, nbus
+        )
+    end
+
+    @timeit timer "Get partials" begin
+        getpartials_kernel!(arrays.compressedJ, arrays.t1sF, nbus)
+    end
+    @timeit timer "Uncompress" begin
+        uncompress_kernel!(arrays.J, arrays.compressedJ, arrays.coloring)
+    end
+    return nothing
+end
 """
     residual_jacobian!(arrays::StateJacobian,
                         residual_polar!,
