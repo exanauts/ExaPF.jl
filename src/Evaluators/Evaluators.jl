@@ -152,4 +152,5 @@ include("proxal_evaluators.jl")
 include("penalty.jl")
 include("auglag.jl")
 include("MOI_wrapper.jl")
+include("optimizers.jl")
 
