@@ -77,7 +77,7 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
                    η=100.0, tol=1e-8)
     n = n_variables(nlp)
     m = n_constraints(nlp)
-    update!(nlp, u0)
+    conv = update!(nlp, u0)
     ∇g = similar(u0) ; fill!(∇g, 0)
     gradient!(nlp, ∇g, u0)
     s_obj = scale_factor(norm(∇g, Inf), tol, η)
@@ -91,6 +91,8 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
         s_cons[i] = scale_factor(norm(∇c, Inf), tol, η)
     end
 
-    return MaxScaler(s_obj, s_cons, s_cons .* nlp.g_min, s_cons .* nlp.g_max)
+    g♭, g♯ = bounds(nlp, Constraints())
+
+    return MaxScaler(s_obj, s_cons, s_cons .* g♭, s_cons .* g♯)
 end
 

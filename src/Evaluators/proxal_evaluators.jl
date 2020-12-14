@@ -69,7 +69,6 @@ function ProxALEvaluator(
     )
 end
 
-# TODO: add constructor from PowerNetwork
 function ProxALEvaluator(
     pf::PS.PowerNetwork,
     time::ProxALTime;
@@ -113,8 +112,8 @@ end
 bounds(nlp::ProxALEvaluator, ::Constraints) = bounds(nlp.inner, Constraints())
 
 function update!(nlp::ProxALEvaluator, w)
-    u = w[1:nlp.nu]
-    s = w[nlp.nu+1:end]
+    u = @view w[1:nlp.nu]
+    s = @view w[nlp.nu+1:end]
     conv = update!(nlp.inner, u)
     pg = get(nlp.inner, PS.ActivePower())
     # Update terms for augmented penalties
@@ -147,8 +146,8 @@ end
 
 ## Objective
 function objective(nlp::ProxALEvaluator, w)
-    u = w[1:nlp.nu]
-    s = w[nlp.nu+1:end]
+    u = @view w[1:nlp.nu]
+    s = @view w[nlp.nu+1:end]
     pg = get(nlp.inner, PS.ActivePower())
     # Operational costs
     cost = nlp.scale_objective * cost_production(nlp.inner.model, pg)
@@ -167,25 +166,24 @@ function objective(nlp::ProxALEvaluator, w)
 end
 
 ## Gradient
-function gradient!(nlp::ProxALEvaluator, g, w)
-    u = w[1:nlp.nu]
-    s = w[nlp.nu+1:end]
-    pg = get(nlp.inner, PS.ActivePower())
+update_jacobian!(nlp::ProxALEvaluator, ::Control) = update_jacobian!(nlp.inner, Control())
+
+
+function gradient_full!(nlp::ProxALEvaluator, jvx, jvu, w)
+    # Import model
+    model = nlp.inner.model
     # Import buffer (has been updated previously in update!)
     buffer = get(nlp.inner, PhysicalState())
     # Import AutoDiff objects
     autodiff = get(nlp.inner, AutoDiffBackend())
     ∂obj = autodiff.∇f
-    # Import model
-    model = nlp.inner.model
     # Scaling
     scale_obj = nlp.scale_objective
+    # Current active power
+    pg = get(nlp.inner, PS.ActivePower())
 
-    # Start to update Control Jacobian in reduced model
-    update_jacobian!(nlp.inner, Control())
+    u = @view w[1:nlp.nu]
 
-    # Reduced gradient wrt u
-    g_u = @view g[1:nlp.nu]
     ## Objective's coefficients
     coefs = model.costs_coefficients
     c3 = @view coefs[:, 3]
@@ -205,23 +203,47 @@ function gradient!(nlp::ProxALEvaluator, g, w)
     ## Evaluate conjointly
     # ∇fₓ = v' * J,  with J = ∂pg / ∂x
     # ∇fᵤ = v' * J,  with J = ∂pg / ∂u
-    fill!(∂obj.∇fᵤ, 0)
-    fill!(∂obj.∇fₓ, 0)
     put(model, PS.Generator(), PS.ActivePower(), ∂obj, buffer)
 
-    ## Evaluation of reduced gradient
-    reduced_gradient!(nlp.inner, g_u, ∂obj.∇fₓ, ∂obj.∇fᵤ)
+    copyto!(jvx, ∂obj.∇fₓ)
+    copyto!(jvu, ∂obj.∇fᵤ)
+end
 
+function gradient_slack!(nlp::ProxALEvaluator, grad, w)
     # Gradient wrt s
-    g_s = @view g[nlp.nu+1:end]
+    g_s = @view grad[nlp.nu+1:end]
     if nlp.time != Origin
         g_s .= nlp.λf .+ nlp.ρf .* nlp.ramp_link_prev
+    else
+        g_s .= 0.0
     end
+end
+
+function reduced_gradient!(nlp::ProxALEvaluator, grad, jvx, jvu, w)
+    g = @view grad[1:nlp.nu]
+    reduced_gradient!(nlp.inner, g, jvx, jvu, w)
+    gradient_slack!(nlp, grad, w)
+end
+
+## Gradient
+function gradient!(nlp::ProxALEvaluator, g, w)
+    # Import AutoDiff objects
+    autodiff = get(nlp.inner, AutoDiffBackend())
+    ∂obj = autodiff.∇f
+
+    jvu = ∂obj.∇fᵤ ; jvx = ∂obj.∇fₓ
+    fill!(jvx, 0)  ; fill!(jvu, 0)
+    gradient_full!(nlp, jvx, jvu, w)
+
+    # Start to update Control Jacobian in reduced model
+    update_jacobian!(nlp, Control())
+    ## Evaluation of reduced gradient
+    reduced_gradient!(nlp, g, jvx, jvu, w)
     return nothing
 end
 
 function constraint!(nlp::ProxALEvaluator, cons, w)
-    u = w[1:nlp.nu]
+    u = @view w[1:nlp.nu]
     constraint!(nlp.inner, cons, u)
 end
 
@@ -246,31 +268,44 @@ function jacobian!(nlp::ProxALEvaluator, jac, w)
 end
 
 ## Transpose Jacobian-vector product
+## ProxAL does not add any constraint to the reduced model
 function jtprod!(nlp::ProxALEvaluator, cons, jv, w, v; start=1)
-    u = w[1:nlp.nu]
-    jvu = jv[1:nlp.nu]
+    u = @view w[1:nlp.nu]
+    jvu = @view jv[1:nlp.nu]
     jtprod!(nlp.inner, cons, jvu, u, v; start=start)
 end
 function jtprod!(nlp::ProxALEvaluator, jv, w, v)
-    u = w[1:nlp.nu]
-    jvu = jv[1:nlp.nu]
+    u = @view w[1:nlp.nu]
+    jvu = @view jv[1:nlp.nu]
     jtprod!(nlp.inner, jvu, u, v)
 end
-
+function jtprod_full!(nlp::ProxALEvaluator, jvx, jvu, w, v)
+    u = @view w[1:nlp.nu]
+    jtprod_full!(nlp.inner, jvx, jvu, u, v)
+end
 
 ## Utils function
+function reset!(nlp::ProxALEvaluator)
+    reset!(nlp.inner)
+    # Reset multipliers
+    fill!(nlp.λf, 0)
+    fill!(nlp.λt, 0)
+    # Reset proximal centers
+    fill!(nlp.pg_f, 0)
+    fill!(nlp.pg_ref, 0)
+    fill!(nlp.pg_t, 0)
+    # Reset buffers
+    fill!(nlp.ramp_link_prev, 0)
+    fill!(nlp.ramp_link_next, 0)
+end
+
 function primal_infeasibility!(nlp::ProxALEvaluator, cons, w)
     @assert length(w) == nlp.nu + nlp.ng
-    u = w[1:nlp.nu]
+    u = @view w[1:nlp.nu]
     return primal_infeasibility(nlp.inner, cons, u)
 end
 function primal_infeasibility(nlp::ProxALEvaluator, w)
     @assert length(w) == nlp.nu + nlp.ng
-    u = w[1:nlp.nu]
-    return primal_infeasibility!(nlp.inner, cons, u)
+    u = @view w[1:nlp.nu]
+    return primal_infeasibility(nlp.inner, u)
 end
-
-function reset!(nlp::ProxALEvaluator)
-    reset!(nlp.inner)
-end
-

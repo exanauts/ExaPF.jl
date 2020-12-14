@@ -84,44 +84,29 @@ function inner_objective(ag::AugLagEvaluator, u)
     return ag.scaler.scale_obj * objective(ag.inner, u)
 end
 
-# TODO
 function gradient!(ag::AugLagEvaluator, grad, u)
     ag.counter.gradient += 1
     base_nlp = ag.inner
     scaler = ag.scaler
-    model = base_nlp.model
-    # Import buffer (has been updated previously in update!)
-    buffer = get(base_nlp, PhysicalState())
     # Import AutoDiff objects
     autodiff = get(base_nlp, AutoDiffBackend())
-
-    # Evaluate Jacobian of power flow equation on current u
-    update_jacobian!(base_nlp, Control())
 
     ∂obj = autodiff.∇f
     jvx = ∂obj.jvₓ ; fill!(jvx, 0)
     jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
 
     # compute gradient of objective
-    ∂cost(model, ∂obj, buffer)
-    jvx .+= scaler.scale_obj .* ∂obj.∇fₓ
-    jvu .+= scaler.scale_obj .* ∂obj.∇fᵤ
-
+    gradient_full!(base_nlp, jvx, jvu, u)
+    jvx .*= scaler.scale_obj
+    jvu .*= scaler.scale_obj
     # compute gradient of penalties
-    constraints = get(base_nlp, Constraints())
-    fr_ = 0
-    for cons in constraints
-        n = size_constraint(model, cons)
-        mask = fr_+1:fr_+n
-        cx = @view ag.λc[mask]
-        v = cx .* scaler.scale_cons[mask]
-        jtprod(model, cons, ∂obj, buffer, v)
-        jvx .+= ∂obj.∇fₓ
-        jvu .+= ∂obj.∇fᵤ
-        fr_ += n
-    end
-    # Evaluate reduced gradient
-    reduced_gradient!(base_nlp, grad, jvx, jvu)
+    v = scaler.scale_cons .* ag.λc
+    jtprod_full!(base_nlp, jvx, jvu, u, v)
+
+    # Evaluate Jacobian of power flow equation on current u
+    update_jacobian!(base_nlp, Control())
+    # Evaluate gradient in reduced space
+    reduced_gradient!(base_nlp, grad, jvx, jvu, u)
 end
 
 function constraint!(ag::AugLagEvaluator, cons, u)

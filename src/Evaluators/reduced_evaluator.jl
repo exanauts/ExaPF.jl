@@ -166,14 +166,14 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0, nlp_pf = nlp)
     x₀ = nlp.x
     jac_x = nlp_pf.autodiff.Jgₓ
     # Transfer x, u, p into the network cache
-    transfer!(nlp_pf.model, nlp_pf.buffer, nlp_pf.x, u, nlp_pf.p)
+    transfer!(nlp_pf.model, nlp_pf.buffer, nlp_pf.x, u)
     # Get corresponding point on the manifold
     conv = powerflow(nlp_pf.model, jac_x, nlp_pf.buffer, tol=nlp_pf.ε_tol;
                      solver=nlp_pf.linear_solver, verbose_level=VERBOSE_LEVEL_HIGH)
     # Update from device is necessary
     nlp_pf != nlp && transfer!(nlp, nlp_pf)
     if !conv.has_converged
-        @warn("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
+        error("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
         return conv
     end
     ∇gₓ = nlp.autodiff.Jgₓ.J
@@ -206,7 +206,7 @@ end
 # equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
 # (take λₖ_neg to avoid computing an intermediate array)
 function reduced_gradient!(
-    nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ,
+    nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, u,
 )
     λₖ = nlp.λ
     ∇gᵤ = nlp.autodiff.Jgᵤ.J
@@ -214,6 +214,16 @@ function reduced_gradient!(
     LinearSolvers.ldiv!(nlp.linear_solver, λₖ, nlp.∇gᵗ, ∂fₓ)
     grad .= ∂fᵤ
     mul!(grad, transpose(∇gᵤ), λₖ, -1.0, 1.0)
+end
+
+# Compute only full gradient wrt x and u
+function gradient_full!(nlp::ReducedSpaceEvaluator, gx, gu, u)
+    buffer = nlp.buffer
+    ∂obj = nlp.autodiff.∇f
+    # Evaluate adjoint of cost function and update inplace AdjointStackObjective
+    ∂cost(nlp.model, ∂obj, buffer)
+    copyto!(gx, ∂obj.∇fₓ)
+    copyto!(gu, ∂obj.∇fᵤ)
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
@@ -224,7 +234,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
 
     # Evaluate Jacobian of power flow equation on current u
     update_jacobian!(nlp, Control())
-    reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ)
+    reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ, u)
     return nothing
 end
 
@@ -297,13 +307,8 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
     reduced_gradient!(nlp, jv, jvx, jvu)
 end
 
-function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+function jtprod_full!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
     ∂obj = nlp.autodiff.∇f
-    jvx = ∂obj.jvₓ
-    jvu = ∂obj.jvᵤ
-    fill!(jvx, 0)
-    fill!(jvu, 0)
-
     fr_ = 0
     for cons in nlp.constraints
         n = size_constraint(nlp.model, cons)
@@ -315,7 +320,16 @@ function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
         jvu .+= ∂obj.∇fᵤ
         fr_ += n
     end
-    reduced_gradient!(nlp, jv, jvx, jvu)
+end
+
+function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    ∂obj = nlp.autodiff.∇f
+    jvx = ∂obj.jvₓ
+    jvu = ∂obj.jvᵤ
+    fill!(jvx, 0)
+    fill!(jvu, 0)
+    jtprod_full!(nlp, jvx, jvu, u, v)
+    reduced_gradient!(nlp, jv, jvx, jvu, u)
     return
 end
 
@@ -365,8 +379,7 @@ function reset!(nlp::ReducedSpaceEvaluator)
     # Reset adjoint
     fill!(nlp.λ, 0)
     # Reset initial state
-    x0 = initial(nlp.model, State())
-    copy!(nlp.x, x0)
+    copy!(nlp.x, initial(nlp.model, State()))
     # Reset buffer
     nlp.buffer = get(nlp.model, PhysicalState())
 end
