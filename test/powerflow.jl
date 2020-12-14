@@ -51,7 +51,8 @@ import ExaPF: PowerSystem
             xk = copy(x0)
             nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p;
                                               ε_tol=tolerance, linear_solver=algo)
-            convergence = ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE, device = device)
+            nlp_pf = ExaPF.ReducedSpaceEvaluator(nlp, CUDADevice())
+            convergence = ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE, nlp_pf = nlp_pf)
             @test convergence.has_converged
             @test convergence.norm_residuals < tolerance
             @test convergence.n_iterations == 2

@@ -123,6 +123,13 @@ function ReducedSpaceEvaluator(nlp::ReducedSpaceEvaluator, device = nothing)
     )
 end
 
+function transfer!(target::ReducedSpaceEvaluator, origin::ReducedSpaceEvaluator) 
+    copyto!(target.x, origin.x)
+    copyto!(target.p, origin.p)
+    copyto!(target.λ, origin.λ)
+    transfer!(target.autodiff, origin.autodiff)
+end
+
 # TODO: add constructor from PowerNetwork
 
 type_array(nlp::ReducedSpaceEvaluator) = typeof(nlp.u_min)
@@ -156,21 +163,15 @@ initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
 bounds(nlp::ReducedSpaceEvaluator, ::Variables) = nlp.u_min, nlp.u_max
 bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.g_min, nlp.g_max
 
-function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0, device = nothing)
+function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0, nlp_pf = nlp)
     x₀ = nlp.x
-    jac_x = nlp.autodiff.Jgₓ
+    jac_x = nlp_pf.autodiff.Jgₓ
     # Transfer x, u, p into the network cache
-    transfer!(nlp.model, nlp.buffer, nlp.x, u, nlp.p)
+    transfer!(nlp_pf.model, nlp_pf.buffer, nlp_pf.x, u, nlp_pf.p)
     # Get corresponding point on the manifold
-    if !(device === nothing)
-        jac_x = AutoDiff.StateJacobian(jac_x, device)
-        nlp  = ReducedSpaceEvaluator(nlp, device)
-    end
-    conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
-                     solver=nlp.linear_solver, verbose_level=VERBOSE_LEVEL_HIGH)
-    if !(device === nothing)
-        nlp = ReducedSpaceEvaluator(nlp, CPU())
-    end
+    conv = powerflow(nlp_pf.model, jac_x, nlp_pf.buffer, tol=nlp_pf.ε_tol;
+                     solver=nlp_pf.linear_solver, verbose_level=VERBOSE_LEVEL_HIGH)
+    transfer!(nlp_pf, nlp)
     if !conv.has_converged
         @warn("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
         return conv
