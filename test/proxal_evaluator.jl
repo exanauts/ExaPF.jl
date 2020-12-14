@@ -66,5 +66,7 @@ using Test
         # Check correctness of transpose Jacobian vector product
         @test jv == jac' * v
     end
+
+    ExaPF.reset!(prox)
 end
 
