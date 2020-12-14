@@ -69,7 +69,6 @@ function ProxALEvaluator(
     )
 end
 
-# TODO: add constructor from PowerNetwork
 function ProxALEvaluator(
     pf::PS.PowerNetwork,
     time::ProxALTime;
@@ -287,8 +286,17 @@ end
 
 ## Utils function
 function reset!(nlp::ProxALEvaluator)
-    # TODO
     reset!(nlp.inner)
+    # Reset multipliers
+    fill!(nlp.λf, 0)
+    fill!(nlp.λt, 0)
+    # Reset proximal centers
+    fill!(nlp.pg_f, 0)
+    fill!(nlp.pg_ref, 0)
+    fill!(nlp.pg_t, 0)
+    # Reset buffers
+    fill!(nlp.ramp_link_prev, 0)
+    fill!(nlp.ramp_link_next, 0)
 end
 
 function primal_infeasibility!(nlp::ProxALEvaluator, cons, w)

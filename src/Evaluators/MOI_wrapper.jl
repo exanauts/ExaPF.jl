@@ -17,7 +17,7 @@ mutable struct MOIEvaluator <: MOI.AbstractNLPEvaluator
     hash_x::UInt
     has_hess::Bool
 end
-MOIEvaluator(nlp) = MOIEvaluator(nlp, UInt64(0), false)
+MOIEvaluator(nlp) = MOIEvaluator(nlp, UInt64(0), true)
 
 function _update!(ev::MOIEvaluator, x)
     hx = hash(x)
