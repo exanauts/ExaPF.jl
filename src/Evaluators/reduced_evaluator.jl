@@ -91,7 +91,6 @@ function ReducedSpaceEvaluator(nlp::ReducedSpaceEvaluator, device = nothing)
         VT = CuVector 
         MT = CuMatrix
     elseif device == CPU()
-        buffer = PolarNetworkState(nlp.buffer, device)
         VT = Vector 
         MT = Matrix
     else
