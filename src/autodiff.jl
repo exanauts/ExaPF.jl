@@ -38,6 +38,17 @@ function _init_seed!(t1sseeds, coloring, ncolor, nmap)
     end
 end
 
+function transfer!(target::AbstractJacobian, origin::AbstractJacobian)
+    if target.x isa Array
+        J = SparseMatrixCSC(origin.J)
+    elseif target.x isa CuArray
+        J = CuSparseMatrixCSR(origin.J)
+    else
+        error("Wrong array type ", typeof(target.x))
+    end
+    copyto!(target.J, J)
+end
+
 """
     StateJacobian
 

@@ -8,6 +8,12 @@ struct AutoDiffFactory <: AbstractAutoDiffFactory
     ∇f::AdjointStackObjective
 end
 
+function transfer!(target::AutoDiffFactory, origin::AutoDiffFactory)
+    AutoDiff.transfer!(target.Jgₓ, origin.Jgₓ)
+    AutoDiff.transfer!(target.Jgᵤ, origin.Jgᵤ)
+    transfer!(target.∇f, origin.∇f)
+end
+
 # Counters
 abstract type AbstractCounter end
 

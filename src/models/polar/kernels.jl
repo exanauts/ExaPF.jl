@@ -220,8 +220,10 @@ end
 function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u, p)
     if isa(x, Array)
         kernel! = transfer_kernel!(CPU(), 1)
+        u_ = u
     else
         kernel! = transfer_kernel!(CUDADevice(), 256)
+        isa(u, Array) ? u_ = CuArray(u) : u_ = u
     end
     nbus = length(buffer.vmag)
     pv = polar.indexing.index_pv
@@ -229,7 +231,7 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u, p)
     ref = polar.indexing.index_ref
     ev = kernel!(
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
-        x, u, p,
+        x, u_, p,
         pv, pq, ref,
         polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
         polar.ybus_im.nzval, polar.active_load,

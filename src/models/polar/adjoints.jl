@@ -17,6 +17,16 @@ struct AdjointStackObjective{VT}
     jvᵤ::VT
 end
 
+function transfer!(target::AdjointStackObjective, origin::AdjointStackObjective)
+    copyto!(target.∇fₓ, origin.∇fₓ)
+    copyto!(target.∇fᵤ, origin.∇fᵤ)
+    copyto!(target.∂pg, origin.∂pg)
+    copyto!(target.∂vm, origin.∂vm)
+    copyto!(target.∂va, origin.∂va)
+    copyto!(target.jvₓ, origin.jvₓ)
+    copyto!(target.jvᵤ, origin.jvᵤ)
+end
+
 function put_active_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, ybus_im)
     @inbounds for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
         to = ybus_re.rowval[c]
