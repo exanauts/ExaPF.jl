@@ -2,6 +2,15 @@ export PolarForm, bounds, powerflow
 export State, Control, Parameters, NumberOfState, NumberOfControl
 
 """
+    AbstractJacobianStructure
+
+The user may specify a mapping to the single input vector x for AD.
+
+"""
+
+abstract type AbstractJacobianStructure end
+
+"""
     AbstractFormulation
 
 Second layer of the package, implementing the interface between

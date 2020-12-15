@@ -1,6 +1,5 @@
 # Polar formulation
 #
-abstract type AbstractJacobianStructure end
 
 struct StateJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
     sparsity::Function
