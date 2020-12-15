@@ -78,9 +78,8 @@ function ProxALEvaluator(
     model = PolarForm(pf, device)
     # Build reduced space evaluator
     x = initial(model, State())
-    p = initial(model, Parameters())
     u = initial(model, Control())
-    nlp = ReducedSpaceEvaluator(model, x, u, p)
+    nlp = ReducedSpaceEvaluator(model, x, u)
     return ProxALEvaluator(nlp, time)
 end
 
@@ -302,7 +301,7 @@ end
 function primal_infeasibility!(nlp::ProxALEvaluator, cons, w)
     @assert length(w) == nlp.nu + nlp.ng
     u = @view w[1:nlp.nu]
-    return primal_infeasibility(nlp.inner, cons, u)
+    return primal_infeasibility!(nlp.inner, cons, u)
 end
 function primal_infeasibility(nlp::ProxALEvaluator, w)
     @assert length(w) == nlp.nu + nlp.ng

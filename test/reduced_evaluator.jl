@@ -23,10 +23,9 @@
         polar = PolarForm(pf, device)
         x0 = ExaPF.initial(polar, State())
         u0 = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
 
         constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0)
         # Test printing
         println(devnull, nlp)
 

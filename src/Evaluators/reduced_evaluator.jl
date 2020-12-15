@@ -17,7 +17,6 @@ only CUDA is supported).
 mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     model::AbstractFormulation
     x::AbstractVector{T}
-    p::AbstractVector{T}
     λ::AbstractVector{T}
 
     x_min::AbstractVector{T}
@@ -37,7 +36,7 @@ mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 end
 
 function ReducedSpaceEvaluator(
-    model, x, u, p;
+    model, x, u;
     constraints=Function[state_constraint, power_constraints],
     linear_solver=DirectSolver(),
     ε_tol=1e-12,
@@ -63,7 +62,7 @@ function ReducedSpaceEvaluator(
         append!(g_max, cu)
     end
 
-    return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
+    return ReducedSpaceEvaluator(model, x, λ, x_min, x_max, u_min, u_max,
                                  constraints, g_min, g_max,
                                  buffer,
                                  ad, jx.J, linear_solver, ε_tol)
@@ -78,11 +77,10 @@ function ReducedSpaceEvaluator(
     polar = PolarForm(pf, device)
 
     x0 = initial(polar, State())
-    p = initial(polar, Parameters())
     uk = initial(polar, Control())
 
     return ReducedSpaceEvaluator(
-        polar, x0, uk, p; options...
+        polar, x0, uk; options...
     )
 end
 
@@ -122,7 +120,7 @@ bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.g_min, nlp.g_max
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x
     jac_x = nlp.autodiff.Jgₓ
-    # Transfer x, u, p into the network cache
+    # Transfer x, u into the network cache
     transfer!(nlp.model, nlp.buffer, nlp.x, u)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
