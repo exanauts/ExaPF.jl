@@ -139,7 +139,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     xₖ = nlp.x
     ∇gₓ = nlp.autodiff.Jgₓ.J
     # Evaluate Jacobian of power flow equation on current u
-    ∇gᵤ = jacobian(nlp.model, nlp.autodiff.Jgᵤ, buffer)
+    ∇gᵤ = jacobian(nlp.model, nlp.autodiff.Jgᵤ, buffer, AutoDiff.ControlJacobian())
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
     ∂cost(nlp.model, nlp.autodiff.∇f, buffer)
 
