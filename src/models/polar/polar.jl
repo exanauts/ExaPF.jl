@@ -224,11 +224,15 @@ function get(form::PolarForm{T, IT, VT, AT}, ::PhysicalState) where {T, IT, VT, 
     vmag = abs.(form.network.vbus) |> VT
     vang = angle.(form.network.vbus) |> VT
     ngen = PS.get(form.network, PS.NumberOfGenerators())
-    pg = xzeros(VT, ngen)
-    qg = xzeros(VT, ngen)
+
+    id_gen = form.indexing.index_generators
+    # S_bus = S_g - S_load
+    pg = pbus[id_gen] .+ form.active_load[id_gen]
+    qg = qbus[id_gen] .+ form.reactive_load[id_gen]
 
     npv = PS.get(form.network, PS.NumberOfPVBuses())
     npq = PS.get(form.network, PS.NumberOfPQBuses())
+    # Additional buffers
     balance = xzeros(VT, 2*npq+npv)
     dx = xzeros(VT, 2*npq+npv)
     return PolarNetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx)

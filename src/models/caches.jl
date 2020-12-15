@@ -22,3 +22,7 @@ struct PolarNetworkState{VT} <: AbstractNetworkBuffer
     dx::VT
 end
 
+setvalues!(buf::PolarNetworkState, ::PS.VoltageMagnitude, values) = copyto!(buf.vmag, values)
+setvalues!(buf::PolarNetworkState, ::PS.VoltageAngle, values) = copyto!(buf.vang, values)
+setvalues!(buf::PolarNetworkState, ::PS.ActivePower, values) = copyto!(buf.pg, values)
+setvalues!(buf::PolarNetworkState, ::PS.ReactivePower, values) = copyto!(buf.qg, values)

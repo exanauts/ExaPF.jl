@@ -51,7 +51,6 @@ function ProxALEvaluator(
     ng = get(nlp, PS.NumberOfGenerators())
 
     s_min = xzeros(S, ng)
-    # TODO: fix s_max properly
     s_max = xones(S, ng)
     λf = xzeros(S, ng)
     λt = xzeros(S, ng)
@@ -78,9 +77,8 @@ function ProxALEvaluator(
     model = PolarForm(pf, device)
     # Build reduced space evaluator
     x = initial(model, State())
-    p = initial(model, Parameters())
     u = initial(model, Control())
-    nlp = ReducedSpaceEvaluator(model, x, u, p)
+    nlp = ReducedSpaceEvaluator(model, x, u)
     return ProxALEvaluator(nlp, time)
 end
 
@@ -95,6 +93,9 @@ get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkAttribute) = get(nlp.inner, at
 # Setters
 function setvalues!(nlp::ProxALEvaluator, attr::PS.AbstractNetworkValues, values)
     setvalues!(nlp.inner, attr, values)
+end
+function transfer!(nlp::ProxALEvaluator, vm, va, pg, qg)
+    transfer!(nlp.inner, vm, va, pg, qg)
 end
 
 # Initial position
@@ -302,7 +303,7 @@ end
 function primal_infeasibility!(nlp::ProxALEvaluator, cons, w)
     @assert length(w) == nlp.nu + nlp.ng
     u = @view w[1:nlp.nu]
-    return primal_infeasibility(nlp.inner, cons, u)
+    return primal_infeasibility!(nlp.inner, cons, u)
 end
 function primal_infeasibility(nlp::ProxALEvaluator, w)
     @assert length(w) == nlp.nu + nlp.ng

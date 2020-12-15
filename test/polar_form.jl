@@ -40,11 +40,10 @@ const PS = PowerSystem
         # Get initial position
         x0 = ExaPF.initial(polar, State())
         u0 = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
 
         @test length(u0) == nᵤ
         @test length(x0) == nₓ
-        for v in [x0, u0, p]
+        for v in [x0, u0]
             @test isa(v, M)
         end
 

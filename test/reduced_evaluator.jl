@@ -23,10 +23,9 @@
         polar = PolarForm(pf, device)
         x0 = ExaPF.initial(polar, State())
         u0 = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
 
         constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0)
         # Test printing
         println(devnull, nlp)
 
@@ -50,9 +49,12 @@
         # Test API
         @test isa(get(nlp, ExaPF.Constraints()), Array{Function})
         @test get(nlp, State()) == x0
-        @test isa(get(nlp, ExaPF.PhysicalState()), ExaPF.AbstractBuffer)
+        buffer = get(nlp, ExaPF.PhysicalState())
+        @test isa(buffer, ExaPF.AbstractBuffer)
         @test isa(get(nlp, ExaPF.AutoDiffBackend()), ExaPF.AutoDiffFactory)
         @test ExaPF.initial(nlp) == u0
+
+        vm, va, pg, qg = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
 
         u = u0
         # Update nlp to stay on manifold
