@@ -362,8 +362,6 @@ function powerflow(
             AutoDiff.residual_jacobian!(jacobian, residual_polar!, 
                                    Vm, Va,
                                    polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
-            # AutoDiff.residual_jacobian!(jacobian, residual_polar!, Vm, Va,
-            #                        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
         end
         J = jacobian.J
 

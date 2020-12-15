@@ -24,6 +24,8 @@ This is currently not done because the abstraction of the indexing is not yet re
 
 """
 abstract type AbstractJacobian end
+struct StateJacobian <: AbstractJacobian end
+struct ControlJacobian <: AbstractJacobian end
 
 function _init_seed!(t1sseeds, coloring, ncolor, nmap)
     t1sseedvec = zeros(Float64, ncolor)
@@ -54,7 +56,6 @@ Creates an object for the Jacobian
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-# struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
 struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} 
     J::SMT
     compressedJ::MT
@@ -118,8 +119,7 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
             compressedJ = MT(zeros(Float64, ncolor, nmap))
             varx = view(x, map)
             t1svarx = view(t1sx, map)
-        end
-        if isa(type, ControlJacobian) 
+        elseif isa(type, ControlJacobian) 
             x = VT(zeros(Float64, npbus + nv_a))
             t1sx = A{t1s{ncolor}}(x)
             t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
@@ -128,6 +128,8 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
             compressedJ = MT(zeros(Float64, ncolor, length(F)))
             varx = view(x, map)
             t1svarx = view(t1sx, map)
+        else
+            error("Unsupported Jacobian type. Must be either ControlJacobian or StateJacobian.")
         end
 
         VP = typeof(t1sseeds)
@@ -137,9 +139,6 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
         )
     end
 end
-
-struct StateJacobian <: AbstractJacobian end
-struct ControlJacobian <: AbstractJacobian end
 
 """
     seed_kernel_cpu!
