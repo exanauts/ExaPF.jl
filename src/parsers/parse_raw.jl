@@ -329,8 +329,6 @@ function raw_to_exapf(rawdata::Dict{String, Array})
     end
     data["branch"] = branch_array
 
-    # TODO:
-    bus_id_to_indexes = Dict{Int, Int}([(i, i) for i in 1:nbus])
-    return data, bus_id_to_indexes
+    return data
 end
 

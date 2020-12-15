@@ -40,15 +40,13 @@ function mat_to_exapf(data_mat)
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
     nbus = length(data_mat["bus"])
-    bus_array = Array{Any}(undef, nbus, 17)
+    bus_array = zeros(nbus, 13)
 
     # Keep the correspondence between Matpower's ID and ExaPF
     # contiguous indexing.
-    bus_id_to_indexes = Dict{Int,Int}()
 
     for (i, bus) in enumerate(data_mat["bus"])
         busn = bus["bus_i"]
-        bus_id_to_indexes[busn] = i
         bus_array[i, BUS_I] = busn
         bus_array[i, BUS_TYPE] = bus["bus_type"]
         bus_array[i, PD] = bus["pd"]
@@ -71,7 +69,7 @@ function mat_to_exapf(data_mat)
     MU_QMIN = IndexSet.idx_gen()
 
     ngen = length(data_mat["gen"])
-    gen_array = Array{Any}(undef, ngen, 25)
+    gen_array = zeros(ngen, 16)
 
     for (i, gen) in enumerate(data_mat["gen"])
         gen_array[i, GEN_BUS] = gen["gen_bus"]
@@ -97,8 +95,7 @@ function mat_to_exapf(data_mat)
     ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IndexSet.idx_branch()
 
     nbranch = length(data_mat["branch"])
-    #branch_array = Array{Any}(undef, nbranch, 21)
-    branch_array = zeros(nbranch, 21)
+    branch_array = zeros(nbranch, 13)
 
     for (i, branch) in enumerate(data_mat["branch"])
         branch_array[i, F_BUS] = branch["f_bus"]
@@ -122,17 +119,19 @@ function mat_to_exapf(data_mat)
 
     MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
     ncost = length(data_mat["gencost"])
-    cost_array = Array{Any}(undef, ncost, 5)
+    cost_array = zeros(ncost, 7)
     for (i, cos) in enumerate(data_mat["gencost"])
         cost_array[i, MODEL] = cos["model"]
         cost_array[i, STARTUP] = cos["startup"]
         cost_array[i, SHUTDOWN] = cos["shutdown"]
         cost_array[i, NCOST] = cos["ncost"]
-        cost_array[i, COST] = cos["cost"]
+        cost_array[i, COST] = cos["cost"][1]
+        cost_array[i, COST+1] = cos["cost"][2]
+        cost_array[i, COST+2] = cos["cost"][3]
     end
     data["cost"] = cost_array
 
-    return data, bus_id_to_indexes
+    return data
 end
 
 ### Data and functions specific to Matpower format ###

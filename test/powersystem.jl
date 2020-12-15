@@ -4,7 +4,7 @@ using KernelAbstractions
 using Test
 using TimerOutputs
 
-import ExaPF: ParsePSSE, PowerSystem
+import ExaPF: ParsePSSE, PowerSystem, IndexSet
 
 const PS = PowerSystem
 
@@ -14,7 +14,7 @@ const PS = PowerSystem
     to = TimerOutputs.TimerOutput()
     datafile = joinpath(dirname(@__FILE__), "..", "data", local_case)
     data_raw = ParsePSSE.parse_raw(datafile)
-    data, bus_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
+    data = ParsePSSE.raw_to_exapf(data_raw)
 
     # Parsed data indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -24,6 +24,8 @@ const PS = PowerSystem
     bus = data["bus"]
     gen = data["gen"]
     SBASE = data["baseMVA"][1]
+
+    bus_to_indexes = PS.get_bus_id_to_indexes(bus)
     nbus = size(bus, 1)
 
     # obtain V0 from raw data
@@ -122,14 +124,14 @@ end
     # Test constructor
     @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
         datafile = joinpath(dirname(@__FILE__), "..", "data", name)
-        switch = endswith(name, ".m") ? 1 : 0
-        pf = PS.PowerNetwork(datafile, switch)
+        pf = PS.PowerNetwork(datafile)
         @test isa(pf, PS.PowerNetwork)
     end
 
     # From now on, test with "case9.m"
     datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
-    pf = PS.PowerNetwork(datafile, 1)
+    data = PS.import_dataset(datafile)
+    pf = PS.PowerNetwork(data)
 
     @testset "Computing cost coefficients" begin
         coefs = PS.get_costs_coefficients(pf)
@@ -167,5 +169,18 @@ end
         q_min, q_max = PS.bounds(pf, PS.Generator(), PS.ReactivePower())
         @test length(q_min) == n_gen
         @test length(q_max) == n_gen
+    end
+
+    @testset "Load from data" begin
+        pf_original = PS.PowerNetwork(data)
+        @test isa(pf_original, PS.PowerNetwork)
+        n_lines = PS.get(pf_original, PS.NumberOfLines())
+
+        pf_removed = PS.PowerNetwork(data; remove_lines=Int[1])
+        @test isa(pf_removed, PS.PowerNetwork)
+        n_after_removal = PS.get(pf_removed, PS.NumberOfLines())
+
+        @test n_lines - 1 == n_after_removal
+        @test pf_original.Ybus != pf_removed.Ybus
     end
 end

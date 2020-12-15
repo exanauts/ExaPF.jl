@@ -4,7 +4,7 @@ using Printf
 using SparseArrays
 using ..ExaPF: ParsePSSE, ParseMAT, IndexSet, Spmat
 
-import Base: show
+import Base: show, get
 
 const PQ_BUS_TYPE = 1
 const PV_BUS_TYPE = 2
@@ -190,6 +190,19 @@ Reactive power `Q` of the complex power `S = P + iQ`.
 """
 struct ReactivePower <: AbstractNetworkValues end
 
+"""
+    ActiveLoad <: AbstractNetworkValues
+
+Active load `Pd` at buses.
+"""
+struct ActiveLoad <: AbstractNetworkValues end
+
+"""
+    ReactiveLoad <: AbstractNetworkValues
+
+Reactive load `Qd` at buses.
+"""
+struct ReactiveLoad <: AbstractNetworkValues end
 
 # Templating
 """
@@ -228,6 +241,57 @@ v_min, v_max = bounds(pf, Buses(), VoltageMagnitude())
 ```
 """
 function bounds end
+
+# Utils
+function get_bus_id_to_indexes(bus)
+    BUS_I = IndexSet.idx_bus()[1]
+    nbus = size(bus, 1)
+
+    bus_id_to_indexes = Dict{Int,Int}()
+    for i in 1:nbus
+        busn = bus[i, BUS_I]
+        bus_id_to_indexes[busn] = i
+    end
+    return bus_id_to_indexes
+end
+
+function get_bus_generators(buses, gens, bus_id_to_indexes)
+    bus_gen = Dict{Int, Array{Int}}()
+    GEN_BUS = IndexSet.idx_gen()[1]
+    for g in 1:size(gens, 1)
+        bus_id = gens[g, GEN_BUS]
+        bus_index = bus_id_to_indexes[bus_id]
+        if haskey(bus_gen, bus_index)
+            push!(bus_gen[bus_index], g)
+        else
+            bus_gen[bus_index] = Int[g]
+        end
+    end
+    return bus_gen
+end
+
+function get_active_branches(lines, remove_lines)
+    if isempty(remove_lines)
+        return lines
+    else
+        lines = lines[1:end .!= remove_lines, :]
+        return lines
+    end
+end
+
+function import_dataset(datafile::String)
+    if endswith(datafile, ".raw")
+        data_raw = ParsePSSE.parse_raw(datafile)
+        return ParsePSSE.raw_to_exapf(data_raw)
+    elseif endswith(datafile, ".m")
+        data_mat = ParseMAT.parse_mat(datafile)
+        return ParseMAT.mat_to_exapf(data_mat)
+    else
+        error("Unsupported format in file $(datafile): supported extensions are " *
+              "Matpower (.m) or PSSE (.raw)")
+    end
+end
+
 
 include("topology.jl")
 include("power_network.jl")
