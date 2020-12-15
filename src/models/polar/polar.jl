@@ -4,12 +4,12 @@ abstract type AbstractJacobianStructure end
 
 struct StateJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
     sparsity::Function
-    map::Vector
+    map::IT
 end
 
 struct ControlJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
     sparsity::Function
-    map::Vector
+    map::IT
 end
 
 struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
@@ -146,7 +146,7 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     mappq = [i + nvbus for i in idx_pq]
     # Ordering for x is (θ_pv, θ_pq, v_pq)
     statemap = vcat(mappv, mappq, idx_pq)
-    state_jacobian_structure = StateJacobianStructure{IT}(state_jacobian, IT(statemap))
+    state_jacobian_structure = StateJacobianStructure(state_jacobian, IT(statemap))
 
     function control_jacobian(V, Ybus, ref, pv, pq)
         n = size(V, 1)
