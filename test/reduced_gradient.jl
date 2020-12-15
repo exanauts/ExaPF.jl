@@ -32,15 +32,15 @@ const PS = PowerSystem
         ExaPF.get!(polar, State(), xk, cache)
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
-        ∇gᵤ = ExaPF.jacobian(polar, ju, cache)
+        ∇gᵤ = ExaPF.jacobian(polar, ju, cache, AutoDiff.ControlJacobian())
         # test jacobian wrt x
-        ∇gᵥ = ExaPF.jacobian(polar, jx, cache)
+        ∇gᵥ = ExaPF.jacobian(polar, jx, cache, AutoDiff.StateJacobian())
         @test isapprox(∇gₓ, ∇gᵥ)
 
         # Test with Matpower's Jacobian
         V = cache.vmag .* exp.(im * cache.vang)
         Ybus = pf.Ybus
-        J = ExaPF.residual_jacobian(V, Ybus, pf.pv, pf.pq)
+        J = ExaPF.residual_jacobian(V, Ybus, pf.ref, pf.pv, pf.pq)
         @test isapprox(∇gₓ, J)
 
         # Test gradients

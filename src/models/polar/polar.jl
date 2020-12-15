@@ -1,5 +1,16 @@
 # Polar formulation
 #
+
+struct StateJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
+    sparsity::Function
+    map::IT
+end
+
+struct ControlJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
+    sparsity::Function
+    map::IT
+end
+
 struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     network::PS.PowerNetwork
     device::Device
@@ -19,6 +30,9 @@ struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     ybus_re::Spmat{IT, VT}
     ybus_im::Spmat{IT, VT}
     AT::Type
+    # Jacobian structures and indexing
+    statejacobian::StateJacobianStructure
+    controljacobian::ControlJacobianStructure
 end
 
 include("kernels.jl")
@@ -109,6 +123,47 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
     u_max[nref+1:nref+npv] .= p_max[gpv_to_gen]
 
     indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen)
+    function state_jacobian(V, Ybus, ref, pv, pq)
+        n = size(V, 1)
+        Ibus = Ybus*V
+        diagV       = sparse(1:n, 1:n, V, n, n)
+        diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
+        diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
+
+        dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
+        dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
+
+        j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
+        j12 = real(dSbus_dVm[[pv; pq], pq])
+        j21 = imag(dSbus_dVa[pq, [pv; pq]])
+        j22 = imag(dSbus_dVm[pq, pq])
+
+        J = [j11 j12; j21 j22]
+    end
+    nvbus = length(pf.vbus)
+    mappv = [i + nvbus for i in idx_pv]
+    mappq = [i + nvbus for i in idx_pq]
+    # Ordering for x is (θ_pv, θ_pq, v_pq)
+    statemap = vcat(mappv, mappq, idx_pq)
+    state_jacobian_structure = StateJacobianStructure(state_jacobian, IT(statemap))
+
+    function control_jacobian(V, Ybus, ref, pv, pq)
+        n = size(V, 1)
+        Ibus = Ybus*V
+        diagV       = sparse(1:n, 1:n, V, n, n)
+        diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
+        diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
+
+        dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
+        dSbus_dpbus = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
+
+        j11 = real(dSbus_dVm[[pv; pq], [ref; pv; pv]])
+        j21 = imag(dSbus_dVm[pq, [ref; pv; pv]])
+        J = [j11; j21]
+    end
+    mappv =  [i + nvbus for i in idx_pv]
+    controlmap = vcat(idx_ref, mappv, idx_pv)
+    control_jacobian_structure = ControlJacobianStructure{IT}(control_jacobian, IT(controlmap))
 
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
@@ -117,6 +172,7 @@ function PolarForm(pf::PS.PowerNetwork, device; nocost=false)
         indexing,
         ybus_re, ybus_im,
         AT,
+        state_jacobian_structure, control_jacobian_structure
     )
 end
 
@@ -211,11 +267,13 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     F = buffer.balance
     fill!(F, zero(T))
     # Build the AutoDiff Jacobian structure
-    statejacobian = AutoDiff.StateJacobian(F, Vm, Va,
-        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus
+    statejacobian = AutoDiff.Jacobian(polar.statejacobian, F, Vm, Va,
+        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, 
+        AutoDiff.StateJacobian()
     )
-    controljacobian = AutoDiff.ControlJacobian(F, Vm, Va,
-        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus
+    controljacobian = AutoDiff.Jacobian(polar.controljacobian, F, Vm, Va,
+        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, 
+        AutoDiff.ControlJacobian()
     )
 
     # Build the AutoDiff structure for the objective
@@ -231,7 +289,7 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     return statejacobian, controljacobian, objectiveAD
 end
 
-function jacobian(polar::PolarForm, jac::AutoDiff.AbstractJacobian, buffer::PolarNetworkState)
+function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetworkState, jac_type::AutoDiff.AbstractJacobian)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     # Indexing
@@ -241,13 +299,13 @@ function jacobian(polar::PolarForm, jac::AutoDiff.AbstractJacobian, buffer::Pola
     # Network state
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
     AutoDiff.residual_jacobian!(jac, residual_polar!, Vm, Va,
-                           polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
+                           polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, jac_type)
     return jac.J
 end
 
 function powerflow(
     polar::PolarForm{T, IT, VT, AT},
-    jacobian::AutoDiff.StateJacobian,
+    jacobian::AutoDiff.Jacobian,
     buffer::PolarNetworkState{VT};
     solver=DirectSolver(),
     tol=1e-7,
@@ -262,6 +320,7 @@ function powerflow(
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     n_states = get(polar, NumberOfState())
+    nvbus = length(polar.network.vbus)
 
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -312,8 +371,9 @@ function powerflow(
         iter += 1
 
         @timeit TIMER "Jacobian" begin
-            AutoDiff.residual_jacobian!(jacobian, residual_polar!, Vm, Va,
-                                   polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, TIMER)
+            AutoDiff.residual_jacobian!(jacobian, residual_polar!, 
+                                   Vm, Va,
+                                   polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
         end
         J = jacobian.J
 

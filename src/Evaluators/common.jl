@@ -3,8 +3,8 @@
 abstract type AbstractAutoDiffFactory end
 
 struct AutoDiffFactory <: AbstractAutoDiffFactory
-    Jgₓ::AutoDiff.StateJacobian
-    Jgᵤ::AutoDiff.ControlJacobian
+    Jgₓ::AutoDiff.Jacobian
+    Jgᵤ::AutoDiff.Jacobian
     ∇f::AdjointStackObjective
 end
 
