@@ -32,9 +32,9 @@ const PS = PowerSystem
         ExaPF.get!(polar, State(), xk, cache)
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
-        ∇gᵤ = ExaPF.jacobian(polar, ju, cache)
+        ∇gᵤ = ExaPF.jacobian(polar, ju, cache, AutoDiff.ControlJacobian())
         # test jacobian wrt x
-        ∇gᵥ = ExaPF.jacobian(polar, jx, cache)
+        ∇gᵥ = ExaPF.jacobian(polar, jx, cache, AutoDiff.StateJacobian())
         @test isapprox(∇gₓ, ∇gᵥ)
 
         # Test with Matpower's Jacobian

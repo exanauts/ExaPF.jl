@@ -277,7 +277,7 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     return statejacobian, controljacobian, objectiveAD
 end
 
-function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetworkState)
+function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetworkState, jac_type::AutoDiff.AbstractJacobian)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     # Indexing
@@ -287,7 +287,7 @@ function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetwork
     # Network state
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
     AutoDiff.residual_jacobian!(jac, residual_polar!, Vm, Va,
-                           polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.ControlJacobian())
+                           polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, jac_type)
     return jac.J
 end
 

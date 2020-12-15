@@ -85,7 +85,7 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     # Import buffer (has been updated previously in update!)
     buffer = base_nlp.buffer
     # Import AutoDiff objects
-    ∇gᵤ = jacobian(model, base_nlp.autodiff.Jgᵤ, buffer)
+    ∇gᵤ = jacobian(model, base_nlp.autodiff.Jgᵤ, buffer, AutoDiff.ControlJacobian())
     ∂obj = base_nlp.autodiff.∇f
     jvx = ∂obj.jvₓ ; fill!(jvx, 0)
     jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
