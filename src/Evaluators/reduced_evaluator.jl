@@ -165,7 +165,7 @@ function objective(nlp::ReducedSpaceEvaluator, u)
 end
 
 function update_jacobian!(nlp::ReducedSpaceEvaluator, ::Control)
-    jacobian(nlp.model, nlp.autodiff.Jgᵤ, nlp.buffer)
+    jacobian(nlp.model, nlp.autodiff.Jgᵤ, nlp.buffer, AutoDiff.ControlJacobian())
 end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)

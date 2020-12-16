@@ -77,8 +77,8 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
     s_obj = scale_factor(norm(∇g, Inf), tol, η)
 
     # TODO: avoid forming whole Jacobian
-    jac = similar(u0, (m, n))
-    s_cons = similar(u0, m)
+    jac = similar(u0, (m, n)) ; fill!(jac, 0)
+    s_cons = similar(u0, m) ; fill!(s_cons, 0)
     jacobian!(nlp, jac, u0)
     for i in eachindex(s_cons)
         ∇c = @view jac[i, :]

@@ -33,9 +33,9 @@ end
     include("reduced_gradient.jl")
     # ReducedSpaceEvaluator API
     include("reduced_evaluator.jl")
+    include("proxal_evaluator.jl")
     include("penalty.jl")
     include("auglag.jl")
-    include("proxal_evaluator.jl")
     include("MOI_wrapper.jl")
 end
 
