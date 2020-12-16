@@ -1,8 +1,16 @@
-@testset "AugLagEvaluators" begin
+
+init(datafile, ::Type{ExaPF.ReducedSpaceEvaluator}) = ExaPF.ReducedSpaceEvaluator(datafile)
+function init(datafile, ::Type{ExaPF.ProxALEvaluator})
+    nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+    time = ExaPF.Normal
+    return ExaPF.ProxALEvaluator(nlp, time)
+end
+
+@testset "AugLagEvaluator with $Evaluator backend" for Evaluator in [ExaPF.ReducedSpaceEvaluator, ExaPF.ProxALEvaluator]
     @testset "Inactive constraints" begin
         datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
         # Build reference evaluator
-        nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+        nlp = init(datafile, ExaPF.ReducedSpaceEvaluator)
         u0 = ExaPF.initial(nlp)
         # Build penalty evaluator
         pen = ExaPF.AugLagEvaluator(nlp, u0)
@@ -37,17 +45,18 @@
     @testset "Active constraints" begin
         datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
         # Build reference evaluator
-        nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+        nlp = init(datafile, ExaPF.ReducedSpaceEvaluator)
         u0 = ExaPF.initial(nlp)
+        w♭, w♯ = ExaPF.bounds(nlp, ExaPF.Variables())
         # Build penalty evaluator
         for scaling in [true, false]
             pen = ExaPF.AugLagEvaluator(nlp, u0; scale=scaling)
-            u = nlp.u_min
+            u = w♭
             # Update nlp to stay on manifold
             ExaPF.update!(pen, u)
             # Compute objective
             c = ExaPF.objective(pen, u)
-            c_ref = ExaPF.objective(nlp, u)
+            c_ref = ExaPF.inner_objective(pen, u)
             @test isa(c, Real)
             # For case57.m some constraints are active, so penalty are >= 0
             @test c > c_ref
