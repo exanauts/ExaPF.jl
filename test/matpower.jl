@@ -22,7 +22,6 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
     u = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
@@ -48,7 +47,6 @@ end
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
     u = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
@@ -73,7 +71,6 @@ end
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
     u = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
@@ -96,7 +93,6 @@ end
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
     u = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)

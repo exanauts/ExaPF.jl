@@ -84,8 +84,6 @@ function ReducedSpaceEvaluator(
     )
 end
 
-# TODO: add constructor from PowerNetwork
-
 type_array(nlp::ReducedSpaceEvaluator) = typeof(nlp.u_min)
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
@@ -109,13 +107,28 @@ end
 function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkValues, values)
     setvalues!(nlp.model, attr, values)
 end
+function setvalues!(nlp::ReducedSpaceEvaluator, ::State, x::AbstractVector)
+    copyto!(nlp.x, x)
+end
+
+# Transfer network values inside buffer
+function transfer!(
+    nlp::ReducedSpaceEvaluator, vm, va, pg, qg,
+)
+    setvalues!(nlp.buffer, PS.VoltageMagnitude(), vm)
+    setvalues!(nlp.buffer, PS.VoltageAngle(), va)
+    setvalues!(nlp.buffer, PS.ActivePower(), pg)
+    setvalues!(nlp.buffer, PS.ReactivePower(), qg)
+end
 
 # Initial position
-initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
+function initial(nlp::ReducedSpaceEvaluator)
+    return get(nlp.model, Control(), nlp.buffer)
+end
 
 # Bounds
-bounds(nlp::ReducedSpaceEvaluator, ::Variables) = nlp.u_min, nlp.u_max
-bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.g_min, nlp.g_max
+bounds(nlp::ReducedSpaceEvaluator, ::Variables) = (nlp.u_min, nlp.u_max)
+bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = (nlp.g_min, nlp.g_max)
 
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     x₀ = nlp.x

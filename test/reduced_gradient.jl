@@ -23,7 +23,6 @@ const PS = PowerSystem
 
         xk = ExaPF.initial(polar, State())
         u = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
 
         jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 

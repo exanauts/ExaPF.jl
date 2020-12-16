@@ -51,7 +51,6 @@ function ProxALEvaluator(
     ng = get(nlp, PS.NumberOfGenerators())
 
     s_min = xzeros(S, ng)
-    # TODO: fix s_max properly
     s_max = xones(S, ng)
     λf = xzeros(S, ng)
     λt = xzeros(S, ng)
@@ -94,6 +93,9 @@ get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkAttribute) = get(nlp.inner, at
 # Setters
 function setvalues!(nlp::ProxALEvaluator, attr::PS.AbstractNetworkValues, values)
     setvalues!(nlp.inner, attr, values)
+end
+function transfer!(nlp::ProxALEvaluator, vm, va, pg, qg)
+    transfer!(nlp.inner, vm, va, pg, qg)
 end
 
 # Initial position

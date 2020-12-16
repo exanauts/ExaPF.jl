@@ -37,9 +37,12 @@ using Test
         # Test gradient with non-trivial penalties
         λf = 0.5 * rand(prox.ng)
         λt = 1.5 * rand(prox.ng)
+        pgf = rand(prox.ng)
+        ExaPF.update_primal!(prox, ExaPF.Previous(), pgf)
         ExaPF.update_multipliers!(prox, ExaPF.Next(), λt)
         ExaPF.update_multipliers!(prox, ExaPF.Current(), λf)
 
+        ExaPF.update!(prox, w)
         fill!(g, 0)
         ExaPF.gradient!(prox, g, w)
         grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, w)
