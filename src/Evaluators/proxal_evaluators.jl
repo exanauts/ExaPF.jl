@@ -5,17 +5,17 @@
     Normal,
 )
 
-abstract type AbstractTime end
-struct Current <: AbstractTime end
-struct Previous <: AbstractTime end
-struct Next <: AbstractTime end
+abstract type AbstractTimeStep end
+struct Current <: AbstractTimeStep end
+struct Previous <: AbstractTimeStep end
+struct Next <: AbstractTimeStep end
 
 
 """
     ProxALEvaluator{T} <: AbstractNLPEvaluator
 
 Evaluator wrapping a `ReducedSpaceEvaluator` for use inside
-dual decomposition algorithm.
+decomposition algorithm implemented in [ProxAL.jl](https://github.com/exanauts/ProxAL.jl).
 
 """
 mutable struct ProxALEvaluator{T} <: AbstractNLPEvaluator
@@ -162,13 +162,11 @@ function objective(nlp::ProxALEvaluator, w)
         cost += dot(nlp.λt, nlp.ramp_link_next)
         cost += 0.5 * nlp.ρt * xnorm(nlp.ramp_link_next)^2
     end
-
     return cost
 end
 
 ## Gradient
 update_jacobian!(nlp::ProxALEvaluator, ::Control) = update_jacobian!(nlp.inner, Control())
-
 
 function gradient_full!(nlp::ProxALEvaluator, jvx, jvu, w)
     # Import model

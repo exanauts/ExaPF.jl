@@ -1,5 +1,36 @@
 
+"""
+    optimize!(optimizer, nlp::AbstractNLPEvaluator, x0)
 
+Use optimization routine implemented in `optimizer` to optimize
+the optimal power flow problem specified in the evaluator `nlp`.
+Initial point is specified by `x0`.
+
+Return the solution as a named tuple, with fields
+- `status::MOI.TerminationStatus`: Solver's termination status, as specified by MOI
+- `minimum::Float64`: final objective
+- `minimizer::AbstractVector`: final solution vector, with same ordering as the `Variables` specified in `nlp`.
+
+
+    optimize!(optimizer, nlp::AbstractNLPEvaluator)
+
+Wrap previous `optimize!` function and pass as initial guess `x0`
+the initial value specified when calling `initial(nlp)`.
+
+## Examples
+
+```julia
+nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+optimizer = Ipopt.Optimizer()
+solution = ExaPF.optimize!(optimizer, nlp)
+
+```
+
+## Notes
+By default, the optimization routine solves a minimization
+problem.
+
+"""
 function optimize! end
 
 # MOI-based solver
