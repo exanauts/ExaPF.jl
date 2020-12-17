@@ -72,13 +72,14 @@ function ProxALEvaluator(
     pf::PS.PowerNetwork,
     time::ProxALTime;
     device=CPU(),
+    options...
 )
     # Build network polar formulation
     model = PolarForm(pf, device)
     # Build reduced space evaluator
     x = initial(model, State())
     u = initial(model, Control())
-    nlp = ReducedSpaceEvaluator(model, x, u)
+    nlp = ReducedSpaceEvaluator(model, x, u; options...)
     return ProxALEvaluator(nlp, time)
 end
 

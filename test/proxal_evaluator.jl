@@ -1,8 +1,20 @@
 using FiniteDiff
 using Test
+import ExaPF: PS
 
 @testset "ProxALEvaluators ($time)" for time in [ExaPF.Origin, ExaPF.Normal, ExaPF.Final]
     datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+
+    @testset "PowerNetwork Constructor" begin
+        pf = PS.PowerNetwork(datafile)
+        eps = 1e-10
+        prox0 = ExaPF.ProxALEvaluator(pf, time; ε_tol=eps)
+        @test isa(prox0, ExaPF.ProxALEvaluator)
+        @test isa(prox0.inner, ExaPF.ReducedSpaceEvaluator)
+        # Test that argument was correctly set
+        @test prox0.inner.ε_tol == eps
+    end
+
     # Build reference evaluator
     nlp = ExaPF.ReducedSpaceEvaluator(datafile)
     S = ExaPF.type_array(nlp)
