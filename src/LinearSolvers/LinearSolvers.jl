@@ -195,11 +195,11 @@ Wrap `Krylov.jl` BICGSTAB algorithm to solve iteratively the linear system
 """
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
-    verbose::Bool
+    verbose::Int
     atol::Float64
     rtol::Float64
 end
-KrylovBICGSTAB(precond; verbose=false, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(precond, verbose, atol, rtol)
+KrylovBICGSTAB(precond; verbose=0, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(precond, verbose, atol, rtol)
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
