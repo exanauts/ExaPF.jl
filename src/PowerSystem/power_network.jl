@@ -181,6 +181,14 @@ function bounds(pf::PowerNetwork, ::Generator, ::ReactivePower)
     return q_min, q_max
 end
 
+function bounds(pf::PowerNetwork, ::Lines, ::ActivePower)
+    RATE_A = IndexSet.idx_branch()[6]
+    n_lines = get(pf, NumberOfLines())
+    flow_max = pf.branches[:, RATE_A]
+    flow_min = zeros(n_lines)
+    return (flow_min, flow_max)
+end
+
 """
     get_costs_coefficients(pf::PowerNetwork)
 

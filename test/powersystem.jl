@@ -175,6 +175,11 @@ end
         q_min, q_max = PS.bounds(pf, PS.Generator(), PS.ReactivePower())
         @test length(q_min) == n_gen
         @test length(q_max) == n_gen
+
+        n_lines = PS.get(pf, PS.NumberOfLines())
+        f_min, f_max = PS.bounds(pf, PS.Lines(), PS.ActivePower())
+        @test length(f_min) == n_lines
+        @test length(f_max) == n_lines
     end
 
     @testset "Load from data" begin
