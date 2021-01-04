@@ -127,6 +127,8 @@ function jacobian(
     index_ref = polar.indexing.index_ref
     pv_to_gen = polar.indexing.index_pv_to_gen
 
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
     vmag = buffer.vmag
     vang = buffer.vang
     adj_x = ∂jac.∇fₓ
@@ -144,15 +146,15 @@ function jacobian(
     if i_cons <= nref
         # Constraint on P_ref (generator) (P_inj = P_g - P_load)
         bus = index_ref[i_cons]
-        put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
+        put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
     elseif i_cons <= 2*nref
         # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
         bus = index_ref[i_cons - nref]
-        put_reactive_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
+        put_reactive_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
     else
         # Constraint on Q_pv (generator) (Q_inj = Q_g - Q_load)
         bus = index_pv[i_cons - 2* nref]
-        put_reactive_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
+        put_reactive_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
     end
     if isa(adj_x, Array)
         kernel! = put_adjoint_kernel!(CPU(), 1)

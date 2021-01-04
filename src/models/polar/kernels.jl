@@ -227,12 +227,13 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     ev = kernel!(
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
         x, u,
         pv, pq, ref,
-        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
-        polar.ybus_im.nzval, polar.active_load, polar.reactive_load,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+        ybus_im.nzval, polar.active_load, polar.reactive_load,
         ndrange=nbus
     )
     wait(ev)
@@ -285,6 +286,7 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::Po
     ref = polar.indexing.index_ref
     pv_to_gen = polar.indexing.index_pv_to_gen
     ref_to_gen = polar.indexing.index_ref_to_gen
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     range_ = length(pv) + length(ref)
 
@@ -292,8 +294,8 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::Po
         buffer.pg,
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
         pv, ref, pv_to_gen, ref_to_gen,
-        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
-        polar.ybus_im.nzval, polar.active_load,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+        ybus_im.nzval, polar.active_load,
         ndrange=range_
     )
     wait(ev)
@@ -344,14 +346,15 @@ function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::
     ref = polar.indexing.index_ref
     pv_to_gen = polar.indexing.index_pv_to_gen
     ref_to_gen = polar.indexing.index_ref_to_gen
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     range_ = length(pv) + length(ref)
     ev = kernel!(
         buffer.qg,
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
         pv, ref, pv_to_gen, ref_to_gen,
-        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
-        polar.ybus_im.nzval, polar.reactive_load,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+        ybus_im.nzval, polar.reactive_load,
         ndrange=range_
     )
     wait(ev)
