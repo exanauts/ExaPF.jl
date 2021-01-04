@@ -155,10 +155,9 @@ function residual_polar!(F, v_m, v_a,
     wait(ev)
 end
 
-@kernel function transfer_kernel!(vmag, vang, pinj, qinj,
-                        x, u, pv, pq, ref,
-                        ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                        ybus_im_nzval, pload, qload)
+@kernel function transfer_kernel!(
+    vmag, vang, pinj, qinj, u, pv, pq, ref, pload, qload
+)
     i = @index(Global, Linear)
     npv = length(pv)
     npq = length(pq)
@@ -167,61 +166,24 @@ end
     # PV bus
     if i <= npv
         bus = pv[i]
-        qacc = 0
-        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
-            to = ybus_re_rowval[c]
-            aij = vang[bus] - vang[to]
-            # f_re = a * cos + b * sin
-            # f_im = a * sin - b * cos
-            coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-            coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
-            cos_val = cos(aij)
-            sin_val = sin(aij)
-            qacc += coef_cos * sin_val - coef_sin * cos_val
-        end
-        qinj[bus] = qacc
-        vang[bus] = x[i]
+        # P = Pg - Pd
         pinj[bus] = u[nref + i] - pload[bus]
         vmag[bus] = u[nref + npv + i]
-    # PQ bus
-    elseif i <= npv + npq
-        i_pq = i - npv
-        bus = pq[i_pq]
-        vang[bus] = x[npv+i_pq]
-        vmag[bus] = x[npv+npq+i_pq]
-        pinj[bus] = - pload[bus]
-        qinj[bus] = - qload[bus]
     # REF bus
-    else i <= npv + npq + nref
-        i_ref = i - npv - npq
+    else
+        i_ref = i - npv
         bus = ref[i_ref]
-        pacc = 0
-        qacc = 0
-        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
-            to = ybus_re_rowval[c]
-            aij = vang[bus] - vang[to]
-            # f_re = a * cos + b * sin
-            # f_im = a * sin - b * cos
-            coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-            coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
-            cos_val = cos(aij)
-            sin_val = sin(aij)
-            pacc += coef_cos * cos_val + coef_sin * sin_val
-            qacc += coef_cos * sin_val - coef_sin * cos_val
-        end
-        pinj[bus] = pacc
-        qinj[bus] = qacc
         vmag[bus] = u[i_ref]
         vang[bus] = 0.0  # reference angle set to 0 by default
     end
 end
 
 # Transfer values in (x, u) to buffer
-function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u)
-    if isa(x, Array)
-        kernel! = transfer_kernel!(CPU(), 1)
-    else
+function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
+    if isa(u, CuArray)
         kernel! = transfer_kernel!(CUDADevice(), 256)
+    else
+        kernel! = transfer_kernel!(CPU(), 1)
     end
     nbus = length(buffer.vmag)
     pv = polar.indexing.index_pv
@@ -229,11 +191,10 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u)
     ref = polar.indexing.index_ref
     ev = kernel!(
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
-        x, u,
+        u,
         pv, pq, ref,
-        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
-        polar.ybus_im.nzval, polar.active_load, polar.reactive_load,
-        ndrange=nbus
+        polar.active_load, polar.reactive_load,
+        ndrange=(length(pv)+length(ref)),
     )
     wait(ev)
 end

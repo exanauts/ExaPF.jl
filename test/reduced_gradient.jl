@@ -20,6 +20,7 @@ const PS = PowerSystem
 
         polar = PolarForm(pf, CPU())
         cache = ExaPF.get(polar, ExaPF.PhysicalState())
+        ExaPF.init!(polar, cache)
 
         xk = ExaPF.initial(polar, State())
         u = ExaPF.initial(polar, Control())
@@ -64,7 +65,7 @@ const PS = PowerSystem
             # Compare with finite difference
             function reduced_cost(u_)
                 # Ensure we remain in the manifold
-                ExaPF.transfer!(polar, cache, xk, u_)
+                ExaPF.transfer!(polar, cache, u_)
                 convergence = powerflow(polar, jx, cache, tol=1e-14)
                 ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
                 return ExaPF.cost_production(polar, cache.pg)
