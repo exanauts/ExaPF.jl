@@ -73,6 +73,8 @@ function PolarForm(pf::PS.PowerNetwork, device)
     # Build-up reverse index for performance
     pv_to_gen = similar(idx_pv)
     ref_to_gen = similar(idx_ref)
+    ## We assume here that the indexing of generators is the same
+    ## as in MATPOWER
     for i in 1:ngens
         bus = idx_gen[i]
         i_pv = findfirst(isequal(bus), idx_pv)
@@ -219,23 +221,38 @@ function initial(form::PolarForm{T, IT, VT, AT}, v::AbstractVariable) where {T, 
 end
 
 function get(form::PolarForm{T, IT, VT, AT}, ::PhysicalState) where {T, IT, VT, AT}
-    pbus = real.(form.network.sbus) |> VT
-    qbus = imag.(form.network.sbus) |> VT
-    vmag = abs.(form.network.vbus) |> VT
-    vang = angle.(form.network.vbus) |> VT
+    nbus = PS.get(form.network, PS.NumberOfBuses())
     ngen = PS.get(form.network, PS.NumberOfGenerators())
+    pbus = xzeros(VT, nbus)
+    qbus = xzeros(VT, nbus)
+    vmag = xzeros(VT, nbus)
+    vang = xzeros(VT, nbus)
 
-    id_gen = form.indexing.index_generators
-    # S_bus = S_g - S_load
-    pg = pbus[id_gen] .+ form.active_load[id_gen]
-    qg = qbus[id_gen] .+ form.reactive_load[id_gen]
+    pg = xzeros(VT, ngen)
+    qg = xzeros(VT, ngen)
 
-    npv = PS.get(form.network, PS.NumberOfPVBuses())
-    npq = PS.get(form.network, PS.NumberOfPQBuses())
     # Additional buffers
-    balance = xzeros(VT, 2*npq+npv)
-    dx = xzeros(VT, 2*npq+npv)
+    n_state = get(form, NumberOfState())
+    balance = xzeros(VT, n_state)
+    dx = xzeros(VT, n_state)
     return PolarNetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx)
+end
+
+function init!(form::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
+    pbus = real.(form.network.sbus)
+    qbus = imag.(form.network.sbus)
+    vmag = abs.(form.network.vbus)
+    vang = angle.(form.network.vbus)
+
+    pg = get(form.network, PS.ActivePower())
+    qg = get(form.network, PS.ReactivePower())
+
+    setvalues!(buffer, PS.VoltageMagnitude(), vmag)
+    setvalues!(buffer, PS.VoltageAngle(), vang)
+    setvalues!(buffer, PS.ActivePower(), pg)
+    setvalues!(buffer, PS.ReactivePower(), qg)
+    copyto!(buffer.pinj, pbus)
+    copyto!(buffer.qinj, qbus)
 end
 
 function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
@@ -276,11 +293,11 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     fill!(F, zero(T))
     # Build the AutoDiff Jacobian structure
     statejacobian = AutoDiff.Jacobian(polar.statejacobian, F, Vm, Va,
-        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, 
+        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus,
         AutoDiff.StateJacobian()
     )
     controljacobian = AutoDiff.Jacobian(polar.controljacobian, F, Vm, Va,
-        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, 
+        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus,
         AutoDiff.ControlJacobian()
     )
 
@@ -379,7 +396,7 @@ function powerflow(
         iter += 1
 
         @timeit TIMER "Jacobian" begin
-            AutoDiff.residual_jacobian!(jacobian, residual_polar!, 
+            AutoDiff.residual_jacobian!(jacobian, residual_polar!,
                                    Vm, Va,
                                    polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
         end
