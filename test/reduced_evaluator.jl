@@ -38,6 +38,8 @@
         end
 
         # Test consistence
+        n_state = get(polar, NumberOfState())
+        @test length(nlp.λ) == n_state
         n = ExaPF.n_variables(nlp)
         m = ExaPF.n_constraints(nlp)
         @test n == length(u0)
@@ -98,7 +100,7 @@
 
         # test reset!
         ExaPF.reset!(nlp)
-        @test nlp.x == x0
+        @test get(nlp, State()) == x0
         @test iszero(nlp.λ)
     end
 end

@@ -94,6 +94,14 @@ get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
 ## Loads
 get(pf::PowerNetwork, ::ActiveLoad) = real.(pf.sload)
 get(pf::PowerNetwork, ::ReactiveLoad) = imag.(pf.sload)
+function get(pf::PowerNetwork, ::ActivePower)
+    GEN_BUS, PG, QG, _ = IndexSet.idx_gen()
+    return pf.generators[:, PG] ./ pf.baseMVA
+end
+function get(pf::PowerNetwork, ::ReactivePower)
+    GEN_BUS, PG, QG, _ = IndexSet.idx_gen()
+    return pf.generators[:, QG] ./ pf.baseMVA
+end
 
 ## Indexing
 function get(pf::PowerNetwork, ::GeneratorIndexes)
