@@ -19,6 +19,8 @@ struct PowerNetwork <: AbstractPowerSystem
     vbus::Vector{Complex{Float64}}
     # Admittance matrix
     Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
+    # Lines
+    lines::Branches{Complex{Float64}}
     # Data
     buses::Array{Float64, 2}
     branches::Array{Float64, 2}
@@ -66,14 +68,20 @@ struct PowerNetwork <: AbstractPowerSystem
         end
 
         # form Y matrix
-        Ybus = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+        topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+
+        branches = Branches{Complex{Float64}}(
+            topology.yff, topology.yft, topology.ytf, topology.ytt,
+            topology.from_buses, topology.to_buses,
+        )
 
         # bus type indexing
         ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
 
         sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
+        Ybus = topology.ybus
 
-        new(vbus, Ybus, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
+        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
     end
 end
 

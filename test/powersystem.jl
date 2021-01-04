@@ -52,7 +52,7 @@ const PS = PowerSystem
     ]
 
     # form Y matrix
-    Ybus = PS.makeYbus(data, bus_to_indexes);
+    Ybus = PS.makeYbus(data, bus_to_indexes).ybus;
 
     Vm = abs.(V)
     Va = angle.(V)
