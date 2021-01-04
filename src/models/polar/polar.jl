@@ -27,8 +27,7 @@ struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     # Indexing of the PV, PQ and slack buses
     indexing::IndexingCache{IT}
     # struct
-    ybus_re::Spmat{IT, VT}
-    ybus_im::Spmat{IT, VT}
+    topology::NetworkTopology{IT, VT}
     AT::Type
     # Jacobian structures and indexing
     statejacobian::StateJacobianStructure
@@ -58,7 +57,7 @@ function PolarForm(pf::PS.PowerNetwork, device)
     nref = PS.get(pf, PS.NumberOfSlackBuses())
     ngens = PS.get(pf, PS.NumberOfGenerators())
 
-    ybus_re, ybus_im = Spmat{IT, VT}(pf.Ybus)
+    topology = NetworkTopology{IT, VT}(pf)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
     # Move load to the target device
@@ -172,7 +171,7 @@ function PolarForm(pf::PS.PowerNetwork, device)
         x_min, x_max, u_min, u_max,
         coefs, pload, qload,
         indexing,
-        ybus_re, ybus_im,
+        topology,
         AT,
         state_jacobian_structure, control_jacobian_structure
     )
@@ -256,12 +255,13 @@ function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     F = buffer.balance
     fill!(F, 0.0)
     residual_polar!(
         F, Vm, Va,
-        polar.ybus_re, polar.ybus_im,
+        ybus_re, ybus_im,
         pbus, qbus, pv, pq, nbus
     )
 end
@@ -272,6 +272,7 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     nₓ = get(polar, NumberOfState())
     nᵤ = get(polar, NumberOfControl())
     # Take indexing on the CPU as we initiate AutoDiff on the CPU
@@ -284,11 +285,11 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     fill!(F, zero(T))
     # Build the AutoDiff Jacobian structure
     statejacobian = AutoDiff.Jacobian(polar.statejacobian, F, Vm, Va,
-        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus,
         AutoDiff.StateJacobian()
     )
     controljacobian = AutoDiff.Jacobian(polar.controljacobian, F, Vm, Va,
-        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus,
         AutoDiff.ControlJacobian()
     )
 
@@ -308,6 +309,7 @@ end
 function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetworkState, jac_type::AutoDiff.AbstractJacobian)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     # Indexing
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -315,7 +317,7 @@ function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetwork
     # Network state
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
     AutoDiff.residual_jacobian!(jac, residual_polar!, Vm, Va,
-                           polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, jac_type)
+                           ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, jac_type)
     return jac.J
 end
 
@@ -337,6 +339,7 @@ function powerflow(
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     n_states = get(polar, NumberOfState())
     nvbus = length(polar.network.vbus)
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -361,9 +364,10 @@ function powerflow(
     fill!(dx, zero(T))
 
     # Evaluate residual function
-    residual_polar!(F, Vm, Va,
-                            polar.ybus_re, polar.ybus_im,
-                            pbus, qbus, pv, pq, nbus)
+    residual_polar!(
+        F, Vm, Va, ybus_re, ybus_im,
+        pbus, qbus, pv, pq, nbus
+    )
 
     # check for convergence
     normF = norm(F, Inf)
@@ -389,7 +393,7 @@ function powerflow(
         @timeit TIMER "Jacobian" begin
             AutoDiff.residual_jacobian!(jacobian, residual_polar!,
                                    Vm, Va,
-                                   polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
+                                   ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
         end
         J = jacobian.J
 
@@ -418,7 +422,7 @@ function powerflow(
         fill!(F, zero(T))
         @timeit TIMER "Residual function" begin
             residual_polar!(F, Vm, Va,
-                polar.ybus_re, polar.ybus_im,
+                ybus_re, ybus_im,
                 pbus, qbus, pv, pq, nbus)
         end
 
