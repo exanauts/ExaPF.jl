@@ -189,3 +189,31 @@ function jtprod(
     ∂jac.∇fᵤ .= jvu
 end
 
+# Branch flow constraints
+function flow_constraints(polar::PolarForm, cons, buffer)
+    if isa(cons, Array)
+        kernel! = branch_flow_kernel!(CPU(), 1)
+    else
+        kernel! = branch_flow_kernel!(CUDADevice(), 256)
+    end
+    nlines = PS.get(polar.network, PS.NumberOfLines())
+    ev = kernel!(
+        cons, buffer.vmag, buffer.vang,
+        polar.topology.yff_re, polar.topology.yft_re, polar.topology.ytf_re, polar.topology.ytt_re,
+        polar.topology.yff_im, polar.topology.yft_im, polar.topology.ytf_im, polar.topology.ytt_im,
+        polar.topology.f_buses, polar.topology.t_buses, nlines,
+        ndrange=nlines,
+    )
+    wait(ev)
+    return
+end
+is_constraint(::typeof(flow_constraints)) = true
+function size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(flow_constraints)) where {T, IT, VT, AT}
+    return 2 * PS.get(polar.network, PS.NumberOfLines())
+end
+function bounds(polar::PolarForm, ::typeof(flow_constraints))
+    MT = polar.AT
+    f_min, f_max = PS.bounds(polar.network, PS.Lines(), PS.ActivePower())
+    return convert(MT, [f_min; f_min]), convert(MT, [f_max; f_max])
+end
+
