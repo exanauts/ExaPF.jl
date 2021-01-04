@@ -116,6 +116,12 @@ Base MVA of the network.
 """
 struct BaseMVA <: AbstractNetworkAttribute end
 
+"""
+    BusAdmittanceMatrix <: AbstractNetworkAttribute
+
+Bus admittance matrix associated with the topology of the network.
+"""
+struct BusAdmittanceMatrix <: AbstractNetworkAttribute end
 
 abstract type AbstractIndexing <: AbstractNetworkAttribute end
 
