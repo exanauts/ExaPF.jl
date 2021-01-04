@@ -132,6 +132,8 @@ function put(
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
 
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
     index_pv = polar.indexing.index_pv
     index_ref = polar.indexing.index_ref
     index_pq = polar.indexing.index_pq
@@ -157,7 +159,7 @@ function put(
         i_gen = ref_to_gen[i]
         # pg[i] = inj + polar.active_load[bus]
         adj_inj = adj_pg[i_gen]
-        put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
+        put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
     end
     if isa(adj_x, Array)
         kernel! = put_adjoint_kernel!(CPU(), 1)
