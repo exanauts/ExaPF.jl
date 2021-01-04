@@ -375,3 +375,42 @@ end
     end
 end
 
+@kernel function branch_flow_kernel!(
+        slines, vmag, vang,
+        yff_re, yft_re, ytf_re, ytt_re,
+        yff_im, yft_im, ytf_im, ytt_im,
+        f, t, nlines,
+   )
+    ℓ = @index(Global, Linear)
+    fr_bus = f[ℓ]
+    to_bus = t[ℓ]
+
+    Δθ = vang[fr_bus] - vang[to_bus]
+    cosθ = cos(Δθ)
+    sinθ = sin(Δθ)
+
+    # branch apparent power limits - from bus
+    yff_abs = yff_re[ℓ]^2 + yff_im[ℓ]^2
+    yft_abs = yft_re[ℓ]^2 + yft_im[ℓ]^2
+    yre_fr =   yff_re[ℓ] * yft_re[ℓ] + yff_im[ℓ] * yft_im[ℓ]
+    yim_fr = - yff_re[ℓ] * yft_im[ℓ] + yff_im[ℓ] * yft_re[ℓ]
+
+    fr_flow = vmag[fr_bus]^2 * (
+        yff_abs * vmag[fr_bus]^2 + yft_abs * vmag[to_bus]^2 +
+        2 * vmag[fr_bus] * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
+    )
+    slines[ℓ] = fr_flow
+
+    # branch apparent power limits - to bus
+    ytf_abs = ytf_re[ℓ]^2 + ytf_im[ℓ]^2
+    ytt_abs = ytt_re[ℓ]^2 + ytt_im[ℓ]^2
+    yre_to =   ytf_re[ℓ] * ytt_re[ℓ] + ytf_im[ℓ] * ytt_im[ℓ]
+    yim_to = - ytf_re[ℓ] * ytt_im[ℓ] + ytf_im[ℓ] * ytt_re[ℓ]
+
+    to_flow = vmag[to_bus]^2 * (
+        ytf_abs * vmag[fr_bus]^2 + ytt_abs * vmag[to_bus]^2 +
+        2 * vmag[fr_bus] * vmag[to_bus] * (yre_to * cosθ - yim_to * sinθ)
+    )
+    slines[ℓ + nlines] = to_flow
+end
+

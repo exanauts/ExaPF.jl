@@ -81,11 +81,17 @@ const PS = PowerSystem
             @test isa(g, M)
             # As we run powerflow before, the balance should be below tolerance
             @test norm(g, Inf) < tolerance
+
             ## Cost Production
             c2 = ExaPF.cost_production(polar, cache.pg)
             @test isa(c2, Real)
+
             ## Inequality constraint
-            for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
+            for cons in [
+                         ExaPF.state_constraint,
+                         ExaPF.power_constraints,
+                         ExaPF.flow_constraints,
+                        ]
                 m = ExaPF.size_constraint(polar, cons)
                 @test isa(m, Int)
                 g = M{Float64, 1}(undef, m) # TODO: this signature is not great
