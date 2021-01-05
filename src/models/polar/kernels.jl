@@ -418,7 +418,7 @@ function branch_flow_kernel_zygote(
         yff_re, yft_re, ytf_re, ytt_re,
         yff_im, yft_im, ytf_im, ytt_im,
         #Zygote
-        fr_flow, to_flow, fr_vmag, to_vmag,
+        fr_vmag, to_vmag,
         cosθ, sinθ
    )
 

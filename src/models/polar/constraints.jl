@@ -212,8 +212,6 @@ function flow_constraints_grad(polar::PolarForm, cons, buffer, reduction::Functi
     nlines = PS.get(polar.network, PS.NumberOfLines())
     f = polar.topology.f_buses
     t = polar.topology.t_buses
-    fr_flow = similar(cons)
-    to_flow = similar(cons)
     fr_vmag = buffer.vmag[f]
     to_vmag = buffer.vmag[t]
     Δθ = buffer.vang[f] .- buffer.vang[t]
@@ -228,7 +226,7 @@ function flow_constraints_grad(polar::PolarForm, cons, buffer, reduction::Functi
         cons = branch_flow_kernel_zygote(
             polar.topology.yff_re, polar.topology.yft_re, polar.topology.ytf_re, polar.topology.ytt_re,
             polar.topology.yff_im, polar.topology.yft_im, polar.topology.ytf_im, polar.topology.ytt_im,
-            fr_flow, to_flow, fr_vmag, to_vmag,
+            fr_vmag, to_vmag,
             cosθ, sinθ
         )
         return reduction(cons)
