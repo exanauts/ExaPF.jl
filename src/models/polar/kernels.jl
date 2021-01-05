@@ -235,7 +235,7 @@ end
 end
 
 # Refresh active power (needed to evaluate objective)
-function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::PolarNetworkState)
+function update!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
         kernel! = active_power_kernel!(CPU(), 1)
     else
@@ -294,7 +294,7 @@ end
     qg[i_gen] = inj + qload[bus]
 end
 
-function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::PolarNetworkState)
+function update!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
         kernel! = reactive_power_kernel!(CPU(), 1)
     else
