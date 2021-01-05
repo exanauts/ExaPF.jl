@@ -60,7 +60,7 @@ function power_constraints(polar::PolarForm, g, buffer)
     g[cnt] = buffer.pg[ref_to_gen[1]]
     cnt += 1
     # Refresh reactive power generation in buffer
-    refresh!(polar, PS.Generator(), PS.ReactivePower(), buffer)
+    update!(polar, PS.Generator(), PS.ReactivePower(), buffer)
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
     # Careful: g could be a view
     if isa(g, SubArray)

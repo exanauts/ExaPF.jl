@@ -20,7 +20,7 @@ const PS = PowerSystem
 
         polar = PolarForm(pf, CPU())
         cache = ExaPF.get(polar, ExaPF.PhysicalState())
-        ExaPF.init!(polar, cache)
+        ExaPF.init_buffer!(polar, cache)
 
         xk = ExaPF.initial(polar, State())
         u = ExaPF.initial(polar, Control())
@@ -46,7 +46,7 @@ const PS = PowerSystem
         # Test gradients
         @testset "Reduced gradient" begin
             # Refresh cache with new values of vmag and vang
-            ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
+            ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
             ExaPF.∂cost(polar, ∂obj, cache)
@@ -67,7 +67,7 @@ const PS = PowerSystem
                 # Ensure we remain in the manifold
                 ExaPF.transfer!(polar, cache, u_)
                 convergence = powerflow(polar, jx, cache, tol=1e-14)
-                ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
+                ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
                 return ExaPF.cost_production(polar, cache.pg)
             end
 
