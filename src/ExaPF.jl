@@ -21,6 +21,7 @@ using Printf
 using SparseArrays
 using SparseDiffTools
 using TimerOutputs
+using Zygote
 
 import Base: show, get
 

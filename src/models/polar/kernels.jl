@@ -414,3 +414,34 @@ end
     slines[ℓ + nlines] = to_flow
 end
 
+function branch_flow_kernel_zygote(
+        yff_re, yft_re, ytf_re, ytt_re,
+        yff_im, yft_im, ytf_im, ytt_im,
+        #Zygote
+        fr_flow, to_flow, fr_vmag, to_vmag,
+        cosθ, sinθ
+   )
+
+    # branch apparent power limits - from bus
+    yff_abs = yff_re.^2 .+ yff_im.^2
+    yft_abs = yft_re.^2 .+ yft_im.^2
+    yre_fr =   yff_re .* yft_re .+ yff_im .* yft_im
+    yim_fr = .- yff_re .* yft_im .+ yff_im .* yft_re
+
+    fr_flow = fr_vmag.^2 .* (
+        yff_abs .* fr_vmag.^2 .+ yft_abs .* to_vmag.^2 .+
+        2 .* fr_vmag .* to_vmag .* (yre_fr .* cosθ .- yim_fr .* sinθ)
+    )
+
+    # branch apparent power limits - to bus
+    ytf_abs = ytf_re.^2 + ytf_im.^2
+    ytt_abs = ytt_re.^2 + ytt_im.^2
+    yre_to =   ytf_re .* ytt_re .+ ytf_im .* ytt_im
+    yim_to = - ytf_re .* ytt_im .+ ytf_im .* ytt_re
+
+    to_flow = to_vmag.^2 .* (
+        ytf_abs .* fr_vmag.^2 .+ ytt_abs .* to_vmag.^2 .+
+        2 .* fr_vmag .* to_vmag .* (yre_to .* cosθ .- yim_to .* sinθ)
+    )
+    return vcat(fr_flow, to_flow)
+end

@@ -107,6 +107,31 @@ const PS = PowerSystem
                 # Test constraints are consistent
                 @test isless(g_min, g_max)
             end
+
+            # Adjoint of flow_constraints()
+            nbus = length(cache.vmag)
+            m = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
+            x = M{Float64, 1}(undef, 2*nbus)
+            x[1:nbus] .= cache.vmag
+            x[1+nbus:2*nbus] .= cache.vang
+
+            ## Example with using sum as a sort of lumping of all constraints
+            function lumping(x)
+                VT = typeof(x)
+                # Needed for ForwardDiff to have a cache with the right active type VT
+                adcache = ExaPF.PolarNetworkState{VT}(cache.vmag, cache.vang, cache.pinj, cache.qinj, cache.pg, cache.qg, cache.balance, cache.dx)
+                adcache.vmag .= x[1:nbus]
+                adcache.vang .= x[1+nbus:2*nbus]
+                g = VT(undef, m) 
+                ExaPF.flow_constraints(polar, g, adcache)
+                return sum(g)
+            end
+            gradg = ForwardDiff.gradient(lumping,x)
+            ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping.
+            result = ExaPF.flow_constraints_grad(polar, g, cache, sum)
+            gradg_zy = vcat(result[1], result[2])
+            # Verify  ForwardDiff and Zygote agree on the gradient
+            @test isapprox(gradg, gradg_zy)
         end
     end
 end

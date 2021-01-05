@@ -207,6 +207,34 @@ function flow_constraints(polar::PolarForm, cons, buffer)
     wait(ev)
     return
 end
+
+function flow_constraints_grad(polar::PolarForm, cons, buffer, reduction::Function=sum)
+    nlines = PS.get(polar.network, PS.NumberOfLines())
+    f = polar.topology.f_buses
+    t = polar.topology.t_buses
+    fr_flow = similar(cons)
+    to_flow = similar(cons)
+    fr_vmag = buffer.vmag[f]
+    to_vmag = buffer.vmag[t]
+    Δθ = buffer.vang[f] .- buffer.vang[t]
+    cosθ = cos.(Δθ)
+    sinθ = sin.(Δθ)
+    function lumping(vmag, vang)
+        fr_vmag = vmag[f]
+        to_vmag = vmag[t]
+        Δθ =vang[f] .- vang[t]
+        cosθ = cos.(Δθ)
+        sinθ = sin.(Δθ)
+        cons = branch_flow_kernel_zygote(
+            polar.topology.yff_re, polar.topology.yft_re, polar.topology.ytf_re, polar.topology.ytt_re,
+            polar.topology.yff_im, polar.topology.yft_im, polar.topology.ytf_im, polar.topology.ytt_im,
+            fr_flow, to_flow, fr_vmag, to_vmag,
+            cosθ, sinθ
+        )
+        return reduction(cons)
+    end
+    return Zygote.gradient(lumping, buffer.vmag, buffer.vang)
+end
 is_constraint(::typeof(flow_constraints)) = true
 function size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(flow_constraints)) where {T, IT, VT, AT}
     return 2 * PS.get(polar.network, PS.NumberOfLines())
