@@ -102,6 +102,12 @@
         ExaPF.reset!(nlp)
         @test get(nlp, State()) == x0
         @test iszero(nlp.λ)
+
+        # setters
+        nbus = get(nlp, PS.NumberOfBuses())
+        loads = similar(u, nbus) ; fill!(loads, 1)
+        ExaPF.setvalues!(nlp, PS.ActiveLoad(), loads)
+        ExaPF.setvalues!(nlp, PS.ReactiveLoad(), loads)
     end
 end
 

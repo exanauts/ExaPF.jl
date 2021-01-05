@@ -36,6 +36,8 @@ const PS = PowerSystem
         # Test getters
         nᵤ = ExaPF.get(polar, NumberOfControl())
         nₓ = ExaPF.get(polar, NumberOfState())
+        ngen = get(polar, PS.NumberOfGenerators())
+        nbus = get(polar, PS.NumberOfBuses())
 
         # Get initial position
         x0 = ExaPF.initial(polar, State())
@@ -48,11 +50,47 @@ const PS = PowerSystem
         end
 
         cache = ExaPF.get(polar, ExaPF.PhysicalState())
-        ExaPF.init!(polar, cache)
         @testset "NetworkState cache" begin
+            # By defaut, values are equal to 0
+            @test iszero(cache)
             @test isa(cache.vmag, M)
+            @test cache.bus_gen == polar.indexing.index_generators
+            # Transfer control u0 inside cache
             ExaPF.transfer!(polar, cache, u0)
+            # Test that all attributes have valid length
+            @test length(cache.vang) == length(cache.vmag) == length(cache.pinj) == length(cache.qinj) == nbus
+            @test length(cache.pg) == length(cache.qg) == length(cache.bus_gen) == ngen
+            @test length(cache.dx) == length(cache.balance) == nₓ
+            # Test setters
+            ## Buses
+            values = similar(x0, nbus)
+            fill!(values, 1)
+            ExaPF.setvalues!(cache, PS.VoltageMagnitude(), values)
+            @test cache.vmag == values
+            ExaPF.setvalues!(cache, PS.VoltageAngle(), values)
+            @test cache.vang == values
+            ExaPF.setvalues!(cache, PS.ActiveLoad(), values)
+            ExaPF.setvalues!(cache, PS.ReactiveLoad(), values)
+            # Power generations are still equal to 0, so we get equality
+            @test cache.pinj == -values  # Pinj = 0 - Pd
+            @test cache.qinj == -values  # Qinj = 0 - Qd
+            ## Generators
+            vgens = similar(x0, ngen)
+            fill!(vgens, 2.0)
+            ExaPF.setvalues!(cache, PS.ActivePower(), vgens)
+            ExaPF.setvalues!(cache, PS.ReactivePower(), vgens)
+            @test cache.pg == vgens
+            @test cache.qg == vgens
+            genbus = polar.indexing.index_generators
+            @test cache.pinj[genbus] == vgens - values[genbus]  # Pinj = Cg*Pg - Pd
+            @test cache.qinj[genbus] == vgens - values[genbus]  # Qinj = Cg*Qg - Pd
+            # After all these operations, values become non-trivial
+            @test !iszero(cache)
         end
+        # Reset to default values before going any further
+        ExaPF.init_buffer!(polar, cache)
+        @test !iszero(cache)
+
         @testset "Polar model API" begin
             xₖ = copy(x0)
             # Init AD factory
@@ -63,7 +101,7 @@ const PS = PowerSystem
             ExaPF.get!(polar, State(), xₖ, cache)
             # Refresh power of generators in cache
             for Power in [PS.ActivePower, PS.ReactivePower]
-                ExaPF.refresh!(polar, PS.Generator(), Power(), cache)
+                ExaPF.update!(polar, PS.Generator(), Power(), cache)
             end
 
             # Bounds on state and control

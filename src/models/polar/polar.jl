@@ -223,22 +223,13 @@ end
 function get(form::PolarForm{T, IT, VT, AT}, ::PhysicalState) where {T, IT, VT, AT}
     nbus = PS.get(form.network, PS.NumberOfBuses())
     ngen = PS.get(form.network, PS.NumberOfGenerators())
-    pbus = xzeros(VT, nbus)
-    qbus = xzeros(VT, nbus)
-    vmag = xzeros(VT, nbus)
-    vang = xzeros(VT, nbus)
-
-    pg = xzeros(VT, ngen)
-    qg = xzeros(VT, ngen)
-
-    # Additional buffers
     n_state = get(form, NumberOfState())
-    balance = xzeros(VT, n_state)
-    dx = xzeros(VT, n_state)
-    return PolarNetworkState{VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx)
+    gen2bus = form.indexing.index_generators
+    return PolarNetworkState{VT}(nbus, ngen, n_state, gen2bus)
 end
 
-function init!(form::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
+function init_buffer!(form::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
+    # FIXME
     pbus = real.(form.network.sbus)
     qbus = imag.(form.network.sbus)
     vmag = abs.(form.network.vbus)
@@ -247,10 +238,10 @@ function init!(form::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where 
     pg = get(form.network, PS.ActivePower())
     qg = get(form.network, PS.ReactivePower())
 
-    setvalues!(buffer, PS.VoltageMagnitude(), vmag)
-    setvalues!(buffer, PS.VoltageAngle(), vang)
-    setvalues!(buffer, PS.ActivePower(), pg)
-    setvalues!(buffer, PS.ReactivePower(), qg)
+    copyto!(buffer.vmag, vmag)
+    copyto!(buffer.vang, vang)
+    copyto!(buffer.pg, pg)
+    copyto!(buffer.qg, qg)
     copyto!(buffer.pinj, pbus)
     copyto!(buffer.qinj, qbus)
 end
@@ -331,7 +322,7 @@ end
 function powerflow(
     polar::PolarForm{T, IT, VT, AT},
     jacobian::AutoDiff.Jacobian,
-    buffer::PolarNetworkState{VT};
+    buffer::PolarNetworkState{IT,VT};
     solver=DirectSolver(),
     tol=1e-7,
     maxiter=20,

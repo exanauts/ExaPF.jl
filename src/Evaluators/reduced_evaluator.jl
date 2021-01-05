@@ -59,7 +59,7 @@ function ReducedSpaceEvaluator(
     buffer = get(model, PhysicalState())
     # Populate buffer with default values of the network, as stored
     # inside model
-    init!(model, buffer)
+    init_buffer!(model, buffer)
     # Build up AutoDiff factory
     jx, ju, adjoint_f = init_autodiff_factory(model, buffer)
     ad = AutoDiffFactory(jx, ju, adjoint_f)
@@ -128,6 +128,14 @@ end
 function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkValues, values)
     setvalues!(nlp.model, attr, values)
 end
+function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.ActiveLoad, values)
+    setvalues!(nlp.model, attr, values)
+    setvalues!(nlp.buffer, attr, values)
+end
+function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.ReactiveLoad, values)
+    setvalues!(nlp.model, attr, values)
+    setvalues!(nlp.buffer, attr, values)
+end
 
 # Transfer network values inside buffer
 function transfer!(
@@ -150,7 +158,7 @@ bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = (nlp.g_min, nlp.g_max)
 
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     jac_x = nlp.autodiff.Jgₓ
-    # Transfer x, u into the network cache
+    # Transfer control u into the network cache
     transfer!(nlp.model, nlp.buffer, u)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
@@ -167,7 +175,7 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
     end
 
     # Refresh values of active and reactive powers at generators
-    refresh!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.buffer)
+    update!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.buffer)
     return conv
 end
 
@@ -221,7 +229,6 @@ end
 
 function constraint!(nlp::ReducedSpaceEvaluator, g, u)
     ϕ = nlp.buffer
-    # First: state constraint
     mf = 1
     mt = 0
     for cons in nlp.constraints
@@ -353,7 +360,6 @@ function reset!(nlp::ReducedSpaceEvaluator)
     # Reset adjoint
     fill!(nlp.λ, 0)
     # Reset buffer
-    nlp.buffer = get(nlp.model, PhysicalState())
-    init!(nlp.model, nlp.buffer)
+    init_buffer!(nlp.model, nlp.buffer)
 end
 
