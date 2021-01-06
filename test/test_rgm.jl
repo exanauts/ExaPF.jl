@@ -33,7 +33,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     fill!(grad, 0)
 
     while norm_grad > norm_tol && iter < iter_max
-        ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
+        ExaPF.update!(nlp, uk)
         c = ExaPF.objective(nlp, uk)
         ExaPF.gradient!(nlp, grad, uk)
         # compute control step

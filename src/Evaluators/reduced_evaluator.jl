@@ -45,15 +45,14 @@ mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     autodiff::AutoDiffFactory
     ∇gᵗ::AbstractMatrix
     linear_solver::LinearSolvers.AbstractLinearSolver
-    ε_tol::Float64
+    powerflow_solver::AbstractNonLinearSolver
 end
 
 function ReducedSpaceEvaluator(
     model, x, u;
     constraints=Function[state_constraint, power_constraints],
     linear_solver=DirectSolver(),
-    ε_tol=1e-12,
-    verbose_level=VERBOSE_LEVEL_NONE,
+    powerflow_solver=NewtonRaphson(tol=1e-12),
 )
     # First, build up a network buffer
     buffer = get(model, PhysicalState())
@@ -81,7 +80,7 @@ function ReducedSpaceEvaluator(
         model, λ, x_min, x_max, u_min, u_max,
         constraints, g_min, g_max,
         buffer,
-        ad, jx.J, linear_solver, ε_tol
+        ad, jx.J, linear_solver, powerflow_solver,
     )
 end
 function ReducedSpaceEvaluator(
@@ -156,13 +155,13 @@ end
 bounds(nlp::ReducedSpaceEvaluator, ::Variables) = (nlp.u_min, nlp.u_max)
 bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = (nlp.g_min, nlp.g_max)
 
-function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
+function update!(nlp::ReducedSpaceEvaluator, u)
     jac_x = nlp.autodiff.Jgₓ
     # Transfer control u into the network cache
     transfer!(nlp.model, nlp.buffer, u)
     # Get corresponding point on the manifold
-    conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
-                     solver=nlp.linear_solver, verbose_level=verbose_level)
+    conv = powerflow(nlp.model, jac_x, nlp.buffer, nlp.powerflow_solver;
+                     solver=nlp.linear_solver)
     if !conv.has_converged
         error("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
         return conv

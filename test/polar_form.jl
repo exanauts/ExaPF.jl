@@ -97,7 +97,7 @@ const PS = PowerSystem
             jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
             # Test powerflow with cache signature
-            conv = powerflow(polar, jx, cache, tol=tolerance)
+            conv = powerflow(polar, jx, cache, NewtonRaphson(tol=tolerance))
             ExaPF.get!(polar, State(), xₖ, cache)
             # Refresh power of generators in cache
             for Power in [PS.ActivePower, PS.ReactivePower]
