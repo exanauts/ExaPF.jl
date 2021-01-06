@@ -209,18 +209,27 @@ function flow_constraints(polar::PolarForm, cons, buffer)
 end
 
 function flow_constraints_grad(polar::PolarForm, cons, buffer, reduction::Function=sum)
+    function accumulate_view!(x, vx, indices)
+        ids = unique(indices)
+        # This is parallelizable 
+        for id in ids
+            for (j, idx) in enumerate(indices)
+                if id == idx 
+                    x[id] += vx[j]
+                end
+            end
+        end
+    end
     nlines = PS.get(polar.network, PS.NumberOfLines())
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
     f = polar.topology.f_buses
     t = polar.topology.t_buses
     fr_vmag = buffer.vmag[f]
     to_vmag = buffer.vmag[t]
-    Δθ = buffer.vang[f] .- buffer.vang[t]
-    cosθ = cos.(Δθ)
-    sinθ = sin.(Δθ)
-    function lumping(vmag, vang)
-        fr_vmag = vmag[f]
-        to_vmag = vmag[t]
-        Δθ =vang[f] .- vang[t]
+    fr_vang = buffer.vang[f]
+    to_vang = buffer.vang[t]
+    function lumping(fr_vmag, to_vmag, fr_vang, to_vang)
+        Δθ = fr_vang .- to_vang
         cosθ = cos.(Δθ)
         sinθ = sin.(Δθ)
         cons = branch_flow_kernel_zygote(
@@ -231,7 +240,16 @@ function flow_constraints_grad(polar::PolarForm, cons, buffer, reduction::Functi
         )
         return reduction(cons)
     end
-    return Zygote.gradient(lumping, buffer.vmag, buffer.vang)
+    grad = Zygote.gradient(lumping, fr_vmag, to_vmag, fr_vang, to_vang)
+    gvmag = similar(buffer.vmag)
+    gvang = similar(buffer.vang)
+    fill!(gvmag, 0.0)
+    fill!(gvang, 0.0)
+    accumulate_view!(gvmag, grad[1], f)
+    accumulate_view!(gvmag, grad[2], t)
+    accumulate_view!(gvang, grad[3], f)
+    accumulate_view!(gvang, grad[4], t)
+    return vcat(gvmag, gvang)
 end
 is_constraint(::typeof(flow_constraints)) = true
 function size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(flow_constraints)) where {T, IT, VT, AT}

@@ -128,11 +128,11 @@ const PS = PowerSystem
             end
             gradg = ForwardDiff.gradient(lumping,x)
             ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping.
-            result = ExaPF.flow_constraints_grad(polar, g, cache, sum)
-            gradg_zy = vcat(result[1], result[2])
+            gradg_zy = ExaPF.flow_constraints_grad(polar, g, cache, sum)
             # Verify  ForwardDiff and Zygote agree on the gradient
             
-            device == CUDADevice() ? (@test_broken isapprox(gradg, gradg_zy)) : (@test isapprox(gradg, gradg_zy))
+            # device == CUDADevice() ? (@test_broken isapprox(gradg, gradg_zy)) : (@test isapprox(gradg, gradg_zy))
+            @test isapprox(gradg, gradg_zy)
         end
     end
 end
