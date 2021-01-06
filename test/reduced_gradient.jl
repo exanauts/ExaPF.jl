@@ -28,7 +28,7 @@ const PS = PowerSystem
         jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
         # solve power flow
-        conv = powerflow(polar, jx, cache, tol=1e-12)
+        conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
         ExaPF.get!(polar, State(), xk, cache)
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
@@ -66,7 +66,7 @@ const PS = PowerSystem
             function reduced_cost(u_)
                 # Ensure we remain in the manifold
                 ExaPF.transfer!(polar, cache, u_)
-                convergence = powerflow(polar, jx, cache, tol=1e-14)
+                convergence = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-14))
                 ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
                 return ExaPF.cost_production(polar, cache.pg)
             end

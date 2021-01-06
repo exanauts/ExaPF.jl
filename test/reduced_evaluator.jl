@@ -6,8 +6,8 @@
     end
     datafile = joinpath(dirname(@__FILE__), "..", "data", case)
     @testset "Constructor" for (device, M) in ITERATORS
-        tol = 1e-11
-        nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device, ε_tol=tol)
+        powerflow_solver = NewtonRaphson(; tol=1e-11)
+        nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device, powerflow_solver=powerflow_solver)
         TNLP = typeof(nlp)
         for (fn, ft) in zip(fieldnames(TNLP), fieldtypes(TNLP))
             if ft <: AbstractArray{Float64, P} where P
@@ -15,7 +15,7 @@
             end
         end
         # Test that arguments are passed as expected in the constructor:
-        @test nlp.ε_tol == tol
+        @test nlp.powerflow_solver == powerflow_solver
     end
 
     pf = PowerSystem.PowerNetwork(datafile)

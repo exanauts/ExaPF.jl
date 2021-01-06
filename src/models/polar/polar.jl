@@ -322,11 +322,9 @@ end
 function powerflow(
     polar::PolarForm{T, IT, VT, AT},
     jacobian::AutoDiff.Jacobian,
-    buffer::PolarNetworkState{IT,VT};
+    buffer::PolarNetworkState{IT,VT},
+    algo::NewtonRaphson;
     solver=DirectSolver(),
-    tol=1e-7,
-    maxiter=20,
-    verbose_level=0,
 ) where {T, IT, VT, AT}
     # Retrieve parameter and initial voltage guess
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
@@ -367,10 +365,10 @@ function powerflow(
 
     # check for convergence
     normF = norm(F, Inf)
-    if verbose_level >= VERBOSE_LEVEL_LOW
+    if algo.verbose >= VERBOSE_LEVEL_LOW
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
     end
-    if normF < tol
+    if normF < algo.tol
         converged = true
     end
 
@@ -382,7 +380,7 @@ function powerflow(
     dx34 = view(dx, j3:j4) # Vapq
     dx56 = view(dx, j1:j2) # Vapv
 
-    @timeit TIMER "Newton" while ((!converged) && (iter < maxiter))
+    @timeit TIMER "Newton" while ((!converged) && (iter < algo.maxiter))
 
         iter += 1
 
@@ -423,16 +421,16 @@ function powerflow(
         end
 
         @timeit TIMER "Norm" normF = xnorm(F)
-        if verbose_level >= VERBOSE_LEVEL_LOW
+        if algo.verbose >= VERBOSE_LEVEL_LOW
             @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
         end
 
-        if normF < tol
+        if normF < algo.tol
             converged = true
         end
     end
 
-    if verbose_level >= VERBOSE_LEVEL_HIGH
+    if algo.verbose >= VERBOSE_LEVEL_HIGH
         if converged
             @printf("N-R converged in %d iterations.\n", iter)
         else
@@ -441,12 +439,11 @@ function powerflow(
     end
 
     # Timer outputs display
-    if verbose_level >= VERBOSE_LEVEL_MEDIUM
+    if algo.verbose >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
         println("")
     end
-    conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
-    return conv
+    return ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
 end
 
 # Cost function
