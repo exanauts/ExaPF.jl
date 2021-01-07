@@ -245,10 +245,14 @@ function flow_constraints_grad(polar::PolarForm, buffer, reduction::Function=sum
         ut = cu(ut)
     end
     # This is basically the adjoint of the statements above (1). = becomes +=.
-    kernel!(gvmag, grad[1], f, uf, ndrange = length(uf))
-    kernel!(gvmag, grad[2], t, ut, ndrange = length(ut))
-    kernel!(gvang, grad[3], f, uf, ndrange = length(uf))
-    kernel!(gvang, grad[4], t, ut, ndrange = length(ut))
+    ev_vmag = kernel!(gvmag, grad[1], f, uf, ndrange = length(uf))
+    ev_vang = kernel!(gvang, grad[3], f, uf, ndrange = length(uf))
+    wait(ev_vmag)
+    ev_vmag = kernel!(gvmag, grad[2], t, ut, ndrange = length(ut))
+    wait(ev_vang)
+    ev_vang = kernel!(gvang, grad[4], t, ut, ndrange = length(ut))
+    wait(ev_vmag)
+    wait(ev_vang)
     return cons_grad
 end
 is_constraint(::typeof(flow_constraints)) = true

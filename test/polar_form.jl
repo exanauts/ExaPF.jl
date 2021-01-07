@@ -131,8 +131,8 @@ const PS = PowerSystem
             ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping. 
             zygradg = ExaPF.flow_constraints_grad(polar, cache, sum)
             # Verify  ForwardDiff and Zygote agree on the gradient
-            @test isapprox.(adgradg, fdgradg)
-            @test isapprox.(adgradg, zygradg)
+            @test isapprox(adgradg, fdgradg)
+            @test isapprox(adgradg, zygradg)
         end
     end
 end
