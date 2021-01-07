@@ -238,19 +238,13 @@ function flow_constraints_grad(polar::PolarForm, buffer, reduction::Function=sum
     fill!(cons_grad, 0.0)
     gvmag = @view cons_grad[1:nbus]
     gvang = @view cons_grad[nbus+1:2*nbus]
-    uf = unique(f)
-    ut = unique(t)
-    if isa(buffer.vmag, CuArray)
-        uf = cu(uf)
-        ut = cu(ut)
-    end
     # This is basically the adjoint of the statements above (1). = becomes +=.
-    ev_vmag = kernel!(gvmag, grad[1], f, uf, ndrange = length(uf))
-    ev_vang = kernel!(gvang, grad[3], f, uf, ndrange = length(uf))
+    ev_vmag = kernel!(gvmag, grad[1], f, ndrange = nbus)
+    ev_vang = kernel!(gvang, grad[3], f, ndrange = nbus)
     wait(ev_vmag)
-    ev_vmag = kernel!(gvmag, grad[2], t, ut, ndrange = length(ut))
+    ev_vmag = kernel!(gvmag, grad[2], t, ndrange = nbus)
     wait(ev_vang)
-    ev_vang = kernel!(gvang, grad[4], t, ut, ndrange = length(ut))
+    ev_vang = kernel!(gvang, grad[4], t, ndrange = nbus)
     wait(ev_vmag)
     wait(ev_vang)
     return cons_grad
