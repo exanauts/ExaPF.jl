@@ -208,22 +208,14 @@ function flow_constraints(polar::PolarForm, cons, buffer)
     return
 end
 
-function flow_constraints_grad(polar::PolarForm, cons, buffer, reduction::Function=sum)
-    function accumulate_view!(x, vx, indices)
-        ids = unique(indices)
-        # This is parallelizable 
-        for id in ids
-            for (j, idx) in enumerate(indices)
-                if id == idx 
-                    x[id] += vx[j]
-                end
-            end
-        end
-    end
+function flow_constraints_grad(polar::PolarForm, buffer, reduction::Function=sum)
+    T = typeof(buffer.vmag)
+    isa(buffer.vmag, Array) ? kernel! = accumulate_view!(CPU(), 1) : kernel! = accumulate_view!(CUDADevice(), 256)
     nlines = PS.get(polar.network, PS.NumberOfLines())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     f = polar.topology.f_buses
     t = polar.topology.t_buses
+    # Statements references below (1)
     fr_vmag = buffer.vmag[f]
     to_vmag = buffer.vmag[t]
     fr_vang = buffer.vang[f]
@@ -241,15 +233,23 @@ function flow_constraints_grad(polar::PolarForm, cons, buffer, reduction::Functi
         return reduction(cons)
     end
     grad = Zygote.gradient(lumping, fr_vmag, to_vmag, fr_vang, to_vang)
-    gvmag = similar(buffer.vmag)
-    gvang = similar(buffer.vang)
-    fill!(gvmag, 0.0)
-    fill!(gvang, 0.0)
-    accumulate_view!(gvmag, grad[1], f)
-    accumulate_view!(gvmag, grad[2], t)
-    accumulate_view!(gvang, grad[3], f)
-    accumulate_view!(gvang, grad[4], t)
-    return vcat(gvmag, gvang)
+    # TODO: This may belong to the state cache?
+    cons_grad = T(undef, 2*length(buffer.vmag)) 
+    fill!(cons_grad, 0.0)
+    gvmag = @view cons_grad[1:nbus]
+    gvang = @view cons_grad[nbus+1:2*nbus]
+    uf = unique(f)
+    ut = unique(t)
+    if isa(buffer.vmag, CuArray)
+        uf = cu(uf)
+        ut = cu(ut)
+    end
+    # This is basically the adjoint of the statements above (1). = becomes +=.
+    kernel!(gvmag, grad[1], f, uf, ndrange = length(uf))
+    kernel!(gvmag, grad[2], t, ut, ndrange = length(ut))
+    kernel!(gvang, grad[3], f, uf, ndrange = length(uf))
+    kernel!(gvang, grad[4], t, ut, ndrange = length(ut))
+    return cons_grad
 end
 is_constraint(::typeof(flow_constraints)) = true
 function size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(flow_constraints)) where {T, IT, VT, AT}
