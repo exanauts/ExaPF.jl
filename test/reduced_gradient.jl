@@ -20,10 +20,10 @@ const PS = PowerSystem
 
         polar = PolarForm(pf, CPU())
         cache = ExaPF.get(polar, ExaPF.PhysicalState())
+        ExaPF.init_buffer!(polar, cache)
 
         xk = ExaPF.initial(polar, State())
         u = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
 
         jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
@@ -32,21 +32,21 @@ const PS = PowerSystem
         ExaPF.get!(polar, State(), xk, cache)
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
-        ∇gᵤ = ExaPF.jacobian(polar, ju, cache)
+        ∇gᵤ = ExaPF.jacobian(polar, ju, cache, AutoDiff.ControlJacobian())
         # test jacobian wrt x
-        ∇gᵥ = ExaPF.jacobian(polar, jx, cache)
+        ∇gᵥ = ExaPF.jacobian(polar, jx, cache, AutoDiff.StateJacobian())
         @test isapprox(∇gₓ, ∇gᵥ)
 
         # Test with Matpower's Jacobian
         V = cache.vmag .* exp.(im * cache.vang)
         Ybus = pf.Ybus
-        J = ExaPF.residual_jacobian(V, Ybus, pf.pv, pf.pq)
+        J = ExaPF.residual_jacobian(V, Ybus, pf.ref, pf.pv, pf.pq)
         @test isapprox(∇gₓ, J)
 
         # Test gradients
         @testset "Reduced gradient" begin
             # Refresh cache with new values of vmag and vang
-            ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
+            ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
             ExaPF.∂cost(polar, ∂obj, cache)
@@ -65,9 +65,9 @@ const PS = PowerSystem
             # Compare with finite difference
             function reduced_cost(u_)
                 # Ensure we remain in the manifold
-                ExaPF.transfer!(polar, cache, xk, u_)
+                ExaPF.transfer!(polar, cache, u_)
                 convergence = powerflow(polar, jx, cache, tol=1e-14)
-                ExaPF.refresh!(polar, PS.Generator(), PS.ActivePower(), cache)
+                ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
                 return ExaPF.cost_production(polar, cache.pg)
             end
 

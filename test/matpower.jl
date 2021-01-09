@@ -22,9 +22,9 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
     u = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
+    ExaPF.init_buffer!(polar, cache)
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
     convergence = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
@@ -48,9 +48,9 @@ end
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
     u = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
+    ExaPF.init_buffer!(polar, cache)
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
@@ -73,9 +73,9 @@ end
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
     u = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
+    ExaPF.init_buffer!(polar, cache)
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
@@ -96,9 +96,9 @@ end
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
     u = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
+    ExaPF.init_buffer!(polar, cache)
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)

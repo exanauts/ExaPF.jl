@@ -24,12 +24,11 @@ import ExaPF: PowerSystem
         # Retrieve initial state of network
         x0 = ExaPF.initial(polar, State())
         uk = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
 
         @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
             algo = LinSolver(precond)
             xk = copy(x0)
-            nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p;
+            nlp = ExaPF.ReducedSpaceEvaluator(polar, xk, uk;
                                               ε_tol=tolerance, linear_solver=algo)
             convergence = ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
             @test convergence.has_converged

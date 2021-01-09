@@ -25,8 +25,8 @@ function AugLagEvaluator(nlp::AbstractNLPEvaluator, u0;
     end
 
     g_min, g_max = bounds(nlp, Constraints())
-    cons = similar(g_min)
-    cx = similar(g_min)
+    cons = similar(g_min) ; fill!(cons, 0)
+    cx = similar(g_min) ; fill!(cx, 0)
     λc = similar(g_min) ; fill!(λc, 0)
     λ = similar(g_min) ; fill!(λ, 0)
 
@@ -57,8 +57,8 @@ function update!(ag::AugLagEvaluator, u)
     g♭ = ag.scaler.g_min
     g♯ = ag.scaler.g_max
 
-    ag.λc = max.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♯)) .+
-            min.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♭))
+    ag.λc .= max.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♯)) .+
+             min.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♭))
     ag.infeasibility .= max.(0, ag.cons .- g♯) .+ min.(0, ag.cons .- g♭)
     return conv
 end

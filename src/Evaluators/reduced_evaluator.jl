@@ -5,7 +5,7 @@
 Evaluator working in the reduced space corresponding to the
 control variable `u`. Once a new point `u` is passed to the evaluator,
 the user needs to call the method `update!` to find the corresponding
-state `x(u)` satisfying the equilibrium equation `g(x(u), u) = 0`.
+state `x(u)` satisfying the balance equation `g(x(u), u) = 0`.
 
 Taking as input a given `AbstractFormulation`, the reduced evaluator
 builds the bounds corresponding to the control `u` and the state `x`,
@@ -13,11 +13,23 @@ and initiate an `AutoDiffFactory` tailored to the problem. The reduced evaluator
 could be instantiated on the main memory, or on a specific device (currently,
 only CUDA is supported).
 
+## Note
+Mathematically, we set apart the state `x` from the control `u`,
+and use a third variable `y` --- the by-product --- to store the remaining
+values of the network.
+In the implementation of `ReducedSpaceEvaluator`,
+we only deal with a control `u` and an attribute `buffer`,
+storing all the physical values needed to describe the network.
+This attribute `buffer` stores the values of the control `u`, the state `x`
+and the by-product `y`. Each time we are calling the method `update!`,
+the values of the control are copied to the buffer, so as
+the algorithm use only the physical representation of the network, more
+convenient to use. Thus, the resolution of the balance equation
+involves only the physical representation `buffer`.
+
 """
 mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     model::AbstractFormulation
-    x::AbstractVector{T}
-    p::AbstractVector{T}
     λ::AbstractVector{T}
 
     x_min::AbstractVector{T}
@@ -37,7 +49,7 @@ mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
 end
 
 function ReducedSpaceEvaluator(
-    model, x, u, p;
+    model, x, u;
     constraints=Function[state_constraint, power_constraints],
     linear_solver=DirectSolver(),
     ε_tol=1e-12,
@@ -45,28 +57,32 @@ function ReducedSpaceEvaluator(
 )
     # First, build up a network buffer
     buffer = get(model, PhysicalState())
-    # Initiate adjoint
-    λ = similar(x)
+    # Populate buffer with default values of the network, as stored
+    # inside model
+    init_buffer!(model, buffer)
     # Build up AutoDiff factory
     jx, ju, adjoint_f = init_autodiff_factory(model, buffer)
     ad = AutoDiffFactory(jx, ju, adjoint_f)
 
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
+    λ = similar(x_min)
 
     MT = model.AT
-    g_min = MT{eltype(x), 1}()
-    g_max = MT{eltype(x), 1}()
+    g_min = MT{eltype(x_min), 1}()
+    g_max = MT{eltype(x_min), 1}()
     for cons in constraints
         cb, cu = bounds(model, cons)
         append!(g_min, cb)
         append!(g_max, cu)
     end
 
-    return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
-                                 constraints, g_min, g_max,
-                                 buffer,
-                                 ad, jx.J, linear_solver, ε_tol)
+    return ReducedSpaceEvaluator(
+        model, λ, x_min, x_max, u_min, u_max,
+        constraints, g_min, g_max,
+        buffer,
+        ad, jx.J, linear_solver, ε_tol
+    )
 end
 function ReducedSpaceEvaluator(
     datafile;
@@ -78,20 +94,19 @@ function ReducedSpaceEvaluator(
     polar = PolarForm(pf, device)
 
     x0 = initial(polar, State())
-    p = initial(polar, Parameters())
     uk = initial(polar, Control())
 
     return ReducedSpaceEvaluator(
-        polar, x0, uk, p; options...
+        polar, x0, uk; options...
     )
 end
 
-function ReducedSpaceEvaluator(nlp::ReducedSpaceEvaluator, device = nothing) 
+function ReducedSpaceEvaluator(nlp::ReducedSpaceEvaluator, device = nothing)
     if device == CUDADevice()
-        VT = CuVector 
+        VT = CuVector
         MT = CuMatrix
     elseif device == CPU()
-        VT = Vector 
+        VT = Vector
         MT = Matrix
     else
         VT = typeof(nlp.x)
@@ -104,8 +119,6 @@ function ReducedSpaceEvaluator(nlp::ReducedSpaceEvaluator, device = nothing)
     model = PolarForm(nlp.model.network, device)
     return ReducedSpaceEvaluator(
         model,
-        VT(nlp.x),
-        VT(nlp.p),
         VT(nlp.λ),
         VT(nlp.x_min),
         VT(nlp.x_max),
@@ -122,14 +135,11 @@ function ReducedSpaceEvaluator(nlp::ReducedSpaceEvaluator, device = nothing)
     )
 end
 
-function transfer!(target::ReducedSpaceEvaluator, origin::ReducedSpaceEvaluator) 
-    copyto!(target.x, origin.x)
-    copyto!(target.p, origin.p)
+function transfer!(target::ReducedSpaceEvaluator, origin::ReducedSpaceEvaluator)
     copyto!(target.λ, origin.λ)
     transfer!(target.autodiff, origin.autodiff)
 end
 
-# TODO: add constructor from PowerNetwork
 
 type_array(nlp::ReducedSpaceEvaluator) = typeof(nlp.u_min)
 
@@ -138,7 +148,11 @@ n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
 # Getters
 get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints
-get(nlp::ReducedSpaceEvaluator, ::State) = nlp.x
+function get(nlp::ReducedSpaceEvaluator, ::State)
+    x = similar(nlp.λ) ; fill!(x, 0)
+    get!(nlp.model, State(), x, nlp.buffer)
+    return x
+end
 get(nlp::ReducedSpaceEvaluator, ::PhysicalState) = nlp.buffer
 get(nlp::ReducedSpaceEvaluator, ::AutoDiffBackend) = nlp.autodiff
 # Physics
@@ -155,18 +169,39 @@ function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkValues, 
     setvalues!(nlp.model, attr, values)
 end
 
+function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.ActiveLoad, values)
+    setvalues!(nlp.model, attr, values)
+    setvalues!(nlp.buffer, attr, values)
+end
+function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.ReactiveLoad, values)
+    setvalues!(nlp.model, attr, values)
+    setvalues!(nlp.buffer, attr, values)
+end
+
+# Transfer network values inside buffer
+function transfer!(
+    nlp::ReducedSpaceEvaluator, vm, va, pg, qg,
+)
+    setvalues!(nlp.buffer, PS.VoltageMagnitude(), vm)
+    setvalues!(nlp.buffer, PS.VoltageAngle(), va)
+    setvalues!(nlp.buffer, PS.ActivePower(), pg)
+    setvalues!(nlp.buffer, PS.ReactivePower(), qg)
+end
+
 # Initial position
-initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
+function initial(nlp::ReducedSpaceEvaluator)
+    return get(nlp.model, Control(), nlp.buffer)
+end
 
 # Bounds
-bounds(nlp::ReducedSpaceEvaluator, ::Variables) = nlp.u_min, nlp.u_max
-bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.g_min, nlp.g_max
+bounds(nlp::ReducedSpaceEvaluator, ::Variables) = (nlp.u_min, nlp.u_max)
+bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = (nlp.g_min, nlp.g_max)
 
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0, nlp_pf = nlp)
     x₀ = nlp.x
     jac_x = nlp_pf.autodiff.Jgₓ
     # Transfer x, u, p into the network cache
-    transfer!(nlp_pf.model, nlp_pf.buffer, nlp_pf.x, u)
+    transfer!(nlp_pf.model, nlp_pf.buffer, u)
     # Get corresponding point on the manifold
     conv = powerflow(nlp_pf.model, jac_x, nlp_pf.buffer, tol=nlp_pf.ε_tol;
                      solver=nlp_pf.linear_solver, verbose_level=VERBOSE_LEVEL_HIGH)
@@ -183,10 +218,8 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0, nlp_pf = nlp)
         LinearSolvers.update!(nlp.linear_solver, nlp.∇gᵗ)
     end
 
-    # Update value of nlp.x with new network state
-    get!(nlp.model, State(), nlp.x, nlp.buffer)
-    # Refresh value of the active power of the generators
-    refresh!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.buffer)
+    # Refresh values of active and reactive powers at generators
+    update!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.buffer)
     return conv
 end
 
@@ -199,7 +232,7 @@ function objective(nlp::ReducedSpaceEvaluator, u)
 end
 
 function update_jacobian!(nlp::ReducedSpaceEvaluator, ::Control)
-    jacobian(nlp.model, nlp.autodiff.Jgᵤ, nlp.buffer)
+    jacobian(nlp.model, nlp.autodiff.Jgᵤ, nlp.buffer, AutoDiff.ControlJacobian())
 end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
@@ -239,9 +272,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
 end
 
 function constraint!(nlp::ReducedSpaceEvaluator, g, u)
-    xₖ = nlp.x
     ϕ = nlp.buffer
-    # First: state constraint
     mf = 1
     mt = 0
     for cons in nlp.constraints
@@ -276,11 +307,9 @@ end
 
 function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     model = nlp.model
-    xₖ = nlp.x
     ∇gₓ = nlp.autodiff.Jgₓ.J
     ∇gᵤ = nlp.autodiff.Jgᵤ.J
-    nₓ = length(xₖ)
-    MT = nlp.model.AT
+    nₓ = get(nlp.model, NumberOfState())
     μ = similar(nlp.λ)
     ∂obj = nlp.autodiff.∇f
     cnt = 1
@@ -351,10 +380,6 @@ function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
     (n_inf, err_inf, n_sup, err_sup) = _check(u, nlp.u_min, nlp.u_max)
     @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
             err_sup, n_sup, err_inf, n_inf)
-    print("State    \t")
-    (n_inf, err_inf, n_sup, err_sup) = _check(nlp.x, nlp.x_min, nlp.x_max)
-    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
-            err_sup, n_sup, err_inf, n_inf)
     print("Constraints\t")
     (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
     @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
@@ -378,9 +403,7 @@ end
 function reset!(nlp::ReducedSpaceEvaluator)
     # Reset adjoint
     fill!(nlp.λ, 0)
-    # Reset initial state
-    copy!(nlp.x, initial(nlp.model, State()))
     # Reset buffer
-    nlp.buffer = get(nlp.model, PhysicalState())
+    init_buffer!(nlp.model, nlp.buffer)
 end
 

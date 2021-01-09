@@ -1,8 +1,20 @@
 using FiniteDiff
 using Test
+import ExaPF: PS
 
 @testset "ProxALEvaluators ($time)" for time in [ExaPF.Origin, ExaPF.Normal, ExaPF.Final]
     datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+
+    @testset "PowerNetwork Constructor" begin
+        pf = PS.PowerNetwork(datafile)
+        eps = 1e-10
+        prox0 = ExaPF.ProxALEvaluator(pf, time; ε_tol=eps)
+        @test isa(prox0, ExaPF.ProxALEvaluator)
+        @test isa(prox0.inner, ExaPF.ReducedSpaceEvaluator)
+        # Test that argument was correctly set
+        @test prox0.inner.ε_tol == eps
+    end
+
     # Build reference evaluator
     nlp = ExaPF.ReducedSpaceEvaluator(datafile)
     S = ExaPF.type_array(nlp)
@@ -37,9 +49,12 @@ using Test
         # Test gradient with non-trivial penalties
         λf = 0.5 * rand(prox.ng)
         λt = 1.5 * rand(prox.ng)
+        pgf = rand(prox.ng)
+        ExaPF.update_primal!(prox, ExaPF.Previous(), pgf)
         ExaPF.update_multipliers!(prox, ExaPF.Next(), λt)
         ExaPF.update_multipliers!(prox, ExaPF.Current(), λf)
 
+        ExaPF.update!(prox, w)
         fill!(g, 0)
         ExaPF.gradient!(prox, g, w)
         grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, w)
