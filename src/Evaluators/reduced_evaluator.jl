@@ -112,9 +112,19 @@ function ReducedSpaceEvaluator(nlp::ReducedSpaceEvaluator, device = nothing)
         VT = typeof(nlp.x)
         MT = typeof(nlp.∇gᵗ)
     end
-    buffer = PolarNetworkState(nlp.buffer, device)
-    jac_x = AutoDiff.StateJacobian(nlp.autodiff.Jgₓ, device)
-    jac_u = AutoDiff.ControlJacobian(nlp.autodiff.Jgᵤ, device)
+    buffer = PolarNetworkState{VT{Int}, VT{Float64}}(
+        nlp.buffer.vmag,
+        nlp.buffer.vang,
+        nlp.buffer.pinj,
+        nlp.buffer.qinj,
+        nlp.buffer.pg,
+        nlp.buffer.qg,
+        nlp.buffer.balance,
+        nlp.buffer.dx,
+        nlp.buffer.bus_gen,
+    )
+    jac_x = AutoDiff.Jacobian(nlp.autodiff.Jgₓ, device)
+    jac_u = AutoDiff.Jacobian(nlp.autodiff.Jgᵤ, device)
     ad = AutoDiffFactory(jac_x, jac_u, nlp.autodiff.∇f)
     model = PolarForm(nlp.model.network, device)
     return ReducedSpaceEvaluator(
@@ -139,7 +149,6 @@ function transfer!(target::ReducedSpaceEvaluator, origin::ReducedSpaceEvaluator)
     copyto!(target.λ, origin.λ)
     transfer!(target.autodiff, origin.autodiff)
 end
-
 
 type_array(nlp::ReducedSpaceEvaluator) = typeof(nlp.u_min)
 
@@ -198,7 +207,6 @@ bounds(nlp::ReducedSpaceEvaluator, ::Variables) = (nlp.u_min, nlp.u_max)
 bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = (nlp.g_min, nlp.g_max)
 
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0, nlp_pf = nlp)
-    x₀ = nlp.x
     jac_x = nlp_pf.autodiff.Jgₓ
     # Transfer x, u, p into the network cache
     transfer!(nlp_pf.model, nlp_pf.buffer, u)

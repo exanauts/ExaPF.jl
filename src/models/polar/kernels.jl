@@ -155,16 +155,9 @@ function residual_polar!(F, v_m, v_a,
     wait(ev)
 end
 
-<<<<<<< HEAD
-@kernel function transfer_kernel!(vmag, vang, pinj, qinj,
-                        x, u, pv, pq, ref,
-                        ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                        ybus_im_nzval, pload, qload)
-=======
 @kernel function transfer_kernel!(
     vmag, vang, pinj, qinj, u, pv, pq, ref, pload, qload
 )
->>>>>>> develop
     i = @index(Global, Linear)
     npv = length(pv)
     npq = length(pq)
@@ -176,17 +169,6 @@ end
         # P = Pg - Pd
         pinj[bus] = u[nref + i] - pload[bus]
         vmag[bus] = u[nref + npv + i]
-<<<<<<< HEAD
-    # PQ bus
-    elseif i <= npv + npq
-        i_pq = i - npv
-        bus = pq[i_pq]
-        vang[bus] = x[npv+i_pq]
-        vmag[bus] = x[npv+npq+i_pq]
-        pinj[bus] = - pload[bus]
-        qinj[bus] = - qload[bus]
-=======
->>>>>>> develop
     # REF bus
     else
         i_ref = i - npv
@@ -197,21 +179,11 @@ end
 end
 
 # Transfer values in (x, u) to buffer
-<<<<<<< HEAD
-function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u)
-    if isa(x, Array)
-        kernel! = transfer_kernel!(CPU(), 1)
-        u_ = u
-    else
-        kernel! = transfer_kernel!(CUDADevice(), 256)
-        isa(u, Array) ? u_ = CuArray(u) : u_ = u
-=======
 function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
     if isa(u, CuArray)
         kernel! = transfer_kernel!(CUDADevice(), 256)
     else
         kernel! = transfer_kernel!(CPU(), 1)
->>>>>>> develop
     end
     nbus = length(buffer.vmag)
     pv = polar.indexing.index_pv
@@ -219,18 +191,10 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
     ref = polar.indexing.index_ref
     ev = kernel!(
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
-<<<<<<< HEAD
-        x, u_,
-        pv, pq, ref,
-        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
-        polar.ybus_im.nzval, polar.active_load, polar.reactive_load,
-        ndrange=nbus
-=======
         u,
         pv, pq, ref,
         polar.active_load, polar.reactive_load,
         ndrange=(length(pv)+length(ref)),
->>>>>>> develop
     )
     wait(ev)
 end
