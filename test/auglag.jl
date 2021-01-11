@@ -1,5 +1,12 @@
 
-init(datafile, ::Type{ExaPF.ReducedSpaceEvaluator}) = ExaPF.ReducedSpaceEvaluator(datafile)
+function init(datafile, ::Type{ExaPF.ReducedSpaceEvaluator})
+    constraints = Function[
+        ExaPF.state_constraint,
+        ExaPF.power_constraints,
+        ExaPF.flow_constraints,
+    ]
+    return ExaPF.ReducedSpaceEvaluator(datafile; constraints=constraints)
+end
 function init(datafile, ::Type{ExaPF.ProxALEvaluator})
     nlp = ExaPF.ReducedSpaceEvaluator(datafile)
     time = ExaPF.Normal
