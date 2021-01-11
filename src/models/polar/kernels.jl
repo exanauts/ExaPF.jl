@@ -410,10 +410,10 @@ end
     accumulate_view(x, vx, indices, ids)
 
 .+= is broken on views with redundant indices in CUDA.jl leading to a bug Zygote (see #). This implements the .+= operator.
-            
+
 """
 @kernel function accumulate_view!(x, vx, indices)
-    # This is parallelizable 
+    # This is parallelizable
     id = @index(Global, Linear)
     for (j, idx) in enumerate(indices)
             if id == idx
