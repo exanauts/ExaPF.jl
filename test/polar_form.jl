@@ -122,17 +122,19 @@ const PS = PowerSystem
                 adcache = ExaPF.PolarNetworkState{VT}(cache.vmag, cache.vang, cache.pinj, cache.qinj, cache.pg, cache.qg, cache.balance, cache.dx)
                 adcache.vmag .= x[1:nbus]
                 adcache.vang .= x[1+nbus:2*nbus]
-                g = VT(undef, m) 
+                g = VT(undef, m) ; fill!(g, 0)
                 ExaPF.flow_constraints(polar, g, adcache)
                 return sum(g)
             end
             adgradg = ForwardDiff.gradient(lumping,x)
             fdgradg = FiniteDiff.finite_difference_gradient(lumping,x)
-            ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping. 
-            zygradg = ExaPF.flow_constraints_grad(polar, cache, sum)
+            ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping.
+            m_flows = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
+            weights = ones(m_flows)
+            zygradg = ExaPF.flow_constraints_grad(polar, cache, weights)
             # Verify  ForwardDiff and Zygote agree on the gradient
             @test isapprox(adgradg, fdgradg)
-            # This breads because of issue #89
+            # This breaks because of issue #89
             @test_broken isapprox(adgradg, zygradg)
         end
     end

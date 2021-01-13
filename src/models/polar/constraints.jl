@@ -191,10 +191,10 @@ end
 
 # Branch flow constraints
 function flow_constraints(polar::PolarForm, cons, buffer)
-    if isa(cons, Array)
-        kernel! = branch_flow_kernel!(CPU(), 1)
-    else
+    if isa(cons, CuArray)
         kernel! = branch_flow_kernel!(CUDADevice(), 256)
+    else
+        kernel! = branch_flow_kernel!(CPU(), 1)
     end
     nlines = PS.get(polar.network, PS.NumberOfLines())
     ev = kernel!(
@@ -208,7 +208,7 @@ function flow_constraints(polar::PolarForm, cons, buffer)
     return
 end
 
-function flow_constraints_grad(polar::PolarForm, buffer, reduction::Function=sum)
+function flow_constraints_grad(polar::PolarForm, buffer, weights)
     T = typeof(buffer.vmag)
     isa(buffer.vmag, Array) ? kernel! = accumulate_view!(CPU(), 1) : kernel! = accumulate_view!(CUDADevice(), 256)
     nlines = PS.get(polar.network, PS.NumberOfLines())
@@ -230,11 +230,11 @@ function flow_constraints_grad(polar::PolarForm, buffer, reduction::Function=sum
             fr_vmag, to_vmag,
             cosθ, sinθ
         )
-        return reduction(cons)
+        return dot(weights, cons)
     end
     grad = Zygote.gradient(lumping, fr_vmag, to_vmag, fr_vang, to_vang)
     # TODO: This may belong to the state cache?
-    cons_grad = T(undef, 2*length(buffer.vmag)) 
+    cons_grad = T(undef, 2*length(buffer.vmag))
     fill!(cons_grad, 0.0)
     gvmag = @view cons_grad[1:nbus]
     gvang = @view cons_grad[nbus+1:2*nbus]
@@ -242,8 +242,8 @@ function flow_constraints_grad(polar::PolarForm, buffer, reduction::Function=sum
     ev_vmag = kernel!(gvmag, grad[1], f, ndrange = nbus)
     ev_vang = kernel!(gvang, grad[3], f, ndrange = nbus)
     wait(ev_vmag)
-    ev_vmag = kernel!(gvmag, grad[2], t, ndrange = nbus)
     wait(ev_vang)
+    ev_vmag = kernel!(gvmag, grad[2], t, ndrange = nbus)
     ev_vang = kernel!(gvang, grad[4], t, ndrange = nbus)
     wait(ev_vmag)
     wait(ev_vang)
@@ -257,5 +257,43 @@ function bounds(polar::PolarForm, ::typeof(flow_constraints))
     MT = polar.AT
     f_min, f_max = PS.bounds(polar.network, PS.Lines(), PS.ActivePower())
     return convert(MT, [f_min; f_min]), convert(MT, [f_max; f_max])
+end
+
+# Jacobian-transpose vector product
+function jtprod(
+    polar::PolarForm,
+    ::typeof(flow_constraints),
+    ∂jac,
+    buffer,
+    v::AbstractVector,
+)
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    index_pv = polar.indexing.index_pv
+    index_pq = polar.indexing.index_pq
+    index_ref = polar.indexing.index_ref
+    pv_to_gen = polar.indexing.index_pv_to_gen
+    # Init buffer
+    adj_x = ∂jac.∇fₓ
+    adj_u = ∂jac.∇fᵤ
+    adj_vmag = ∂jac.∂vm
+    adj_vang = ∂jac.∂va
+    adj_pg = ∂jac.∂pg
+    fill!(adj_pg, 0.0)
+    fill!(adj_x, 0.0)
+    fill!(adj_u, 0.0)
+    # Compute gradient w.r.t. vmag and vang
+    ∇Jv = flow_constraints_grad(polar, buffer, v)
+    # Copy results into buffer
+    copyto!(adj_vmag, ∇Jv[1:nbus])
+    copyto!(adj_vang, ∇Jv[nbus+1:2*nbus])
+    if isa(adj_x, Array)
+        kernel! = put_adjoint_kernel!(CPU(), 1)
+    else
+        kernel! = put_adjoint_kernel!(CUDADevice(), 256)
+    end
+    ev = kernel!(adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
+                 index_pv, index_pq, index_ref, pv_to_gen,
+                 ndrange=nbus)
+    wait(ev)
 end
 
