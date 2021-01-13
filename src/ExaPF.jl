@@ -34,6 +34,9 @@ const VERBOSE_LEVEL_LOW = 1
 const VERBOSE_LEVEL_NONE = 0
 
 include("utils.jl")
+# Templates
+include("models.jl")
+
 # Import submodules
 include("autodiff.jl")
 using .AutoDiff
@@ -51,7 +54,10 @@ using .PowerSystem
 const PS = PowerSystem
 
 # Modeling
-include("models/models.jl")
+include("caches.jl")
+# Polar formulation:
+include("polar/polar.jl")
+
 # Evaluators
 include("Evaluators/Evaluators.jl")
 
