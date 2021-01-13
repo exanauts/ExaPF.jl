@@ -407,18 +407,19 @@ function branch_flow_kernel_zygote(
 end
 
 """
-    accumulate_view(x, vx, indices, ids)
+    accumulate_view(x, vx, indices)
 
-.+= is broken on views with redundant indices in CUDA.jl leading to a bug Zygote (see #). This implements the .+= operator.
+.+= is broken on views with redundant indices in CUDA.jl leading to a bug Zygote (see #89).
+This implements the .+= operator.
 
 """
 @kernel function accumulate_view!(x, vx, indices)
     # This is parallelizable
     id = @index(Global, Linear)
     for (j, idx) in enumerate(indices)
-            if id == idx
-                x[id] += vx[j]
-            end
+        if id == idx
+            x[id] += vx[j]
+        end
     end
 end
 

@@ -208,9 +208,14 @@ function flow_constraints(polar::PolarForm, cons, buffer)
     return
 end
 
-function flow_constraints_grad(polar::PolarForm, buffer, weights)
+function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
     T = typeof(buffer.vmag)
-    isa(buffer.vmag, Array) ? kernel! = accumulate_view!(CPU(), 1) : kernel! = accumulate_view!(CUDADevice(), 256)
+    if isa(buffer.vmag, Array)
+        kernel! = accumulate_view!(CPU(), 1)
+    else
+        kernel! = accumulate_view!(CUDADevice(), 256)
+    end
+
     nlines = PS.get(polar.network, PS.NumberOfLines())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     f = polar.topology.f_buses
@@ -233,9 +238,6 @@ function flow_constraints_grad(polar::PolarForm, buffer, weights)
         return dot(weights, cons)
     end
     grad = Zygote.gradient(lumping, fr_vmag, to_vmag, fr_vang, to_vang)
-    # TODO: This may belong to the state cache?
-    cons_grad = T(undef, 2*length(buffer.vmag))
-    fill!(cons_grad, 0.0)
     gvmag = @view cons_grad[1:nbus]
     gvang = @view cons_grad[nbus+1:2*nbus]
     # This is basically the adjoint of the statements above (1). = becomes +=.
@@ -278,11 +280,13 @@ function jtprod(
     adj_vmag = ∂jac.∂vm
     adj_vang = ∂jac.∂va
     adj_pg = ∂jac.∂pg
+    ∇Jv = ∂jac.∂flow
     fill!(adj_pg, 0.0)
     fill!(adj_x, 0.0)
     fill!(adj_u, 0.0)
+    fill!(∇Jv, 0.0)
     # Compute gradient w.r.t. vmag and vang
-    ∇Jv = flow_constraints_grad(polar, buffer, v)
+    flow_constraints_grad!(polar, ∇Jv, buffer, v)
     # Copy results into buffer
     copyto!(adj_vmag, ∇Jv[1:nbus])
     copyto!(adj_vang, ∇Jv[nbus+1:2*nbus])

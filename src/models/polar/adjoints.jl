@@ -15,6 +15,7 @@ struct AdjointStackObjective{VT}
     ∂va::VT
     jvₓ::VT
     jvᵤ::VT
+    ∂flow::VT
 end
 
 function put_active_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, ybus_im)

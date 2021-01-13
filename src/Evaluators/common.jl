@@ -76,9 +76,10 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
     gradient!(nlp, ∇g, u0)
     s_obj = scale_factor(norm(∇g, Inf), tol, η)
 
-    ∇c = similar(u0, n) ; fill!(∇c, 0)
-    s_cons = similar(u0, m) ; fill!(s_cons, 0)
-    v = zeros(m)
+    VT = typeof(u0)
+    ∇c = xzeros(VT, n)
+    s_cons = xzeros(VT, m)
+    v = xzeros(VT, m)
     for i in eachindex(s_cons)
         fill!(v, 0.0)
         v[i] = 1.0

@@ -302,7 +302,8 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     # Build cache for Jacobian vector-product
     jvₓ = xzeros(VT, nₓ)
     jvᵤ = xzeros(VT, nᵤ)
-    objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ)
+    adjoint_flow = xzeros(VT, 2 * nbus)
+    objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ, adjoint_flow)
     return statejacobian, controljacobian, objectiveAD
 end
 

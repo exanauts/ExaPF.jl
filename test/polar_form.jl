@@ -127,10 +127,10 @@ const PS = PowerSystem
 
             ## Inequality constraint
             for cons in [
-                         ExaPF.state_constraint,
-                         ExaPF.power_constraints,
-                         ExaPF.flow_constraints,
-                        ]
+                ExaPF.state_constraint,
+                ExaPF.power_constraints,
+                ExaPF.flow_constraints,
+            ]
                 m = ExaPF.size_constraint(polar, cons)
                 @test isa(m, Int)
                 g = M{Float64, 1}(undef, m) # TODO: this signature is not great
@@ -146,34 +146,7 @@ const PS = PowerSystem
                 # Test constraints are consistent
                 @test isless(g_min, g_max)
             end
-
-            # Adjoint of flow_constraints()
-            nbus = length(cache.vmag)
-            m = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
-            x = M{Float64, 1}(undef, 2*nbus)
-            x[1:nbus] .= cache.vmag
-            x[1+nbus:2*nbus] .= cache.vang
-
-            ## Example with using sum as a sort of lumping of all constraints
-            function lumping(x)
-                VT = typeof(x)
-                # Needed for ForwardDiff to have a cache with the right active type VT
-                adcache = ExaPF.PolarNetworkState{VT}(cache.vmag, cache.vang, cache.pinj, cache.qinj, cache.pg, cache.qg, cache.balance, cache.dx)
-                adcache.vmag .= x[1:nbus]
-                adcache.vang .= x[1+nbus:2*nbus]
-                g = VT(undef, m) ; fill!(g, 0)
-                ExaPF.flow_constraints(polar, g, adcache)
-                return sum(g)
-            end
-            adgradg = ForwardDiff.gradient(lumping,x)
-            fdgradg = FiniteDiff.finite_difference_gradient(lumping,x)
-            ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping.
-            m_flows = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
-            weights = ones(m_flows)
-            zygradg = ExaPF.flow_constraints_grad(polar, cache, weights)
-            # Verify  ForwardDiff and Zygote agree on the gradient
-            @test isapprox(adgradg, fdgradg)
-            @test_broken isapprox(adgradg, zygradg)
         end
     end
 end
+
