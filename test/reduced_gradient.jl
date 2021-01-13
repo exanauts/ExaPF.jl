@@ -29,7 +29,7 @@ const PS = PowerSystem
 
         # solve power flow
         conv = powerflow(polar, jx, cache, tol=1e-12)
-        ExaPF.get!(polar, State(), xk, cache)
+
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
         ∇gᵤ = ExaPF.jacobian(polar, ju, cache, AutoDiff.ControlJacobian())
@@ -81,6 +81,44 @@ const PS = PowerSystem
                     ExaPF.jacobian(polar, cons, icons, ∂obj, cache)
                 end
             end
+        end
+        # We test apart this routine, as it depends on Zygote
+        @testset "Gradient of line-flow constraints" begin
+            # Adjoint of flow_constraints()
+            nbus = length(cache.vmag)
+            M = typeof(u)
+            m = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
+            x = ExaPF.xzeros(M, 2 * nbus)
+            x[1:nbus] .= cache.vmag
+            x[1+nbus:2*nbus] .= cache.vang
+            bus_gen = polar.indexing.index_generators
+            VI = typeof(bus_gen)
+
+            ## Example with using sum as a sort of lumping of all constraints
+            function lumping(x)
+                VT = typeof(x)
+                # Needed for ForwardDiff to have a cache with the right active type VT
+                adcache = ExaPF.PolarNetworkState{VI, VT}(
+                    cache.vmag, cache.vang, cache.pinj, cache.qinj,
+                    cache.pg, cache.qg, cache.balance, cache.dx, bus_gen,
+                )
+                adcache.vmag .= x[1:nbus]
+                adcache.vang .= x[1+nbus:2*nbus]
+                g = VT(undef, m) ; fill!(g, 0)
+                ExaPF.flow_constraints(polar, g, adcache)
+                return sum(g)
+            end
+            adgradg = ForwardDiff.gradient(lumping,x)
+            fdgradg = FiniteDiff.finite_difference_gradient(lumping,x)
+            ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping.
+            m_flows = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
+            weights = ones(m_flows)
+            zygradg = ExaPF.xzeros(M, 2 * nbus)
+            ExaPF.flow_constraints_grad!(polar, zygradg, cache, weights)
+            # Verify  ForwardDiff and Zygote agree on the gradient
+            @test isapprox(adgradg, fdgradg)
+            # This breaks because of issue #89
+            @test_broken isapprox(adgradg, zygradg)
         end
     end
 end
