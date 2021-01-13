@@ -132,7 +132,8 @@ const PS = PowerSystem
             zygradg = ExaPF.flow_constraints_grad(polar, cache, sum)
             # Verify  ForwardDiff and Zygote agree on the gradient
             @test isapprox(adgradg, fdgradg)
-            @test isapprox(adgradg, zygradg)
+            # This breads because of issue #89
+            @test_broken isapprox(adgradg, zygradg)
         end
     end
 end
