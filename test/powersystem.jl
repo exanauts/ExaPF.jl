@@ -8,12 +8,13 @@ import ExaPF: ParsePSSE, PowerSystem, IndexSet
 
 const PS = PowerSystem
 
+@testset "Powerflow residuals and Jacobian" begin
     local_case = "case14.raw"
     # read data
     to = TimerOutputs.TimerOutput()
     datafile = joinpath(dirname(@__FILE__), "..", "data", local_case)
     data_raw = ParsePSSE.parse_raw(datafile)
-    data, bus_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
+    data = ParsePSSE.raw_to_exapf(data_raw)
 
     # Parsed data indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
@@ -23,6 +24,8 @@ const PS = PowerSystem
     bus = data["bus"]
     gen = data["gen"]
     SBASE = data["baseMVA"][1]
+
+    bus_to_indexes = PS.get_bus_id_to_indexes(bus)
     nbus = size(bus, 1)
 
     # obtain V0 from raw data
@@ -86,22 +89,110 @@ const PS = PowerSystem
     npv = size(pv, 1)
     npq = size(pq, 1)
 
-    F = zeros(Float64, npv + 2*npq)
-    # Compute Jacobian at point V manually and use it as reference
-    J = ExaPF.residualJacobian(V, Ybus, pv, pq)
-    J♯ = copy(J)
+    # hessianAD = ExaPF.AD.StateHessianAD(F, Vm, Va,
+    #                                             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
+    # ExaPF.AD.residualHessianAD!(
+    #     hessianAD, ExaPF.residualFunction_polar!, Vm, Va,
+    #     ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
 
-    # Then, create a JacobianAD object
-    jacobianAD = ExaPF.AD.StateJacobianAD(F, Vm, Va,
-                                            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
-    # and compute Jacobian with ForwardDiff
-    ExaPF.AD.residualJacobianAD!(
-        jacobianAD, ExaPF.residualFunction_polar!, Vm, Va,
-        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
-    @test jacobianAD.J ≈ J♯
-    hessianAD = ExaPF.AD.StateHessianAD(F, Vm, Va,
-                                                ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
-    ExaPF.AD.residualHessianAD!(
-        hessianAD, ExaPF.residualFunction_polar!, Vm, Va,
-        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
+    @testset "Computing residuals" begin
+        F = zeros(Float64, npv + 2*npq)
+        # First compute a reference value for resisual computed at V
+        F♯ = ExaPF.power_balance(V, Ybus, Sbus, pv, pq)
+        # residual_polar! uses only binary types as this function is meant
+        # to be deported on the GPU
+        ExaPF.residual_polar!(F, Vm, Va,
+            ybus_re, ybus_im,
+            pbus, qbus, pv, pq, nbus)
+        @test F ≈ F♯
+    end
+    @testset "Computing Jacobian of residuals" begin
+        F = zeros(Float64, npv + 2*npq)
+        # Compute Jacobian at point V manually and use it as reference
+        J = ExaPF.residual_jacobian(V, Ybus, ref, pv, pq)
+        J♯ = copy(J)
+        # Build the Jacobian structure
+        mappv = [i + nbus for i in pv]
+        mappq = [i + nbus for i in pq]
+        # Ordering for x is (θ_pv, θ_pq, v_pq)
+        statemap = vcat(mappv, mappq, pq)
+        jacobian_structure = ExaPF.StateJacobianStructure{Vector{Float64}}(ExaPF.residual_jacobian, statemap)
 
+        # Then, create a Jacobian object
+        jacobianAD = ExaPF.AutoDiff.Jacobian(jacobian_structure, F, Vm, Va,
+                                              ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, ExaPF.AutoDiff.StateJacobian())
+        # and compute Jacobian with ForwardDiff
+        ExaPF.AutoDiff.residual_jacobian!(
+            jacobianAD, ExaPF.residual_polar!, Vm, Va,
+            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, ExaPF.AutoDiff.StateJacobian())
+        @test jacobianAD.J ≈ J♯
+    end
+end
+
+@testset "PowerNetwork object" begin
+    psse_datafile = "case14.raw"
+    matpower_datafile = "case9.m"
+
+    # Test constructor
+    @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
+        datafile = joinpath(dirname(@__FILE__), "..", "data", name)
+        pf = PS.PowerNetwork(datafile)
+        @test isa(pf, PS.PowerNetwork)
+    end
+
+    # From now on, test with "case9.m"
+    datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
+    data = PS.import_dataset(datafile)
+    pf = PS.PowerNetwork(data)
+
+    @testset "Computing cost coefficients" begin
+        coefs = PS.get_costs_coefficients(pf)
+        @test size(coefs) == (3, 4)
+        @test isequal(coefs[:, 1], [3.0, 2.0, 2.0])
+    end
+
+    @testset "Getters" for Attr in [
+        PS.NumberOfBuses,
+        PS.NumberOfPVBuses,
+        PS.NumberOfPQBuses,
+        PS.NumberOfSlackBuses,
+        PS.NumberOfLines,
+        PS.NumberOfGenerators,
+    ]
+        res = PS.get(pf, Attr())
+        @test isa(res, Int)
+    end
+
+    @testset "Indexing" begin
+        idx = PS.get(pf, PS.GeneratorIndexes())
+        @test isequal(idx, [1, 2, 3])
+    end
+
+    @testset "Bounds" begin
+        n_bus = PS.get(pf, PS.NumberOfBuses())
+        v_min, v_max = PS.bounds(pf, PS.Buses(), PS.VoltageMagnitude())
+        @test length(v_min) == n_bus
+        @test length(v_max) == n_bus
+
+        n_gen = PS.get(pf, PS.NumberOfGenerators())
+        p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
+        @test length(p_min) == n_gen
+        @test length(p_max) == n_gen
+        q_min, q_max = PS.bounds(pf, PS.Generator(), PS.ReactivePower())
+        @test length(q_min) == n_gen
+        @test length(q_max) == n_gen
+    end
+
+    @testset "Load from data" begin
+        pf_original = PS.PowerNetwork(data)
+        @test isa(pf_original, PS.PowerNetwork)
+        n_lines = PS.get(pf_original, PS.NumberOfLines())
+
+        pf_removed = PS.PowerNetwork(data; remove_lines=Int[1])
+        @test isa(pf_removed, PS.PowerNetwork)
+        n_after_removal = PS.get(pf_removed, PS.NumberOfLines())
+
+        @test n_lines - 1 == n_after_removal
+        @test pf_original.Ybus != pf_removed.Ybus
+    end
+end

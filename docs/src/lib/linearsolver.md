@@ -1,21 +1,51 @@
 ```@meta
-CurrentModule = ExaPF
-DocTestSetup = quote
-    using ExaPF
-end
-DocTestFilters = [r"ExaPF"]
+CurrentModule = ExaPF.LinearSolvers
 ```
 
-## Description
+## Linear solvers
+
+`ExaPF` allows to solve linear systems with either
+direct and indirect linear algebra.
 ```@docs
-ExaPF.LinearSolvers.AbstractPreconditioner
+ldiv!
+DirectSolver
+KrylovBICGSTAB
+BICGSTAB
+EigenBICGSTAB
+
 ```
 
-## API Reference
+Available linear solvers could be queried with
 ```@docs
-ExaPF.LinearSolvers.BlockJacobiPreconditioner
-ExaPF.LinearSolvers.update
-ExaPF.LinearSolvers.build_adjmatrix
-ExaPF.LinearSolvers.fillblock_gpu!
-ExaPF.LinearSolvers.fillP_gpu!
+list_solvers
+
+```
+
+`ExaPF.jl` is shipped with a custom BICGSTAB implementation.
+However, we highly recommend to use `KrylovBICGSTAB` instead,
+which has proved to be more robust.
+```@docs
+bicgstab
+
+```
+
+
+## Preconditioning
+
+To solve linear systems with iterative methods, `ExaPF`
+provides an implementation of a block-Jacobi preconditioner,
+portable on GPU.
+
+```@docs
+AbstractPreconditioner
+```
+
+### Block-Jacobi preconditioner
+
+```@docs
+BlockJacobiPreconditioner
+update
+build_adjmatrix
+fillblock_gpu!
+fillP_gpu!
 ```

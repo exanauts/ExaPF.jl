@@ -1,6 +1,22 @@
 # Adjoints needed in polar formulation
 #
 
+"""
+    AdjointStackObjective
+
+An object for storing the adjoint stack in the adjoint objective computation
+
+"""
+struct AdjointStackObjective{VT}
+    ∇fₓ::VT
+    ∇fᵤ::VT
+    ∂pg::VT
+    ∂vm::VT
+    ∂va::VT
+    jvₓ::VT
+    jvᵤ::VT
+end
+
 function put_active_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, ybus_im)
     @inbounds for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
         to = ybus_re.rowval[c]
@@ -107,7 +123,7 @@ function put(
     polar::PolarForm{T, VT, AT},
     ::PS.Generator,
     ::PS.ActivePower,
-    obj_ad::AD.ObjectiveAD,
+    obj_autodiff::AdjointStackObjective,
     buffer::PolarNetworkState
 ) where {T, VT, AT}
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
@@ -126,11 +142,11 @@ function put(
     vmag = buffer.vmag
     vang = buffer.vang
 
-    adj_pg = obj_ad.∂pg
-    adj_x = obj_ad.∇fₓ
-    adj_u = obj_ad.∇fᵤ
-    adj_vmag = obj_ad.∂vm
-    adj_vang = obj_ad.∂va
+    adj_pg = obj_autodiff.∂pg
+    adj_x = obj_autodiff.∇fₓ
+    adj_u = obj_autodiff.∇fᵤ
+    adj_vmag = obj_autodiff.∂vm
+    adj_vang = obj_autodiff.∂va
     fill!(adj_vmag, 0.0)
     fill!(adj_vang, 0.0)
     fill!(adj_x, 0.0)
@@ -156,7 +172,7 @@ function put(
     return
 end
 
-function ∂cost(polar::PolarForm, ∂obj::AD.ObjectiveAD, buffer::PolarNetworkState)
+function ∂cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarNetworkState)
     pg = buffer.pg
     coefs = polar.costs_coefficients
     c3 = @view coefs[:, 3]

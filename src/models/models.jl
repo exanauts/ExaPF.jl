@@ -1,5 +1,14 @@
-export PolarForm, get, bounds, powerflow
+export PolarForm, bounds, powerflow
 export State, Control, Parameters, NumberOfState, NumberOfControl
+
+"""
+    AbstractJacobianStructure
+
+The user may specify a mapping to the single input vector x for AD.
+
+"""
+
+abstract type AbstractJacobianStructure end
 
 """
     AbstractFormulation
@@ -63,6 +72,10 @@ struct Parameters <: AbstractVariable end
 All physical variables describing the current physical state
 of the underlying network.
 
+`PhysicalState` variables are encoded in a `AbstractNetworkBuffer`,
+storing all the physical values needed to describe the current
+state of the network.
+
 """
 struct PhysicalState <: AbstractVariable end
 
@@ -84,14 +97,29 @@ get(form, NumberOfControl())
 function get end
 
 """
+    setvalues!(form::AbstractFormulation, attr::PS.AbstractNetworkAttribute, values)
+
+Update inplace the attribute's values specified by `attr`.
+
+## Examples
+
+```julia
+setvalues!(form, ActiveLoad(), new_ploads)
+setvalues!(form, ReactiveLoad(), new_qloads)
+
+```
+"""
+function setvalues! end
+
+"""
     bounds(form::AbstractFormulation, var::AbstractVariable)
 
 Return the bounds attached to the variable `var`.
 
     bounds(form::AbstractFormulation, func::Function)
 
-Return the lower and upper bounds attached to a given constraint
-functional.
+Return a tuple of vectors `(lb, ub)` specifying the admissible range
+of the constraints specified by the function `cons_func`.
 
 ## Examples
 
@@ -120,7 +148,7 @@ function initial end
 
 """
     powerflow(form::AbstractFormulation,
-              jacobian::AD.StateJacobianAD,
+              jacobian::AutoDiff.StateJacobian,
               buffer::AbstractNetworkBuffer;
               kwargs...) where VT <: AbstractVector
 
@@ -136,7 +164,7 @@ irations `maxiter` are reached.
 ## Arguments
 
 * `form::AbstractFormulation`: formulation of the power flow equation
-* `jacobian::AD.StateJacobianAD`: Jacobian
+* `jacobian::AutoDiff.StateJacobian`: Jacobian
 * `buffer::AbstractNetworkBuffer`: buffer storing current state `x` and control `u`
 
 ## Optional arguments
@@ -182,14 +210,6 @@ Get number of constraints specified by the function `cons_func`
 in the formulation `form`.
 """
 function size_constraint end
-
-"""
-    bounds(form::AbstractFormulation, cons_func::Function)
-
-Return a tuple of vectors `(lb, ub)` specifying the admissible range
-of the constraints specified by the function `cons_func`.
-"""
-function bounds end
 
 """
     state_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)

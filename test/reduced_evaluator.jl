@@ -18,17 +18,16 @@
         @test nlp.ε_tol == tol
     end
 
-    pf = PowerSystem.PowerNetwork(datafile, 1)
+    pf = PowerSystem.PowerNetwork(datafile)
     @testset "Test API on $device" for (device, M) in ITERATORS
         polar = PolarForm(pf, device)
         x0 = ExaPF.initial(polar, State())
         u0 = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
 
         constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p; constraints=constraints)
+        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0)
         # Test printing
-        println(nlp)
+        println(devnull, nlp)
 
         # Test evaluator is well instantiated on target device
         TNLP = typeof(nlp)
@@ -39,6 +38,8 @@
         end
 
         # Test consistence
+        n_state = get(polar, NumberOfState())
+        @test length(nlp.λ) == n_state
         n = ExaPF.n_variables(nlp)
         m = ExaPF.n_constraints(nlp)
         @test n == length(u0)
@@ -46,6 +47,16 @@
         @test isless(nlp.x_min, nlp.x_max)
         @test isless(nlp.g_min, nlp.g_max)
         @test length(nlp.g_min) == m
+
+        # Test API
+        @test isa(get(nlp, ExaPF.Constraints()), Array{Function})
+        @test get(nlp, State()) == x0
+        buffer = get(nlp, ExaPF.PhysicalState())
+        @test isa(buffer, ExaPF.AbstractBuffer)
+        @test isa(get(nlp, ExaPF.AutoDiffBackend()), ExaPF.AutoDiffFactory)
+        @test ExaPF.initial(nlp) == u0
+
+        vm, va, pg, qg = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
 
         u = u0
         # Update nlp to stay on manifold
@@ -89,8 +100,14 @@
 
         # test reset!
         ExaPF.reset!(nlp)
-        @test nlp.x == x0
+        @test get(nlp, State()) == x0
         @test iszero(nlp.λ)
+
+        # setters
+        nbus = get(nlp, PS.NumberOfBuses())
+        loads = similar(u, nbus) ; fill!(loads, 1)
+        ExaPF.setvalues!(nlp, PS.ActiveLoad(), loads)
+        ExaPF.setvalues!(nlp, PS.ReactiveLoad(), loads)
     end
 end
 

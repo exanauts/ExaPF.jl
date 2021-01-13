@@ -60,24 +60,19 @@ function get(
     u[nref + npv + 1:nref + 2*npv] = vmag[polar.network.pv]
     return u
 end
-
 function get(
-    polar::PolarForm{T, IT, VT, AT},
-    ::Parameters,
-    vmag::VT,
-    vang::VT,
-    pbus::VT,
-    qbus::VT,
+    polar::PolarForm{T, IT, VT, AT}, ::Control, buffer::PolarNetworkState,
 ) where {T, IT, VT, AT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    # build vector p
-    dimension = nref + 2*npq
-    p = xzeros(VT, dimension)
-    p[1:nref] = vang[polar.network.ref]
-    p[nref + 1:nref + npq] = pbus[polar.network.pq]
-    p[nref + npq + 1:nref + 2*npq] = qbus[polar.network.pq]
-    return p
+    # build vector u
+    nᵤ = get(polar, NumberOfControl())
+    u = xzeros(VT, nᵤ)
+    u[1:nref] .= buffer.vmag[polar.network.ref]
+    u[nref + 1:nref + npv] .= buffer.pg[polar.indexing.index_pv_to_gen]
+    u[nref + npv + 1:nref + 2*npv] .= buffer.vmag[polar.network.pv]
+    return u
 end
+
 

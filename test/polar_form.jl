@@ -3,7 +3,6 @@ using CUDA.CUSPARSE
 using Printf
 using FiniteDiff
 using ForwardDiff
-using BenchmarkTools
 using KernelAbstractions
 using LinearAlgebra
 using Random
@@ -11,14 +10,14 @@ using SparseArrays
 using Test
 using TimerOutputs
 using ExaPF
-import ExaPF: PowerSystem, AD
+import ExaPF: PowerSystem, AutoDiff
 
 const PS = PowerSystem
 
 @testset "Polar formulation" begin
     datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
     tolerance = 1e-8
-    pf = PS.PowerNetwork(datafile, 1)
+    pf = PS.PowerNetwork(datafile)
 
     if has_cuda_gpu()
         ITERATORS = zip([CPU(), CUDADevice()], [Array, CuArray])
@@ -29,7 +28,7 @@ const PS = PowerSystem
     @testset "Initiate polar formulation on device $device" for (device, M) in ITERATORS
         polar = PolarForm(pf, device)
         # Test printing
-        println(polar)
+        println(devnull, polar)
 
         b = bounds(polar, State())
         b = bounds(polar, Control())
@@ -37,34 +36,72 @@ const PS = PowerSystem
         # Test getters
         nᵤ = ExaPF.get(polar, NumberOfControl())
         nₓ = ExaPF.get(polar, NumberOfState())
+        ngen = get(polar, PS.NumberOfGenerators())
+        nbus = get(polar, PS.NumberOfBuses())
 
         # Get initial position
         x0 = ExaPF.initial(polar, State())
         u0 = ExaPF.initial(polar, Control())
-        p = ExaPF.initial(polar, Parameters())
 
         @test length(u0) == nᵤ
         @test length(x0) == nₓ
-        for v in [x0, u0, p]
+        for v in [x0, u0]
             @test isa(v, M)
         end
 
         cache = ExaPF.get(polar, ExaPF.PhysicalState())
         @testset "NetworkState cache" begin
+            # By defaut, values are equal to 0
+            @test iszero(cache)
             @test isa(cache.vmag, M)
-            ExaPF.transfer!(polar, cache, x0, u0, p)
+            @test cache.bus_gen == polar.indexing.index_generators
+            # Transfer control u0 inside cache
+            ExaPF.transfer!(polar, cache, u0)
+            # Test that all attributes have valid length
+            @test length(cache.vang) == length(cache.vmag) == length(cache.pinj) == length(cache.qinj) == nbus
+            @test length(cache.pg) == length(cache.qg) == length(cache.bus_gen) == ngen
+            @test length(cache.dx) == length(cache.balance) == nₓ
+            # Test setters
+            ## Buses
+            values = similar(x0, nbus)
+            fill!(values, 1)
+            ExaPF.setvalues!(cache, PS.VoltageMagnitude(), values)
+            @test cache.vmag == values
+            ExaPF.setvalues!(cache, PS.VoltageAngle(), values)
+            @test cache.vang == values
+            ExaPF.setvalues!(cache, PS.ActiveLoad(), values)
+            ExaPF.setvalues!(cache, PS.ReactiveLoad(), values)
+            # Power generations are still equal to 0, so we get equality
+            @test cache.pinj == -values  # Pinj = 0 - Pd
+            @test cache.qinj == -values  # Qinj = 0 - Qd
+            ## Generators
+            vgens = similar(x0, ngen)
+            fill!(vgens, 2.0)
+            ExaPF.setvalues!(cache, PS.ActivePower(), vgens)
+            ExaPF.setvalues!(cache, PS.ReactivePower(), vgens)
+            @test cache.pg == vgens
+            @test cache.qg == vgens
+            genbus = polar.indexing.index_generators
+            @test cache.pinj[genbus] == vgens - values[genbus]  # Pinj = Cg*Pg - Pd
+            @test cache.qinj[genbus] == vgens - values[genbus]  # Qinj = Cg*Qg - Pd
+            # After all these operations, values become non-trivial
+            @test !iszero(cache)
         end
+        # Reset to default values before going any further
+        ExaPF.init_buffer!(polar, cache)
+        @test !iszero(cache)
+
         @testset "Polar model API" begin
             xₖ = copy(x0)
             # Init AD factory
-            jx, ju, ∂obj = ExaPF.init_ad_factory(polar, cache)
+            jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
             # Test powerflow with cache signature
             conv = powerflow(polar, jx, cache, tol=tolerance)
             ExaPF.get!(polar, State(), xₖ, cache)
             # Refresh power of generators in cache
             for Power in [PS.ActivePower, PS.ReactivePower]
-                ExaPF.refresh!(polar, PS.Generator(), Power(), cache)
+                ExaPF.update!(polar, PS.Generator(), Power(), cache)
             end
 
             # Bounds on state and control

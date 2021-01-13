@@ -1,11 +1,11 @@
 
-# AD Factory
-abstract type AbstractADFactory end
+# AutoDiff Factory
+abstract type AbstractAutoDiffFactory end
 
-struct ADFactory <: AbstractADFactory
-    Jgₓ::AD.StateJacobianAD
-    Jgᵤ::AD.DesignJacobianAD
-    ∇f::AD.ObjectiveAD
+struct AutoDiffFactory <: AbstractAutoDiffFactory
+    Jgₓ::AutoDiff.Jacobian
+    Jgᵤ::AutoDiff.Jacobian
+    ∇f::AdjointStackObjective
 end
 
 # Counters
@@ -71,20 +71,22 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
                    η=100.0, tol=1e-8)
     n = n_variables(nlp)
     m = n_constraints(nlp)
-    update!(nlp, u0)
+    conv = update!(nlp, u0)
     ∇g = similar(u0) ; fill!(∇g, 0)
     gradient!(nlp, ∇g, u0)
     s_obj = scale_factor(norm(∇g, Inf), tol, η)
 
     # TODO: avoid forming whole Jacobian
-    jac = similar(u0, (m, n))
-    s_cons = similar(u0, m)
+    jac = similar(u0, (m, n)) ; fill!(jac, 0)
+    s_cons = similar(u0, m) ; fill!(s_cons, 0)
     jacobian!(nlp, jac, u0)
     for i in eachindex(s_cons)
         ∇c = @view jac[i, :]
         s_cons[i] = scale_factor(norm(∇c, Inf), tol, η)
     end
 
-    return MaxScaler(s_obj, s_cons, s_cons .* nlp.g_min, s_cons .* nlp.g_max)
+    g♭, g♯ = bounds(nlp, Constraints())
+
+    return MaxScaler(s_obj, s_cons, s_cons .* g♭, s_cons .* g♯)
 end
 

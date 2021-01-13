@@ -1,11 +1,19 @@
 # Implement kernels for polar formulation
 
 """
-residualFunction
+    power_balance(V, Ybus, Sbus, pv, pq)
 
-Assembly residual function for N-R power flow
+Assembly residual function for N-R power flow.
+In complex form, the balance equations writes
+
+``
+g(V) = V * (Y_{bus} * V)^* - S_{bus}
+``
+
+# Note
+Code adapted from MATPOWER.
 """
-function residualFunction(V, Ybus, Sbus, pv, pq)
+function power_balance(V, Ybus, Sbus, pv, pq)
     # form mismatch vector
     mis = V .* conj(Ybus * V) - Sbus
     # form residual vector
@@ -15,7 +23,16 @@ function residualFunction(V, Ybus, Sbus, pv, pq)
     return F
 end
 
-function residualJacobian(V, Ybus, pv, pq)
+"""
+    residual_jacobian(V, Ybus, pv, pq)
+
+Compute the Jacobian w.r.t. the state `x` of the power
+balance function [`power_balance`](@ref).
+
+# Note
+Code adapted from MATPOWER.
+"""
+function residual_jacobian(V, Ybus, ref, pv, pq)
     n = size(V, 1)
     Ibus = Ybus*V
     diagV       = sparse(1:n, 1:n, V, n, n)
@@ -45,14 +62,18 @@ function _state_jacobian(polar::PolarForm)
     Vre = rand(n)
     Vim = rand(n)
     V = Vre .+ 1im .* Vim
-    return residualJacobian(V, Y, pv, pq)
+    return residual_jacobian(V, Y, ref, pv, pq)
 end
 _sparsity_pattern(polar::PolarForm) = findnz(_state_jacobian(polar))
 
 """
     get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
 
-Computes the power injection at node "fr".
+Computes the power injection at node `fr`.
+In polar form, the power injection at node `i` satisfies
+```math
+p_{i} = \\sum_{j} v_{i} v_{j} (g_{ij} \\cos(\\theta_i - \\theta_j) + b_{ij} \\sin(\\theta_i - \\theta_j))
+```
 """
 function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
     P = 0.0
@@ -67,7 +88,11 @@ end
 """
     get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
 
-Computes the reactive power injection at node "fr".
+Computes the reactive power injection at node `fr`.
+In polar form, the power injection at node `i` satisfies
+```math
+q_{i} = \\sum_{j} v_{i} v_{j} (g_{ij} \\sin(\\theta_i - \\theta_j) - b_{ij} \\cos(\\theta_i - \\theta_j))
+```
 """
 function get_react_injection(fr::Int, v_m, v_a, ybus_re::Spmat{VI,VT}, ybus_im::Spmat{VI,VT}) where {VT <: AbstractVector, VI<:AbstractVector}
     Q = zero(eltype(v_m))
@@ -112,9 +137,9 @@ end
     end
 end
 
-function residualFunction_polar!(F, v_m, v_a,
-                                 ybus_re, ybus_im,
-                                 pinj, qinj, pv, pq, nbus)
+function residual_polar!(F, v_m, v_a,
+                         ybus_re, ybus_im,
+                         pinj, qinj, pv, pq, nbus)
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
@@ -130,10 +155,9 @@ function residualFunction_polar!(F, v_m, v_a,
     wait(ev)
 end
 
-@kernel function transfer_kernel!(vmag, vang, pinj, qinj,
-                        x, u, p, pv, pq, ref,
-                        ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                        ybus_im_nzval, pload)
+@kernel function transfer_kernel!(
+    vmag, vang, pinj, qinj, u, pv, pq, ref, pload, qload
+)
     i = @index(Global, Linear)
     npv = length(pv)
     npq = length(pq)
@@ -142,61 +166,24 @@ end
     # PV bus
     if i <= npv
         bus = pv[i]
-        qacc = 0
-        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
-            to = ybus_re_rowval[c]
-            aij = vang[bus] - vang[to]
-            # f_re = a * cos + b * sin
-            # f_im = a * sin - b * cos
-            coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-            coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
-            cos_val = cos(aij)
-            sin_val = sin(aij)
-            qacc += coef_cos * sin_val - coef_sin * cos_val
-        end
-        qinj[bus] = qacc
-        vang[bus] = x[i]
+        # P = Pg - Pd
         pinj[bus] = u[nref + i] - pload[bus]
         vmag[bus] = u[nref + npv + i]
-    # PQ bus
-    elseif i <= npv + npq
-        i_pq = i - npv
-        bus = pq[i_pq]
-        vang[bus] = x[npv+i_pq]
-        vmag[bus] = x[npv+npq+i_pq]
-        pinj[bus] = p[nref + i_pq]
-        qinj[bus] = p[nref + npq + i_pq]
     # REF bus
-    else i <= npv + npq + nref
-        i_ref = i - npv - npq
+    else
+        i_ref = i - npv
         bus = ref[i_ref]
-        pacc = 0
-        qacc = 0
-        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
-            to = ybus_re_rowval[c]
-            aij = vang[bus] - vang[to]
-            # f_re = a * cos + b * sin
-            # f_im = a * sin - b * cos
-            coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-            coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
-            cos_val = cos(aij)
-            sin_val = sin(aij)
-            pacc += coef_cos * cos_val + coef_sin * sin_val
-            qacc += coef_cos * sin_val - coef_sin * cos_val
-        end
-        pinj[bus] = pacc
-        qinj[bus] = qacc
         vmag[bus] = u[i_ref]
-        vang[bus] = p[i_ref]
+        vang[bus] = 0.0  # reference angle set to 0 by default
     end
 end
 
-# Transfer values in (x, u, p) to buffer
-function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u, p)
-    if isa(x, Array)
-        kernel! = transfer_kernel!(CPU(), 1)
-    else
+# Transfer values in (x, u) to buffer
+function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
+    if isa(u, CuArray)
         kernel! = transfer_kernel!(CUDADevice(), 256)
+    else
+        kernel! = transfer_kernel!(CPU(), 1)
     end
     nbus = length(buffer.vmag)
     pv = polar.indexing.index_pv
@@ -204,11 +191,10 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, x, u, p)
     ref = polar.indexing.index_ref
     ev = kernel!(
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
-        x, u, p,
+        u,
         pv, pq, ref,
-        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
-        polar.ybus_im.nzval, polar.active_load,
-        ndrange=nbus
+        polar.active_load, polar.reactive_load,
+        ndrange=(length(pv)+length(ref)),
     )
     wait(ev)
 end
@@ -249,7 +235,7 @@ end
 end
 
 # Refresh active power (needed to evaluate objective)
-function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::PolarNetworkState)
+function update!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
         kernel! = active_power_kernel!(CPU(), 1)
     else
@@ -308,7 +294,7 @@ end
     qg[i_gen] = inj + qload[bus]
 end
 
-function refresh!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::PolarNetworkState)
+function update!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
         kernel! = reactive_power_kernel!(CPU(), 1)
     else

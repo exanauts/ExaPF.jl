@@ -1,11 +1,16 @@
 """
-    bicgstab
+    bicgstab(A, b, P, xi;
+             tol=1e-8,
+             maxiter=size(A, 1),
+             verbose=false,
+             maxtol=1e20)
 
 BiCGSTAB implementation according to
-Van der Vorst, Henk A.
-"Bi-CGSTAB: A fast and smoothly converging variant of Bi-CG for the solution
-of nonsymmetric linear systems."
-SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
+
+> Van der Vorst, Henk A.
+> "Bi-CGSTAB: A fast and smoothly converging variant of Bi-CG for the solution of nonsymmetric linear systems."
+> SIAM Journal on scientific and Statistical Computing 13, no. 2 (1992): 631-644.
+
 """
 function bicgstab(A, b, P, xi;
                   tol=1e-8, maxiter=size(A, 1), verbose=false, maxtol=1e20)

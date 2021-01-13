@@ -5,19 +5,31 @@
 Evaluator working in the reduced space corresponding to the
 control variable `u`. Once a new point `u` is passed to the evaluator,
 the user needs to call the method `update!` to find the corresponding
-state `x(u)` satisfying the equilibrium equation `g(x(u), u) = 0`.
+state `x(u)` satisfying the balance equation `g(x(u), u) = 0`.
 
 Taking as input a given `AbstractFormulation`, the reduced evaluator
 builds the bounds corresponding to the control `u` and the state `x`,
-and initiate an `ADFactory` tailored to the problem. The reduced evaluator
+and initiate an `AutoDiffFactory` tailored to the problem. The reduced evaluator
 could be instantiated on the main memory, or on a specific device (currently,
 only CUDA is supported).
+
+## Note
+Mathematically, we set apart the state `x` from the control `u`,
+and use a third variable `y` --- the by-product --- to store the remaining
+values of the network.
+In the implementation of `ReducedSpaceEvaluator`,
+we only deal with a control `u` and an attribute `buffer`,
+storing all the physical values needed to describe the network.
+This attribute `buffer` stores the values of the control `u`, the state `x`
+and the by-product `y`. Each time we are calling the method `update!`,
+the values of the control are copied to the buffer, so as
+the algorithm use only the physical representation of the network, more
+convenient to use. Thus, the resolution of the balance equation
+involves only the physical representation `buffer`.
 
 """
 mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     model::AbstractFormulation
-    x::AbstractVector{T}
-    p::AbstractVector{T}
     λ::AbstractVector{T}
 
     x_min::AbstractVector{T}
@@ -30,14 +42,14 @@ mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
     g_max::AbstractVector{T}
 
     buffer::AbstractNetworkBuffer
-    ad::ADFactory
+    autodiff::AutoDiffFactory
     ∇gᵗ::AbstractMatrix
     linear_solver::LinearSolvers.AbstractLinearSolver
     ε_tol::Float64
 end
 
 function ReducedSpaceEvaluator(
-    model, x, u, p;
+    model, x, u;
     constraints=Function[state_constraint, power_constraints],
     linear_solver=DirectSolver(),
     ε_tol=1e-12,
@@ -45,28 +57,32 @@ function ReducedSpaceEvaluator(
 )
     # First, build up a network buffer
     buffer = get(model, PhysicalState())
-    # Initiate adjoint
-    λ = similar(x)
-    # Build up AD factory
-    jx, ju, adjoint_f = init_ad_factory(model, buffer)
-    ad = ADFactory(jx, ju, adjoint_f)
+    # Populate buffer with default values of the network, as stored
+    # inside model
+    init_buffer!(model, buffer)
+    # Build up AutoDiff factory
+    jx, ju, adjoint_f = init_autodiff_factory(model, buffer)
+    ad = AutoDiffFactory(jx, ju, adjoint_f)
 
     u_min, u_max = bounds(model, Control())
     x_min, x_max = bounds(model, State())
+    λ = similar(x_min)
 
     MT = model.AT
-    g_min = MT{eltype(x), 1}()
-    g_max = MT{eltype(x), 1}()
+    g_min = MT{eltype(x_min), 1}()
+    g_max = MT{eltype(x_min), 1}()
     for cons in constraints
         cb, cu = bounds(model, cons)
         append!(g_min, cb)
         append!(g_max, cu)
     end
 
-    return ReducedSpaceEvaluator(model, x, p, λ, x_min, x_max, u_min, u_max,
-                                 constraints, g_min, g_max,
-                                 buffer,
-                                 ad, jx.J, linear_solver, ε_tol)
+    return ReducedSpaceEvaluator(
+        model, λ, x_min, x_max, u_min, u_max,
+        constraints, g_min, g_max,
+        buffer,
+        ad, jx.J, linear_solver, ε_tol
+    )
 end
 function ReducedSpaceEvaluator(
     datafile;
@@ -78,26 +94,72 @@ function ReducedSpaceEvaluator(
     polar = PolarForm(pf, device)
 
     x0 = initial(polar, State())
-    p = initial(polar, Parameters())
     uk = initial(polar, Control())
 
     return ReducedSpaceEvaluator(
-        polar, x0, uk, p; options...
+        polar, x0, uk; options...
     )
 end
+
+type_array(nlp::ReducedSpaceEvaluator) = typeof(nlp.u_min)
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
-initial(nlp::ReducedSpaceEvaluator) = initial(nlp.model, Control())
-bounds(nlp::ReducedSpaceEvaluator, ::Variables) = nlp.u_min, nlp.u_max
-bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.g_min, nlp.g_max
+# Getters
+get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints
+function get(nlp::ReducedSpaceEvaluator, ::State)
+    x = similar(nlp.λ) ; fill!(x, 0)
+    get!(nlp.model, State(), x, nlp.buffer)
+    return x
+end
+get(nlp::ReducedSpaceEvaluator, ::PhysicalState) = nlp.buffer
+get(nlp::ReducedSpaceEvaluator, ::AutoDiffBackend) = nlp.autodiff
+# Physics
+get(nlp::ReducedSpaceEvaluator, ::PS.VoltageMagnitude) = nlp.buffer.vmag
+get(nlp::ReducedSpaceEvaluator, ::PS.VoltageAngle) = nlp.buffer.vang
+get(nlp::ReducedSpaceEvaluator, ::PS.ActivePower) = nlp.buffer.pg
+get(nlp::ReducedSpaceEvaluator, ::PS.ReactivePower) = nlp.buffer.qg
+function get(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkAttribute)
+    return get(nlp.model, attr)
+end
+
+# Setters
+function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkValues, values)
+    setvalues!(nlp.model, attr, values)
+end
+function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.ActiveLoad, values)
+    setvalues!(nlp.model, attr, values)
+    setvalues!(nlp.buffer, attr, values)
+end
+function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.ReactiveLoad, values)
+    setvalues!(nlp.model, attr, values)
+    setvalues!(nlp.buffer, attr, values)
+end
+
+# Transfer network values inside buffer
+function transfer!(
+    nlp::ReducedSpaceEvaluator, vm, va, pg, qg,
+)
+    setvalues!(nlp.buffer, PS.VoltageMagnitude(), vm)
+    setvalues!(nlp.buffer, PS.VoltageAngle(), va)
+    setvalues!(nlp.buffer, PS.ActivePower(), pg)
+    setvalues!(nlp.buffer, PS.ReactivePower(), qg)
+end
+
+# Initial position
+function initial(nlp::ReducedSpaceEvaluator)
+    return get(nlp.model, Control(), nlp.buffer)
+end
+
+# Bounds
+bounds(nlp::ReducedSpaceEvaluator, ::Variables) = (nlp.u_min, nlp.u_max)
+bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = (nlp.g_min, nlp.g_max)
 
 function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
-    x₀ = nlp.x
-    jac_x = nlp.ad.Jgₓ
-    # Transfer x, u, p into the network cache
-    transfer!(nlp.model, nlp.buffer, nlp.x, u, nlp.p)
+    jac_x = nlp.autodiff.Jgₓ
+    # Transfer control u into the network cache
+    transfer!(nlp.model, nlp.buffer, u)
     # Get corresponding point on the manifold
     conv = powerflow(nlp.model, jac_x, nlp.buffer, tol=nlp.ε_tol;
                      solver=nlp.linear_solver, verbose_level=verbose_level)
@@ -105,56 +167,68 @@ function update!(nlp::ReducedSpaceEvaluator, u; verbose_level=0)
         error("Newton-Raphson algorithm failed to converge ($(conv.norm_residuals))")
         return conv
     end
-    ∇gₓ = nlp.ad.Jgₓ.J
+    ∇gₓ = nlp.autodiff.Jgₓ.J
     nlp.∇gᵗ = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
     # Switch preconditioner to transpose mode
     if isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
         LinearSolvers.update!(nlp.linear_solver, nlp.∇gᵗ)
     end
 
-    # Update value of nlp.x with new network state
-    get!(nlp.model, State(), nlp.x, nlp.buffer)
-    # Refresh value of the active power of the generators
-    refresh!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.buffer)
+    # Refresh values of active and reactive powers at generators
+    update!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.buffer)
     return conv
 end
 
 function objective(nlp::ReducedSpaceEvaluator, u)
     # Take as input the current cache, updated previously in `update!`.
-    cost = cost_production(nlp.model, nlp.buffer.pg)
+    pg = get(nlp, PS.ActivePower())
+    cost = cost_production(nlp.model, pg)
     # TODO: determine if we should include λ' * g(x, u), even if ≈ 0
     return cost
+end
+
+function update_jacobian!(nlp::ReducedSpaceEvaluator, ::Control)
+    jacobian(nlp.model, nlp.autodiff.Jgᵤ, nlp.buffer, AutoDiff.ControlJacobian())
 end
 
 # compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
 # equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
 # (take λₖ_neg to avoid computing an intermediate array)
-function _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
-    g .= ∇fᵤ
-    mul!(g, transpose(∇gᵤ), λₖ_neg, -1.0, 1.0)
+function reduced_gradient!(
+    nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, u,
+)
+    λₖ = nlp.λ
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J
+    # Compute adjoint and store value inside λₖ
+    LinearSolvers.ldiv!(nlp.linear_solver, λₖ, nlp.∇gᵗ, ∂fₓ)
+    grad .= ∂fᵤ
+    mul!(grad, transpose(∇gᵤ), λₖ, -1.0, 1.0)
+end
+
+# Compute only full gradient wrt x and u
+function gradient_full!(nlp::ReducedSpaceEvaluator, gx, gu, u)
+    buffer = nlp.buffer
+    ∂obj = nlp.autodiff.∇f
+    # Evaluate adjoint of cost function and update inplace AdjointStackObjective
+    ∂cost(nlp.model, ∂obj, buffer)
+    copyto!(gx, ∂obj.∇fₓ)
+    copyto!(gu, ∂obj.∇fᵤ)
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     buffer = nlp.buffer
-    xₖ = nlp.x
-    ∇gₓ = nlp.ad.Jgₓ.J
-    # Evaluate Jacobian of power flow equation on current u
-    ∇gᵤ = jacobian(nlp.model, nlp.ad.Jgᵤ, buffer)
-    # Evaluate adjoint of cost function and update inplace ObjectiveAD
-    ∂cost(nlp.model, nlp.ad.∇f, buffer)
+    # Evaluate adjoint of cost function and update inplace AdjointStackObjective
+    ∂cost(nlp.model, nlp.autodiff.∇f, buffer)
+    ∇fₓ, ∇fᵤ = nlp.autodiff.∇f.∇fₓ, nlp.autodiff.∇f.∇fᵤ
 
-    ∇fₓ, ∇fᵤ = nlp.ad.∇f.∇fₓ, nlp.ad.∇f.∇fᵤ
-    # Update (negative) adjoint
-    λₖ_neg = nlp.λ
-    LinearSolvers.ldiv!(nlp.linear_solver, λₖ_neg, nlp.∇gᵗ, ∇fₓ)
-    _reduced_gradient!(g, ∇fᵤ, ∇gᵤ, λₖ_neg)
+    # Evaluate Jacobian of power flow equation on current u
+    update_jacobian!(nlp, Control())
+    reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ, u)
     return nothing
 end
 
 function constraint!(nlp::ReducedSpaceEvaluator, g, u)
-    xₖ = nlp.x
     ϕ = nlp.buffer
-    # First: state constraint
     mf = 1
     mt = 0
     for cons in nlp.constraints
@@ -164,6 +238,16 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
         cons(nlp.model, cons_, ϕ)
         mf += m_
     end
+end
+
+function jacobian_structure(nlp::ReducedSpaceEvaluator)
+    S = type_array(nlp)
+    m, n = n_constraints(nlp), n_variables(nlp)
+    nnzj = m * n
+    rows = zeros(Int, nnzj)
+    cols = zeros(Int, nnzj)
+    jacobian_structure!(nlp, rows, cols)
+    return rows, cols
 end
 
 function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
@@ -179,13 +263,11 @@ end
 
 function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     model = nlp.model
-    xₖ = nlp.x
-    ∇gₓ = nlp.ad.Jgₓ.J
-    ∇gᵤ = nlp.ad.Jgᵤ.J
-    nₓ = length(xₖ)
-    MT = nlp.model.AT
+    ∇gₓ = nlp.autodiff.Jgₓ.J
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J
+    nₓ = get(nlp.model, NumberOfState())
     μ = similar(nlp.λ)
-    ∂obj = nlp.ad.∇f
+    ∂obj = nlp.autodiff.∇f
     cnt = 1
 
     for cons in nlp.constraints
@@ -203,30 +285,15 @@ end
 
 function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
     model = nlp.model
-    xₖ = nlp.x
-    ∇gₓ = nlp.ad.Jgₓ.J
-    ∇gᵤ = nlp.ad.Jgᵤ.J
-    nₓ = length(xₖ)
-    μ = nlp.λ
-
-    ∂obj = nlp.ad.∇f
+    ∂obj = nlp.autodiff.∇f
     # Get adjoint
     jtprod(model, cons, ∂obj, nlp.buffer, v)
     jvx, jvu = ∂obj.∇fₓ, ∂obj.∇fᵤ
-    # jv .+= (ju .- ∇gᵤ' * μ)
-    LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jvx)
-    jv .+= jvu
-    mul!(jv, transpose(∇gᵤ), μ, -1.0, 1.0)
+    reduced_gradient!(nlp, jv, jvx, jvu)
 end
-function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
-    μ = nlp.λ
-    ∇gᵤ = nlp.ad.Jgᵤ.J
-    ∂obj = nlp.ad.∇f
-    jvx = ∂obj.jvₓ
-    jvu = ∂obj.jvᵤ
-    fill!(jvx, 0)
-    fill!(jvu, 0)
 
+function jtprod_full!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
+    ∂obj = nlp.autodiff.∇f
     fr_ = 0
     for cons in nlp.constraints
         n = size_constraint(nlp.model, cons)
@@ -238,9 +305,16 @@ function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
         jvu .+= ∂obj.∇fᵤ
         fr_ += n
     end
-    LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jvx)
-    jv .+= jvu
-    mul!(jv, transpose(∇gᵤ), μ, -1.0, 1.0)
+end
+
+function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    ∂obj = nlp.autodiff.∇f
+    jvx = ∂obj.jvₓ
+    jvu = ∂obj.jvᵤ
+    fill!(jvx, 0)
+    fill!(jvu, 0)
+    jtprod_full!(nlp, jvx, jvu, u, v)
+    reduced_gradient!(nlp, jv, jvx, jvu, u)
     return
 end
 
@@ -262,10 +336,6 @@ function sanity_check(nlp::ReducedSpaceEvaluator, u, cons)
     (n_inf, err_inf, n_sup, err_sup) = _check(u, nlp.u_min, nlp.u_max)
     @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
             err_sup, n_sup, err_inf, n_inf)
-    print("State    \t")
-    (n_inf, err_inf, n_sup, err_sup) = _check(nlp.x, nlp.x_min, nlp.x_max)
-    @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
-            err_sup, n_sup, err_inf, n_inf)
     print("Constraints\t")
     (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
     @printf("UB: %.4e (%d)    LB: %.4e (%d)\n",
@@ -281,7 +351,7 @@ function Base.show(io::IO, nlp::ReducedSpaceEvaluator)
     println(io, "    * #cons: ", m)
     println(io, "    * constraints:")
     for cons in nlp.constraints
-        println("        - ", cons)
+        println(io, "        - ", cons)
     end
     print(io, "    * linear solver: ", nlp.linear_solver)
 end
@@ -289,10 +359,7 @@ end
 function reset!(nlp::ReducedSpaceEvaluator)
     # Reset adjoint
     fill!(nlp.λ, 0)
-    # Reset initial state
-    x0 = initial(nlp.model, State())
-    copy!(nlp.x, x0)
     # Reset buffer
-    nlp.buffer = get(nlp.model, PhysicalState())
+    init_buffer!(nlp.model, nlp.buffer)
 end
 

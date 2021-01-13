@@ -1,6 +1,4 @@
 
-import Base: show
-
 """
     AbstractNLPEvaluator
 
@@ -30,6 +28,14 @@ Attribute corresponding to the constraints  attached
 to a given `AbstractNLPEvaluator`.
 """
 struct Constraints <: AbstractNLPAttribute end
+
+"""
+    AutoDiffBackend <: AbstractNLPAttribute end
+
+Attribute corresponding to the autodiff backend used
+inside the `AbstractNLPEvaluator`.
+"""
+struct AutoDiffBackend <: AbstractNLPAttribute end
 
 """
     n_variables(nlp::AbstractNLPEvaluator)
@@ -142,7 +148,9 @@ function reset! end
 
 include("common.jl")
 include("reduced_evaluator.jl")
+include("proxal_evaluators.jl")
 include("penalty.jl")
 include("auglag.jl")
 include("MOI_wrapper.jl")
+include("optimizers.jl")
 

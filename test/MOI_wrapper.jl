@@ -4,41 +4,6 @@ using MathOptInterface
 
 const MOI = MathOptInterface
 
-function moi_solve(
-    optimizer::MOI.AbstractOptimizer,
-    nlp::ExaPF.AbstractNLPEvaluator,
-)
-    block_data = MOI.NLPBlockData(nlp)
-    u♭, u♯ = ExaPF.bounds(nlp, ExaPF.Variables())
-    u0 = ExaPF.initial(nlp)
-    n = ExaPF.n_variables(nlp)
-    vars = MOI.add_variables(optimizer, n)
-    # Set bounds and initial values
-    for i in 1:n
-        MOI.add_constraint(
-            optimizer,
-            MOI.SingleVariable(vars[i]),
-            MOI.LessThan(u♯[i])
-        )
-        MOI.add_constraint(
-            optimizer,
-            MOI.SingleVariable(vars[i]),
-            MOI.GreaterThan(u♭[i])
-        )
-        MOI.set(optimizer, MOI.VariablePrimalStart(), vars[i], u0[i])
-    end
-    MOI.set(optimizer, MOI.NLPBlock(), block_data)
-    MOI.set(optimizer, MOI.ObjectiveSense(), MOI.MIN_SENSE)
-    MOI.optimize!(optimizer)
-    x_opt = [MOI.get(optimizer, MOI.VariablePrimal(), v) for v in vars]
-    solution = (
-        minimum=MOI.get(optimizer, MOI.ObjectiveValue()),
-        minimizer=x_opt
-    )
-    MOI.empty!(optimizer)
-    return solution
-end
-
 @testset "MOI wrapper" begin
     CASE57_SOLUTION = [
         1.0260825400262428,
@@ -58,13 +23,16 @@ end
 
     datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
     nlp = ExaPF.ReducedSpaceEvaluator(datafile)
-    optimizer = Ipopt.Optimizer(
-        print_level=0,
-        limited_memory_max_history=50,
-        hessian_approximation="limited-memory",
-        tol=1e-2,
-    )
-    solution = moi_solve(optimizer, nlp)
+    optimizer = Ipopt.Optimizer()
+    MOI.set(optimizer, MOI.RawParameter("print_level"), 0)
+    MOI.set(optimizer, MOI.RawParameter("limited_memory_max_history"), 50)
+    MOI.set(optimizer, MOI.RawParameter("hessian_approximation"), "limited-memory")
+    MOI.set(optimizer, MOI.RawParameter("tol"), 1e-2)
+
+    solution = ExaPF.optimize!(optimizer, nlp)
+    MOI.empty!(optimizer)
+    @test solution.status ∈ [MOI.OPTIMAL, MOI.LOCALLY_SOLVED]
     @test solution.minimum ≈ 3.7589338e+04
     @test solution.minimizer ≈ CASE57_SOLUTION atol=1e-6
 end
+
