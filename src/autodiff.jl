@@ -45,11 +45,12 @@ end
 
 function _init_seed!(t2sseeds::Array{ForwardDiff.Partials{M,t1s{N,V}},1}, coloring, ncolor, nmap) where {M,N,V}
     t2sseedvec = zeros(t1s{N,V}, nmap)
-    @inbounds for i in 1:nmap
+    @show M
+    @inbounds for i in 1:M
         for j in 1:nmap
             t2sseedvec[j] = 1.0
         end
-        t2sseeds[i] = ForwardDiff.Partials{nmap, t1s{N,V}}(NTuple{nmap, t1s{N,V}}(t2sseedvec))
+        t2sseeds[i] = ForwardDiff.Partials{M, t1s{N,V}}(NTuple{M, t1s{N,V}}(t2sseedvec))
         @show t2sseeds[i]
         t2sseedvec .= 0
     end
@@ -390,8 +391,8 @@ Creates an object for the state Jacobian
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
 struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
-    H::Array{SMT}
-    compressedH::Array{MT}
+    H::SMT
+    compressedH::MT
     coloring::VI
     t1sseeds::VP
     t2sseeds::VP2
@@ -464,24 +465,19 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         if F isa CuArray
             J = CuSparseMatrixCSR(J)
         end
-        H = Array{SMT}(undef, nmap)
-        for i in 1:nmap
-            H[i] = copy(J)
-        end
+        H = copy(J)   
+        @show size(H)
         x = VT(zeros(Float64, nv_m + nv_a))
-        t2sx = A{t2s{nmap,ncolor,Float64}}(x)
-        t2sF = A{t2s{nmap,ncolor,Float64}}(zeros(Float64, nmap))
+        t2sx = A{t2s{1,ncolor,Float64}}(x)
+        t2sF = A{t2s{1,ncolor,Float64}}(zeros(Float64, nmap))
         t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
         @show typeof(t1sseeds)
-        t2sseeds = A{ForwardDiff.Partials{nmap,t1s{ncolor,Float64}}}(undef, nmap)
+        t2sseeds = A{ForwardDiff.Partials{1,t1s{ncolor,Float64}}}(undef, nmap)
         @show typeof(t2sseeds)
         _init_seed!(t1sseeds, coloring, ncolor, nmap)
         _init_seed!(t2sseeds, coloring, ncolor, nmap)
 
-        compressedH = Array{MT}(undef, nmap)
-        for i in 1:nmap
-            compressedH[i] = copy(MT(zeros(Float64, ncolor, nmap)))
-        end
+        compressedH = MT(zeros(Float64, ncolor, nmap))
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
         # Views
@@ -495,27 +491,17 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         )
     end
 end
-function getpartials(compressedH::Array{Array{T, 2}}, t2sF, nbus) where T
-    @show size(compressedH)
-    @show size(compressedH[1])
-    @show size(t2sF)
-    @show t2sF[1].partials[1].value
-    @show length(t2sF[1].partials[1].partials)
-    @show length(ForwardDiff.partials(t2sF[1]).values)
-    @show t2sF[1].partials[1].partials
-    @show t2sF[1].partials[2].partials
-    # @show size t2sF.partials
-    # for idx in 1:length(compressedH)
-    # for idx in 1:1
-    #     getpartials_cpu(compressedH, t2sF, idx)
-    # end
-    #     compressedH[idx][:,i] .= ForwardDiff.partials.((ForwardDiff.partials.(t2sF[idx])).values[i]).values
+function getpartials(compressedH::Array{T, 2}, t2sF, nbus) where T
+    for i in 1:length(t2sF)
+        compressedH[:,i] .= t2sF[i].partials[1].partials
+    end
 end
 
 function seed_kernel!(t2sseeds::AbstractArray{ForwardDiff.Partials{M,t1s{N,V}}},
 t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}},nbus) where {T,V,M,N}
     # seed_kernel_cpu!(t1svarx, varx, t1sseeds)
-    tupt2sseeds=NTuple{length(t2sseeds),ForwardDiff.Partials{M,t1s{N,V}}}(t2sseeds)
+    @show M
+    tupt2sseeds=NTuple{1,ForwardDiff.Partials{M,t1s{N,V}}}(t2sseeds[1:1])
     tupt1sseeds=NTuple{length(t1sseeds),ForwardDiff.Partials{N,V}}(t1sseeds)
     @show tupt2sseeds[1]
     @show tupt1sseeds[1]
@@ -524,7 +510,9 @@ t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray
     seed_inds = 1:length(t2svarx)
     dual_inds = seed_inds
     t1svarx = ForwardDiff.Dual{T,V,N}.(view(varx, dual_inds), getindex.(Ref(tupt1sseeds), seed_inds))
-    t2svarx[dual_inds] .= ForwardDiff.Dual{T,t1s{N,V},M}.(view(t1svarx, dual_inds), getindex.(Ref(tupt2sseeds), seed_inds))
+    vv = view(t1svarx, dual_inds)
+    idx = getindex.(Ref(tupt2sseeds), 1:M)
+    t2svarx[dual_inds] .= ForwardDiff.Dual{T,t1s{N,V},M}.(view(t1svarx, dual_inds), getindex.(Ref(tupt2sseeds), 1:M))
     # @show t2svarx[1]
     @show t2svarx[1].value.value
     @show t2svarx[1].value.partials[1]
@@ -575,7 +563,7 @@ function residual_hessian!(arrays::Hessian,
         getpartials(arrays.compressedH, arrays.t2sF, nbus)
     end
     @timeit timer "Uncompress" begin
-        uncompress!(arrays.H, arrays.compressedH, arrays.coloring)
+        uncompress_kernel!(arrays.H, arrays.compressedH, arrays.coloring)
     end
     return nothing
 end
