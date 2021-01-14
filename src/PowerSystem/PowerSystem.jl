@@ -116,6 +116,12 @@ Base MVA of the network.
 """
 struct BaseMVA <: AbstractNetworkAttribute end
 
+"""
+    BusAdmittanceMatrix <: AbstractNetworkAttribute
+
+Bus admittance matrix associated with the topology of the network.
+"""
+struct BusAdmittanceMatrix <: AbstractNetworkAttribute end
 
 abstract type AbstractIndexing <: AbstractNetworkAttribute end
 
@@ -241,6 +247,15 @@ v_min, v_max = bounds(pf, Buses(), VoltageMagnitude())
 ```
 """
 function bounds end
+
+struct Branches{T}
+    Yff::Vector{T}
+    Yft::Vector{T}
+    Ytf::Vector{T}
+    Ytt::Vector{T}
+    from_buses::Vector{Int}
+    to_buses::Vector{Int}
+end
 
 # Utils
 function get_bus_id_to_indexes(bus)

@@ -189,6 +189,7 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     ev = kernel!(
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
         u,
@@ -246,6 +247,7 @@ function update!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::Pol
     ref = polar.indexing.index_ref
     pv_to_gen = polar.indexing.index_pv_to_gen
     ref_to_gen = polar.indexing.index_ref_to_gen
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     range_ = length(pv) + length(ref)
 
@@ -253,8 +255,8 @@ function update!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::Pol
         buffer.pg,
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
         pv, ref, pv_to_gen, ref_to_gen,
-        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
-        polar.ybus_im.nzval, polar.active_load,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+        ybus_im.nzval, polar.active_load,
         ndrange=range_
     )
     wait(ev)
@@ -305,14 +307,15 @@ function update!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::P
     ref = polar.indexing.index_ref
     pv_to_gen = polar.indexing.index_pv_to_gen
     ref_to_gen = polar.indexing.index_ref_to_gen
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     range_ = length(pv) + length(ref)
     ev = kernel!(
         buffer.qg,
         buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
         pv, ref, pv_to_gen, ref_to_gen,
-        polar.ybus_re.nzval, polar.ybus_re.colptr, polar.ybus_re.rowval,
-        polar.ybus_im.nzval, polar.reactive_load,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+        ybus_im.nzval, polar.reactive_load,
         ndrange=range_
     )
     wait(ev)
@@ -330,6 +333,93 @@ end
         i_ = i - npv
         ig = ref_to_gen[i_]
         g[i_ + shift] = qg[ig]
+    end
+end
+
+@kernel function branch_flow_kernel!(
+        slines, vmag, vang,
+        yff_re, yft_re, ytf_re, ytt_re,
+        yff_im, yft_im, ytf_im, ytt_im,
+        f, t, nlines,
+   )
+    ℓ = @index(Global, Linear)
+    fr_bus = f[ℓ]
+    to_bus = t[ℓ]
+
+    Δθ = vang[fr_bus] - vang[to_bus]
+    cosθ = cos(Δθ)
+    sinθ = sin(Δθ)
+
+    # branch apparent power limits - from bus
+    yff_abs = yff_re[ℓ]^2 + yff_im[ℓ]^2
+    yft_abs = yft_re[ℓ]^2 + yft_im[ℓ]^2
+    yre_fr =   yff_re[ℓ] * yft_re[ℓ] + yff_im[ℓ] * yft_im[ℓ]
+    yim_fr = - yff_re[ℓ] * yft_im[ℓ] + yff_im[ℓ] * yft_re[ℓ]
+
+    fr_flow = vmag[fr_bus]^2 * (
+        yff_abs * vmag[fr_bus]^2 + yft_abs * vmag[to_bus]^2 +
+        2 * vmag[fr_bus] * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
+    )
+    slines[ℓ] = fr_flow
+
+    # branch apparent power limits - to bus
+    ytf_abs = ytf_re[ℓ]^2 + ytf_im[ℓ]^2
+    ytt_abs = ytt_re[ℓ]^2 + ytt_im[ℓ]^2
+    yre_to =   ytf_re[ℓ] * ytt_re[ℓ] + ytf_im[ℓ] * ytt_im[ℓ]
+    yim_to = - ytf_re[ℓ] * ytt_im[ℓ] + ytf_im[ℓ] * ytt_re[ℓ]
+
+    to_flow = vmag[to_bus]^2 * (
+        ytf_abs * vmag[fr_bus]^2 + ytt_abs * vmag[to_bus]^2 +
+        2 * vmag[fr_bus] * vmag[to_bus] * (yre_to * cosθ - yim_to * sinθ)
+    )
+    slines[ℓ + nlines] = to_flow
+end
+
+function branch_flow_kernel_zygote(
+        yff_re, yft_re, ytf_re, ytt_re,
+        yff_im, yft_im, ytf_im, ytt_im,
+        fr_vmag, to_vmag,
+        cosθ, sinθ
+   )
+
+    # branch apparent power limits - from bus
+    yff_abs = yff_re.^2 .+ yff_im.^2
+    yft_abs = yft_re.^2 .+ yft_im.^2
+    yre_fr =   yff_re .* yft_re .+ yff_im .* yft_im
+    yim_fr = .- yff_re .* yft_im .+ yff_im .* yft_re
+
+    fr_flow = fr_vmag.^2 .* (
+        yff_abs .* fr_vmag.^2 .+ yft_abs .* to_vmag.^2 .+
+        2 .* fr_vmag .* to_vmag .* (yre_fr .* cosθ .- yim_fr .* sinθ)
+    )
+
+    # branch apparent power limits - to bus
+    ytf_abs = ytf_re.^2 + ytf_im.^2
+    ytt_abs = ytt_re.^2 + ytt_im.^2
+    yre_to =   ytf_re .* ytt_re .+ ytf_im .* ytt_im
+    yim_to = - ytf_re .* ytt_im .+ ytf_im .* ytt_re
+
+    to_flow = to_vmag.^2 .* (
+        ytf_abs .* fr_vmag.^2 .+ ytt_abs .* to_vmag.^2 .+
+        2 .* fr_vmag .* to_vmag .* (yre_to .* cosθ .- yim_to .* sinθ)
+    )
+    return vcat(fr_flow, to_flow)
+end
+
+"""
+    accumulate_view(x, vx, indices)
+
+.+= is broken on views with redundant indices in CUDA.jl leading to a bug Zygote (see #89).
+This implements the .+= operator.
+
+"""
+@kernel function accumulate_view!(x, vx, indices)
+    # This is parallelizable
+    id = @index(Global, Linear)
+    for (j, idx) in enumerate(indices)
+        if id == idx
+            x[id] += vx[j]
+        end
     end
 end
 
