@@ -50,8 +50,10 @@ function _init_seed!(t2sseeds::Array{ForwardDiff.Partials{M,t1s{N,V}},1}, colori
             t2sseedvec[j] = 1.0
         end
         t2sseeds[i] = ForwardDiff.Partials{nmap, t1s{N,V}}(NTuple{nmap, t1s{N,V}}(t2sseedvec))
+        @show t2sseeds[i]
         t2sseedvec .= 0
     end
+    
 end
 
 """
@@ -155,63 +157,16 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
 end
 
 """
-    seed_kernel_cpu!
+    seed_kernel!(t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t1svarx::AbstractArray{ForwardDiff.Dual{T,V,N}}, nbus) where {T,V,N}
 
-Seeding on the CPU, not parallelized.
-
-"""
-function seed_kernel_cpu!(
-    duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
-    seeds::AbstractArray{ForwardDiff.Partials{N,V}}
-) where {T,V,N}
-    for i in 1:size(duals,1)
-        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
-    end
-end
+Calling the seeding kernel
 
 """
-    seed_kernel_gpu!
-
-Seeding on GPU parallelized over the `ncolor` number of duals
-
-"""
-function seed_kernel_gpu!(
-    duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
-    seeds::AbstractArray{ForwardDiff.Partials{N,V}}
-) where {T,V,N}
-    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    stride = blockDim().x * gridDim().x
-    for i in index:stride:size(duals,1)
-        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
-    end
-end
-
-"""
-    seed_kernel!
-
-Calling the GPU seeding kernel
-
-"""
-function seed_kernel!(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
-    nthreads = 256
-    nblocks = div(nbus, nthreads, RoundUp)
-    CUDA.@sync begin
-        @cuda threads=nthreads blocks=nblocks seed_kernel_gpu!(
-            t1svarx,
-            varx,
-            t1sseeds,
-        )
-    end
-end
-
-"""
-    seed_kernel!(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
-
-Calling the CPU seeding kernel
-
-"""
-function seed_kernel!(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
-    seed_kernel_cpu!(t1svarx, varx, t1sseeds)
+function seed_kernel!(t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t1svarx::AbstractArray{ForwardDiff.Dual{T,V,N}}, nbus) where {T,V,N}
+    # seed_kernel_cpu!(t1svarx, varx, t1sseeds)
+    tupseeds=NTuple{length(t1sseeds),ForwardDiff.Partials{N,V}}(t1sseeds)
+    inds = 1:length(t1svarx)
+    t1svarx[inds] .= ForwardDiff.Dual{T,V,N}.(view(varx, inds), getindex.(Ref(tupseeds), inds))
 end
 
 """
@@ -402,7 +357,7 @@ function getpartials_cpu(compressedH, t2sF, idx)
 
     @show typeof(ForwardDiff.partials.(t2sF[1]))
     # @show length(ForwardDiff.partials.(t2sF[1]))
-    @show ForwardDiff.partials.((ForwardDiff.partials.(t2sF[idx])).values[12]).values
+    # @show ForwardDiff.partials.((ForwardDiff.partials.(t2sF[idx])).values[12]).values
     for i in 1:size(t2sF,1) # Go over outputs
         # @show typeof(ForwardDiff.partials.(t2sF[i]))
         # @show typeof(ForwardDiff.partials.(t2sF[i]).values)
@@ -434,7 +389,7 @@ Creates an object for the state Jacobian
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct StateHessianAD{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD} <: AbstractHessian
+struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
     H::Array{SMT}
     compressedH::Array{MT}
     coloring::VI
@@ -447,7 +402,7 @@ struct StateHessianAD{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD} <: AbstractHessi
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t2svarx::SubD
-    function StateHessianAD(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    function Hessian(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
         if F isa Array
@@ -520,6 +475,7 @@ struct StateHessianAD{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD} <: AbstractHessi
         @show typeof(t1sseeds)
         t2sseeds = A{ForwardDiff.Partials{nmap,t1s{ncolor,Float64}}}(undef, nmap)
         @show typeof(t2sseeds)
+        _init_seed!(t1sseeds, coloring, ncolor, nmap)
         _init_seed!(t2sseeds, coloring, ncolor, nmap)
 
         compressedH = Array{MT}(undef, nmap)
@@ -539,31 +495,49 @@ struct StateHessianAD{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD} <: AbstractHessi
         )
     end
 end
-
-function seeding(t2sseeds, t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t2svarx, nbus) where {N, V}
-    @show typeof(t2sseeds)
-    @show typeof(t1sseeds)
-    myseed_kernel_cpu(t2svarx, varx, t2sseeds, t1sseeds)
+function getpartials(compressedH::Array{Array{T, 2}}, t2sF, nbus) where T
+    @show size(compressedH)
+    @show size(compressedH[1])
+    @show size(t2sF)
+    @show t2sF[1].partials[1].value
+    @show length(t2sF[1].partials[1].partials)
+    @show length(ForwardDiff.partials(t2sF[1]).values)
+    @show t2sF[1].partials[1].partials
+    @show t2sF[1].partials[2].partials
+    # @show size t2sF.partials
+    # for idx in 1:length(compressedH)
+    # for idx in 1:1
+    #     getpartials_cpu(compressedH, t2sF, idx)
+    # end
+    #     compressedH[idx][:,i] .= ForwardDiff.partials.((ForwardDiff.partials.(t2sF[idx])).values[i]).values
 end
 
-function myseed_kernel_cpu(
-    duals::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}}, 
-    x,
-    t2sseeds::Array{ForwardDiff.Partials{M,t1s{N,V}},1},
-    t1sseeds::Vector{ForwardDiff.Partials{N,V}}
-) where {T,V,M,N}
-    @show M, N
-    for i in 1:size(duals,1)
-        # duals[i] = ForwardDiff.Dual{T,t1s{N},N}(ForwardDiff.Dual{T,V,N}(x[i], t1sseeds[i]), t2sseeds[i])
-        @show typeof(duals[i])
-        @show typeof(ForwardDiff.Dual{T,V,N}(x[i]))
-        # duals[i] = ForwardDiff.Dual{T,t1s{N,V},M}(ForwardDiff.Dual{T,V,N}(x[i], t1sseeds[i]))
-        duals[i] = ForwardDiff.Dual{T,t1s{N,V},M}(ForwardDiff.Dual{T,V,N}(x[i]))
-    end
+function seed_kernel!(t2sseeds::AbstractArray{ForwardDiff.Partials{M,t1s{N,V}}},
+t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}},nbus) where {T,V,M,N}
+    # seed_kernel_cpu!(t1svarx, varx, t1sseeds)
+    tupt2sseeds=NTuple{length(t2sseeds),ForwardDiff.Partials{M,t1s{N,V}}}(t2sseeds)
+    tupt1sseeds=NTuple{length(t1sseeds),ForwardDiff.Partials{N,V}}(t1sseeds)
+    @show tupt2sseeds[1]
+    @show tupt1sseeds[1]
+    # @show t2sseeds
+    # @show t1sseeds
+    seed_inds = 1:length(t2svarx)
+    dual_inds = seed_inds
+    t1svarx = ForwardDiff.Dual{T,V,N}.(view(varx, dual_inds), getindex.(Ref(tupt1sseeds), seed_inds))
+    t2svarx[dual_inds] .= ForwardDiff.Dual{T,t1s{N,V},M}.(view(t1svarx, dual_inds), getindex.(Ref(tupt2sseeds), seed_inds))
+    # @show t2svarx[1]
+    @show t2svarx[1].value.value
+    @show t2svarx[1].value.partials[1]
+    # @show typeof(t2svarx[1].value.partials)
+    @show t2svarx[1].partials[1].value
+    # for v in t2svarx
+    #     @show ForwardDiff.value.(ForwardDiff.partials(v))
+    # end
+    @show t2svarx[1].partials[1].partials
 end
 
-function residualHessianAD!(arrays::StateHessianAD,
-                             residualFunction_polar!,
+function residual_hessian!(arrays::Hessian,
+                             residual_polar!,
                              v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                              timer = nothing)
     @timeit timer "Before" begin
@@ -581,12 +555,12 @@ function residualHessianAD!(arrays::StateHessianAD,
         end
     end
     @timeit timer "Seeding" begin
-        @show typeof(arrays.t1sseeds)
-        seeding(arrays.t2sseeds, arrays.t1sseeds, arrays.varx, arrays.t2svarx, nbus)
+        seed_kernel!(arrays.t2sseeds, arrays.t1sseeds, arrays.varx, arrays.t2svarx, nbus)
     end
+    # @show arrays.t2svarx[1]
 
     @timeit timer "Function" begin
-        residualFunction_polar!(
+        residual_polar!(
             arrays.t2sF,
             view(arrays.t2sx, 1:nv_m),
             view(arrays.t2sx, nv_m+1:nv_m+nv_a),
@@ -595,6 +569,7 @@ function residualHessianAD!(arrays::StateHessianAD,
             pv, pq, nbus
         )
     end
+    # @show arrays.t2sF[1]
 
     @timeit timer "Get partials" begin
         getpartials(arrays.compressedH, arrays.t2sF, nbus)
