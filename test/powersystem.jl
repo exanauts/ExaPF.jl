@@ -198,4 +198,3 @@ end
         @test pf_original.Ybus != pf_removed.Ybus
     end
 end
-    
