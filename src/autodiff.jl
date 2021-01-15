@@ -3,7 +3,7 @@ module AutoDiff
 
 using CUDA
 using CUDA.CUSPARSE
-using ForwardDiff
+using ForwardDiff: Partials, partials, Dual
 using KernelAbstractions
 using SparseArrays
 using TimerOutputs
@@ -499,29 +499,15 @@ end
 
 function seed_kernel!(t2sseeds::AbstractArray{ForwardDiff.Partials{M,t1s{N,V}}},
 t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}},nbus) where {T,V,M,N}
-    # seed_kernel_cpu!(t1svarx, varx, t1sseeds)
-    @show M
-    tupt2sseeds=NTuple{1,ForwardDiff.Partials{M,t1s{N,V}}}(t2sseeds[1:1])
+    n = length(varx)
+    partiallambda = Partials{1,t1s{N,V}}.(NTuple{1,t1s{N,V}}.(ones(t1s{N,V}, n)))
+    # List of vectors to compute H*v off. Here it is only lambda.
+    seedlambda=NTuple{1,ForwardDiff.Partials{M,t1s{N,V}}}(partiallambda[1:1])
     tupt1sseeds=NTuple{length(t1sseeds),ForwardDiff.Partials{N,V}}(t1sseeds)
-    @show tupt2sseeds[1]
-    @show tupt1sseeds[1]
-    # @show t2sseeds
-    # @show t1sseeds
-    seed_inds = 1:length(t2svarx)
+    seed_inds = 1:n
     dual_inds = seed_inds
     t1svarx = ForwardDiff.Dual{T,V,N}.(view(varx, dual_inds), getindex.(Ref(tupt1sseeds), seed_inds))
-    vv = view(t1svarx, dual_inds)
-    idx = getindex.(Ref(tupt2sseeds), 1:M)
-    t2svarx[dual_inds] .= ForwardDiff.Dual{T,t1s{N,V},M}.(view(t1svarx, dual_inds), getindex.(Ref(tupt2sseeds), 1:M))
-    # @show t2svarx[1]
-    @show t2svarx[1].value.value
-    @show t2svarx[1].value.partials[1]
-    # @show typeof(t2svarx[1].value.partials)
-    @show t2svarx[1].partials[1].value
-    # for v in t2svarx
-    #     @show ForwardDiff.value.(ForwardDiff.partials(v))
-    # end
-    @show t2svarx[1].partials[1].partials
+    t2svarx[dual_inds] .= ForwardDiff.Dual{T,t1s{N,V},M}.(view(t1svarx, dual_inds), getindex.(Ref(seedlambda), 1:M))
 end
 
 function residual_hessian!(arrays::Hessian,
