@@ -3,7 +3,8 @@ module AutoDiff
 
 using CUDA
 using CUDA.CUSPARSE
-using ForwardDiff: Partials, partials, Dual
+# using ForwardDiff: Partials, partials, Dual
+using ForwardDiff
 using KernelAbstractions
 using SparseArrays
 using TimerOutputs
@@ -27,6 +28,9 @@ abstract type AbstractJacobian end
 struct StateJacobian <: AbstractJacobian end
 struct ControlJacobian <: AbstractJacobian end
 abstract type AbstractHessian end
+struct StateStateHessian <: AbstractHessian end
+struct ControlStateHessian <: AbstractHessian end
+struct ControlControlHessian <: AbstractHessian end
 t1s{N,V} = ForwardDiff.Dual{Nothing,V, N} where {N,V}
 t2s{M,N,V} =  ForwardDiff.Dual{Nothing,t1s{N,V}, M} where {M,N,V}
 
@@ -45,13 +49,11 @@ end
 
 function _init_seed!(t2sseeds::Array{ForwardDiff.Partials{M,t1s{N,V}},1}, coloring, ncolor, nmap) where {M,N,V}
     t2sseedvec = zeros(t1s{N,V}, nmap)
-    @show M
     @inbounds for i in 1:M
         for j in 1:nmap
             t2sseedvec[j] = 1.0
         end
         t2sseeds[i] = ForwardDiff.Partials{M, t1s{N,V}}(NTuple{M, t1s{N,V}}(t2sseedvec))
-        @show t2sseeds[i]
         t2sseedvec .= 0
     end
     
@@ -352,28 +354,6 @@ function Base.show(io::IO, jacobian::AbstractJacobian)
     print(io, "Number of Jacobian colors: ", ncolor)
 end
 
-function getpartials_cpu(compressedH, t2sF, idx)
-    # @show typeof(t2sF)
-    # @show typeof(ForwardDiff.partials.((ForwardDiff.partials.(t2sF[1])).values[1]).values)
-
-    @show typeof(ForwardDiff.partials.(t2sF[1]))
-    # @show length(ForwardDiff.partials.(t2sF[1]))
-    # @show ForwardDiff.partials.((ForwardDiff.partials.(t2sF[idx])).values[12]).values
-    for i in 1:size(t2sF,1) # Go over outputs
-        # @show typeof(ForwardDiff.partials.(t2sF[i]))
-        # @show typeof(ForwardDiff.partials.(t2sF[i]).values)
-        # compressedH[idx][:, i] .= ForwardDiff.partials.(t2sF[i]).values
-        # compressedH[idx][:, i] .= ForwardDiff.partials.(t2sF[i]).values
-        # @show typeof(ForwardDiff.partials.((ForwardDiff.partials.(t2sF[idx])).values[i]).values)
-        # @show typeof(ForwardDiff.partials.((ForwardDiff.partials.(t2sF[idx])).values[i]))
-        # @show length(ForwardDiff.partials.((ForwardDiff.partials.(t2sF[idx])).values[i]).values)
-        # @show typeof(compressedH[idx][:,i])
-        # @show length(compressedH[idx][:,i])
-        compressedH[idx][:,i] .= ForwardDiff.partials.((ForwardDiff.partials.(t2sF[idx])).values[i]).values
-    end
-end
-
-
 """
     StateHessianAD
 
@@ -403,7 +383,7 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t2svarx::SubD
-    function Hessian(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    function Hessian(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, type)
         nv_m = size(v_m, 1)
         nv_a = size(v_a, 1)
         if F isa Array
@@ -466,14 +446,11 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
             J = CuSparseMatrixCSR(J)
         end
         H = copy(J)   
-        @show size(H)
         x = VT(zeros(Float64, nv_m + nv_a))
         t2sx = A{t2s{1,ncolor,Float64}}(x)
         t2sF = A{t2s{1,ncolor,Float64}}(zeros(Float64, nmap))
         t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-        @show typeof(t1sseeds)
         t2sseeds = A{ForwardDiff.Partials{1,t1s{ncolor,Float64}}}(undef, nmap)
-        @show typeof(t2sseeds)
         _init_seed!(t1sseeds, coloring, ncolor, nmap)
         _init_seed!(t2sseeds, coloring, ncolor, nmap)
 
@@ -491,16 +468,16 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         )
     end
 end
-function getpartials(compressedH::Array{T, 2}, t2sF, nbus) where T
+function getpartials(compressedH::Array{T, 2}, t2sF) where T
     for i in 1:length(t2sF)
         compressedH[:,i] .= t2sF[i].partials[1].partials
     end
 end
 
-function seed_kernel!(t2sseeds::AbstractArray{ForwardDiff.Partials{M,t1s{N,V}}},
-t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}},nbus) where {T,V,M,N}
+function seed_kernel!(lambda::AbstractVector,
+t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}}) where {T,V,M,N}
     n = length(varx)
-    partiallambda = Partials{1,t1s{N,V}}.(NTuple{1,t1s{N,V}}.(ones(t1s{N,V}, n)))
+    partiallambda = ForwardDiff.Partials{1,t1s{N,V}}.(NTuple{1,t1s{N,V}}.(t1s{N,V}.(lambda)))
     # List of vectors to compute H*v off. Here it is only lambda.
     seedlambda=NTuple{1,ForwardDiff.Partials{M,t1s{N,V}}}(partiallambda[1:1])
     tupt1sseeds=NTuple{length(t1sseeds),ForwardDiff.Partials{N,V}}(t1sseeds)
@@ -510,47 +487,32 @@ t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray
     t2svarx[dual_inds] .= ForwardDiff.Dual{T,t1s{N,V},M}.(view(t1svarx, dual_inds), getindex.(Ref(seedlambda), 1:M))
 end
 
-function residual_hessian!(arrays::Hessian,
+function residual_hessian_vecprod!(arrays::Hessian,
                              residual_polar!,
                              v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
-                             timer = nothing)
-    @timeit timer "Before" begin
-        @timeit timer "Setup" begin
-            nv_m = size(v_m, 1)
-            nv_a = size(v_a, 1)
-            nmap = size(arrays.map, 1)
-            n = nv_m + nv_a
-        end
-        @timeit timer "Arrays" begin
-            arrays.x[1:nv_m] .= v_m
-            arrays.x[nv_m+1:nv_m+nv_a] .= v_a
-            arrays.t2sx .= arrays.x
-            arrays.t2sF .= 0.0
-        end
-    end
-    @timeit timer "Seeding" begin
-        seed_kernel!(arrays.t2sseeds, arrays.t1sseeds, arrays.varx, arrays.t2svarx, nbus)
-    end
-    # @show arrays.t2svarx[1]
+                             lambda::AbstractVector, type::AbstractHessian)
+    nv_m = size(v_m, 1)
+    nv_a = size(v_a, 1)
+    nmap = size(arrays.map, 1)
+    n = nv_m + nv_a
+    arrays.x[1:nv_m] .= v_m
+    arrays.x[nv_m+1:nv_m+nv_a] .= v_a
+    arrays.t2sx .= arrays.x
+    arrays.t2sF .= 0.0
 
-    @timeit timer "Function" begin
-        residual_polar!(
-            arrays.t2sF,
-            view(arrays.t2sx, 1:nv_m),
-            view(arrays.t2sx, nv_m+1:nv_m+nv_a),
-            ybus_re, ybus_im,
-            pinj, qinj,
-            pv, pq, nbus
-        )
-    end
-    # @show arrays.t2sF[1]
+    seed_kernel!(lambda, arrays.t1sseeds, arrays.varx, arrays.t2svarx)
 
-    @timeit timer "Get partials" begin
-        getpartials(arrays.compressedH, arrays.t2sF, nbus)
-    end
-    @timeit timer "Uncompress" begin
-        uncompress_kernel!(arrays.H, arrays.compressedH, arrays.coloring)
-    end
+    residual_polar!(
+        arrays.t2sF,
+        view(arrays.t2sx, 1:nv_m),
+        view(arrays.t2sx, nv_m+1:nv_m+nv_a),
+        ybus_re, ybus_im,
+        pinj, qinj,
+        pv, pq, nbus
+    )
+
+    getpartials(arrays.compressedH, arrays.t2sF)
+    uncompress_kernel!(arrays.H, arrays.compressedH, arrays.coloring)
     return nothing
 end
 

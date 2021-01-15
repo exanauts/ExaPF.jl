@@ -89,12 +89,6 @@ const PS = PowerSystem
     npv = size(pv, 1)
     npq = size(pq, 1)
 
-    # hessianAD = ExaPF.AD.StateHessianAD(F, Vm, Va,
-    #                                             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
-    # ExaPF.AD.residualHessianAD!(
-    #     hessianAD, ExaPF.residualFunction_polar!, Vm, Va,
-    #     ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
-
     @testset "Computing residuals" begin
         F = zeros(Float64, npv + 2*npq)
         # First compute a reference value for resisual computed at V
@@ -126,73 +120,14 @@ const PS = PowerSystem
             jacobianAD, ExaPF.residual_polar!, Vm, Va,
             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, ExaPF.AutoDiff.StateJacobian())
         @test jacobianAD.J ≈ J♯
+        HessianAD = ExaPF.AutoDiff.Hessian(F, Vm, Va,
+                                                    ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, ExaPF.AutoDiff.StateStateHessian())
+        lambda = similar(F)
+        lambda .= 1.0
+        ExaPF.AutoDiff.residual_hessian_vecprod!(
+            HessianAD, ExaPF.residual_polar!, Vm, Va,
+            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, lambda, ExaPF.AutoDiff.StateStateHessian())
+        @show HessianAD.H
     end
 end
-
-@testset "PowerNetwork object" begin
-    psse_datafile = "case14.raw"
-    matpower_datafile = "case9.m"
-
-    # Test constructor
-    @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
-        datafile = joinpath(dirname(@__FILE__), "..", "data", name)
-        pf = PS.PowerNetwork(datafile)
-        @test isa(pf, PS.PowerNetwork)
-    end
-
-    # From now on, test with "case9.m"
-    datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
-    data = PS.import_dataset(datafile)
-    pf = PS.PowerNetwork(data)
-
-    @testset "Computing cost coefficients" begin
-        coefs = PS.get_costs_coefficients(pf)
-        @test size(coefs) == (3, 4)
-        @test isequal(coefs[:, 1], [3.0, 2.0, 2.0])
-    end
-
-    @testset "Getters" for Attr in [
-        PS.NumberOfBuses,
-        PS.NumberOfPVBuses,
-        PS.NumberOfPQBuses,
-        PS.NumberOfSlackBuses,
-        PS.NumberOfLines,
-        PS.NumberOfGenerators,
-    ]
-        res = PS.get(pf, Attr())
-        @test isa(res, Int)
-    end
-
-    @testset "Indexing" begin
-        idx = PS.get(pf, PS.GeneratorIndexes())
-        @test isequal(idx, [1, 2, 3])
-    end
-
-    @testset "Bounds" begin
-        n_bus = PS.get(pf, PS.NumberOfBuses())
-        v_min, v_max = PS.bounds(pf, PS.Buses(), PS.VoltageMagnitude())
-        @test length(v_min) == n_bus
-        @test length(v_max) == n_bus
-
-        n_gen = PS.get(pf, PS.NumberOfGenerators())
-        p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
-        @test length(p_min) == n_gen
-        @test length(p_max) == n_gen
-        q_min, q_max = PS.bounds(pf, PS.Generator(), PS.ReactivePower())
-        @test length(q_min) == n_gen
-        @test length(q_max) == n_gen
-    end
-
-    @testset "Load from data" begin
-        pf_original = PS.PowerNetwork(data)
-        @test isa(pf_original, PS.PowerNetwork)
-        n_lines = PS.get(pf_original, PS.NumberOfLines())
-
-        pf_removed = PS.PowerNetwork(data; remove_lines=Int[1])
-        @test isa(pf_removed, PS.PowerNetwork)
-        n_after_removal = PS.get(pf_removed, PS.NumberOfLines())
-
-        @test n_lines - 1 == n_after_removal
-        @test pf_original.Ybus != pf_removed.Ybus
-    end
-end
+    
