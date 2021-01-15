@@ -47,18 +47,6 @@ function _init_seed!(t1sseeds, coloring, ncolor, nmap)
     end
 end
 
-function _init_seed!(t2sseeds::Array{ForwardDiff.Partials{M,t1s{N,V}},1}, coloring, ncolor, nmap) where {M,N,V}
-    t2sseedvec = zeros(t1s{N,V}, nmap)
-    @inbounds for i in 1:M
-        for j in 1:nmap
-            t2sseedvec[j] = 1.0
-        end
-        t2sseeds[i] = ForwardDiff.Partials{M, t1s{N,V}}(NTuple{M, t1s{N,V}}(t2sseedvec))
-        t2sseedvec .= 0
-    end
-    
-end
-
 """
     Jacobian
 
@@ -452,7 +440,6 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
         t2sseeds = A{ForwardDiff.Partials{1,t1s{ncolor,Float64}}}(undef, nmap)
         _init_seed!(t1sseeds, coloring, ncolor, nmap)
-        _init_seed!(t2sseeds, coloring, ncolor, nmap)
 
         compressedH = MT(zeros(Float64, ncolor, nmap))
         nthreads=256
