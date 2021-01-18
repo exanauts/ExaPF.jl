@@ -73,7 +73,9 @@
             return ExaPF.objective(nlp, u_)
         end
         grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
+        hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
         @test isapprox(grad_fd, g, rtol=1e-4)
+        @info("h", hess_fd)
 
         # Constraint
         ## Evaluation of the constraints
