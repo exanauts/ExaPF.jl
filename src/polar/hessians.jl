@@ -128,8 +128,8 @@ function residual_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref)
     return H
 end
 
-# ∂²pg / ∂²x
-function active_power_hessian(::State, ::State, V, Ybus, λ, pv, pq, ref)
+# ∂²pg_ref / ∂²x
+function active_power_hessian(::State, ::State, V, Ybus, pv, pq, ref)
     # decompose vector
     n = length(V)
     npv = length(pv)
@@ -138,7 +138,7 @@ function active_power_hessian(::State, ::State, V, Ybus, λ, pv, pq, ref)
 
     λp = zeros(n)
     # Pick only components wrt ref nodes
-    λp[ref] = λ[ref]
+    λp[ref] .= 1.0
 
     G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
     Pθθ = real.(G11)
@@ -160,8 +160,8 @@ function active_power_hessian(::State, ::State, V, Ybus, λ, pv, pq, ref)
     return H
 end
 
-# ∂²pg / ∂²u
-function active_power_hessian(::Control, ::Control, V, Ybus, λ, pv, pq, ref)
+# ∂²pg_ref / ∂²u
+function active_power_hessian(::Control, ::Control, V, Ybus, pv, pq, ref)
     # decompose vector
     n = length(V)
     npv = length(pv)
@@ -170,11 +170,9 @@ function active_power_hessian(::Control, ::Control, V, Ybus, λ, pv, pq, ref)
 
     λp = zeros(n)
     # Pick only components wrt ref nodes
-    λp[ref] = λ[ref]
+    λp[ref] .= 1.0
 
     G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
-    Pθθ = real.(G11)
-    Pvθ = real.(G12)
     Pvv = real.(G22)
 
     H11 = Pvv[ref, ref]
@@ -189,8 +187,8 @@ function active_power_hessian(::Control, ::Control, V, Ybus, λ, pv, pq, ref)
     return H
 end
 
-# ∂²pg / ∂x∂u
-function active_power_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref)
+# ∂²pg_ref / ∂x∂u
+function active_power_hessian(::State, ::Control, V, Ybus, pv, pq, ref)
     # decompose vector
     n = length(V)
     npv = length(pv)
@@ -199,7 +197,7 @@ function active_power_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref)
 
     λp = zeros(n)
     # Pick only components wrt ref nodes
-    λp[ref] = λ[ref]
+    λp[ref] .= 1.0
 
     G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
     Pθθ = real.(G11)
@@ -220,3 +218,94 @@ function active_power_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref)
 
     return H
 end
+
+# ∂²qg / ∂²x * λ
+function reactive_power_hessian(::State, ::State, V, Ybus, λ, pv, pq, ref, igen)
+    n = length(V)
+    npv = length(pv)
+    npq = length(pq)
+    nref = length(ref)
+
+    λp = zeros(n)
+    # Take only components wrt generators
+    λp[igen] .= λ
+
+    G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
+    Qθθ = imag.(G11)
+    Qvθ = imag.(G12)
+    Qvv = imag.(G22)
+
+    H11 = Qθθ[pv, pv]
+    H12 = Qθθ[pv, pq]
+    H13 = Qvθ[pv, pq]
+    H22 = Qθθ[pq, pq]
+    H23 = Qvθ[pq, pq]
+    H33 = Qvv[pq, pq]
+
+    H = [
+        H11  H12  H13
+        H12' H22  H23
+        H13' H23' H33
+    ]
+    return H
+end
+
+# ∂²qg / ∂²u * λ
+function reactive_power_hessian(::Control, ::Control, V, Ybus, λ, pv, pq, ref, igen)
+    # decompose vector
+    n = length(V)
+    npv = length(pv)
+    npq = length(pq)
+    nref = length(ref)
+
+    λp = zeros(n)
+    # Take only components wrt generators
+    λp[igen] .= λ
+
+    G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
+    Qvv = imag.(G22)
+
+    H11 = Qvv[ref, ref]
+    H12 = Qvv[ref, pv]
+    H22 = Qvv[pv, pv]
+
+    H = [
+        H11  H12
+        H12' H22
+    ]
+
+    return H
+end
+
+# ∂²qg / ∂x∂u * λ
+function reactive_power_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref, igen)
+    # decompose vector
+    n = length(V)
+    npv = length(pv)
+    npq = length(pq)
+    nref = length(ref)
+
+    λp = zeros(n)
+    # Take only components wrt generators
+    λp[igen] .= λ
+
+    G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
+    Qθθ = imag.(G11)
+    Qvθ = imag.(transpose(G12))
+    Qvv = imag.(G22)
+
+    H11 = Qvθ[ref, pv]
+    H12 = Qvθ[ref, pq]
+    H13 = Qvv[ref, pq]
+    H21 = Qvθ[pv, pv]
+    H22 = Qvθ[pv, pq]
+    H23 = Qvv[pv, pq]
+
+    H = [
+        H11  H12  H13
+        H21  H22  H23
+    ]
+
+    return H
+end
+
