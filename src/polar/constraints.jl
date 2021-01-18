@@ -19,7 +19,7 @@ function bounds(polar::PolarForm, ::typeof(state_constraint))
     return polar.x_min[fr_:to_], polar.x_max[fr_:to_]
 end
 # State Jacobian: Jx_i = [0, ..., 1, ... 0] where
-function jacobian(polar::PolarForm, ::typeof(state_constraint), i_cons, ∂jac, buffer)
+function jacobian(polar::PolarForm, ::typeof(state_constraint), i_cons::Int, ∂jac, buffer)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     fr_ = npq + npv
@@ -29,6 +29,21 @@ function jacobian(polar::PolarForm, ::typeof(state_constraint), i_cons, ∂jac, 
     ∂jac.∇fₓ[fr_ + i_cons] = 1.0
     # Adjoint / Control
     fill!(∂jac.∇fᵤ, 0)
+end
+function jacobian(polar::PolarForm, cons::typeof(state_constraint), buffer)
+    m = size_constraint(polar, cons)
+    nᵤ = get(polar, NumberOfControl())
+    nₓ = get(polar, NumberOfState())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    shift = npq + npv
+
+    I = 1:m
+    J = (shift+1):(shift+npq)
+    V = ones(m)
+    jx = sparse(I, J, V, m, nₓ)
+    ju = spzeros(m, nᵤ)
+    return jx, ju
 end
 function jtprod(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, v)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -165,6 +180,42 @@ function jacobian(
                  index_pv, index_pq, index_ref, pv_to_gen,
                  ndrange=nbus)
     wait(ev)
+end
+function jacobian(polar::PolarForm, cons::typeof(power_constraints), buffer)
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ref = polar.indexing.index_ref
+    gen2bus = polar.indexing.index_generators
+    ngen = length(gen2bus)
+    npv = length(pv)
+    # Use MATPOWER to derive expression of Hessian
+    # Use the fact that q_g = q_inj + q_load
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, polar.network.Ybus)
+
+    # wrt Pg_ref
+    P11x = real(dSbus_dVa[ref, [pv; pq]])
+    P12x = real(dSbus_dVm[ref, pq])
+    P11u = real(dSbus_dVm[ref, [ref; pv; pv]])
+
+    # wrt Qg
+    Q21x = imag(dSbus_dVa[gen2bus, [pv; pq]])
+    Q22x = imag(dSbus_dVm[gen2bus, pq])
+
+    Q21u = imag(dSbus_dVm[gen2bus, ref])
+    Q22u = spzeros(ngen, npv)
+    Q23u = imag(dSbus_dVm[gen2bus, pv])
+
+    jx = [
+        P11x P12x
+        Q21x Q22x
+    ]
+    ju = [
+        P11u
+        Q21u Q22u Q23u
+    ]
+
+    return (jx, ju)
 end
 # Jacobian-transpose vector product
 function jtprod(

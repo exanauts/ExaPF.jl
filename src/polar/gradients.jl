@@ -54,3 +54,15 @@ function residual_jacobian(A::Attr, polar::PolarForm) where {Attr <: Union{State
 end
 _sparsity_pattern(polar::PolarForm) = findnz(residual_jacobian(State(), polar))
 
+
+# Jacobian wrt active power generation
+function active_power_jacobian(::State, V, Ybus, pv, pq, ref)
+    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
+    j11 = real(dSbus_dVa[:, [pv; pq]])
+    j12 = real(dSbus_dVm[:, pq])
+    J = [j11 j12]
+end
+function active_power_jacobian(::Control, V, Ybus, pv, pq, ref)
+    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
+    J = real(dSbus_dVm[:, [ref; pv]])
+end
