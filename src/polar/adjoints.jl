@@ -85,8 +85,8 @@ function put!(
         ∂u[i] = ∂vmag[p]
     end
     for (i, p) in enumerate(polar.network.pv)
-        ∂u[nref + i] = 0.0
-        ∂u[nref + npv + i] = ∂vmag[p]
+        ∂u[nref + i] = ∂vmag[p]
+        ∂u[nref + npv + i] = 0.0
     end
 end
 
@@ -109,8 +109,8 @@ end
         i_ = i - npq
         bus = index_pv[i_]
         i_gen = pv_to_gen[i_]
-        adj_u[nref + npv + i_] = adj_vmag[bus]
-        adj_u[nref + i_] += adj_pg[i_gen]
+        adj_u[nref + i_] = adj_vmag[bus]
+        adj_u[nref + npv + i_] += adj_pg[i_gen]
         adj_x[i_] = adj_vang[bus]
     # SLACK buses
     elseif i <= npq + npv + nref

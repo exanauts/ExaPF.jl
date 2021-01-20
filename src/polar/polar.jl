@@ -54,6 +54,7 @@ function PolarForm(pf::PS.PowerNetwork, device)
         AT = CuArray
     end
 
+    nbus = PS.get(pf, PS.NumberOfBuses())
     npv = PS.get(pf, PS.NumberOfPVBuses())
     npq = PS.get(pf, PS.NumberOfPQBuses())
     nref = PS.get(pf, PS.NumberOfSlackBuses())
@@ -116,25 +117,23 @@ function PolarForm(pf::PS.PowerNetwork, device)
     x_min[npv+npq+1:end] .= v_min[gidx_pq]
     x_max[npv+npq+1:end] .= v_max[gidx_pq]
     ## Bounds on v_pv
-    u_min[nref+npv+1:end] .= v_min[gidx_pv]
-    u_max[nref+npv+1:end] .= v_max[gidx_pv]
+    u_min[nref+1:nref+npv] .= v_min[gidx_pv]
+    u_max[nref+1:nref+npv] .= v_max[gidx_pv]
     ## Bounds on v_ref
     u_min[1:nref] .= v_min[gidx_ref]
     u_max[1:nref] .= v_max[gidx_ref]
     ## Bounds on p_pv
-    u_min[nref+1:nref+npv] .= p_min[gpv_to_gen]
-    u_max[nref+1:nref+npv] .= p_max[gpv_to_gen]
+    u_min[nref+npv+1:nref+2*npv] .= p_min[gpv_to_gen]
+    u_max[nref+npv+1:nref+2*npv] .= p_max[gpv_to_gen]
 
     indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen)
-    nvbus = length(pf.vbus)
-    mappv = [i + nvbus for i in idx_pv]
-    mappq = [i + nvbus for i in idx_pq]
+    mappv = [i + nbus for i in idx_pv]
+    mappq = [i + nbus for i in idx_pq]
     # Ordering for x is (θ_pv, θ_pq, v_pq)
     statemap = vcat(mappv, mappq, idx_pq)
     state_jacobian_structure = StateJacobianStructure(residual_jacobian, IT(statemap))
 
-    mappv =  [i + nvbus for i in idx_pv]
-    controlmap = vcat(idx_ref, mappv, idx_pv)
+    controlmap = vcat(idx_ref, idx_pv, idx_pv .+ nbus)
     control_jacobian_structure = ControlJacobianStructure{IT}(residual_jacobian, IT(controlmap))
 
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(

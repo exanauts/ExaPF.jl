@@ -100,7 +100,7 @@ const PS = PowerSystem
             vm_[ref] = u[1:nref]
             vm_[pv] = u[nref+1:end]
             V = vm_ .* exp.(im * va_)
-            Ju = ExaPF.residual_jacobian(Control(), V, Ybus, pv, pq, ref)[:, [1:nref; (nref+npv+1):(nref+2*npv)]]
+            Ju = ExaPF.residual_jacobian(Control(), V, Ybus, pv, pq, ref)[:, 1:nref+npv]
             return Ju' * λ
         end
 
@@ -117,7 +117,7 @@ const PS = PowerSystem
             va_[pq] = x[npv+1:npv+npq]
             vm_[pq] = x[npv+npq+1:end]
             V = vm_ .* exp.(im * va_)
-            Ju = ExaPF.residual_jacobian(Control(), V, Ybus, pv, pq, ref)[:, [1:nref; (nref+npv+1):(nref+2*npv)]]
+            Ju = ExaPF.residual_jacobian(Control(), V, Ybus, pv, pq, ref)[:, 1:nref+npv]
             return Ju' * λ
         end
 
@@ -145,7 +145,7 @@ const PS = PowerSystem
 
         # Update variables
         x = [va[pv] ; va[pq] ; vm[pq]]
-        u = [vm[ref]; pg[pv2gen]; vm[pv]]
+        u = [vm[ref]; vm[pv]; pg[pv2gen]]
         # Reset voltage
         V = vm .* exp.(im * va)
         # Adjoint
@@ -179,25 +179,25 @@ const PS = PowerSystem
         ∇²fₓᵤ = ∂c .* ∂₂Pₓᵤ + ∂²c .* ∂Pᵤ' * ∂Pₓ
         # TODO: test broke on case30 because of indexing issues
         @test isapprox(∇²fₓₓ, H_ffd[1:nx, 1:nx], rtol=1e-3)
-        index_xu = [nx+1:nx+nref; nx+nref+npv+1:nx+nref+2*npv]
+        index_xu = nx+1:nx+nref+npv
         @test isapprox(∇²fₓᵤ, H_ffd[index_xu, 1:nx], rtol=1e-3)
 
         ∇gaₓ = ∇²fₓₓ + ∇²gₓₓλ
 
         # Computation of the reduced Hessian
         function reduced_hess(w)
-            wᵥ = [w[1:nref]; w[(nref+npv+1):end]]
-            wₚ = w[nref+1:nref+npv]
+            wᵥ = w[1:nref+npv]
+            wₚ = w[nref+npv+1:nref+2*npv]
             # Second-order adjoint
             z = -(∇gₓ ) \ (∇gᵤ * w)
             ψ = -(∇gₓ') \ (∇²fₓᵤ' * wᵥ + ∇²gₓᵤλ' * wᵥ +  ∇gaₓ * z)
-            ∇gᵤᵛ = ∇gᵤ[: ,[1:nref; nref+npv+1:end]]
-            ∇gᵤᵖ = ∇gᵤ[: , nref+1:nref+npv]
+            ∇gᵤᵛ = ∇gᵤ[: , 1:nref+npv]
+            ∇gᵤᵖ = ∇gᵤ[: , nref+npv+1:nref+2*npv]
             # Hessian w.r.t. voltages
             Hwᵥ = ∇²fᵤᵤ * wᵥ +  ∇²gᵤᵤλ * wᵥ + ∇gᵤᵛ' * ψ  + ∇²fₓᵤ * z + ∇²gₓᵤλ * z
             # Hessian w.r.t. active power generation
             Hwₚ = ∂²cpv .* wₚ + ∇gᵤᵖ' * ψ
-            Hw = [Hwᵥ[1:nref]; Hwₚ; Hwᵥ[nref+1:nref+npv]]
+            Hw = [Hwᵥ; Hwₚ]
             return Hw
         end
 
@@ -208,6 +208,7 @@ const PS = PowerSystem
             w[i] = 1.0
             H[:, i] .= reduced_hess(w)
         end
+        @info("h", H)
 
         ##################################################
         # Step 3: include constraints in Hessian
@@ -223,8 +224,8 @@ const PS = PowerSystem
         Jh2ₓ, Jh2ᵤ = ExaPF.jacobian(polar, ExaPF.power_constraints, cache)
         Jₓ = [Jh1ₓ; Jh2ₓ]
         Jᵤ = [Jh1ᵤ; Jh2ᵤ]
-        Jᵤᵛ = Jᵤ[: ,[1:nref; nref+npv+1:end]]
-        Jᵤᵖ = Jᵤ[: , nref+1:nref+npv]
+        Jᵤᵛ = Jᵤ[: , 1:nref+npv]
+        Jᵤᵖ = Jᵤ[: , nref+npv+1:nref+2*npv]
 
         # Hessians of objective: add penalty terms
         ∇²fₓₓ = ∇²fₓₓ + ∂₂Qₓₓ + Jₓ' * Jₓ
