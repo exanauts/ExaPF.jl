@@ -56,8 +56,8 @@ function get(
     u[1:nref] = vmag[polar.network.ref]
     # u is equal to active power of generator (Pᵍ)
     # As P = Pᵍ - Pˡ , we get
-    u[nref + 1:nref + npv] = pbus[polar.network.pv] + pload[polar.network.pv]
-    u[nref + npv + 1:nref + 2*npv] = vmag[polar.network.pv]
+    u[nref + 1:nref + npv] = vmag[polar.network.pv]
+    u[nref + npv + 1:nref + 2*npv] = pbus[polar.network.pv] + pload[polar.network.pv]
     return u
 end
 function get(
@@ -70,9 +70,8 @@ function get(
     nᵤ = get(polar, NumberOfControl())
     u = xzeros(VT, nᵤ)
     u[1:nref] .= buffer.vmag[polar.network.ref]
-    u[nref + 1:nref + npv] .= buffer.pg[polar.indexing.index_pv_to_gen]
-    u[nref + npv + 1:nref + 2*npv] .= buffer.vmag[polar.network.pv]
+    u[nref + 1:nref + npv] .= buffer.vmag[polar.network.pv]
+    u[nref + npv + 1:nref + 2*npv] .= buffer.pg[polar.indexing.index_pv_to_gen]
     return u
 end
-
 

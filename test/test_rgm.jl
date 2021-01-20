@@ -44,6 +44,6 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         up .= uk
     end
     @test iter == 39
-    @test isapprox(uk, [1.1, 1.343109921105559, 0.9421135274454701, 1.1, 1.1], atol=1e-4)
+    @test isapprox(uk, [1.1, 1.1, 1.1, 1.343109921105559, 0.9421135274454701], atol=1e-4)
 end
 

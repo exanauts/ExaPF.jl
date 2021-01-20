@@ -123,9 +123,9 @@ end
     # PV bus
     if i <= npv
         bus = pv[i]
+        vmag[bus] = u[nref + i]
         # P = Pg - Pd
-        pinj[bus] = u[nref + i] - pload[bus]
-        vmag[bus] = u[nref + npv + i]
+        pinj[bus] = u[nref + npv + i] - pload[bus]
     # REF bus
     else
         i_ref = i - npv
