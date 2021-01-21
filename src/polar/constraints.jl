@@ -43,7 +43,7 @@ function jacobian(polar::PolarForm, cons::typeof(state_constraint), buffer)
     V = ones(m)
     jx = sparse(I, J, V, m, nₓ)
     ju = spzeros(m, nᵤ)
-    return jx, ju
+    return (jx, ju)
 end
 function jtprod(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, v)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -54,6 +54,15 @@ function jtprod(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, v)
     # Adjoint / State
     fill!(∂jac.∇fₓ, 0)
     ∂jac.∇fₓ[fr_:end] .= v
+end
+function hessian(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, λ)
+    nu = get(polar, NumberOfControl())
+    nx = get(polar, NumberOfState())
+    return (
+        xx=spzeros(nx, nx),
+        xu=spzeros(nu, nx),
+        uu=spzeros(nu, nu),
+    )
 end
 
 # Here, the power constraints are ordered as:
@@ -239,6 +248,38 @@ function jtprod(
     ∂jac.∇fₓ .= jvx
     ∂jac.∇fᵤ .= jvu
 end
+
+function hessian(polar::PolarForm, ::typeof(power_constraints), ∂jac, buffer, λ)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    gen2bus = polar.indexing.index_generators
+    # Check consistency
+    @assert length(λ) == length(pv) + 2 * length(ref) == length(gen2bus) + 1
+
+    nu = get(polar, NumberOfControl())
+    nx = get(polar, NumberOfState())
+
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    Ybus = polar.network.Ybus
+
+    # First constraint is on active power generation at slack node
+    λₚ = λ[1]
+    ∂₂Pₓₓ = λₚ .* active_power_hessian(State(), State(), V, Ybus, pv, pq, ref)
+    ∂₂Pₓᵤ = λₚ .* active_power_hessian(State(), Control(), V, Ybus, pv, pq, ref)
+    ∂₂Pᵤᵤ = λₚ .* active_power_hessian(Control(), Control(), V, Ybus, pv, pq, ref)
+
+    λq = λ[2:end]
+    ∂₂Qₓₓ = reactive_power_hessian(State(), State(), V, Ybus, λq, pv, pq, ref, gen2bus)
+    ∂₂Qₓᵤ = reactive_power_hessian(State(), Control(), V, Ybus, λq, pv, pq, ref, gen2bus)
+    ∂₂Qᵤᵤ = reactive_power_hessian(Control(), Control(), V, Ybus, λq, pv, pq, ref, gen2bus)
+    return (
+        xx=∂₂Qₓₓ + ∂₂Pₓₓ,
+        xu=∂₂Qₓᵤ + ∂₂Pₓᵤ,
+        uu=∂₂Qᵤᵤ + ∂₂Pᵤᵤ,
+    )
+end
+
 
 # Branch flow constraints
 function flow_constraints(polar::PolarForm, cons, buffer)

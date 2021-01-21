@@ -331,6 +331,80 @@ function ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)
     reduced_gradient!(nlp, jv, jvx, jvu, u)
 end
 
+# Compute reduced Hessian-vector product using the adjoint-adjoint method
+function reduced_hessian!(
+    nlp::ReducedSpaceEvaluator, hessvec, ∇²fₓₓ, ∇²fₓᵤ, ∇²fᵤᵤ, w,
+)
+    λ = -nlp.λ
+    # Jacobian
+    ∇gₓ = nlp.autodiff.Jgₓ.J
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J
+
+    # Evaluate Hess-vec of residual function g(x, u) = 0
+    ∇²gₓₓλ = residual_hessian(nlp.model, State(), State(), nlp.buffer, λ)
+    ∇²gᵤᵤλ = residual_hessian(nlp.model, Control(), Control(), nlp.buffer, λ)
+    ∇²gₓᵤλ = residual_hessian(nlp.model, State(), Control(), nlp.buffer, λ)
+
+    # Adjoint-adjoint
+    ∇gaₓ = ∇²fₓₓ + ∇²gₓₓλ
+    z = -(∇gₓ ) \ (∇gᵤ * w)
+    ψ = -(∇gₓ') \ (∇²fₓᵤ' * w + ∇²gₓᵤλ' * w +  ∇gaₓ * z)
+    hessvec .= ∇²fᵤᵤ * w +  ∇²gᵤᵤλ * w + ∇gᵤ' * ψ  + ∇²fₓᵤ * z + ∇²gₓᵤλ * z
+end
+
+function hessprod!(nlp, hessvec, u, w)
+    buffer = nlp.buffer
+    ∂f = nlp.autodiff.∇f
+    # Evaluate Hess-vec of objective function f(x, u)
+    ∇²f = hessian_cost(nlp.model, ∂f, buffer)
+    reduced_hessian!(nlp, hessvec, ∇²f.xx, ∇²f.xu, ∇²f.uu, w)
+end
+
+function hessian!(nlp, H, u)
+    nu = n_variables(nlp)
+    w = zeros(nu)
+    for i in 1:nu
+        fill!(w, 0)
+        w[i] = 1.0
+        hessprod!(nlp, view(H, :, i), u, w)
+    end
+end
+
+function hessprod_lagrangian!(nlp, hessvec, u, y, w)
+    nu = n_variables(nlp)
+    buffer = nlp.buffer
+    ∂f = nlp.autodiff.∇f
+    # Evaluate Hess-vec of objective function f(x, u)
+    ∇²f = hessian_cost(nlp.model, ∂f, buffer)
+    ∇²Lₓₓ = ∇²f.xx
+    ∇²Lₓᵤ = ∇²f.xu
+    ∇²Lᵤᵤ = ∇²f.uu
+
+    shift = 0
+    for cons in nlp.constraints
+        m = size_constraint(nlp.model, cons)
+        mask = shift+1:shift+m
+        yc = @view y[mask]
+        ∇²h = hessian(nlp.model, cons, ∂f, nlp.buffer, yc)
+        ∇²Lₓₓ += ∇²h.xx
+        ∇²Lₓᵤ += ∇²h.xu
+        ∇²Lᵤᵤ += ∇²h.uu
+        shift += m
+    end
+
+    reduced_hessian!(nlp, hessvec, ∇²Lₓₓ, ∇²Lₓᵤ, ∇²Lᵤᵤ, w)
+end
+
+function hessian_lagrangian!(nlp, H, u, y)
+    nu = n_variables(nlp)
+    w = zeros(nu)
+    for i in 1:nu
+        fill!(w, 0)
+        w[i] = 1.0
+        hessprod_lagrangian!(nlp, view(H, :, i), u, y, w)
+    end
+end
+
 # Utils function
 function primal_infeasibility!(nlp::ReducedSpaceEvaluator, cons, u)
     constraint!(nlp, cons, u) # Evaluate constraints

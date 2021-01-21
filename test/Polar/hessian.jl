@@ -100,14 +100,14 @@ const PS = PowerSystem
             vm_[ref] = u[1:nref]
             vm_[pv] = u[nref+1:end]
             V = vm_ .* exp.(im * va_)
-            Ju = ExaPF.residual_jacobian(Control(), V, Ybus, pv, pq, ref)[:, 1:nref+npv]
+            Ju = ExaPF.residual_jacobian(Control(), V, Ybus, pv, pq, ref)
             return Ju' * λ
         end
 
         Hᵤᵤ_fd = FiniteDiff.finite_difference_jacobian(jac_u_diff, u)
         ∇²gᵤᵤλ = ExaPF.residual_hessian(Control(), Control(), V, Ybus, λ, pv, pq, ref)
 
-        @test isapprox(∇²gᵤᵤλ, Hᵤᵤ_fd, atol=1e-3)
+        @test isapprox(∇²gᵤᵤλ[1:nref+npv, 1:nref+npv], Hᵤᵤ_fd[1:nref+npv, :], atol=1e-3)
 
         ## w.r.t. xu
         function jac_xu_diff(x)
@@ -123,7 +123,7 @@ const PS = PowerSystem
 
         Hₓᵤ_fd = FiniteDiff.finite_difference_jacobian(jac_xu_diff, x)
         ∇²gₓᵤλ = ExaPF.residual_hessian(State(), Control(), V, Ybus, λ, pv, pq, ref)
-        @test isapprox(∇²gₓᵤλ, Hₓᵤ_fd, rtol=1e-3)
+        @test isapprox(∇²gₓᵤλ[1:nref+npv, :], Hₓᵤ_fd, rtol=1e-3)
 
         ##################################################
         # Step 2: computation of Hessian of objective f
@@ -161,43 +161,23 @@ const PS = PowerSystem
 
         H_ffd = FiniteDiff.finite_difference_hessian(cost_x, [x; u])
 
-        # Hessian of active power generation at slack node (this is a matrix)
-        ∂₂Pₓₓ = ExaPF.active_power_hessian(State(), State(), V, Ybus, pv, pq, ref)
-        ∂₂Pₓᵤ = ExaPF.active_power_hessian(State(), Control(), V, Ybus, pv, pq, ref)
-        ∂₂Pᵤᵤ = ExaPF.active_power_hessian(Control(), Control(), V, Ybus, pv, pq, ref)
-        @test issymmetric(∂₂Pₓₓ)
-        @test issymmetric(∂₂Pᵤᵤ)
-
-        Jpgₓ = ExaPF.active_power_jacobian(State(), V, Ybus, pv, pq, ref)
-        Jpgᵤ = ExaPF.active_power_jacobian(Control(), V, Ybus, pv, pq, ref)
-        ∂Pₓ = Jpgₓ[ref, :]
-        ∂Pᵤ = Jpgᵤ[ref, :]  # take only Jacobian w.r.t. v_ref and v_pv
-
         # Hessians of objective
-        ∇²fₓₓ = ∂c .* ∂₂Pₓₓ + ∂²c .* ∂Pₓ' * ∂Pₓ
-        ∇²fᵤᵤ = ∂c .* ∂₂Pᵤᵤ + ∂²c .* ∂Pᵤ' * ∂Pᵤ
-        ∇²fₓᵤ = ∂c .* ∂₂Pₓᵤ + ∂²c .* ∂Pᵤ' * ∂Pₓ
-        # TODO: test broke on case30 because of indexing issues
+        ∇²f = ExaPF.hessian_cost(polar, ∂obj, cache)
+        ∇²fₓₓ = ∇²f.xx
+        ∇²fᵤᵤ = ∇²f.uu
+        ∇²fₓᵤ = ∇²f.xu
         @test isapprox(∇²fₓₓ, H_ffd[1:nx, 1:nx], rtol=1e-3)
-        index_xu = nx+1:nx+nref+npv
+        index_xu = nx+1:nx+nref+2*npv
         @test isapprox(∇²fₓᵤ, H_ffd[index_xu, 1:nx], rtol=1e-3)
 
         ∇gaₓ = ∇²fₓₓ + ∇²gₓₓλ
 
         # Computation of the reduced Hessian
         function reduced_hess(w)
-            wᵥ = w[1:nref+npv]
-            wₚ = w[nref+npv+1:nref+2*npv]
             # Second-order adjoint
             z = -(∇gₓ ) \ (∇gᵤ * w)
-            ψ = -(∇gₓ') \ (∇²fₓᵤ' * wᵥ + ∇²gₓᵤλ' * wᵥ +  ∇gaₓ * z)
-            ∇gᵤᵛ = ∇gᵤ[: , 1:nref+npv]
-            ∇gᵤᵖ = ∇gᵤ[: , nref+npv+1:nref+2*npv]
-            # Hessian w.r.t. voltages
-            Hwᵥ = ∇²fᵤᵤ * wᵥ +  ∇²gᵤᵤλ * wᵥ + ∇gᵤᵛ' * ψ  + ∇²fₓᵤ * z + ∇²gₓᵤλ * z
-            # Hessian w.r.t. active power generation
-            Hwₚ = ∂²cpv .* wₚ + ∇gᵤᵖ' * ψ
-            Hw = [Hwᵥ; Hwₚ]
+            ψ = -(∇gₓ') \ (∇²fₓᵤ' * w + ∇²gₓᵤλ' * w +  ∇gaₓ * z)
+            Hw = ∇²fᵤᵤ * w +  ∇²gᵤᵤλ * w + ∇gᵤ' * ψ  + ∇²fₓᵤ * z + ∇²gₓᵤλ * z
             return Hw
         end
 
@@ -208,38 +188,17 @@ const PS = PowerSystem
             w[i] = 1.0
             H[:, i] .= reduced_hess(w)
         end
-        @info("h", H)
+        # @info("h", H)
 
         ##################################################
         # Step 3: include constraints in Hessian
         ##################################################
         # h1 (state)      : xl <= x <= xu
         # h2 (by-product) : yl <= y <= yu
-        λq = ones(ngen)
-
-        ∂₂Qₓₓ = ExaPF.reactive_power_hessian(State(), State(), V, Ybus, λq, pv, pq, ref, gen2bus)
-        ∂₂Qₓᵤ = ExaPF.reactive_power_hessian(State(), Control(), V, Ybus, λq, pv, pq, ref, gen2bus)
-        ∂₂Qᵤᵤ = ExaPF.reactive_power_hessian(Control(), Control(), V, Ybus, λq, pv, pq, ref, gen2bus)
-        Jh1ₓ, Jh1ᵤ = ExaPF.jacobian(polar, ExaPF.state_constraint, cache)
-        Jh2ₓ, Jh2ᵤ = ExaPF.jacobian(polar, ExaPF.power_constraints, cache)
-        Jₓ = [Jh1ₓ; Jh2ₓ]
-        Jᵤ = [Jh1ᵤ; Jh2ᵤ]
-        Jᵤᵛ = Jᵤ[: , 1:nref+npv]
-        Jᵤᵖ = Jᵤ[: , nref+npv+1:nref+2*npv]
-
-        # Hessians of objective: add penalty terms
-        ∇²fₓₓ = ∇²fₓₓ + ∂₂Qₓₓ + Jₓ' * Jₓ
-        ∇²fᵤᵤ = ∇²fᵤᵤ + ∂₂Qᵤᵤ + Jᵤᵛ' * Jᵤᵛ
-        ∇²fₓᵤ = ∇²fₓᵤ + ∂₂Qₓᵤ + Jᵤᵛ' * Jₓ
-
-        ∇gaₓ = ∇²fₓₓ + ∇²gₓₓλ
-
-        w = zeros(nu)
-        H = zeros(nu, nu)
-        for i in 1:nu
-            fill!(w, 0)
-            w[i] = 1.0
-            H[:, i] .= reduced_hess(w)
+        for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
+            m = ExaPF.size_constraint(polar, cons)
+            λq = ones(m)
+            ∂₂Q = ExaPF.hessian(polar, cons, ∂obj, cache, λq)
         end
     end
 end
