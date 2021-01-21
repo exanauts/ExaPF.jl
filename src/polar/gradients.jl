@@ -58,11 +58,35 @@ _sparsity_pattern(polar::PolarForm) = findnz(residual_jacobian(State(), polar))
 # Jacobian wrt active power generation
 function active_power_jacobian(::State, V, Ybus, pv, pq, ref)
     dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
-    j11 = real(dSbus_dVa[:, [pv; pq]])
-    j12 = real(dSbus_dVm[:, pq])
-    J = [j11 j12]
+    j11 = real(dSbus_dVa[ref, [pv; pq]])
+    j12 = real(dSbus_dVm[ref, pq])
+    J = [
+        j11 j12
+        spzeros(length(pv), length(pv) + 2 * length(pq))
+    ]
 end
+
 function active_power_jacobian(::Control, V, Ybus, pv, pq, ref)
-    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
-    J = real(dSbus_dVm[:, [ref; pv]])
+    ngen = length(pv) + length(ref)
+    npv = length(pv)
+    dSbus_dVm, _ = _matpower_residual_jacobian(V, Ybus)
+    j11 = real(dSbus_dVm[ref, [ref; pv]])
+    j12 = sparse(I, npv, npv)
+    return [
+        j11 spzeros(length(ref), npv)
+        spzeros(npv, ngen) j12
+    ]
 end
+
+function active_power_jacobian(
+    polar::PolarForm,
+    r::AbstractVariable,
+    buffer::PolarNetworkState,
+)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    return active_power_jacobian(r, V, polar.network.Ybus, pv, pq, ref)
+end
+

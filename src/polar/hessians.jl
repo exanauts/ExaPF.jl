@@ -86,8 +86,9 @@ function residual_hessian(::Control, ::Control, V, Ybus, λ, pv, pq, ref)
     H22 = Pvv[pv,   pv] + Qvv[pv,   pv]
 
     H = [
-        H11  H12
-        H12' H22
+         H11  H12 spzeros(nref, npv)
+         H12' H22 spzeros(npv, npv)
+         spzeros(npv, nref + 2 * npv)
     ]
 
     return H
@@ -123,10 +124,26 @@ function residual_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref)
     H = [
         H11  H12  H13
         H21  H22  H23
+        spzeros(npv, npv + 2 * npq)
     ]
 
     return H
 end
+
+function residual_hessian(
+    polar::PolarForm,
+    r::AbstractVariable,
+    s::AbstractVariable,
+    buffer::PolarNetworkState,
+    λ::AbstractVector,
+)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    return residual_hessian(r, s, V, polar.network.Ybus, λ, pv, pq, ref)
+end
+
 
 # ∂²pg_ref / ∂²x
 function active_power_hessian(::State, ::State, V, Ybus, pv, pq, ref)
@@ -180,8 +197,9 @@ function active_power_hessian(::Control, ::Control, V, Ybus, pv, pq, ref)
     H22 = Pvv[pv, pv]
 
     H = [
-        H11  H12
-        H12' H22
+         H11  H12 spzeros(nref, npv)
+         H12' H22 spzeros(npv, npv)
+         spzeros(npv, nref + 2 * npv)
     ]
 
     return H
@@ -214,9 +232,23 @@ function active_power_hessian(::State, ::Control, V, Ybus, pv, pq, ref)
     H = [
         H11  H12  H13
         H21  H22  H23
+        spzeros(npv, npv + 2 * npq)
     ]
 
     return H
+end
+
+function active_power_hessian(
+    polar::PolarForm,
+    r::AbstractVariable,
+    s::AbstractVariable,
+    buffer::PolarNetworkState,
+)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    return active_power_hessian(r, s, V, polar.network.Ybus, pv, pq, ref)
 end
 
 # ∂²qg / ∂²x * λ
@@ -270,8 +302,9 @@ function reactive_power_hessian(::Control, ::Control, V, Ybus, λ, pv, pq, ref, 
     H22 = Qvv[pv, pv]
 
     H = [
-        H11  H12
-        H12' H22
+         H11  H12 spzeros(nref, npv)
+         H12' H22 spzeros(npv, npv)
+         spzeros(npv, nref + 2* npv)
     ]
 
     return H
@@ -304,8 +337,23 @@ function reactive_power_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref, ig
     H = [
         H11  H12  H13
         H21  H22  H23
+        spzeros(npv, 2*npq+npv)
     ]
 
     return H
+end
+
+function reactive_power_hessian(
+    polar::PolarForm,
+    r::AbstractVariable,
+    s::AbstractVariable,
+    buffer::PolarNetworkState,
+    λ::AbstractVector,
+)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    return reactive_power_hessian(r, s, V, polar.network.Ybus, λ, pv, pq, ref, igen)
 end
 

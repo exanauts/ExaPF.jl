@@ -74,15 +74,37 @@
         grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
         @test isapprox(grad_fd, g, rtol=1e-4)
 
+        # Hessian
+        ExaPF.update!(nlp, u)
+        hv = similar(u) ; fill!(hv, 0)
+        w = similar(u) ; fill!(w, 0)
+        w[1] = 1
+        ExaPF.hessprod!(nlp, hv, u, w)
+        H = similar(u, n, n) ; fill!(H, 0)
+        ExaPF.hessian!(nlp, H, u)
+        # Is Hessian vector product relevant?
+        @test H * w == hv
+        # Is Hessian correct?
+        hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
+        @test isapprox(H, hess_fd, rtol=1e-2)
+
+        # Hessian-Lagrangian
+        y = similar(u, m) ; fill!(y, 1)
+        ExaPF.hessprod_lagrangian!(nlp, hv, u, y, w)
+        ExaPF.hessian_lagrangian!(nlp, H, u, y)
+        @test H * w == hv
+
         # Constraint
         ## Evaluation of the constraints
         cons = similar(nlp.g_min)
         fill!(cons, 0)
         ExaPF.constraint!(nlp, cons, u)
+
         ## Evaluation of the Jacobian
         jac = M{Float64, 2}(undef, m, n)
         fill!(jac, 0)
         ExaPF.jacobian!(nlp, jac, u)
+
         ## Evaluation of the Jacobian transpose product
         v = similar(cons) ; fill!(v, 0)
         fill!(g, 0)
