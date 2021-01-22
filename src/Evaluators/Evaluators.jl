@@ -141,9 +141,6 @@ function hessian! end
     hessian_lagrangian!(nlp::AbstractNLPEvaluator, H, u, y)
 
 Evaluate the Hessian of the Lagrangian
-```math
-∇²L(u, y) = ∇²f(u) + \sum_i yᵢ ∇²hᵢ(u),
-```
 at `(u, y)`. Stores the result inplace, in `n x n` matrix `H`.
 
 """
@@ -162,13 +159,10 @@ function hessprod! end
     hessprod_lagrangian!(nlp::AbstractNLPEvaluator, hessvec, u, y, v)
 
 Evaluate the Hessian-vector product of the Lagrangian
-```math
-∇²L(u, y) * v = \Big( ∇²f(u) + \sum_i yᵢ ∇²hᵢ(u) \Big) * v ,
-```
 at `(u, y)`. Store the result inplace, in the vector `hessvec`.
 
 """
-function hessprod! end
+function hessprod_lagrangian! end
 
 # Utilities
 """

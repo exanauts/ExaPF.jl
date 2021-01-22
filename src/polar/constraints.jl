@@ -43,7 +43,7 @@ function jacobian(polar::PolarForm, cons::typeof(state_constraint), buffer)
     V = ones(m)
     jx = sparse(I, J, V, m, nₓ)
     ju = spzeros(m, nᵤ)
-    return (jx, ju)
+    return (x=jx, u=ju)
 end
 function jtprod(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, v)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -197,6 +197,7 @@ function jacobian(polar::PolarForm, cons::typeof(power_constraints), buffer)
     gen2bus = polar.indexing.index_generators
     ngen = length(gen2bus)
     npv = length(pv)
+    nref = length(ref)
     # Use MATPOWER to derive expression of Hessian
     # Use the fact that q_g = q_inj + q_load
     V = buffer.vmag .* exp.(im .* buffer.vang)
@@ -205,26 +206,27 @@ function jacobian(polar::PolarForm, cons::typeof(power_constraints), buffer)
     # wrt Pg_ref
     P11x = real(dSbus_dVa[ref, [pv; pq]])
     P12x = real(dSbus_dVm[ref, pq])
-    P11u = real(dSbus_dVm[ref, [ref; pv; pv]])
+    P11u = real(dSbus_dVm[ref, [ref; pv]])
+    P12u = spzeros(nref, npv)
 
     # wrt Qg
-    Q21x = imag(dSbus_dVa[gen2bus, [pv; pq]])
-    Q22x = imag(dSbus_dVm[gen2bus, pq])
+    Q21x = imag(dSbus_dVa[[ref; pv], [pv; pq]])
+    Q22x = imag(dSbus_dVm[[ref; pv], pq])
 
-    Q21u = imag(dSbus_dVm[gen2bus, ref])
-    Q22u = spzeros(ngen, npv)
-    Q23u = imag(dSbus_dVm[gen2bus, pv])
+    Q21u = imag(dSbus_dVm[[ref; pv], ref])
+    Q22u = imag(dSbus_dVm[[ref; pv], pv])
+    Q23u = spzeros(ngen, npv)
 
     jx = [
         P11x P12x
         Q21x Q22x
     ]
     ju = [
-        P11u
+        P11u P12u
         Q21u Q22u Q23u
     ]
 
-    return (jx, ju)
+    return (x=jx, u=ju)
 end
 # Jacobian-transpose vector product
 function jtprod(
@@ -269,10 +271,12 @@ function hessian(polar::PolarForm, ::typeof(power_constraints), ∂jac, buffer, 
     ∂₂Pₓᵤ = λₚ .* active_power_hessian(State(), Control(), V, Ybus, pv, pq, ref)
     ∂₂Pᵤᵤ = λₚ .* active_power_hessian(Control(), Control(), V, Ybus, pv, pq, ref)
 
-    λq = λ[2:end]
-    ∂₂Qₓₓ = reactive_power_hessian(State(), State(), V, Ybus, λq, pv, pq, ref, gen2bus)
-    ∂₂Qₓᵤ = reactive_power_hessian(State(), Control(), V, Ybus, λq, pv, pq, ref, gen2bus)
-    ∂₂Qᵤᵤ = reactive_power_hessian(Control(), Control(), V, Ybus, λq, pv, pq, ref, gen2bus)
+    λq = zeros(length(V))
+    λq[ref] .= λ[2]
+    λq[pv] .= λ[3:end]
+    ∂₂Qₓₓ = reactive_power_hessian(State(), State(), V, Ybus, λq, pv, pq, ref)
+    ∂₂Qₓᵤ = reactive_power_hessian(State(), Control(), V, Ybus, λq, pv, pq, ref)
+    ∂₂Qᵤᵤ = reactive_power_hessian(Control(), Control(), V, Ybus, λq, pv, pq, ref)
     return (
         xx=∂₂Qₓₓ + ∂₂Pₓₓ,
         xu=∂₂Qₓᵤ + ∂₂Pₓᵤ,

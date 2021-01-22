@@ -283,6 +283,19 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     end
 end
 
+function jacobian_full(nlp::ReducedSpaceEvaluator, u)
+    jacobians_x = [] ; jacobians_u = []
+    for cons in nlp.constraints
+        J = jacobian(nlp.model, cons, nlp.buffer)
+        push!(jacobians_x, J.x)
+        push!(jacobians_u, J.u)
+    end
+    Jx = vcat(jacobians_x...)
+    Ju = vcat(jacobians_u...)
+
+    return (x=Jx, u=Ju)
+end
+
 function full_jtprod!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
     ∂obj = nlp.autodiff.∇f
     fr_ = 0
@@ -335,7 +348,7 @@ end
 function reduced_hessian!(
     nlp::ReducedSpaceEvaluator, hessvec, ∇²fₓₓ, ∇²fₓᵤ, ∇²fᵤᵤ, w,
 )
-    λ = -nlp.λ
+    λ = -nlp.λ # take care that λ is negative of true adjoint!
     # Jacobian
     ∇gₓ = nlp.autodiff.Jgₓ.J
     ∇gᵤ = nlp.autodiff.Jgᵤ.J
@@ -352,15 +365,14 @@ function reduced_hessian!(
     hessvec .= ∇²fᵤᵤ * w +  ∇²gᵤᵤλ * w + ∇gᵤ' * ψ  + ∇²fₓᵤ * z + ∇²gₓᵤλ * z
 end
 
-function hessprod!(nlp, hessvec, u, w)
+function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     buffer = nlp.buffer
     ∂f = nlp.autodiff.∇f
-    # Evaluate Hess-vec of objective function f(x, u)
     ∇²f = hessian_cost(nlp.model, ∂f, buffer)
     reduced_hessian!(nlp, hessvec, ∇²f.xx, ∇²f.xu, ∇²f.uu, w)
 end
 
-function hessian!(nlp, H, u)
+function hessian!(nlp::ReducedSpaceEvaluator, H, u)
     nu = n_variables(nlp)
     w = zeros(nu)
     for i in 1:nu
@@ -370,15 +382,14 @@ function hessian!(nlp, H, u)
     end
 end
 
-function hessprod_lagrangian!(nlp, hessvec, u, y, w)
+function hessian_lagrangian_full(nlp::ReducedSpaceEvaluator, u, y, σ)
     nu = n_variables(nlp)
     buffer = nlp.buffer
     ∂f = nlp.autodiff.∇f
-    # Evaluate Hess-vec of objective function f(x, u)
     ∇²f = hessian_cost(nlp.model, ∂f, buffer)
-    ∇²Lₓₓ = ∇²f.xx
-    ∇²Lₓᵤ = ∇²f.xu
-    ∇²Lᵤᵤ = ∇²f.uu
+    ∇²Lₓₓ = σ .* ∇²f.xx
+    ∇²Lₓᵤ = σ .* ∇²f.xu
+    ∇²Lᵤᵤ = σ .* ∇²f.uu
 
     shift = 0
     for cons in nlp.constraints
@@ -386,22 +397,34 @@ function hessprod_lagrangian!(nlp, hessvec, u, y, w)
         mask = shift+1:shift+m
         yc = @view y[mask]
         ∇²h = hessian(nlp.model, cons, ∂f, nlp.buffer, yc)
-        ∇²Lₓₓ += ∇²h.xx
-        ∇²Lₓᵤ += ∇²h.xu
-        ∇²Lᵤᵤ += ∇²h.uu
+        ∇²Lₓₓ .+= ∇²h.xx
+        ∇²Lₓᵤ .+= ∇²h.xu
+        ∇²Lᵤᵤ .+= ∇²h.uu
         shift += m
     end
 
-    reduced_hessian!(nlp, hessvec, ∇²Lₓₓ, ∇²Lₓᵤ, ∇²Lᵤᵤ, w)
+    return (xx=∇²Lₓₓ, xu=∇²Lₓᵤ, uu=∇²Lᵤᵤ)
 end
 
-function hessian_lagrangian!(nlp, H, u, y)
-    nu = n_variables(nlp)
-    w = zeros(nu)
-    for i in 1:nu
-        fill!(w, 0)
-        w[i] = 1.0
-        hessprod_lagrangian!(nlp, view(H, :, i), u, y, w)
+#
+function hessian_structure(nlp::ReducedSpaceEvaluator)
+    S = type_array(nlp)
+    n = n_variables(nlp)
+    nnzh = n * n  # reduced Hessian is dense
+    rows = zeros(Int, nnzh)
+    cols = zeros(Int, nnzh)
+    hessian_structure!(nlp, rows, cols)
+    return rows, cols
+end
+
+function hessian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
+    n = n_variables(nlp)
+    idx = 1
+    for c in 1:n
+        for i in 1:n
+            rows[idx] = c ; cols[idx] = i
+            idx += 1
+        end
     end
 end
 

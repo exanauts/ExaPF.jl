@@ -187,10 +187,12 @@ end
 
 function hessian_cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarNetworkState)
     coefs = polar.costs_coefficients
+    c3 = @view coefs[:, 3]
     c4 = @view coefs[:, 4]
     # Change ordering from pg to [ref; pv]
     pv2gen = polar.indexing.index_pv_to_gen
     ref2gen = polar.indexing.index_ref_to_gen
+    ∂pg = (c3 .+ 2.0 .* c4 .* buffer.pg)[ref2gen]
     ∂²pg = 2.0 .* c4[[ref2gen; pv2gen]]
 
     # Evaluate Hess-vec of objective function f(x, u) = 0
@@ -201,11 +203,10 @@ function hessian_cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::P
     ∂Pₓ = active_power_jacobian(polar, State(), buffer)
     ∂Pᵤ = active_power_jacobian(polar, Control(), buffer)
 
-    ∂c = ∂obj.∂pg[ref2gen]
     D = Diagonal(∂²pg)
-    ∇²fₓₓ = ∂c .* ∂₂Pₓₓ + ∂Pₓ' * D * ∂Pₓ
-    ∇²fᵤᵤ = ∂c .* ∂₂Pᵤᵤ + ∂Pᵤ' * D * ∂Pᵤ
-    ∇²fₓᵤ = ∂c .* ∂₂Pₓᵤ + ∂Pᵤ' * D * ∂Pₓ
+    ∇²fₓₓ = ∂pg .* ∂₂Pₓₓ + ∂Pₓ' * D * ∂Pₓ
+    ∇²fᵤᵤ = ∂pg .* ∂₂Pᵤᵤ + ∂Pᵤ' * D * ∂Pᵤ
+    ∇²fₓᵤ = ∂pg .* ∂₂Pₓᵤ + ∂Pᵤ' * D * ∂Pₓ
 
     return (xx=∇²fₓₓ, xu=∇²fₓᵤ, uu=∇²fᵤᵤ)
 end
