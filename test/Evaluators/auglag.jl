@@ -3,7 +3,7 @@ function init(datafile, ::Type{ExaPF.ReducedSpaceEvaluator})
     constraints = Function[
         ExaPF.state_constraint,
         ExaPF.power_constraints,
-        ExaPF.flow_constraints,
+        # ExaPF.flow_constraints,
     ]
     return ExaPF.ReducedSpaceEvaluator(datafile; constraints=constraints)
 end
@@ -79,6 +79,7 @@ end
             inf_pr2 = ExaPF.primal_infeasibility(pen, u)
             @test inf_pr2 > 0.0
 
+            pen.ρ = 10.0
             # Update penalty weigth with a large factor to have
             # a meaningful derivative check
             ExaPF.update_penalty!(pen, η=1e3)
@@ -96,6 +97,21 @@ end
             end
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
             @test isapprox(grad_fd, g, rtol=1e-6)
+
+            # Test Hessian only on AugLagEvaluator
+            n = length(u)
+            ExaPF.update!(pen, u)
+            hv = similar(u) ; fill!(hv, 0)
+            w = similar(u) ; fill!(w, 0)
+            w[1] = 1
+            ExaPF.hessprod!(pen, hv, u, w)
+            H = similar(u, n, n) ; fill!(H, 0)
+            ExaPF.hessian!(pen, H, u)
+            # Is Hessian vector product relevant?
+            @test H * w == hv
+            # Is Hessian correct?
+            hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
+            @test isapprox(H, hess_fd, rtol=1e-6)
         end
     end
 end

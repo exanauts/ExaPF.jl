@@ -24,7 +24,8 @@
         x0 = ExaPF.initial(polar, State())
         u0 = ExaPF.initial(polar, Control())
 
-        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0)
+        constraints = Function[ExaPF.state_constraint]
+        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0; constraints=constraints)
         # Test printing
         println(devnull, nlp)
 
@@ -72,7 +73,7 @@
             return ExaPF.objective(nlp, u_)
         end
         grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
-        @test isapprox(grad_fd, g, rtol=1e-4)
+        @test isapprox(grad_fd, g, rtol=1e-6)
 
         # Hessian
         ExaPF.update!(nlp, u)
@@ -86,13 +87,7 @@
         @test H * w == hv
         # Is Hessian correct?
         hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
-        @test isapprox(H, hess_fd, rtol=1e-2)
-
-        # Hessian-Lagrangian
-        y = similar(u, m) ; fill!(y, 1)
-        ExaPF.hessprod_lagrangian!(nlp, hv, u, y, w)
-        ExaPF.hessian_lagrangian!(nlp, H, u, y)
-        @test H * w == hv
+        @test isapprox(H, hess_fd, rtol=1e-6)
 
         # Constraint
         ## Evaluation of the constraints

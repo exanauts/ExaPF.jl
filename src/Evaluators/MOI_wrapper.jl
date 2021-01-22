@@ -37,7 +37,8 @@ end
 
 function MOI.hessian_lagrangian_structure(ev::MOIEvaluator)
     n = n_variables(ev.nlp)
-    return Tuple{Int, Int}[(i, i) for i in 1:n]
+    rows, cols = hessian_structure(ev.nlp)
+    return Tuple{Int, Int}[(r, c) for (r, c) in zip(rows, cols)]
 end
 
 function MOI.eval_objective(ev::MOIEvaluator, x)
@@ -73,7 +74,17 @@ function MOI.eval_constraint_jacobian(ev::MOIEvaluator, ∂cons, x)
 end
 
 function MOI.eval_hessian_lagrangian(ev::MOIEvaluator, H, x, σ, μ)
-    fill!(H, 1.0)
+    _update!(ev, x)
+    n = n_variables(ev.nlp)
+    hess = zeros(n, n)
+    hessian_lagrangian!(ev.nlp, hess, x, μ, σ)
+    # Copy back to the MOI arrray
+    rows, cols = hessian_structure(ev.nlp)
+    k = 1
+    for (i, j) in zip(rows, cols)
+        H[k] = hess[i, j]
+        k += 1
+    end
 end
 
 function MOI.NLPBlockData(nlp::AbstractNLPEvaluator)

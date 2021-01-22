@@ -139,6 +139,47 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     ojtprod!(base_nlp, grad, u, σ, v)
 end
 
+function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
+    base_nlp = ag.inner
+    scaler = ag.scaler
+    # Import AutoDiff objects
+    autodiff = get(base_nlp, AutoDiffBackend())
+    cx = ag.infeasibility
+    mask = abs.(cx) .> 1e-10
+
+    σ = scaler.scale_obj
+    y = scaler.scale_cons .* ag.λc
+    # Hessian of Lagrangian L(u, y) = f(u) + y' * h(u)
+    ∇²L = hessian_lagrangian_full(base_nlp, u, y, σ)
+    J = jacobian_full(base_nlp, u)
+    D = Diagonal(scaler.scale_cons .* scaler.scale_cons .* mask)
+    ∇²L.xx .+= ag.ρ .* J.x' * D * J.x
+    ∇²L.xu .+= ag.ρ .* J.u' * D * J.x
+    ∇²L.uu .+= ag.ρ .* J.u' * D * J.u
+
+    reduced_hessian!(base_nlp, hessvec, ∇²L.xx, ∇²L.xu, ∇²L.uu, w)
+end
+
+function hessian!(nlp::AugLagEvaluator, H, u)
+    nu = n_variables(nlp)
+    w = zeros(nu)
+    for i in 1:nu
+        fill!(w, 0)
+        w[i] = 1.0
+        hessprod!(nlp, view(H, :, i), u, w)
+    end
+end
+
+function constraint!(ag::AugLagEvaluator, cons, u)
+    @assert length(cons) == 0
+    return
+end
+
+function jacobian!(ag::AugLagEvaluator, jac, u)
+    @assert length(jac) == 0
+    return
+end
+
 function reset!(ag::AugLagEvaluator)
     reset!(ag.inner)
     empty!(ag.counter)
