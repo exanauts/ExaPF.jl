@@ -14,7 +14,7 @@ const PS = PowerSystem
 
 @testset "Compute reduced gradient on CPU" begin
     @testset "Case $case" for case in ["case9.m", "case30.m"]
-        datafile = joinpath(dirname(@__FILE__), "..", "data", case)
+        datafile = joinpath(dirname(@__FILE__), "..", "..", "data", case)
         tolerance = 1e-8
         pf = PS.PowerNetwork(datafile)
 

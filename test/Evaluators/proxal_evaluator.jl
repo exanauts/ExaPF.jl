@@ -3,7 +3,7 @@ using Test
 import ExaPF: PS
 
 @testset "ProxALEvaluators ($time)" for time in [ExaPF.Origin, ExaPF.Normal, ExaPF.Final]
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+    datafile = joinpath(INSTANCES_DIR, "case9.m")
 
     @testset "PowerNetwork Constructor" begin
         pf = PS.PowerNetwork(datafile)

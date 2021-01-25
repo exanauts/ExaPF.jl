@@ -4,7 +4,7 @@
     else
         ITERATORS = zip([CPU()], [Array])
     end
-    datafile = joinpath(dirname(@__FILE__), "..", "data", case)
+    datafile = joinpath(INSTANCES_DIR, case)
     @testset "Constructor" for (device, M) in ITERATORS
         powerflow_solver = NewtonRaphson(; tol=1e-11)
         nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device, powerflow_solver=powerflow_solver)

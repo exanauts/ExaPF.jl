@@ -19,7 +19,7 @@ const PS = PowerSystem
         ##################################################
         # Initialization
         ##################################################
-        datafile = joinpath(dirname(@__FILE__), "..", "data", case)
+        datafile = joinpath(dirname(@__FILE__), "..", "..", "data", case)
         tolerance = 1e-8
         pf = PS.PowerNetwork(datafile)
         polar = PolarForm(pf, CPU())
