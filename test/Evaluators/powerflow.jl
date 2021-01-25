@@ -6,7 +6,7 @@ using Test
 import ExaPF: PowerSystem
 
 @testset "Powerflow solver" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case14.raw")
+    datafile = joinpath(INSTANCES_DIR, "case14.raw")
     pf = PowerSystem.PowerNetwork(datafile)
     # Parameters
     npartitions = 8

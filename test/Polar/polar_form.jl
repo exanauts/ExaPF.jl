@@ -15,7 +15,7 @@ import ExaPF: PowerSystem, AutoDiff
 const PS = PowerSystem
 
 @testset "Polar formulation" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case9.m")
     tolerance = 1e-8
     pf = PS.PowerNetwork(datafile)
 

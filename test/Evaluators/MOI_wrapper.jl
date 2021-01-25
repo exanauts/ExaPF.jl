@@ -21,7 +21,7 @@ const MOI = MathOptInterface
         1.3982297290334753,
     ]
 
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
+    datafile = joinpath(INSTANCES_DIR, "case57.m")
     nlp = ExaPF.ReducedSpaceEvaluator(datafile)
     optimizer = Ipopt.Optimizer()
     MOI.set(optimizer, MOI.RawParameter("print_level"), 0)

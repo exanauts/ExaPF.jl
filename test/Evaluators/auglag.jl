@@ -15,7 +15,7 @@ end
 
 @testset "AugLagEvaluator with $Evaluator backend" for Evaluator in [ExaPF.ReducedSpaceEvaluator, ExaPF.ProxALEvaluator]
     @testset "Inactive constraints" begin
-        datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+        datafile = joinpath(INSTANCES_DIR, "case9.m")
         # Build reference evaluator
         nlp = init(datafile, ExaPF.ReducedSpaceEvaluator)
         u0 = ExaPF.initial(nlp)
@@ -50,7 +50,7 @@ end
         ExaPF.reset!(pen)
     end
     @testset "Active constraints" begin
-        datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
+        datafile = joinpath(INSTANCES_DIR, "case57.m")
         # Build reference evaluator
         nlp = init(datafile, ExaPF.ReducedSpaceEvaluator)
         u0 = ExaPF.initial(nlp)

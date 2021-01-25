@@ -6,7 +6,7 @@ using ExaPF
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "Power flow 9 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case9.m")
     pf = PowerSystem.PowerNetwork(datafile)
 
     # test impedance matrix entries
@@ -43,7 +43,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 end
 
 @testset "Power flow 14 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case14.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case14.m")
     pf = PowerSystem.PowerNetwork(datafile)
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
@@ -66,7 +66,7 @@ end
 end
 
 @testset "Power flow 30 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case30.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case30.m")
     pf = PowerSystem.PowerNetwork(datafile)
 
     # retrieve initial state of network
@@ -90,7 +90,7 @@ end
 end
 
 @testset "Power flow 300 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case300.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case300.m")
     pf = PowerSystem.PowerNetwork(datafile)
 
     polar = PolarForm(pf, CPU())
