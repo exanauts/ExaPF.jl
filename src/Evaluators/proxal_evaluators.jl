@@ -39,7 +39,6 @@ mutable struct ProxALEvaluator{T} <: AbstractNLPEvaluator
     ramp_link_prev::AbstractVector{T}
     ramp_link_next::AbstractVector{T}
 end
-
 function ProxALEvaluator(
     nlp::ReducedSpaceEvaluator,
     time::ProxALTime;
@@ -67,7 +66,6 @@ function ProxALEvaluator(
         pgf, pgc, pgt, ramp_link_prev, ramp_link_next,
     )
 end
-
 function ProxALEvaluator(
     pf::PS.PowerNetwork,
     time::ProxALTime;
@@ -82,12 +80,22 @@ function ProxALEvaluator(
     nlp = ReducedSpaceEvaluator(model, x, u; options...)
     return ProxALEvaluator(nlp, time)
 end
+function ProxALEvaluator(
+    datafile::String;
+    time::ProxALTime=Normal,
+    device=CPU(),
+    options...
+)
+    nlp = ReducedSpaceEvaluator(datafile; device=device, options...)
+    return ProxALEvaluator(nlp, time; options...)
+end
 
 n_variables(nlp::ProxALEvaluator) = nlp.nu + nlp.ng
 n_constraints(nlp::ProxALEvaluator) = n_constraints(nlp.inner)
 
 # Getters
 get(nlp::ProxALEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
+get(nlp::ProxALEvaluator, attr::AbstractVariable) = get(nlp.inner, attr)
 get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkValues) = get(nlp.inner, attr)
 get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkAttribute) = get(nlp.inner, attr)
 
@@ -269,11 +277,6 @@ end
 
 ## Transpose Jacobian-vector product
 ## ProxAL does not add any constraint to the reduced model
-function jtprod!(nlp::ProxALEvaluator, cons, jv, w, v; start=1)
-    u = @view w[1:nlp.nu]
-    jvu = @view jv[1:nlp.nu]
-    jtprod!(nlp.inner, cons, jvu, u, v; start=start)
-end
 function jtprod!(nlp::ProxALEvaluator, jv, w, v)
     u = @view w[1:nlp.nu]
     jvu = @view jv[1:nlp.nu]

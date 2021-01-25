@@ -47,12 +47,11 @@ mutable struct AugLagEvaluator{T} <: AbstractPenaltyEvaluator
     # Stats
     counter::AbstractCounter
 end
-function AugLagEvaluator(nlp::AbstractNLPEvaluator, u0;
-                         penalties=Float64[],
-                         scale=false,
-                         c₀=0.1)
-
-    if n_constraints(nlp) == 0
+function AugLagEvaluator(
+    nlp::AbstractNLPEvaluator, u0;
+    scale=false, c₀=0.1,
+)
+    if !is_constrained(nlp)
         @warn("Original model has no inequality constraint")
     end
 
@@ -64,6 +63,13 @@ function AugLagEvaluator(nlp::AbstractNLPEvaluator, u0;
 
     scaler = scale ?  MaxScaler(nlp, u0) : MaxScaler(g_min, g_max)
     return AugLagEvaluator(nlp, cons, cx, c₀, λ, λc, scaler, NLPCounter())
+end
+function AugLagEvaluator(
+    datafile::String; options...
+)
+    nlp = ReducedSpaceEvaluator(datafile)
+    u0 = initial(nlp)
+    return AugLagEvaluator(nlp, u0; options...)
 end
 
 function update!(ag::AugLagEvaluator, u)

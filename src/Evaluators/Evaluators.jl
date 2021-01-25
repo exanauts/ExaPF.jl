@@ -138,6 +138,8 @@ at control `u`. Modify vector `cons` inplace.
 """
 function primal_infeasibility! end
 
+is_constrained(nlp::AbstractNLPEvaluator) = n_constraints(nlp) > 0
+
 """
     reset!(nlp::AbstractNLPEvaluator)
 
@@ -150,6 +152,7 @@ include("common.jl")
 
 # Based evaluators
 include("reduced_evaluator.jl")
+include("slack_evaluator.jl")
 include("proxal_evaluators.jl")
 
 # Penalty evaluators

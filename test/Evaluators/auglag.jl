@@ -17,7 +17,7 @@ end
     @testset "Inactive constraints" begin
         datafile = joinpath(INSTANCES_DIR, "case9.m")
         # Build reference evaluator
-        nlp = init(datafile, ExaPF.ReducedSpaceEvaluator)
+        nlp = init(datafile, Evaluator)
         u0 = ExaPF.initial(nlp)
         # Build penalty evaluator
         pen = ExaPF.AugLagEvaluator(nlp, u0)
@@ -52,7 +52,7 @@ end
     @testset "Active constraints" begin
         datafile = joinpath(INSTANCES_DIR, "case57.m")
         # Build reference evaluator
-        nlp = init(datafile, ExaPF.ReducedSpaceEvaluator)
+        nlp = init(datafile, Evaluator)
         u0 = ExaPF.initial(nlp)
         w♭, w♯ = ExaPF.bounds(nlp, ExaPF.Variables())
         # Build penalty evaluator

@@ -282,7 +282,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     end
 end
 
-function jtprod!(nlp::ReducedSpaceEvaluator, cons, jv, u, v; start=1)
+function jtprod!(nlp::ReducedSpaceEvaluator, cons::Function, jv, u, v)
     model = nlp.model
     ∂obj = nlp.autodiff.∇f
     # Get adjoint

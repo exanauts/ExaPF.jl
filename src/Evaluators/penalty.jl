@@ -6,6 +6,13 @@ n_constraints(ag::AbstractPenaltyEvaluator) = 0
 
 # Getters
 get(ag::AbstractPenaltyEvaluator, attr::AbstractNLPAttribute) = get(ag.inner, attr)
+get(ag::AbstractPenaltyEvaluator, attr::AbstractVariable) = get(ag.inner, attr)
+get(ag::AbstractPenaltyEvaluator, attr::PS.AbstractNetworkAttribute) = get(ag.inner, attr)
+
+# Setters
+function setvalues!(ag::AbstractPenaltyEvaluator, attr::PS.AbstractNetworkValues, values)
+    setvalues!(ag.inner, attr, values)
+end
 
 # Initial position
 initial(ag::AbstractPenaltyEvaluator) = initial(ag.inner)
