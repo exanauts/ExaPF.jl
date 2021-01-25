@@ -59,14 +59,6 @@ formulation.
 struct Control <: AbstractVariable end
 
 """
-    Parameters <: AbstractVariable
-
-Constant parameters.
-
-"""
-struct Parameters <: AbstractVariable end
-
-"""
     PhysicalState <: AbstractVariable
 
 All physical variables describing the current physical state
