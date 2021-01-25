@@ -147,10 +147,16 @@ Reset evaluator `nlp` to default configuration.
 function reset! end
 
 include("common.jl")
+
+# Based evaluators
 include("reduced_evaluator.jl")
 include("proxal_evaluators.jl")
+
+# Penalty evaluators
 include("penalty.jl")
 include("auglag.jl")
+
+# Bridge with MOI
 include("MOI_wrapper.jl")
 include("optimizers.jl")
 
