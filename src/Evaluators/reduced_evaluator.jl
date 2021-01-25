@@ -354,15 +354,13 @@ function reduced_hessian!(
     ∇gᵤ = nlp.autodiff.Jgᵤ.J
 
     # Evaluate Hess-vec of residual function g(x, u) = 0
-    ∇²gₓₓλ = residual_hessian(nlp.model, State(), State(), nlp.buffer, λ)
-    ∇²gᵤᵤλ = residual_hessian(nlp.model, Control(), Control(), nlp.buffer, λ)
-    ∇²gₓᵤλ = residual_hessian(nlp.model, State(), Control(), nlp.buffer, λ)
+    ∇²gλ = residual_hessian(nlp.model, nlp.buffer, λ)
 
     # Adjoint-adjoint
-    ∇gaₓ = ∇²fₓₓ + ∇²gₓₓλ
+    ∇gaₓ = ∇²fₓₓ + ∇²gλ.xx
     z = -(∇gₓ ) \ (∇gᵤ * w)
-    ψ = -(∇gₓ') \ (∇²fₓᵤ' * w + ∇²gₓᵤλ' * w +  ∇gaₓ * z)
-    hessvec .= ∇²fᵤᵤ * w +  ∇²gᵤᵤλ * w + ∇gᵤ' * ψ  + ∇²fₓᵤ * z + ∇²gₓᵤλ * z
+    ψ = -(∇gₓ') \ (∇²fₓᵤ' * w + ∇²gλ.xu' * w +  ∇gaₓ * z)
+    hessvec .= ∇²fᵤᵤ * w +  ∇²gλ.uu * w + ∇gᵤ' * ψ  + ∇²fₓᵤ * z + ∇²gλ.xu * z
 end
 
 function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
@@ -406,26 +404,12 @@ function hessian_lagrangian_full(nlp::ReducedSpaceEvaluator, u, y, σ)
     return (xx=∇²Lₓₓ, xu=∇²Lₓᵤ, uu=∇²Lᵤᵤ)
 end
 
-#
+# Return lower-triangular matrix
 function hessian_structure(nlp::ReducedSpaceEvaluator)
-    S = type_array(nlp)
     n = n_variables(nlp)
-    nnzh = n * n  # reduced Hessian is dense
-    rows = zeros(Int, nnzh)
-    cols = zeros(Int, nnzh)
-    hessian_structure!(nlp, rows, cols)
+    rows = Int[r for c in 1:n for r in 1:c]
+    cols = Int[c for c in 1:n for r in 1:c]
     return rows, cols
-end
-
-function hessian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
-    n = n_variables(nlp)
-    idx = 1
-    for c in 1:n
-        for i in 1:n
-            rows[idx] = c ; cols[idx] = i
-            idx += 1
-        end
-    end
 end
 
 # Utils function

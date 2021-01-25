@@ -98,20 +98,22 @@ end
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
             @test isapprox(grad_fd, g, rtol=1e-6)
 
-            # Test Hessian only on AugLagEvaluator
-            n = length(u)
-            ExaPF.update!(pen, u)
-            hv = similar(u) ; fill!(hv, 0)
-            w = similar(u) ; fill!(w, 0)
-            w[1] = 1
-            ExaPF.hessprod!(pen, hv, u, w)
-            H = similar(u, n, n) ; fill!(H, 0)
-            ExaPF.hessian!(pen, H, u)
-            # Is Hessian vector product relevant?
-            @test H * w == hv
-            # Is Hessian correct?
-            hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
-            @test isapprox(H, hess_fd, rtol=1e-6)
+            # Test Hessian only on ReducedSpaceEvaluator
+            if isa(nlp, ExaPF.ReducedSpaceEvaluator)
+                n = length(u)
+                ExaPF.update!(pen, u)
+                hv = similar(u) ; fill!(hv, 0)
+                w = similar(u) ; fill!(w, 0)
+                w[1] = 1
+                ExaPF.hessprod!(pen, hv, u, w)
+                H = similar(u, n, n) ; fill!(H, 0)
+                ExaPF.hessian!(pen, H, u)
+                # Is Hessian vector product relevant?
+                @test H * w == hv
+                # Is Hessian correct?
+                hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
+                @test isapprox(H, hess_fd, rtol=1e-6)
+            end
         end
     end
 end

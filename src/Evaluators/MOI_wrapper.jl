@@ -77,12 +77,14 @@ function MOI.eval_hessian_lagrangian(ev::MOIEvaluator, H, x, σ, μ)
     _update!(ev, x)
     n = n_variables(ev.nlp)
     hess = zeros(n, n)
-    hessian_lagrangian!(ev.nlp, hess, x, μ, σ)
+    g = @view hess[1, :]
+    gradient!(ev.nlp, g, x)
+    hessian!(ev.nlp, hess, x)
     # Copy back to the MOI arrray
     rows, cols = hessian_structure(ev.nlp)
     k = 1
-    for (i, j) in zip(rows, cols)
-        H[k] = hess[i, j]
+    for j = 1:n, i = 1:j #(i, j) in zip(rows, cols)
+        H[k] = σ * hess[i, j]
         k += 1
     end
 end

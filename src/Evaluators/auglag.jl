@@ -144,7 +144,7 @@ function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
     scaler = ag.scaler
     # Import AutoDiff objects
     autodiff = get(base_nlp, AutoDiffBackend())
-    cx = ag.infeasibility
+    cx = ag.cons
     mask = abs.(cx) .> 1e-10
 
     σ = scaler.scale_obj

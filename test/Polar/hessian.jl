@@ -89,9 +89,9 @@ const PS = PowerSystem
         end
 
         # Evaluate Hessian-vector product (full ∇²gₓₓ is a 3rd dimension tensor)
-        ∇²gₓₓλ = ExaPF.residual_hessian(State(), State(), V, Ybus, λ, pv, pq, ref)
+        ∇²gλ = ExaPF.residual_hessian(V, Ybus, λ, pv, pq, ref)
         H_fd = FiniteDiff.finite_difference_jacobian(jac_diff, x)
-        @test isapprox(∇²gₓₓλ, H_fd, rtol=1e-3)
+        @test isapprox(∇²gλ.xx, H_fd, rtol=1e-3)
 
         ## w.r.t. uu
         function jac_u_diff(u)
@@ -105,9 +105,8 @@ const PS = PowerSystem
         end
 
         Hᵤᵤ_fd = FiniteDiff.finite_difference_jacobian(jac_u_diff, u)
-        ∇²gᵤᵤλ = ExaPF.residual_hessian(Control(), Control(), V, Ybus, λ, pv, pq, ref)
 
-        @test isapprox(∇²gᵤᵤλ[1:nref+npv, 1:nref+npv], Hᵤᵤ_fd[1:nref+npv, :], atol=1e-3)
+        @test isapprox(∇²gλ.uu[1:nref+npv, 1:nref+npv], Hᵤᵤ_fd[1:nref+npv, :], atol=1e-3)
 
         ## w.r.t. xu
         function jac_xu_diff(x)
@@ -122,11 +121,10 @@ const PS = PowerSystem
         end
 
         Hₓᵤ_fd = FiniteDiff.finite_difference_jacobian(jac_xu_diff, x)
-        ∇²gₓᵤλ = ExaPF.residual_hessian(State(), Control(), V, Ybus, λ, pv, pq, ref)
-        @test isapprox(∇²gₓᵤλ[1:nref+npv, :], Hₓᵤ_fd, rtol=1e-3)
+        @test isapprox(∇²gλ.xu[1:nref+npv, :], Hₓᵤ_fd, rtol=1e-3)
 
         ##################################################
-        # Step 2: computation of Hessian of objective f
+        # Step 3: computation of Hessian of objective f
         ##################################################
 
         # Finite difference routine
@@ -170,14 +168,14 @@ const PS = PowerSystem
         index_xu = nx+1:nx+nref+2*npv
         @test isapprox(∇²fₓᵤ, H_ffd[index_xu, 1:nx], rtol=1e-3)
 
-        ∇gaₓ = ∇²fₓₓ + ∇²gₓₓλ
+        ∇gaₓ = ∇²fₓₓ + ∇²gλ.xx
 
         # Computation of the reduced Hessian
         function reduced_hess(w)
             # Second-order adjoint
             z = -(∇gₓ ) \ (∇gᵤ * w)
-            ψ = -(∇gₓ') \ (∇²fₓᵤ' * w + ∇²gₓᵤλ' * w +  ∇gaₓ * z)
-            Hw = ∇²fᵤᵤ * w +  ∇²gᵤᵤλ * w + ∇gᵤ' * ψ  + ∇²fₓᵤ * z + ∇²gₓᵤλ * z
+            ψ = -(∇gₓ') \ (∇²fₓᵤ' * w + ∇²gλ.xu' * w +  ∇gaₓ * z)
+            Hw = ∇²fᵤᵤ * w +  ∇²gλ.uu * w + ∇gᵤ' * ψ  + ∇²fₓᵤ * z + ∇²gλ.xu * z
             return Hw
         end
 
@@ -188,10 +186,9 @@ const PS = PowerSystem
             w[i] = 1.0
             H[:, i] .= reduced_hess(w)
         end
-        # @info("h", H)
 
         ##################################################
-        # Step 3: include constraints in Hessian
+        # Step 4: include constraints in Hessian
         ##################################################
         # h1 (state)      : xl <= x <= xu
         # h2 (by-product) : yl <= y <= yu

@@ -2,9 +2,9 @@
 #
 
 """
-    AdjointStackObjective
+    AdjointStackObjective{VT}
 
-An object for storing the adjoint stack in the adjoint objective computation
+An object for storing the adjoint stack in the adjoint objective computation.
 
 """
 struct AdjointStackObjective{VT}
@@ -195,18 +195,16 @@ function hessian_cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::P
     ∂pg = (c3 .+ 2.0 .* c4 .* buffer.pg)[ref2gen]
     ∂²pg = 2.0 .* c4[[ref2gen; pv2gen]]
 
-    # Evaluate Hess-vec of objective function f(x, u) = 0
-    ∂₂Pₓₓ = active_power_hessian(polar, State(), State(), buffer)
-    ∂₂Pₓᵤ = active_power_hessian(polar, State(), Control(), buffer)
-    ∂₂Pᵤᵤ = active_power_hessian(polar, Control(), Control(), buffer)
+    # Evaluate Hess-vec of objective function f(x, u)
+    ∂₂P = active_power_hessian(polar, buffer)
 
     ∂Pₓ = active_power_jacobian(polar, State(), buffer)
     ∂Pᵤ = active_power_jacobian(polar, Control(), buffer)
 
     D = Diagonal(∂²pg)
-    ∇²fₓₓ = ∂pg .* ∂₂Pₓₓ + ∂Pₓ' * D * ∂Pₓ
-    ∇²fᵤᵤ = ∂pg .* ∂₂Pᵤᵤ + ∂Pᵤ' * D * ∂Pᵤ
-    ∇²fₓᵤ = ∂pg .* ∂₂Pₓᵤ + ∂Pᵤ' * D * ∂Pₓ
+    ∇²fₓₓ = ∂pg .* ∂₂P.xx + ∂Pₓ' * D * ∂Pₓ
+    ∇²fᵤᵤ = ∂pg .* ∂₂P.uu + ∂Pᵤ' * D * ∂Pᵤ
+    ∇²fₓᵤ = ∂pg .* ∂₂P.xu + ∂Pᵤ' * D * ∂Pₓ
 
     return (xx=∇²fₓₓ, xu=∇²fₓᵤ, uu=∇²fᵤᵤ)
 end
