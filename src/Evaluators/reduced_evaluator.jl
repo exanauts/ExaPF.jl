@@ -105,6 +105,8 @@ type_array(nlp::ReducedSpaceEvaluator) = typeof(nlp.u_min)
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
+constraints_type(::ReducedSpaceEvaluator) = :inequality
+
 # Getters
 get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints
 function get(nlp::ReducedSpaceEvaluator, ::State)

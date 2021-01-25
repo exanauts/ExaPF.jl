@@ -33,6 +33,8 @@ end
 n_variables(nlp::SlackEvaluator) = nlp.nv + nlp.ns
 n_constraints(nlp::SlackEvaluator) = n_constraints(nlp.inner)
 
+constraints_type(::SlackEvaluator) = :equality
+
 # Getters
 get(nlp::SlackEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
 get(nlp::SlackEvaluator, attr::AbstractVariable) = get(nlp.inner, attr)
@@ -102,7 +104,7 @@ end
 
 function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
     # w.r.t. u
-    u = @view w[1:nlp.nu]
+    u = @view w[1:nlp.nv]
     jvu = @view jv[1:nlp.nv]
     ojtprod!(nlp.inner, jvu, u, σ, v)
     jvs = @view jv[nlp.nv+1:end]
@@ -111,5 +113,15 @@ end
 
 function reset!(nlp::SlackEvaluator)
     reset!(nlp.inner)
+end
+
+# Utils function
+function primal_infeasibility!(nlp::SlackEvaluator, cons, u)
+    constraint!(nlp, cons, u) # Evaluate constraints
+    return norm(cons, Inf)
+end
+function primal_infeasibility(nlp::SlackEvaluator, u)
+    cons = similar(nlp.s_min) ; fill!(cons, 0)
+    return primal_infeasibility!(nlp, cons, u)
 end
 

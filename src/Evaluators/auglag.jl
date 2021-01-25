@@ -1,6 +1,9 @@
 # Code for augmented Lagrangian evaluator. Inspired by the excellent NLPModels.jl:
 # Ref: https://github.com/JuliaSmoothOptimizers/Percival.jl/blob/master/src/AugLagModel.jl
 # Two-sided Lagrangian
+
+const CONSTRAINTS_TYPE = Union{Val{:inequality}, Val{:equality}, Val{:mixed}}
+
 @doc raw"""
     AugLagEvaluator{T} <: AbstractPenaltyEvaluator
 
@@ -37,8 +40,9 @@ if `h_i` is feasible)
 """
 mutable struct AugLagEvaluator{T} <: AbstractPenaltyEvaluator
     inner::AbstractNLPEvaluator
+    # Type
+    cons_type::CONSTRAINTS_TYPE
     cons::AbstractVector{T}
-    infeasibility::AbstractVector{T}
     ρ::T
     λ::AbstractVector{T}
     λc::AbstractVector{T}
@@ -52,17 +56,24 @@ function AugLagEvaluator(
     scale=false, c₀=0.1,
 )
     if !is_constrained(nlp)
-        @warn("Original model has no inequality constraint")
+        error("Model specified in `nlp` is unconstrained. Instead of using" *
+              " an Augmented Lagrangian algorithm, you could use any "*
+              "bound constrained solver instead.")
+    end
+    cons_type = Val(constraints_type(nlp))
+    if !isa(cons_type, CONSTRAINTS_TYPE)
+        error("Constraints $(constraints_type(nlp)) is not supported by" *
+              " AugLagEvaluator.")
     end
 
     g_min, g_max = bounds(nlp, Constraints())
-    cons = similar(g_min) ; fill!(cons, 0)
     cx = similar(g_min) ; fill!(cx, 0)
     λc = similar(g_min) ; fill!(λc, 0)
     λ = similar(g_min) ; fill!(λ, 0)
 
+
     scaler = scale ?  MaxScaler(nlp, u0) : MaxScaler(g_min, g_max)
-    return AugLagEvaluator(nlp, cons, cx, c₀, λ, λc, scaler, NLPCounter())
+    return AugLagEvaluator(nlp, cons_type, cx, c₀, λ, λc, scaler, NLPCounter())
 end
 function AugLagEvaluator(
     datafile::String; options...
@@ -72,19 +83,28 @@ function AugLagEvaluator(
     return AugLagEvaluator(nlp, u0; options...)
 end
 
+# Default fallback
+function _update_internal!(ag::AugLagEvaluator, ::CONSTRAINTS_TYPE)
+    # Update (shifted) infeasibility error
+    g♭ = ag.scaler.g_min
+    g♯ = ag.scaler.g_max
+    ag.λc .= max.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♯)) .+
+             min.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♭))
+    ag.cons .= max.(0, ag.cons .- g♯) .+ min.(0, ag.cons .- g♭)
+end
+
+# Specialization for equality constraints
+function _update_internal!(ag::AugLagEvaluator, ::Val{:equality})
+    ag.λc .= ag.λ .+ ag.ρ .* ag.cons
+end
+
 function update!(ag::AugLagEvaluator, u)
     conv = update!(ag.inner, u)
     # Update constraints
     constraint!(ag.inner, ag.cons, u)
     # Rescale
     ag.cons .*= ag.scaler.scale_cons
-    # Update (shifted) infeasibility error
-    g♭ = ag.scaler.g_min
-    g♯ = ag.scaler.g_max
-
-    ag.λc .= max.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♯)) .+
-             min.(0, ag.λ .+ ag.ρ .* (ag.cons .- g♭))
-    ag.infeasibility .= max.(0, ag.cons .- g♯) .+ min.(0, ag.cons .- g♭)
+    _update_internal!(ag, ag.cons_type)
     return conv
 end
 
@@ -100,7 +120,7 @@ end
 function objective(ag::AugLagEvaluator, u)
     ag.counter.objective += 1
     base_nlp = ag.inner
-    cx = ag.infeasibility
+    cx = ag.cons
     obj = ag.scaler.scale_obj * objective(base_nlp, u) +
         0.5 * ag.ρ * dot(cx, cx) + dot(ag.λ, cx)
     return obj
@@ -123,7 +143,7 @@ function reset!(ag::AugLagEvaluator)
     reset!(ag.inner)
     empty!(ag.counter)
     fill!(ag.cons, 0)
-    fill!(ag.infeasibility, 0)
+    fill!(ag.cons, 0)
     fill!(ag.λ, 0)
     fill!(ag.λc, 0)
 end

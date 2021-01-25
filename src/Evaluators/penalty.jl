@@ -4,6 +4,8 @@ n_variables(ag::AbstractPenaltyEvaluator) = n_variables(ag.inner)
 # All constraints moved inside the objective with penalties!
 n_constraints(ag::AbstractPenaltyEvaluator) = 0
 
+constraints_type(ag::AbstractPenaltyEvaluator) = :bound
+
 # Getters
 get(ag::AbstractPenaltyEvaluator, attr::AbstractNLPAttribute) = get(ag.inner, attr)
 get(ag::AbstractPenaltyEvaluator, attr::AbstractVariable) = get(ag.inner, attr)

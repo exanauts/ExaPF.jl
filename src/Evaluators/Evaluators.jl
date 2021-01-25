@@ -156,7 +156,10 @@ at control `u`. Modify vector `cons` inplace.
 """
 function primal_infeasibility! end
 
+"Return `true` if the problem is constrained, `false` otherwise."
 is_constrained(nlp::AbstractNLPEvaluator) = n_constraints(nlp) > 0
+
+function constraints_type end
 
 """
     reset!(nlp::AbstractNLPEvaluator)
