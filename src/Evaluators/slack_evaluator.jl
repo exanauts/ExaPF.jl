@@ -77,22 +77,6 @@ function constraint!(nlp::SlackEvaluator, cons, w)
 end
 
 # Gradient
-function reduced_gradient!(nlp::SlackEvaluator, grad, jvx, jvu, w)
-    # w.r.t. u
-    u = @view w[1:nlp.nv]
-    gu = @view grad[1:nlp.nv]
-    reduced_gradient!(nlp.inner, gv, jvx, jvu, u)
-    # w.r.t. s
-    gs = @view grad[nlp.nv+1:end]
-    fill!(gs, 0.0)
-end
-
-function gradient_full!(nlp::SlackEvaluator, jvx, jvu, w)
-    autodiff = get(nlp.inner, AutoDiffBackend())
-    u = @view w[1:nlp.nv]
-    gradient_full!(nlp.inner, jvx, jvu, u)
-end
-
 function gradient!(nlp::SlackEvaluator, grad, w)
     # w.r.t. u
     u = @view w[1:nlp.nv]
@@ -112,15 +96,17 @@ function jtprod!(nlp::SlackEvaluator, jv, w, v)
     jvu = @view jv[1:nlp.nv]
     jtprod!(nlp.inner, jvu, u, v)
     # w.r.t. s
-    s = @view w[nlp.nv+1:end]
     jvs = @view jv[nlp.nv+1:end]
     jvs .-= v
 end
 
-function jtprod_full!(nlp::SlackEvaluator, jvx, jvu, w, v)
+function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
+    # w.r.t. u
     u = @view w[1:nlp.nu]
-    jtprod_full!(nlp.inner, jvx, jvu, u, v)
-    # TODO
+    jvu = @view jv[1:nlp.nv]
+    ojtprod!(nlp.inner, jvu, u, σ, v)
+    jvs = @view jv[nlp.nv+1:end]
+    jvs .-= v
 end
 
 function reset!(nlp::SlackEvaluator)

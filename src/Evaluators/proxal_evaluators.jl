@@ -177,7 +177,7 @@ end
 ## Gradient
 update_jacobian!(nlp::ProxALEvaluator, ::Control) = update_jacobian!(nlp.inner, Control())
 
-function gradient_full!(nlp::ProxALEvaluator, jvx, jvu, w)
+function full_gradient!(nlp::ProxALEvaluator, jvx, jvu, w)
     # Import model
     model = nlp.inner.model
     # Import buffer (has been updated previously in update!)
@@ -241,7 +241,7 @@ function gradient!(nlp::ProxALEvaluator, g, w)
 
     jvu = ∂obj.∇fᵤ ; jvx = ∂obj.∇fₓ
     fill!(jvx, 0)  ; fill!(jvu, 0)
-    gradient_full!(nlp, jvx, jvu, w)
+    full_gradient!(nlp, jvx, jvu, w)
 
     # Start to update Control Jacobian in reduced model
     update_jacobian!(nlp, Control())
@@ -282,9 +282,25 @@ function jtprod!(nlp::ProxALEvaluator, jv, w, v)
     jvu = @view jv[1:nlp.nu]
     jtprod!(nlp.inner, jvu, u, v)
 end
-function jtprod_full!(nlp::ProxALEvaluator, jvx, jvu, w, v)
+function full_jtprod!(nlp::ProxALEvaluator, jvx, jvu, w, v)
     u = @view w[1:nlp.nu]
-    jtprod_full!(nlp.inner, jvx, jvu, u, v)
+    full_jtprod!(nlp.inner, jvx, jvu, u, v)
+end
+
+function ojtprod!(nlp::ProxALEvaluator, jv, u, σ, v)
+    autodiff = get(nlp, AutoDiffBackend())
+    ∂obj = autodiff.∇f
+    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
+    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
+    # compute gradient of objective
+    full_gradient!(nlp, jvx, jvu, u)
+    jvx .*= σ
+    jvu .*= σ
+    # compute transpose Jacobian vector product of constraints
+    full_jtprod!(nlp, jvx, jvu, u, v)
+    # Evaluate gradient in reduced space
+    update_jacobian!(nlp, Control())
+    reduced_gradient!(nlp, jv, jvx, jvu, u)
 end
 
 ## Utils function

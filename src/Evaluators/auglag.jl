@@ -114,25 +114,9 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     ag.counter.gradient += 1
     base_nlp = ag.inner
     scaler = ag.scaler
-    # Import AutoDiff objects
-    autodiff = get(base_nlp, AutoDiffBackend())
-
-    ∂obj = autodiff.∇f
-    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
-    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
-
-    # compute gradient of objective
-    gradient_full!(base_nlp, jvx, jvu, u)
-    jvx .*= scaler.scale_obj
-    jvu .*= scaler.scale_obj
-    # compute gradient of penalties
+    σ = scaler.scale_obj
     v = scaler.scale_cons .* ag.λc
-    jtprod_full!(base_nlp, jvx, jvu, u, v)
-
-    # Evaluate Jacobian of power flow equation on current u
-    update_jacobian!(base_nlp, Control())
-    # Evaluate gradient in reduced space
-    reduced_gradient!(base_nlp, grad, jvx, jvu, u)
+    ojtprod!(base_nlp, grad, u, σ, v)
 end
 
 function reset!(ag::AugLagEvaluator)
