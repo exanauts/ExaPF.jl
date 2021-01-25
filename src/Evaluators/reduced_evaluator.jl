@@ -205,7 +205,7 @@ function reduced_gradient!(
 end
 
 # Compute only full gradient wrt x and u
-function gradient_full!(nlp::ReducedSpaceEvaluator, gx, gu, u)
+function full_gradient!(nlp::ReducedSpaceEvaluator, gx, gu, u)
     buffer = nlp.buffer
     ∂obj = nlp.autodiff.∇f
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
@@ -240,7 +240,6 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
 end
 
 function jacobian_structure(nlp::ReducedSpaceEvaluator)
-    S = type_array(nlp)
     m, n = n_constraints(nlp), n_variables(nlp)
     nnzj = m * n
     rows = zeros(Int, nnzj)
@@ -282,16 +281,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     end
 end
 
-function jtprod!(nlp::ReducedSpaceEvaluator, cons::Function, jv, u, v)
-    model = nlp.model
-    ∂obj = nlp.autodiff.∇f
-    # Get adjoint
-    jtprod(model, cons, ∂obj, nlp.buffer, v)
-    jvx, jvu = ∂obj.∇fₓ, ∂obj.∇fᵤ
-    reduced_gradient!(nlp, jv, jvx, jvu)
-end
-
-function jtprod_full!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
+function full_jtprod!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
     ∂obj = nlp.autodiff.∇f
     fr_ = 0
     for cons in nlp.constraints
@@ -308,13 +298,35 @@ end
 
 function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     ∂obj = nlp.autodiff.∇f
-    jvx = ∂obj.jvₓ
-    jvu = ∂obj.jvᵤ
-    fill!(jvx, 0)
-    fill!(jvu, 0)
-    jtprod_full!(nlp, jvx, jvu, u, v)
+    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
+    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
+    full_jtprod!(nlp, jvx, jvu, u, v)
     reduced_gradient!(nlp, jv, jvx, jvu, u)
     return
+end
+
+function jtprod!(nlp::ReducedSpaceEvaluator, cons::Function, jv, u, v)
+    model = nlp.model
+    ∂obj = nlp.autodiff.∇f
+    # Get adjoint
+    jtprod(model, cons, ∂obj, nlp.buffer, v)
+    jvx, jvu = ∂obj.∇fₓ, ∂obj.∇fᵤ
+    reduced_gradient!(nlp, jv, jvx, jvu)
+end
+
+function ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)
+    ∂obj = nlp.autodiff.∇f
+    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
+    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
+    # compute gradient of objective
+    full_gradient!(nlp, jvx, jvu, u)
+    jvx .*= σ
+    jvu .*= σ
+    # compute transpose Jacobian vector product of constraints
+    full_jtprod!(nlp, jvx, jvu, u, v)
+    # Evaluate gradient in reduced space
+    update_jacobian!(nlp, Control())
+    reduced_gradient!(nlp, jv, jvx, jvu, u)
 end
 
 # Utils function

@@ -90,15 +90,15 @@ function jacobian_structure! end
 """
     jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
 
-Evaluate the Jacobian of the constraints at position `u`. Store
-the result inplace, in the array `jac`.
+Evaluate the Jacobian of the constraints ``J`` at position `u`. Store
+the result inplace, in the `m x n` matrix `jac`.
 """
 function jacobian! end
 
 """
     jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
 
-Evaluate the transpose Jacobian-vector product ``J^{T} v``.
+Evaluate the transpose Jacobian-vector product ``J^{T} v`` of the constraints.
 The vector `jv` is modified inplace.
 
 Let `(n, m) = n_variables(nlp), n_constraints(nlp)`.
@@ -109,6 +109,24 @@ Let `(n, m) = n_variables(nlp), n_constraints(nlp)`.
 
 """
 function jtprod! end
+
+"""
+    ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)
+
+Evaluate the transpose Jacobian-vector product `J' * [σ ; v]`,
+with `J` the Jacobian of the vector `[f(x); h(x)]`.
+`f(x)` is the current objective and `h(x)` constraints.
+The vector `jv` is modified inplace.
+
+Let `(n, m) = n_variables(nlp), n_constraints(nlp)`.
+
+* `jv` is a vector with dimension `n`
+* `u` is a vector with dimension `n`
+* `σ` is a scalar
+* `v` is a vector with dimension `m`
+
+"""
+function ojtprod! end
 
 """
     hessian!(nlp::AbstractNLPEvaluator, hess, u)
