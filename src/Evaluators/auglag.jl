@@ -1,9 +1,41 @@
-
+# Code for augmented Lagrangian evaluator. Inspired by the excellent NLPModels.jl:
 # Ref: https://github.com/JuliaSmoothOptimizers/Percival.jl/blob/master/src/AugLagModel.jl
-# TODO:
-# - check case when lb = ub for inequality constraints
 # Two-sided Lagrangian
-mutable struct AugLagEvaluator{T} <: AbstractNLPEvaluator
+@doc raw"""
+    AugLagEvaluator{T} <: AbstractPenaltyEvaluator
+
+Augmented-Lagrangian evaluator. Takes as input any `AbstractNLPEvaluator`
+encoding a non-linear problem
+```math
+\begin{aligned}
+       \min_u \quad & f(u)\\
+\mathrm{s.t.} \quad & h♭ ≤ h(u) ≤ h♯,\\
+                    & u♭ ≤  u   ≤ u♯,
+\end{aligned}
+```
+and return a new evaluator reformulating the original problem
+by moving the `m` constraints `h♭ ≤ h(u) ≤ h♯` into the objective
+using a set of penalties `ϕ_1, ⋯, ϕ_m`:
+```math
+\begin{aligned}
+    \min_u \quad & f(u) + \sum_i ϕ_i(h_i)   \\
+\mathrm{s.t.} \quad &  u♭ ≤  u   ≤  u♯,
+\end{aligned}
+```
+
+This evaluator considers explicitly the inequality constraints,
+without reformulating them by introducing slack variables. Each
+penalty `ϕ_i` writes
+```math
+ϕ_i(h_i) = λ_i' * φ(h_i) + \frac \rho2 \| φ(h_i) \|_2^2
+```
+with `φ` a function to compute the current infeasibility (hence equal to 0
+if `h_i` is feasible)
+```math
+φ(h_i) = \max\{0 , λ_i + ρ * (h_i - h_i♯)   \} + \min\{0 , λ_i + ρ * (h_i - h_i♭)   \}
+```
+"""
+mutable struct AugLagEvaluator{T} <: AbstractPenaltyEvaluator
     inner::AbstractNLPEvaluator
     cons::AbstractVector{T}
     infeasibility::AbstractVector{T}
@@ -33,19 +65,6 @@ function AugLagEvaluator(nlp::AbstractNLPEvaluator, u0;
     scaler = scale ?  MaxScaler(nlp, u0) : MaxScaler(g_min, g_max)
     return AugLagEvaluator(nlp, cons, cx, c₀, λ, λc, scaler, NLPCounter())
 end
-
-n_variables(ag::AugLagEvaluator) = n_variables(ag.inner)
-n_constraints(ag::AugLagEvaluator) = 0
-
-# Getters
-get(ag::AugLagEvaluator, attr::AbstractNLPAttribute) = get(ag.inner, attr)
-
-# Initial position
-initial(ag::AugLagEvaluator) = initial(ag.inner)
-
-# Bounds
-bounds(ag::AugLagEvaluator, ::Variables) = bounds(ag.inner, Variables())
-bounds(ag::AugLagEvaluator, ::Constraints) = Float64[], Float64[]
 
 function update!(ag::AugLagEvaluator, u)
     conv = update!(ag.inner, u)
@@ -80,6 +99,7 @@ function objective(ag::AugLagEvaluator, u)
         0.5 * ag.ρ * dot(cx, cx) + dot(ag.λ, cx)
     return obj
 end
+
 function inner_objective(ag::AugLagEvaluator, u)
     return ag.scaler.scale_obj * objective(ag.inner, u)
 end
@@ -108,23 +128,6 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     # Evaluate gradient in reduced space
     reduced_gradient!(base_nlp, grad, jvx, jvu, u)
 end
-
-function constraint!(ag::AugLagEvaluator, cons, u)
-    @assert length(cons) == 0
-    return
-end
-
-function jacobian!(ag::AugLagEvaluator, jac, u)
-    @assert length(jac) == 0
-    return
-end
-
-function jacobian_structure!(ag::AugLagEvaluator, rows, cols)
-    @assert length(rows) == length(cols) == 0
-end
-
-primal_infeasibility!(ag::AugLagEvaluator, cons, u) = primal_infeasibility!(ag.inner, cons, u)
-primal_infeasibility(ag::AugLagEvaluator, u) = primal_infeasibility(ag.inner, u)
 
 function reset!(ag::AugLagEvaluator)
     reset!(ag.inner)
