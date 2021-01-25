@@ -40,6 +40,10 @@ function jacobian_structure!(ag::AbstractPenaltyEvaluator, rows, cols)
     @assert length(rows) == length(cols) == 0
 end
 
+function hessian_structure(ag::AbstractPenaltyEvaluator)
+    return hessian_structure(ag.inner)
+end
+
 primal_infeasibility!(ag::AbstractPenaltyEvaluator, cons, u) = primal_infeasibility!(ag.inner, cons, u)
 primal_infeasibility(ag::AbstractPenaltyEvaluator, u) = primal_infeasibility(ag.inner, u)
 

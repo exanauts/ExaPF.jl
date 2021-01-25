@@ -60,9 +60,9 @@ function objective end
 """
     gradient!(nlp::AbstractNLPEvaluator, g, u)
 
-Evaluate the gradient of the objective at point `u`. Store
-the result inplace in the vector `g`, which should have the same
-dimension as `u`.
+Evaluate the gradient of the objective in the reduced space, at
+given control `u`. Store the result inplace in the vector `g`, which should
+have the same dimension as `u`.
 
 """
 function gradient! end
@@ -90,8 +90,8 @@ function jacobian_structure! end
 """
     jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
 
-Evaluate the Jacobian of the constraints ``J`` at position `u`. Store
-the result inplace, in the `m x n` matrix `jac`.
+Evaluate the Jacobian of the constraints in the reduced space,
+at control `u`. Store the result inplace, in the `m x n` matrix `jac`.
 """
 function jacobian! end
 
@@ -131,38 +131,36 @@ function ojtprod! end
 """
     hessian!(nlp::AbstractNLPEvaluator, H, u)
 
-Evaluate the Hessian `∇²f(u)` of the objective `f(u)` at point `u`. Store
+Evaluate the Hessian `∇²f(u)` of the objective `f(u)` in the
+reduced space, at control `u`. Store
 the result inplace, in the `n x n` matrix `H`.
 
 """
 function hessian! end
 
 """
-    hessian_lagrangian!(nlp::AbstractNLPEvaluator, H, u, y)
-
-Evaluate the Hessian of the Lagrangian
-at `(u, y)`. Stores the result inplace, in `n x n` matrix `H`.
-
-"""
-function hessian_lagrangian! end
-
-"""
     hessprod!(nlp::AbstractNLPEvaluator, hessvec, u, v)
 
-Evaluate the Hessian-vector product `∇²f(u) * v` of the objective at `u`. Store
+Evaluate the Hessian-vector product `∇²f(u) * v` of the objective in
+the reduced space, at given control `u`. Store
 the result inplace, in the vector `hessvec`.
 
 """
 function hessprod! end
 
-"""
-    hessprod_lagrangian!(nlp::AbstractNLPEvaluator, hessvec, u, y, v)
+@doc raw"""
+    hessian_lagrangian_full(nlp::AbstractNLPEvaluator, u, y, σ)
 
-Evaluate the Hessian-vector product of the Lagrangian
-at `(u, y)`. Store the result inplace, in the vector `hessvec`.
+Evaluate the Hessian of the Lagrangian in the full-space
+```math
+∇²L(x, u, y) = σ ∇²f(x, u) + \sum_i y_i ∇²c_i(x, u)
+```
+Return a named-tuple `H`, with entries `H.xx` corresponding
+to `∇²Lₓₓ`, `H.xu` to `∇²Lₓᵤ` and `H.uu` to `∇²Lᵤᵤ`.
 
 """
-function hessprod_lagrangian! end
+function hessian_lagrangian_full end
+
 
 # Utilities
 """

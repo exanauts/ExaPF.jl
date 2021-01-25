@@ -267,20 +267,16 @@ function hessian(polar::PolarForm, ::typeof(power_constraints), ∂jac, buffer, 
 
     # First constraint is on active power generation at slack node
     λₚ = λ[1]
-    ∂₂Pₓₓ = λₚ .* active_power_hessian(State(), State(), V, Ybus, pv, pq, ref)
-    ∂₂Pₓᵤ = λₚ .* active_power_hessian(State(), Control(), V, Ybus, pv, pq, ref)
-    ∂₂Pᵤᵤ = λₚ .* active_power_hessian(Control(), Control(), V, Ybus, pv, pq, ref)
+    ∂₂P = active_power_hessian(V, Ybus, pv, pq, ref)
 
     λq = zeros(length(V))
     λq[ref] .= λ[2]
     λq[pv] .= λ[3:end]
-    ∂₂Qₓₓ = reactive_power_hessian(State(), State(), V, Ybus, λq, pv, pq, ref)
-    ∂₂Qₓᵤ = reactive_power_hessian(State(), Control(), V, Ybus, λq, pv, pq, ref)
-    ∂₂Qᵤᵤ = reactive_power_hessian(Control(), Control(), V, Ybus, λq, pv, pq, ref)
+    ∂₂Q = reactive_power_hessian(V, Ybus, λq, pv, pq, ref)
     return (
-        xx=∂₂Qₓₓ + ∂₂Pₓₓ,
-        xu=∂₂Qₓᵤ + ∂₂Pₓᵤ,
-        uu=∂₂Qᵤᵤ + ∂₂Pᵤᵤ,
+        xx=∂₂Q.xx + λₚ .* ∂₂P.xx,
+        xu=∂₂Q.xu + λₚ .* ∂₂P.xu,
+        uu=∂₂Q.uu + λₚ .* ∂₂P.uu,
     )
 end
 

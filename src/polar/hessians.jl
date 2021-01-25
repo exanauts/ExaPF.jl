@@ -27,26 +27,28 @@ function _matpower_hessian(V, Ybus, λ)
     return (G11, transpose(G21), G22)
 end
 
-function residual_hessian(::State, ::State, V, Ybus, λ, pv, pq, ref)
+function residual_hessian(V, Ybus, λ, pv, pq, ref)
     # decompose vector
     n = length(V)
     λp = zeros(n) ; λq = zeros(n)
     npv = length(pv)
     npq = length(pq)
+    nref = length(ref)
     λp[pv] = λ[1:npv]
     λp[pq] = λ[npv+1:npv+npq]
     λq[pq] = λ[npv+npq+1:end]
 
-    G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
-    Pθθ = real.(G11)
-    Pvθ = real.(G12)
-    Pvv = real.(G22)
+    Gp11, Gp12, Gp22 = _matpower_hessian(V, Ybus, λp)
+    Pθθ = real.(Gp11)
+    Pvθ = real.(Gp12)
+    Pvv = real.(Gp22)
 
-    G11, G12, G22 = _matpower_hessian(V, Ybus, λq)
-    Qθθ = imag.(G11)
-    Qvθ = imag.(G12)
-    Qvv = imag.(G22)
+    Gq11, Gq12, Gq22 = _matpower_hessian(V, Ybus, λq)
+    Qθθ = imag.(Gq11)
+    Qvθ = imag.(Gq12)
+    Qvv = imag.(Gq22)
 
+    # w.r.t. xx
     H11 = Pθθ[pv, pv] + Qθθ[pv, pv]
     H12 = Pθθ[pv, pq] + Qθθ[pv, pq]
     H13 = Pvθ[pv, pq] + Qvθ[pv, pq]
@@ -54,66 +56,26 @@ function residual_hessian(::State, ::State, V, Ybus, λ, pv, pq, ref)
     H23 = Pvθ[pq, pq] + Qvθ[pq, pq]
     H33 = Pvv[pq, pq] + Qvv[pq, pq]
 
-    H = [
+    Hxx = [
         H11  H12  H13
         H12' H22  H23
         H13' H23' H33
     ]
 
-    return H
-end
-
-function residual_hessian(::Control, ::Control, V, Ybus, λ, pv, pq, ref)
-    # decompose vector
-    n = length(V)
-    λp = zeros(n) ; λq = zeros(n)
-    npv = length(pv)
-    npq = length(pq)
-    nref = length(ref)
-    # λ is ordered according to the state x
-    λp[pv] = λ[1:npv]
-    λp[pq] = λ[npv+1:npv+npq]
-    λq[pq] = λ[npv+npq+1:end]
-
-    _, _, G22 = _matpower_hessian(V, Ybus, λp)
-    Pvv = real.(G22)
-
-    _, _, G22 = _matpower_hessian(V, Ybus, λq)
-    Qvv = imag.(G22)
-
+    # w.r.t. uu
     H11 = Pvv[ref, ref] + Qvv[ref, ref]
     H12 = Pvv[ref,  pv] + Qvv[ref,  pv]
     H22 = Pvv[pv,   pv] + Qvv[pv,   pv]
 
-    H = [
+    Huu = [
          H11  H12 spzeros(nref, npv)
          H12' H22 spzeros(npv, npv)
          spzeros(npv, nref + 2 * npv)
     ]
 
-    return H
-end
-
-function residual_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref)
-    # decompose vector
-    n = length(V)
-    λp = zeros(n) ; λq = zeros(n)
-    npv = length(pv)
-    npq = length(pq)
-    nref = length(ref)
-    # λ is ordered according to the state x
-    λp[pv] = λ[1:npv]
-    λp[pq] = λ[npv+1:npv+npq]
-    λq[pq] = λ[npv+npq+1:end]
-
-    G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
-    Pvθ = real.(transpose(G12))
-    Pvv = real.(G22)
-
-    G11, G12, G22 = _matpower_hessian(V, Ybus, λq)
-    Qvθ = imag.(transpose(G12))
-    Qvv = imag.(G22)
-
+    # w.r.t. xu
+    Pvθ = real.(transpose(Gp12))
+    Qvθ = imag.(transpose(Gq12))
     H11 = Pvθ[ref, pv] + Qvθ[ref, pv]
     H12 = Pvθ[ref, pq] + Qvθ[ref, pq]
     H13 = Pvv[ref, pq] + Qvv[ref, pq]
@@ -121,19 +83,17 @@ function residual_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref)
     H22 = Pvθ[pv,  pq] + Qvθ[pv,  pq]
     H23 = Pvv[pv,  pq] + Qvv[pv,  pq]
 
-    H = [
+    Hxu = [
         H11  H12  H13
         H21  H22  H23
         spzeros(npv, npv + 2 * npq)
     ]
 
-    return H
+    return (xx=Hxx, xu=Hxu, uu=Huu)
 end
 
 function residual_hessian(
     polar::PolarForm,
-    r::AbstractVariable,
-    s::AbstractVariable,
     buffer::PolarNetworkState,
     λ::AbstractVector,
 )
@@ -141,12 +101,12 @@ function residual_hessian(
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     V = buffer.vmag .* exp.(im .* buffer.vang)
-    return residual_hessian(r, s, V, polar.network.Ybus, λ, pv, pq, ref)
+    return residual_hessian(V, polar.network.Ybus, λ, pv, pq, ref)
 end
 
 
 # ∂²pg_ref / ∂²x
-function active_power_hessian(::State, ::State, V, Ybus, pv, pq, ref)
+function active_power_hessian(V, Ybus, pv, pq, ref)
     # decompose vector
     n = length(V)
     npv = length(pv)
@@ -169,59 +129,27 @@ function active_power_hessian(::State, ::State, V, Ybus, pv, pq, ref)
     H23 = Pvθ[pq, pq]
     H33 = Pvv[pq, pq]
 
-    H = [
+    # w.r.t. xx
+    Hxx = [
         H11  H12  H13
         H12' H22  H23
         H13' H23' H33
     ]
-    return H
-end
 
-# ∂²pg_ref / ∂²u
-function active_power_hessian(::Control, ::Control, V, Ybus, pv, pq, ref)
-    # decompose vector
-    n = length(V)
-    npv = length(pv)
-    npq = length(pq)
-    nref = length(ref)
-
-    λp = zeros(n)
-    # Pick only components wrt ref nodes
-    λp[ref] .= 1.0
-
-    G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
-    Pvv = real.(G22)
-
+    # w.r.t. uu
     H11 = Pvv[ref, ref]
     H12 = Pvv[ref, pv]
     H22 = Pvv[pv, pv]
 
-    H = [
+    Huu = [
          H11  H12 spzeros(nref, npv)
          H12' H22 spzeros(npv, npv)
          spzeros(npv, nref + 2 * npv)
     ]
 
-    return H
-end
-
-# ∂²pg_ref / ∂x∂u
-function active_power_hessian(::State, ::Control, V, Ybus, pv, pq, ref)
-    # decompose vector
-    n = length(V)
-    npv = length(pv)
-    npq = length(pq)
-    nref = length(ref)
-
-    λp = zeros(n)
-    # Pick only components wrt ref nodes
-    λp[ref] .= 1.0
-
-    G11, G12, G22 = _matpower_hessian(V, Ybus, λp)
-    Pθθ = real.(G11)
+    # w.r.t. xu
     Pvθ = real.(transpose(G12))
-    Pvv = real.(G22)
-
+    Qvθ = imag.(transpose(G12))
     H11 = Pvθ[ref, pv]
     H12 = Pvθ[ref, pq]
     H13 = Pvv[ref, pq]
@@ -229,30 +157,28 @@ function active_power_hessian(::State, ::Control, V, Ybus, pv, pq, ref)
     H22 = Pvθ[pv, pq]
     H23 = Pvv[pv, pq]
 
-    H = [
+    Hxu = [
         H11  H12  H13
         H21  H22  H23
         spzeros(npv, npv + 2 * npq)
     ]
 
-    return H
+    return (xx=Hxx, xu=Hxu, uu=Huu)
 end
 
 function active_power_hessian(
     polar::PolarForm,
-    r::AbstractVariable,
-    s::AbstractVariable,
     buffer::PolarNetworkState,
 )
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     V = buffer.vmag .* exp.(im .* buffer.vang)
-    return active_power_hessian(r, s, V, polar.network.Ybus, pv, pq, ref)
+    return active_power_hessian(V, polar.network.Ybus, pv, pq, ref)
 end
 
 # ∂²qg / ∂²x * λ
-function reactive_power_hessian(::State, ::State, V, Ybus, λ, pv, pq, ref)
+function reactive_power_hessian(V, Ybus, λ, pv, pq, ref)
     n = length(V)
     npv = length(pv)
     npq = length(pq)
@@ -270,51 +196,24 @@ function reactive_power_hessian(::State, ::State, V, Ybus, λ, pv, pq, ref)
     H23 = Qvθ[pq, pq]
     H33 = Qvv[pq, pq]
 
-    H = [
+    Hxx = [
         H11  H12  H13
         H12' H22  H23
         H13' H23' H33
     ]
-    return H
-end
-
-# ∂²qg / ∂²u * λ
-function reactive_power_hessian(::Control, ::Control, V, Ybus, λ, pv, pq, ref)
-    # decompose vector
-    n = length(V)
-    npv = length(pv)
-    npq = length(pq)
-    nref = length(ref)
-
-    G11, G12, G22 = _matpower_hessian(V, Ybus, λ)
-    Qvv = imag.(G22)
 
     H11 = Qvv[ref, ref]
     H12 = Qvv[ref, pv]
     H22 = Qvv[pv, pv]
 
-    H = [
+    Huu = [
          H11  H12 spzeros(nref, npv)
          H12' H22 spzeros(npv, npv)
          spzeros(npv, nref + 2* npv)
     ]
 
-    return H
-end
-
-# ∂²qg / ∂x∂u * λ
-function reactive_power_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref)
-    # decompose vector
-    n = length(V)
-    npv = length(pv)
-    npq = length(pq)
-    nref = length(ref)
-
-    G11, G12, G22 = _matpower_hessian(V, Ybus, λ)
-    Qθθ = imag.(G11)
+    Pvθ = real.(transpose(G12))
     Qvθ = imag.(transpose(G12))
-    Qvv = imag.(G22)
-
     H11 = Qvθ[ref, pv]
     H12 = Qvθ[ref, pq]
     H13 = Qvv[ref, pq]
@@ -322,19 +221,16 @@ function reactive_power_hessian(::State, ::Control, V, Ybus, λ, pv, pq, ref)
     H22 = Qvθ[pv, pq]
     H23 = Qvv[pv, pq]
 
-    H = [
+    Hxu = [
         H11  H12  H13
         H21  H22  H23
         spzeros(npv, 2*npq+npv)
     ]
-
-    return H
+    return (xx=Hxx, xu=Hxu, uu=Huu)
 end
 
 function reactive_power_hessian(
     polar::PolarForm,
-    r::AbstractVariable,
-    s::AbstractVariable,
     buffer::PolarNetworkState,
     λ::AbstractVector,
 )
@@ -342,6 +238,6 @@ function reactive_power_hessian(
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     V = buffer.vmag .* exp.(im .* buffer.vang)
-    return reactive_power_hessian(r, s, V, polar.network.Ybus, λ, pv, pq, ref, igen)
+    return reactive_power_hessian(V, polar.network.Ybus, λ, pv, pq, ref, igen)
 end
 
