@@ -93,6 +93,8 @@ end
 n_variables(nlp::ProxALEvaluator) = nlp.nu + nlp.ng
 n_constraints(nlp::ProxALEvaluator) = n_constraints(nlp.inner)
 
+constraints_type(::ProxALEvaluator) = :inequality
+
 # Getters
 get(nlp::ProxALEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
 get(nlp::ProxALEvaluator, attr::AbstractVariable) = get(nlp.inner, attr)
