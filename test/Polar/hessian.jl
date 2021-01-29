@@ -15,7 +15,7 @@ const PS = PowerSystem
 # Warning: currently works only on CPU, as depends on
 # explicit evaluation of Hessian, using MATPOWER expressions
 @testset "Compute reduced gradient on CPU" begin
-    @testset "Case $case" for case in ["case9.m", "case30.m"]
+    @testset "Case $case" for case in ["case9.m", "case300.m"]
         ##################################################
         # Initialization
         ##################################################
@@ -91,7 +91,7 @@ const PS = PowerSystem
         # Evaluate Hessian-vector product (full ∇²gₓₓ is a 3rd dimension tensor)
         ∇²gλ = ExaPF.residual_hessian(V, Ybus, λ, pv, pq, ref)
         H_fd = FiniteDiff.finite_difference_jacobian(jac_diff, x)
-        @test isapprox(∇²gλ.xx, H_fd, rtol=1e-3)
+        @test isapprox(∇²gλ.xx, H_fd, rtol=1e-6)
 
         ## w.r.t. uu
         function jac_u_diff(u)
@@ -106,7 +106,9 @@ const PS = PowerSystem
 
         Hᵤᵤ_fd = FiniteDiff.finite_difference_jacobian(jac_u_diff, u)
 
-        @test isapprox(∇²gλ.uu[1:nref+npv, 1:nref+npv], Hᵤᵤ_fd[1:nref+npv, :], atol=1e-3)
+        if !iszero(∇²gλ.uu[1:nref+npv, 1:nref+npv])
+            @test isapprox(∇²gλ.uu[1:nref+npv, 1:nref+npv], Hᵤᵤ_fd[1:nref+npv, :], rtol=1e-6)
+        end
 
         ## w.r.t. xu
         function jac_xu_diff(x)
@@ -121,7 +123,7 @@ const PS = PowerSystem
         end
 
         Hₓᵤ_fd = FiniteDiff.finite_difference_jacobian(jac_xu_diff, x)
-        @test isapprox(∇²gλ.xu[1:nref+npv, :], Hₓᵤ_fd, rtol=1e-3)
+        @test isapprox(∇²gλ.xu[1:nref+npv, :], Hₓᵤ_fd, rtol=1e-6)
 
         ##################################################
         # Step 3: computation of Hessian of objective f
@@ -164,9 +166,10 @@ const PS = PowerSystem
         ∇²fₓₓ = ∇²f.xx
         ∇²fᵤᵤ = ∇²f.uu
         ∇²fₓᵤ = ∇²f.xu
-        @test isapprox(∇²fₓₓ, H_ffd[1:nx, 1:nx], rtol=1e-3)
-        index_xu = nx+1:nx+nref+2*npv
-        @test isapprox(∇²fₓᵤ, H_ffd[index_xu, 1:nx], rtol=1e-3)
+        @test isapprox(∇²fₓₓ, H_ffd[1:nx, 1:nx], rtol=1e-6)
+        index_u = nx+1:nx+nref+2*npv
+        @test isapprox(∇²fₓᵤ, H_ffd[index_u, 1:nx], rtol=1e-6)
+        @test isapprox(∇²fᵤᵤ, H_ffd[index_u, index_u], rtol=1e-6)
 
         ∇gaₓ = ∇²fₓₓ + ∇²gλ.xx
 

@@ -132,8 +132,8 @@ function ojtprod! end
     hessian!(nlp::AbstractNLPEvaluator, H, u)
 
 Evaluate the Hessian `∇²f(u)` of the objective `f(u)` in the
-reduced space, at control `u`. Store
-the result inplace, in the `n x n` matrix `H`.
+reduced space, at control `u`.
+Store the result inplace, in the `n x n` matrix `H`.
 
 """
 function hessian! end
@@ -142,8 +142,8 @@ function hessian! end
     hessprod!(nlp::AbstractNLPEvaluator, hessvec, u, v)
 
 Evaluate the Hessian-vector product `∇²f(u) * v` of the objective in
-the reduced space, at given control `u`. Store
-the result inplace, in the vector `hessvec`.
+the reduced space, at control `u`.
+Store the result inplace, in the vector `hessvec` (with size `n`).
 
 """
 function hessprod! end
@@ -159,7 +159,7 @@ Return a named-tuple `H`, with entries `H.xx` corresponding
 to `∇²Lₓₓ`, `H.xu` to `∇²Lₓᵤ` and `H.uu` to `∇²Lᵤᵤ`.
 
 """
-function hessian_lagrangian_full end
+function full_hessian_lagrangian end
 
 
 # Utilities
@@ -184,6 +184,14 @@ function primal_infeasibility! end
 "Return `true` if the problem is constrained, `false` otherwise."
 is_constrained(nlp::AbstractNLPEvaluator) = n_constraints(nlp) > 0
 
+"""
+    constraints_type(nlp::AbstractNLPEvaluator)
+
+Return the type of the non-linear constraints of the evaluator `nlp`,
+as a `Symbol`. Result could be `:inequality` if problem has only
+inequality constraints, `:equality` if problem has only equality
+constraints, or `:mixed` if problem has both types of constraints.
+"""
 function constraints_type end
 
 """

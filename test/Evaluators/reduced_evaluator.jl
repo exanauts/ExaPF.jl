@@ -75,19 +75,21 @@
         grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
         @test isapprox(grad_fd, g, rtol=1e-6)
 
-        # Hessian
-        ExaPF.update!(nlp, u)
-        hv = similar(u) ; fill!(hv, 0)
-        w = similar(u) ; fill!(w, 0)
-        w[1] = 1
-        ExaPF.hessprod!(nlp, hv, u, w)
-        H = similar(u, n, n) ; fill!(H, 0)
-        ExaPF.hessian!(nlp, H, u)
-        # Is Hessian vector product relevant?
-        @test H * w == hv
-        # Is Hessian correct?
-        hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
-        @test isapprox(H, hess_fd, rtol=1e-6)
+        # Hessian (only supported on CPU)
+        if isa(device, CPU)
+            ExaPF.update!(nlp, u)
+            hv = similar(u) ; fill!(hv, 0)
+            w = similar(u) ; fill!(w, 0)
+            w[1] = 1
+            ExaPF.hessprod!(nlp, hv, u, w)
+            H = similar(u, n, n) ; fill!(H, 0)
+            ExaPF.hessian!(nlp, H, u)
+            # Is Hessian vector product relevant?
+            @test H * w == hv
+            # Is Hessian correct?
+            hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
+            @test isapprox(H, hess_fd, rtol=1e-6)
+        end
 
         # Constraint
         ## Evaluation of the constraints
