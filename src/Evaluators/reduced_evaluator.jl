@@ -283,7 +283,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     end
 end
 
-function jacobian_full(nlp::ReducedSpaceEvaluator, u)
+function full_jacobian(nlp::ReducedSpaceEvaluator, u)
     jacobians_x = [] ; jacobians_u = []
     for cons in nlp.constraints
         J = jacobian(nlp.model, cons, nlp.buffer)
@@ -370,17 +370,7 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     reduced_hessian!(nlp, hessvec, ∇²f.xx, ∇²f.xu, ∇²f.uu, w)
 end
 
-function hessian!(nlp::ReducedSpaceEvaluator, H, u)
-    nu = n_variables(nlp)
-    w = zeros(nu)
-    for i in 1:nu
-        fill!(w, 0)
-        w[i] = 1.0
-        hessprod!(nlp, view(H, :, i), u, w)
-    end
-end
-
-function hessian_lagrangian_full(nlp::ReducedSpaceEvaluator, u, y, σ)
+function full_hessian_lagrangian(nlp::ReducedSpaceEvaluator, u, y, σ)
     nu = n_variables(nlp)
     buffer = nlp.buffer
     ∂f = nlp.autodiff.∇f
@@ -407,8 +397,8 @@ end
 # Return lower-triangular matrix
 function hessian_structure(nlp::ReducedSpaceEvaluator)
     n = n_variables(nlp)
-    rows = Int[r for c in 1:n for r in 1:c]
-    cols = Int[c for c in 1:n for r in 1:c]
+    rows = Int[r for r in 1:n for c in 1:r]
+    cols = Int[c for r in 1:n for c in 1:r]
     return rows, cols
 end
 

@@ -83,7 +83,7 @@ function MOI.eval_hessian_lagrangian(ev::MOIEvaluator, H, x, σ, μ)
     # Copy back to the MOI arrray
     rows, cols = hessian_structure(ev.nlp)
     k = 1
-    for j = 1:n, i = 1:j #(i, j) in zip(rows, cols)
+    for (i, j) in zip(rows, cols)
         H[k] = σ * hess[i, j]
         k += 1
     end

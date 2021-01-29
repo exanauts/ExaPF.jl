@@ -64,12 +64,14 @@ function update!(nlp::SlackEvaluator, w)
     return update!(nlp.inner, u)
 end
 
+# f(x) = f₀(u)   , with x = (u, s)
 function objective(nlp::SlackEvaluator, w)
     u = @view w[1:nlp.nv]
     s = @view w[nlp.nv+1:end]
     return objective(nlp.inner, u)
 end
 
+# h(x) = h₀(u) - s
 function constraint!(nlp::SlackEvaluator, cons, w)
     u = @view w[1:nlp.nv]
     s = @view w[nlp.nv+1:end]
@@ -79,6 +81,7 @@ function constraint!(nlp::SlackEvaluator, cons, w)
 end
 
 # Gradient
+# ∇f = [ ∇f₀ ; 0 ]
 function gradient!(nlp::SlackEvaluator, grad, w)
     # w.r.t. u
     u = @view w[1:nlp.nv]
@@ -92,6 +95,9 @@ end
 
 ## Transpose Jacobian-vector product
 # N.B.: constraints are specified as h(u) - s = 0
+# J = [J₀  -I], so
+# J' = [ J₀' ;
+#        -I  ]
 function jtprod!(nlp::SlackEvaluator, jv, w, v)
     # w.r.t. u
     u = @view w[1:nlp.nv]
@@ -107,8 +113,19 @@ function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
     u = @view w[1:nlp.nv]
     jvu = @view jv[1:nlp.nv]
     ojtprod!(nlp.inner, jvu, u, σ, v)
+    # w.r.t. s
     jvs = @view jv[nlp.nv+1:end]
     jvs .-= v
+end
+
+# H = [ H₀   0 ;
+#       0    0 ]
+function hessprod!(nlp::SlackEvaluator, hessvec, w, v)
+    # w.r.t. u
+    @views hessprod!(nlp.inner, hessvec[1:nlp.nv], w[1:nlp.nv], v[1:nlp.nv])
+    # w.r.t. s
+    hus = @view hessvec[nlp.nv+1:end]
+    hus .= 0.0
 end
 
 function reset!(nlp::SlackEvaluator)

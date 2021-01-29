@@ -1,4 +1,15 @@
 
+# Common interface for Hessian
+function hessian!(nlp::AbstractNLPEvaluator, H, x)
+    n = n_variables(nlp)
+    v = zeros(n)
+    for i in 1:n
+        fill!(v, 0)
+        v[i] = 1.0
+        hessprod!(nlp, view(H, :, i), x, v)
+    end
+end
+
 # AutoDiff Factory
 abstract type AbstractAutoDiffFactory end
 
