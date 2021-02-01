@@ -7,6 +7,7 @@ using Krylov
 using LinearAlgebra
 using Printf
 using SparseArrays
+using UnicodePlots
 
 import ..ExaPF: xnorm, csclsvqr!
 import Base: show
@@ -204,6 +205,9 @@ function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
+    #println("Preconditioner and Jacobian")
+    #println(spy(sparse(Matrix(P)), height=20, width=40))
+    #println(spy(J, height=20, width=40))
     (y[:], status) = Krylov.bicgstab(J, x, N=P,
                                      atol=solver.atol,
                                      rtol=solver.rtol,
