@@ -9,6 +9,8 @@ struct IndexingCache{IVT} <: AbstractBuffer
     index_generators::IVT
     index_pv_to_gen::IVT
     index_ref_to_gen::IVT
+    index_bustype::IVT
+    index_bus_pf::IVT
 end
 
 """

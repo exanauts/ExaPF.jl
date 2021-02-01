@@ -147,6 +147,20 @@ Indexes of the slack buses in a `AbstractPowerSystem`.
 struct SlackIndexes <: AbstractIndexing end
 
 """
+    BusTypeIndex <: AbstractIndexing
+
+Map of bus number (internal) to bus type
+"""
+struct BusTypeIndex <: AbstractIndexing end
+
+"""
+    BusPFIndex <: AbstractIndexing
+
+Map of bus number (internal) to equation number.
+"""
+struct BusPFIndex <: AbstractIndexing end
+
+"""
     GeneratorIndexes <: AbstractIndexing
 
 Indexes of the generators in a `AbstractPowerSystem`.

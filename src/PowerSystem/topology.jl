@@ -129,6 +129,32 @@ function bustypeindex(bus, gen, bus_to_indexes)
 end
 
 """
+    equationmap(bustype)
+
+Returns a map from bus to equation. Can be used to control the ordering of the Jacobian.
+
+NOTE: we just implement a sequential ordering. We'll get fancier.
+"""
+function equationmap(bustype)
+    bus_pf_idx = zeros(Int64, size(bustype, 1))
+    ptr = 1
+
+    for i in 1:size(bustype, 1)
+        if bustype[i] == REF_BUS_TYPE
+            bus_pf_idx[i] = 0
+        elseif bustype[i] == PV_BUS_TYPE
+            bus_pf_idx[i] = ptr
+            ptr += 1
+        elseif bustype[i] == PQ_BUS_TYPE
+            bus_pf_idx[i] = ptr
+            ptr += 2
+        end
+    end
+
+    return bus_pf_idx
+end
+
+"""
     assembleSbus(gen, load, SBASE, nbus)
 
 Assembles vector of constant power injections (generator - load). Since

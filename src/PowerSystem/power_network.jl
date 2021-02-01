@@ -39,6 +39,7 @@ struct PowerNetwork <: AbstractPowerSystem
 
     sbus::Vector{Complex{Float64}}
     sload::Vector{Complex{Float64}}
+    bus_pf_idx::Vector{Int64}
 
     function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
         # Parsed data indexes
@@ -78,10 +79,13 @@ struct PowerNetwork <: AbstractPowerSystem
         # bus type indexing
         ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
 
+        # power flow equation bus map
+        bus_pf_idx = equationmap(bustype)
+
         sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
         Ybus = topology.ybus
 
-        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
+        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload, bus_pf_idx)
     end
 end
 
@@ -127,7 +131,8 @@ end
 get(pf::PowerNetwork, ::PVIndexes) = pf.pv
 get(pf::PowerNetwork, ::PQIndexes) = pf.pq
 get(pf::PowerNetwork, ::SlackIndexes) = pf.ref
-
+get(pf::PowerNetwork, ::BusTypeIndex) = pf.bustype
+get(pf::PowerNetwork, ::BusPFIndex) = pf.bus_pf_idx
 
 # Pretty printing
 function Base.show(io::IO, pf::PowerNetwork)

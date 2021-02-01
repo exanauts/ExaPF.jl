@@ -72,6 +72,9 @@ function PolarForm(pf::PS.PowerNetwork, device)
     idx_ref = PS.get(pf, PS.SlackIndexes())
     idx_pv = PS.get(pf, PS.PVIndexes())
     idx_pq = PS.get(pf, PS.PQIndexes())
+    bustype = PS.get(pf, PS.BusTypeIndex())
+    idx_bus_pf = PS.get(pf, PS.BusPFIndex())
+    
     # Build-up reverse index for performance
     pv_to_gen = similar(idx_pv)
     ref_to_gen = similar(idx_ref)
@@ -96,6 +99,8 @@ function PolarForm(pf::PS.PowerNetwork, device)
     gidx_pq = convert(IT, idx_pq)
     gref_to_gen = convert(IT, ref_to_gen)
     gpv_to_gen = convert(IT, pv_to_gen)
+    gbustype = convert(IT, bustype)
+    gidx_bus_pf = convert(IT, idx_bus_pf)
 
     # Bounds
     ## Get bounds on active power
@@ -126,7 +131,8 @@ function PolarForm(pf::PS.PowerNetwork, device)
     u_min[nref+npv+1:nref+2*npv] .= p_min[gpv_to_gen]
     u_max[nref+npv+1:nref+2*npv] .= p_max[gpv_to_gen]
 
-    indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen)
+    indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen,
+                                gbustype, gidx_bus_pf)
     mappv = [i + nbus for i in idx_pv]
     mappq = [i + nbus for i in idx_pq]
     # Ordering for x is (θ_pv, θ_pq, v_pq)
@@ -135,6 +141,10 @@ function PolarForm(pf::PS.PowerNetwork, device)
 
     controlmap = vcat(idx_ref, idx_pv, idx_pv .+ nbus)
     control_jacobian_structure = ControlJacobianStructure{IT}(residual_jacobian, IT(controlmap))
+
+    # create a map to iterate by bus
+
+
 
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
@@ -313,6 +323,9 @@ function powerflow(
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
+    
+    bustype = polar.indexing.index_bustype
+    bus_pf = polar.indexing.index_bus_pf
 
     # iteration variables
     iter = 0

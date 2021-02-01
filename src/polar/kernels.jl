@@ -71,7 +71,6 @@ end
     npq = size(pq, 1)
 
     i = @index(Global, Linear)
-    println(i)
     # REAL PV: 1:npv
     # REAL PQ: (npv+1:npv+npq)
     # IMAG PQ: (npv+npq+1:npv+2npq)
