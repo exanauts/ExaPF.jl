@@ -13,7 +13,7 @@ end
 
 struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     network::PS.PowerNetwork
-    device::Device
+    device::KA.Device
     # bounds
     x_min::VT
     x_max::VT
@@ -42,16 +42,16 @@ include("adjoints.jl")
 include("constraints.jl")
 
 function PolarForm(pf::PS.PowerNetwork, device)
-    if isa(device, CPU)
+    if isa(device, KA.CPU)
         IT = Vector{Int}
         VT = Vector{Float64}
         M = SparseMatrixCSC
         AT = Array
-    elseif isa(device, CUDADevice)
-        IT = CuVector{Int64}
-        VT = CuVector{Float64}
-        M = CuSparseMatrixCSR
-        AT = CuArray
+    elseif isa(device, KA.CUDADevice)
+        IT = CUDA.CuVector{Int64}
+        VT = CUDA.CuVector{Float64}
+        M = CUSPARSE.CuSparseMatrixCSR
+        AT = CUDA.CuArray
     end
 
     nbus = PS.get(pf, PS.NumberOfBuses())

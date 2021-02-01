@@ -1,3 +1,4 @@
+import KernelAbstractions: @index
 # Implement kernels for polar formulation
 
 """
@@ -61,7 +62,7 @@ function get_react_injection(fr::Int, v_m, v_a, ybus_re::Spmat{VI,VT}, ybus_im::
     return Q
 end
 
-@kernel function residual_kernel!(F, v_m, v_a,
+KA.@kernel function residual_kernel!(F, v_m, v_a,
                                   ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
                                   ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
                                   pinj, qinj, pv, pq, nbus)
@@ -100,9 +101,9 @@ function residual_polar!(F, v_m, v_a,
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
-        kernel! = residual_kernel!(CPU(), 4)
+        kernel! = residual_kernel!(KA.CPU(), 4)
     else
-        kernel! = residual_kernel!(CUDADevice(), 256)
+        kernel! = residual_kernel!(KA.CUDADevice(), 256)
     end
     ev = kernel!(F, v_m, v_a,
                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
@@ -112,7 +113,7 @@ function residual_polar!(F, v_m, v_a,
     wait(ev)
 end
 
-@kernel function transfer_kernel!(
+KA.@kernel function transfer_kernel!(
     vmag, vang, pinj, qinj, u, pv, pq, ref, pload, qload
 )
     i = @index(Global, Linear)
@@ -137,10 +138,10 @@ end
 
 # Transfer values in (x, u) to buffer
 function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
-    if isa(u, CuArray)
-        kernel! = transfer_kernel!(CUDADevice(), 256)
+    if isa(u, CUDA.CuArray)
+        kernel! = transfer_kernel!(KA.CUDADevice(), 256)
     else
-        kernel! = transfer_kernel!(CPU(), 1)
+        kernel! = transfer_kernel!(KA.CPU(), 1)
     end
     nbus = length(buffer.vmag)
     pv = polar.indexing.index_pv
@@ -157,7 +158,7 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
     wait(ev)
 end
 
-@kernel function active_power_kernel!(
+KA.@kernel function active_power_kernel!(
     pg, vmag, vang, pinj, qinj,
     pv, ref, pv_to_gen, ref_to_gen,
     ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
@@ -195,9 +196,9 @@ end
 # Refresh active power (needed to evaluate objective)
 function update!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
-        kernel! = active_power_kernel!(CPU(), 1)
+        kernel! = active_power_kernel!(KA.CPU(), 1)
     else
-        kernel! = active_power_kernel!(CUDADevice(), 256)
+        kernel! = active_power_kernel!(KA.CUDADevice(), 256)
     end
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
@@ -219,7 +220,7 @@ function update!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::Pol
     wait(ev)
 end
 
-@kernel function reactive_power_kernel!(
+KA.@kernel function reactive_power_kernel!(
     qg, vmag, vang, pinj, qinj,
     pv, ref, pv_to_gen, ref_to_gen,
     ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
@@ -255,9 +256,9 @@ end
 
 function update!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
-        kernel! = reactive_power_kernel!(CPU(), 1)
+        kernel! = reactive_power_kernel!(KA.CPU(), 1)
     else
-        kernel! = reactive_power_kernel!(CUDADevice(), 256)
+        kernel! = reactive_power_kernel!(KA.CUDADevice(), 256)
     end
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
@@ -278,7 +279,7 @@ function update!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::P
     wait(ev)
 end
 
-@kernel function load_power_constraint_kernel!(
+KA.@kernel function load_power_constraint_kernel!(
     g, qg, ref_to_gen, pv_to_gen, nref, npv, shift
 )
     i = @index(Global, Linear)
@@ -293,7 +294,7 @@ end
     end
 end
 
-@kernel function branch_flow_kernel!(
+KA.@kernel function branch_flow_kernel!(
         slines, vmag, vang,
         yff_re, yft_re, ytf_re, ytt_re,
         yff_im, yft_im, ytf_im, ytt_im,
@@ -370,7 +371,7 @@ end
 This implements the .+= operator.
 
 """
-@kernel function accumulate_view!(x, vx, indices)
+KA.@kernel function accumulate_view!(x, vx, indices)
     # This is parallelizable
     id = @index(Global, Linear)
     for (j, idx) in enumerate(indices)

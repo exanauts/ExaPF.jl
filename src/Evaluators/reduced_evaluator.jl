@@ -85,7 +85,7 @@ function ReducedSpaceEvaluator(
 end
 function ReducedSpaceEvaluator(
     datafile;
-    device=CPU(),
+    device=KA.CPU(),
     options...
 )
     # Load problem.

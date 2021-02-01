@@ -24,7 +24,7 @@ function SlackEvaluator(nlp::AbstractNLPEvaluator)
 end
 function SlackEvaluator(
     datafile::String;
-    device=CPU(), options...
+    device=KA.CPU(), options...
 )
     nlp = ReducedSpaceEvaluator(datafile; device=device)
     return SlackEvaluator(nlp)
