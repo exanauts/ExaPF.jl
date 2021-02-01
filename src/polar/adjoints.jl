@@ -90,7 +90,7 @@ function put!(
     end
 end
 
-@kernel function put_adjoint_kernel!(
+KA.@kernel function put_adjoint_kernel!(
     adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
     index_pv, index_pq, index_ref, pv_to_gen,
 )
@@ -163,9 +163,9 @@ function put(
         put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
     end
     if isa(adj_x, Array)
-        kernel! = put_adjoint_kernel!(CPU(), 1)
+        kernel! = put_adjoint_kernel!(KA.CPU(), 1)
     else
-        kernel! = put_adjoint_kernel!(CUDADevice(), 256)
+        kernel! = put_adjoint_kernel!(KA.CUDADevice(), 256)
     end
     ev = kernel!(adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
                  index_pv, index_pq, index_ref, pv_to_gen,

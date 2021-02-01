@@ -69,7 +69,7 @@ end
 function ProxALEvaluator(
     pf::PS.PowerNetwork,
     time::ProxALTime;
-    device=CPU(),
+    device=KA.CPU(),
     options...
 )
     # Build network polar formulation
@@ -83,7 +83,7 @@ end
 function ProxALEvaluator(
     datafile::String;
     time::ProxALTime=Normal,
-    device=CPU(),
+    device=KA.CPU(),
     options...
 )
     nlp = ReducedSpaceEvaluator(datafile; device=device, options...)
