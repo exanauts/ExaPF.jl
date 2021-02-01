@@ -14,6 +14,7 @@ using LinearAlgebra
 using SparseArrays
 
 import CUDA
+import CUDA.CUBLAS
 import CUDA.CUSPARSE
 import CUDA.CUSOLVER
 

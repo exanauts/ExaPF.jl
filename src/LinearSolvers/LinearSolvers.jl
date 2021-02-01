@@ -6,7 +6,9 @@ using SparseArrays
 
 import Base: show
 
-import CUDA
+using CUDA
+import CUDA.CUBLAS
+import CUDA.CUSOLVER
 import CUDA.CUSPARSE
 import IterativeSolvers
 import KernelAbstractions
@@ -92,7 +94,7 @@ function ldiv!(::DirectSolver,
     csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
-get_transpose(::DirectSolver, M::CUDA.CUSPARSE.CuSparseMatrixCSR) = CuSparseMatrixCSC(M)
+get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
 
 function update!(solver::AbstractIterativeLinearSolver, J)
     update(J, solver.precond)
