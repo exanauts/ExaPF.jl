@@ -1,5 +1,6 @@
 # Polar formulation
 #
+using UnicodePlots
 
 struct StateJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
     sparsity::Function
@@ -330,6 +331,7 @@ function powerflow(
     # iteration variables
     iter = 0
     converged = false
+    println(spy(jacobian.J, height=20, width=40))
 
     # indices
     j1 = 1
