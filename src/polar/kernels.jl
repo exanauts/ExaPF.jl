@@ -65,20 +65,22 @@ end
 @kernel function residual_kernel_bus!(F, v_m, v_a,
                                   ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
                                   ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
-                                  pinj, qinj, pv, pq, nbus)
+                                  pinj, qinj, pv, pq, nbus, bustype, bus_pf)
 
     npv = size(pv, 1)
     npq = size(pq, 1)
 
-    i = @index(Global, Linear)
-    # REAL PV: 1:npv
-    # REAL PQ: (npv+1:npv+npq)
-    # IMAG PQ: (npv+npq+1:npv+2npq)
-    fr = (i <= npv) ? pv[i] : pq[i - npv]
-    F[i] -= pinj[fr]
-    if i > npv
-        F[i + npq] -= qinj[fr]
+    fr = @index(Global, Linear)
+    ptr = bus_pf[fr]
+    type = bustype[fr]
+
+    if type == 2 # PV
+        F[ptr] -= pinj[fr]
+    elseif type == 1 # PQ
+        F[ptr] -= pinj[fr]
+        F[ptr + 1] -= qinj[fr]
     end
+
     @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
         to = ybus_re_rowval[c]
         aij = v_a[fr] - v_a[to]
@@ -88,10 +90,14 @@ end
         coef_sin = v_m[fr]*v_m[to]*ybus_im_nzval[c]
         cos_val = cos(aij)
         sin_val = sin(aij)
-        F[i] += coef_cos * cos_val + coef_sin * sin_val
-        if i > npv
-            F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
+
+        if type == 2 # PV
+            F[ptr] += coef_cos * cos_val + coef_sin * sin_val
+        elseif type == 1 # PQ
+            F[ptr] += coef_cos * cos_val + coef_sin * sin_val
+            F[ptr + 1] += coef_cos * sin_val - coef_sin * cos_val
         end
+
     end
 end
 
@@ -134,7 +140,7 @@ function residual_polar!(F, v_m, v_a,
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
-        kernel! = residual_kernel_bus!(CPU(), 4)
+        kernel! = residual_kernel!(CPU(), 4)
     else
         kernel! = residual_kernel!(CUDADevice(), 256)
     end
@@ -143,6 +149,25 @@ function residual_polar!(F, v_m, v_a,
                  ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
                  pinj, qinj, pv, pq, nbus,
                  ndrange=npv+npq)
+    wait(ev)
+end
+
+function residual_polar_bus!(F, v_m, v_a,
+                         ybus_re, ybus_im,
+                         pinj, qinj, pv, pq, nbus,
+                         bustype, bus_pf)
+    npv = length(pv)
+    npq = length(pq)
+    if isa(F, Array)
+        kernel! = residual_kernel_bus!(CPU(), 4)
+    else
+        kernel! = residual_kernel_bus!(CUDADevice(), 256)
+    end
+    ev = kernel!(F, v_m, v_a,
+                 ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+                 ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                 pinj, qinj, pv, pq, nbus, bustype, bus_pf,
+                 ndrange=nbus)
     wait(ev)
 end
 

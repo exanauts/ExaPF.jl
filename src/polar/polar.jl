@@ -346,10 +346,17 @@ function powerflow(
     fill!(dx, zero(T))
 
     # Evaluate residual function
+    residual_polar_bus!(
+        F, Vm, Va, ybus_re, ybus_im,
+        pbus, qbus, pv, pq, nbus,
+        bustype, bus_pf
+    )
+    println(norm(F,Inf))
+    fill!(F, zero(T))
     residual_polar!(
         F, Vm, Va, ybus_re, ybus_im,
-        pbus, qbus, pv, pq, nbus
-    )
+        pbus, qbus, pv, pq, nbus)
+    println(norm(F, Inf))
 
     # check for convergence
     normF = norm(F, Inf)
