@@ -24,7 +24,7 @@
         x0 = ExaPF.initial(polar, State())
         u0 = ExaPF.initial(polar, Control())
 
-        constraints = Function[ExaPF.state_constraint]
+        constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
         nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0; constraints=constraints)
         # Test printing
         println(devnull, nlp)
@@ -97,19 +97,21 @@
         fill!(cons, 0)
         ExaPF.constraint!(nlp, cons, u)
 
-        ## Evaluation of the Jacobian
-        jac = M{Float64, 2}(undef, m, n)
-        fill!(jac, 0)
-        ExaPF.jacobian!(nlp, jac, u)
-
-        ## Evaluation of the Jacobian transpose product
+        ## Evaluation of the transpose-Jacobian product
         v = similar(cons) ; fill!(v, 0)
         fill!(g, 0)
         ExaPF.jtprod!(nlp, g, u, v)
         @test iszero(g)
         fill!(v, 1) ; fill!(g, 0)
         ExaPF.jtprod!(nlp, g, u, v)
-        @test isapprox(g, transpose(jac) * v)
+
+        ## Evaluation of the Jacobian (only on CPU)
+        if isa(device, CPU)
+            jac = M{Float64, 2}(undef, m, n)
+            fill!(jac, 0)
+            ExaPF.jacobian!(nlp, jac, u)
+            @test isapprox(g, transpose(jac) * v)
+        end
 
         # Utils
         inf_pr1 = ExaPF.primal_infeasibility(nlp, u)
