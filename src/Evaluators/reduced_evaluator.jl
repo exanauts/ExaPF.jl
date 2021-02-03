@@ -261,28 +261,6 @@ function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     end
 end
 
-function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
-    model = nlp.model
-    ∇gₓ = nlp.autodiff.Jgₓ.J
-    ∇gᵤ = nlp.autodiff.Jgᵤ.J
-    nₓ = get(nlp.model, NumberOfState())
-    μ = similar(nlp.λ)
-    ∂obj = nlp.autodiff.∇f
-    cnt = 1
-
-    for cons in nlp.constraints
-        mc_ = size_constraint(nlp.model, cons)
-        for i_cons in 1:mc_
-            jacobian(model, cons, i_cons, ∂obj, nlp.buffer)
-            jx, ju = ∂obj.∇fₓ, ∂obj.∇fᵤ
-            # Get adjoint
-            LinearSolvers.ldiv!(nlp.linear_solver, μ, nlp.∇gᵗ, jx)
-            jac[cnt, :] .= (ju .- ∇gᵤ' * μ)
-            cnt += 1
-        end
-    end
-end
-
 function full_jacobian(nlp::ReducedSpaceEvaluator, u)
     jacobians_x = [] ; jacobians_u = []
     for cons in nlp.constraints
@@ -290,10 +268,25 @@ function full_jacobian(nlp::ReducedSpaceEvaluator, u)
         push!(jacobians_x, J.x)
         push!(jacobians_u, J.u)
     end
+    # TODO: too many allocations there
     Jx = vcat(jacobians_x...)
     Ju = vcat(jacobians_u...)
 
     return (x=Jx, u=Ju)
+end
+
+function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
+    J = full_jacobian(nlp, u)
+    m, nₓ = size(J.x)
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J
+    # Compute factorization with UMFPACK
+    ∇gfac = factorize(nlp.∇gᵗ)
+    # Compute adjoints all in once, using the same factorization
+    μ = zeros(nₓ, m)
+    ldiv!(μ, ∇gfac, J.x')
+    # Compute reduced Jacobian
+    copy!(jac, J.u)
+    mul!(jac, μ', ∇gᵤ, -1.0, 1.0)
 end
 
 function full_jtprod!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
