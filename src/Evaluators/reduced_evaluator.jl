@@ -192,18 +192,20 @@ function update_jacobian!(nlp::ReducedSpaceEvaluator, ::Control)
     jacobian(nlp.model, nlp.autodiff.Jgᵤ, nlp.buffer, AutoDiff.ControlJacobian())
 end
 
-# compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λₖ)
-# equivalent to: g = ∇fᵤ - (∇gᵤ')*λₖ_neg
+# compute inplace reduced gradient (g = ∇fᵤ + (∇gᵤ')*λ)
+# equivalent to: g = ∇fᵤ - (∇gᵤ')*λ_neg
 # (take λₖ_neg to avoid computing an intermediate array)
 function reduced_gradient!(
-    nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, u,
+    nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, λ, u,
 )
-    λₖ = nlp.λ
     ∇gᵤ = nlp.autodiff.Jgᵤ.J
     # Compute adjoint and store value inside λₖ
-    LinearSolvers.ldiv!(nlp.linear_solver, λₖ, nlp.∇gᵗ, ∂fₓ)
+    LinearSolvers.ldiv!(nlp.linear_solver, λ, nlp.∇gᵗ, ∂fₓ)
     grad .= ∂fᵤ
-    mul!(grad, transpose(∇gᵤ), λₖ, -1.0, 1.0)
+    mul!(grad, transpose(∇gᵤ), λ, -1.0, 1.0)
+end
+function reduced_gradient!(nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, u)
+    reduced_gradient!(nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, nlp.λ, u)
 end
 
 # Compute only full gradient wrt x and u
@@ -309,7 +311,7 @@ function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     jvx = ∂obj.jvₓ ; fill!(jvx, 0)
     jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
     full_jtprod!(nlp, jvx, jvu, u, v)
-    reduced_gradient!(nlp, jv, jvx, jvu, u)
+    reduced_gradient!(nlp, jv, jvx, jvu, jvx, u)
     return
 end
 
@@ -319,7 +321,7 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons::Function, jv, u, v)
     # Get adjoint
     jtprod(model, cons, ∂obj, nlp.buffer, v)
     jvx, jvu = ∂obj.∇fₓ, ∂obj.∇fᵤ
-    reduced_gradient!(nlp, jv, jvx, jvu)
+    reduced_gradient!(nlp, jv, jvx, jvx, jvu)
 end
 
 function ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)
@@ -385,6 +387,28 @@ function full_hessian_lagrangian(nlp::ReducedSpaceEvaluator, u, y, σ)
     end
 
     return (xx=∇²Lₓₓ, xu=∇²Lₓᵤ, uu=∇²Lᵤᵤ)
+end
+
+function hessian_lagrangian_prod!(
+    nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, v,
+)
+    # Full Hessian of Lagrangian L(u, y) = f(u) + y' * h(u)
+    ∇²L = full_hessian_lagrangian(nlp, u, y, σ)
+    reduced_hessian!(base_nlp, hessvec, ∇²L.xx, ∇²L.xu, ∇²L.uu, v)
+end
+
+function hessian_lagrangian_penalty_prod!(
+    nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, v, w,
+)
+    # Full Hessian of Lagrangian L(u, y) = f(u) + y' * h(u)
+    ∇²L = full_hessian_lagrangian(nlp, u, y, σ)
+    # Add Hessian of quadratic penalty
+    J = full_jacobian(nlp, u)
+    D = Diagonal(w)
+    ∇²L.xx .+= J.x' * D * J.x
+    ∇²L.xu .+= J.u' * D * J.x
+    ∇²L.uu .+= J.u' * D * J.u
+    reduced_hessian!(nlp, hessvec, ∇²L.xx, ∇²L.xu, ∇²L.uu, v)
 end
 
 # Return lower-triangular matrix

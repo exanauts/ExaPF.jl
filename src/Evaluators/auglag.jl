@@ -140,28 +140,19 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     ojtprod!(base_nlp, grad, u, σ, v)
 end
 
-# TODO: currently, hessprod! works only with the `ReducedSpaceEvaluator`
-# We should implement something equivalent to `ojtprod!`, but for computing
-# second order information.
 function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
     base_nlp = ag.inner
     scaler = ag.scaler
     # Import AutoDiff objects
     autodiff = get(base_nlp, AutoDiffBackend())
     cx = ag.cons
-    mask = abs.(cx) .> 1e-10
+    mask = abs.(cx) .> 0
 
     σ = scaler.scale_obj
     y = scaler.scale_cons .* ag.λc .* mask
-    # Hessian of Lagrangian L(u, y) = f(u) + y' * h(u)
-    ∇²L = full_hessian_lagrangian(base_nlp, u, y, σ)
-    J = full_jacobian(base_nlp, u)
-    D = Diagonal(scaler.scale_cons .* scaler.scale_cons .* mask)
-    ∇²L.xx .+= ag.ρ .* J.x' * D * J.x
-    ∇²L.xu .+= ag.ρ .* J.u' * D * J.x
-    ∇²L.uu .+= ag.ρ .* J.u' * D * J.u
+    z = ag.ρ .* scaler.scale_cons .* scaler.scale_cons .* mask
 
-    reduced_hessian!(base_nlp, hessvec, ∇²L.xx, ∇²L.xu, ∇²L.uu, w)
+    hessian_lagrangian_penalty_prod!(base_nlp, hessvec, u, y, σ, w, z)
 end
 
 function reset!(ag::AugLagEvaluator)

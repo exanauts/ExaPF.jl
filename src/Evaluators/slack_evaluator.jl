@@ -96,8 +96,8 @@ end
 ## Transpose Jacobian-vector product
 # N.B.: constraints are specified as h(u) - s = 0
 # J = [J₀  -I], so
-# J' = [ J₀' ;
-#        -I  ]
+# J' = [ J₀' ]
+#      [ -I  ]
 function jtprod!(nlp::SlackEvaluator, jv, w, v)
     # w.r.t. u
     u = @view w[1:nlp.nv]
@@ -118,14 +118,45 @@ function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
     jvs .-= v
 end
 
-# H = [ H₀   0 ;
-#       0    0 ]
+# H = [ H₀   0 ]
+#     [ 0    0 ]
 function hessprod!(nlp::SlackEvaluator, hessvec, w, v)
     # w.r.t. u
     @views hessprod!(nlp.inner, hessvec[1:nlp.nv], w[1:nlp.nv], v[1:nlp.nv])
     # w.r.t. s
     hus = @view hessvec[nlp.nv+1:end]
     hus .= 0.0
+end
+
+# J = [Jᵤ -I] , hence
+# J' * J = [ Jᵤ' * Jᵤ    - Jᵤ']
+#          [ - Jᵤ           I ]
+function hessian_lagrangian_penalty_prod!(
+    nlp::SlackEvaluator, hessvec, x, y, σ, v, w,
+)
+    @views begin
+        u   = x[1:nlp.nv]
+        vᵤ  = v[1:nlp.nv]
+        vₛ  = v[nlp.nv+1:end]
+        hvu = hessvec[1:nlp.nv]
+        hvs = hessvec[nlp.nv+1:end]
+    end
+    u_buf = similar(u) ; fill!(u_buf, 0)
+    y_buf = similar(y) ; fill!(y_buf, 0)
+    # w.r.t. uu
+    # ∇²L + ρ Jᵤ' * Jᵤ
+    hessian_lagrangian_penalty_prod!(nlp.inner, hvu, u, y, σ, vᵤ, w)
+
+    # w.r.t. us
+    y_buf .= w .* vₛ
+    # - Jᵤ' * vₛ
+    jtprod!(nlp.inner, u_buf, u, y_buf)
+    hvu .+= - u_buf
+    # w.r.t. su
+    jprod!(nlp.inner, y_buf, u, vᵤ)
+    hvs .+= - w .* y_buf
+    # w.r.t. ss
+    hvs .+= w .* vₛ
 end
 
 function reset!(nlp::SlackEvaluator)

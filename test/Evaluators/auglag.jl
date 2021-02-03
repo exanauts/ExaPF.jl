@@ -99,7 +99,7 @@ end
             @test isapprox(grad_fd, g, rtol=1e-6)
 
             # Test Hessian only on ReducedSpaceEvaluator
-            if isa(nlp, ExaPF.ReducedSpaceEvaluator)
+            if isa(nlp, ExaPF.ReducedSpaceEvaluator) || isa(nlp, ExaPF.SlackEvaluator)
                 n = length(u)
                 ExaPF.update!(pen, u)
                 hv = similar(u) ; fill!(hv, 0)

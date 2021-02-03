@@ -1,5 +1,23 @@
 
+# Default implementation of jprod!, using full Jacobian matrix
+function jprod!(nlp::AbstractNLPEvaluator, jv, u, v)
+    nᵤ = length(u)
+    m  = n_constraints(nlp)
+    @assert nᵤ == length(v)
+    jac = similar(jv, m, nᵤ)
+    jacobian!(nlp, jac, u)
+    mul!(jv, jac, v)
+end
+
+# Joint Objective Jacobian transpose vector product (default implementation)
+function ojtprod!(nlp::AbstractNLPEvaluator, jv, u, σ, v)
+    gradient!(nlp, jv, u)
+    jv .*= σ  # scale gradient
+    jtprod!(nlp, jv, u, v)
+end
+
 # Common interface for Hessian
+# Build full Hessian matrix using `n` Hessian-vector product
 function hessian!(nlp::AbstractNLPEvaluator, H, x)
     n = n_variables(nlp)
     v = zeros(n)
@@ -8,6 +26,16 @@ function hessian!(nlp::AbstractNLPEvaluator, H, x)
         v[i] = 1.0
         hessprod!(nlp, view(H, :, i), x, v)
     end
+end
+
+function hessian_lagrangian_penalty_prod!(
+    nlp::AbstractNLPEvaluator, hessvec, u, y, σ, v, w,
+)
+    jv = similar(u) ; fill!(jv, 0)
+    hessian_lagrangian_prod!(nlp, hessvec, u, y, σ, v)
+    jprod!(nlp, jv, u, v)
+    jv .*= w
+    jtprod!(nlp, hessvec, u, jv)
 end
 
 # AutoDiff Factory

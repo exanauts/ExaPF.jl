@@ -108,14 +108,20 @@
         ## Evaluation of the Jacobian (only on CPU)
         if isa(device, CPU)
             jac = M{Float64, 2}(undef, m, n)
-            fill!(jac, 0)
             ExaPF.jacobian!(nlp, jac, u)
+            # Test transpose Jacobian vector product
             @test isapprox(g, transpose(jac) * v)
+            # Test Jacobian vector product
+            S = typeof(u)
+            jv = ExaPF.xzeros(S, m)
+            v = ExaPF.xzeros(S, n)
+            ExaPF.jprod!(nlp, jv, u, v)
+            @test jac * v == jv
         end
 
         # Utils
         inf_pr1 = ExaPF.primal_infeasibility(nlp, u)
-        inf_pr2 = ExaPF.primal_infeasibility!(nlp, v, u)
+        inf_pr2 = ExaPF.primal_infeasibility!(nlp, cons, u)
         @test inf_pr1 == inf_pr2
 
         # test reset!
