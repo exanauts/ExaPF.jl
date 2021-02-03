@@ -257,9 +257,10 @@ function reset! end
 
 include("common.jl")
 
-# Based evaluators
+# Basic evaluators
 include("reduced_evaluator.jl")
 include("slack_evaluator.jl")
+include("feasibility_evaluator.jl")
 include("proxal_evaluators.jl")
 
 # Penalty evaluators

@@ -98,7 +98,7 @@ end
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
             @test isapprox(grad_fd, g, rtol=1e-6)
 
-            # Test Hessian only on ReducedSpaceEvaluator
+            # Test Hessian only on ReducedSpaceEvaluator and SlackEvaluator
             if isa(nlp, ExaPF.ReducedSpaceEvaluator) || isa(nlp, ExaPF.SlackEvaluator)
                 n = length(u)
                 ExaPF.update!(pen, u)
@@ -113,6 +113,10 @@ end
                 # Is Hessian correct?
                 hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
                 @test isapprox(H, hess_fd, rtol=1e-6)
+            end
+            # Test estimation of multipliers only on SlackEvaluator
+            if isa(nlp, ExaPF.SlackEvaluator)
+                λ = @time ExaPF.estimate_multipliers(pen, u)
             end
         end
     end
