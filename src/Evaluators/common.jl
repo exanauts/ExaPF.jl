@@ -1,11 +1,24 @@
 
+function gradient(nlp::AbstractNLPEvaluator, x)
+    ∇f = similar(x) ; fill!(∇f, 0)
+    gradient!(nlp, ∇f, x)
+    return ∇f
+end
+
+function jacobian(nlp::AbstractNLPEvaluator, x)
+    n = n_variables(nlp)
+    m = n_constraints(nlp)
+    J = similar(x, m, n) ; fill!(J, 0)
+    jacobian!(nlp, J, x)
+    return J
+end
+
 # Default implementation of jprod!, using full Jacobian matrix
 function jprod!(nlp::AbstractNLPEvaluator, jv, u, v)
     nᵤ = length(u)
     m  = n_constraints(nlp)
     @assert nᵤ == length(v)
-    jac = similar(jv, m, nᵤ)
-    jacobian!(nlp, jac, u)
+    jac = jacobian(nlp, u)
     mul!(jv, jac, v)
     return
 end
@@ -28,6 +41,13 @@ function hessian!(nlp::AbstractNLPEvaluator, H, x)
         v[i] = 1.0
         hessprod!(nlp, view(H, :, i), x, v)
     end
+end
+
+function hessian(nlp::AbstractNLPEvaluator, x)
+    n = n_variables(nlp)
+    H = similar(x, n, n) ; fill!(H, 0)
+    hessian!(nlp, H, x)
+    return H
 end
 
 function hessian_lagrangian_penalty_prod!(

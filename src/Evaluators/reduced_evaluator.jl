@@ -173,6 +173,8 @@ function update!(nlp::ReducedSpaceEvaluator, u)
 
     # Refresh values of active and reactive powers at generators
     update!(nlp.model, PS.Generators(), PS.ActivePower(), nlp.buffer)
+    # Evaluate Jacobian of power flow equation on current u
+    update_jacobian!(nlp, Control())
     return conv
 end
 
@@ -199,6 +201,7 @@ function reduced_gradient!(
     LinearSolvers.ldiv!(nlp.linear_solver, λ, nlp.∇gᵗ, ∂fₓ)
     grad .= ∂fᵤ
     mul!(grad, transpose(∇gᵤ), λ, -1.0, 1.0)
+    return λ
 end
 function reduced_gradient!(nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, u)
     reduced_gradient!(nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, nlp.λ, u)
@@ -220,8 +223,6 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     ∂cost(nlp.model, nlp.autodiff.∇f, buffer)
     ∇fₓ, ∇fᵤ = nlp.autodiff.∇f.∇fₓ, nlp.autodiff.∇f.∇fᵤ
 
-    # Evaluate Jacobian of power flow equation on current u
-    update_jacobian!(nlp, Control())
     reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ, u)
     return
 end
@@ -310,7 +311,6 @@ function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
     full_jtprod!(nlp, jvx, jvu, u, v)
     reduced_gradient!(nlp, jv, jvx, jvu, jvx, u)
-    return
 end
 
 function jtprod!(nlp::ReducedSpaceEvaluator, cons::Function, jv, u, v)
@@ -334,7 +334,6 @@ function ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)
     # compute transpose Jacobian vector product of constraints
     full_jtprod!(nlp, jvx, jvu, u, v)
     # Evaluate gradient in reduced space
-    update_jacobian!(nlp, Control())
     reduced_gradient!(nlp, jv, jvx, jvu, u)
     return
 end

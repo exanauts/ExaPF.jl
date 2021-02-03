@@ -137,6 +137,17 @@ function jtprod!(nlp::SlackEvaluator, jv, w, v)
     return
 end
 
+function jacobian!(nlp::SlackEvaluator, jac, w)
+    u = @view w[1:nlp.nv]
+    # w.r.t. u
+    Jᵤ = @view jac[:, 1:nlp.nv]
+    jacobian!(nlp.inner, Jᵤ, u)
+    # w.r.t. s
+    for i in 1:nlp.ns
+        jac[i, i + nlp.nv] = -1.0
+    end
+end
+
 function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
     # w.r.t. u
     u = @view w[1:nlp.nv]
@@ -157,6 +168,21 @@ function hessprod!(nlp::SlackEvaluator, hessvec, w, v)
     hus = @view hessvec[nlp.nv+1:end]
     hus .= 0.0
     return
+end
+
+function hessian_lagrangian_prod!(nlp::SlackEvaluator, hessvec, x, y, σ, v)
+    # w.r.t. u
+    @views hessian_lagrangian_prod!(
+        nlp.inner,
+        hessvec[1:nlp.nv],
+        x[1:nlp.nv],
+        y,
+        σ,
+        v[1:nlp.nv]
+    )
+    # w.r.t. s
+    hus = @view hessvec[nlp.nv+1:end]
+    hus .= 0.0
 end
 
 # J = [Jᵤ -I] , hence
@@ -189,6 +215,14 @@ function hessian_lagrangian_penalty_prod!(
     # w.r.t. ss
     hvs .+= w .* vₛ
     return
+end
+
+# TODO: return sparse sparsity pattern for bottom-left block
+function hessian_structure(nlp::SlackEvaluator)
+    n = n_variables(nlp)
+    rows = Int[r for r in 1:n for c in 1:r]
+    cols = Int[c for r in 1:n for c in 1:r]
+    return rows, cols
 end
 
 function reset!(nlp::SlackEvaluator)

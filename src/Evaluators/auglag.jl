@@ -166,6 +166,14 @@ function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
     return
 end
 
+function estimate_multipliers(ag::AugLagEvaluator, u)
+    J = Diagonal(ag.scaler.scale_cons) * jacobian(ag.inner, u)
+    ∇f = gradient(ag.inner, u)
+    ∇f .*= ag.scaler.scale_obj
+    λ = - (J * J') \ (J * ∇f)
+    return λ
+end
+
 function reset!(ag::AugLagEvaluator)
     reset!(ag.inner)
     empty!(ag.counter)

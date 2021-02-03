@@ -89,6 +89,12 @@ function MOI.eval_hessian_lagrangian(ev::MOIEvaluator, H, x, σ, μ)
     end
 end
 
+function MOI.eval_hessian_lagrangian_product(ev::MOIEvaluator, hv, x, v, σ, μ)
+    _update!(ev, x)
+    hessprod!(ev.nlp, hv, x, v)
+    hv .*= σ
+end
+
 function MOI.NLPBlockData(nlp::AbstractNLPEvaluator)
     lb, ub = bounds(nlp, Constraints())
     ev = MOIEvaluator(nlp)
