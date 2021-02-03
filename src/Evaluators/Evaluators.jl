@@ -60,8 +60,8 @@ function objective end
 """
     gradient!(nlp::AbstractNLPEvaluator, g, u)
 
-Evaluate the gradient of the objective in the reduced space, at
-given control `u`. Store the result inplace in the vector `g`, which should
+Evaluate the gradient of the objective, at
+given variable `u`. Store the result inplace in the vector `g`, which should
 have the same dimension as `u`.
 
 """
@@ -88,17 +88,32 @@ Return the sparsity pattern of the Jacobian matrix.
 function jacobian_structure! end
 
 """
-    jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
+    jacobian!(nlp::AbstractNLPEvaluator, jac, u)
 
 Evaluate the Jacobian of the constraints in the reduced space,
-at control `u`. Store the result inplace, in the `m x n` matrix `jac`.
+at variable `u`. Store the result inplace, in the `m x n` matrix `jac`.
 """
 function jacobian! end
 
 """
-    jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    jprod!(nlp::AbstractNLPEvaluator, jv, u, v)
 
-Evaluate the transpose Jacobian-vector product ``J^{T} v`` of the constraints.
+Evaluate the Jacobian-vector product ``J v`` for the constraints.
+The vector `jv` is modified inplace.
+
+Let `(n, m) = n_variables(nlp), n_constraints(nlp)`.
+
+* `u` is a vector with dimension `n`
+* `v` is a vector with dimension `n`
+* `jv` is a vector with dimension `m`
+
+"""
+function jprod! end
+
+"""
+    jtprod!(nlp::AbstractNLPEvaluator, jv, u, v)
+
+Evaluate the transpose Jacobian-vector product ``J^{\top} v`` of the constraints.
 The vector `jv` is modified inplace.
 
 Let `(n, m) = n_variables(nlp), n_constraints(nlp)`.
@@ -111,7 +126,7 @@ Let `(n, m) = n_variables(nlp), n_constraints(nlp)`.
 function jtprod! end
 
 """
-    ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)
+    ojtprod!(nlp::AbstractNLPEvaluator, jv, u, σ, v)
 
 Evaluate the transpose Jacobian-vector product `J' * [σ ; v]`,
 with `J` the Jacobian of the vector `[f(x); h(x)]`.
@@ -131,8 +146,7 @@ function ojtprod! end
 """
     hessian!(nlp::AbstractNLPEvaluator, H, u)
 
-Evaluate the Hessian `∇²f(u)` of the objective `f(u)` in the
-reduced space, at control `u`.
+Evaluate the Hessian `∇²f(u)` of the objective function `f(u)`.
 Store the result inplace, in the `n x n` matrix `H`.
 
 """
@@ -141,15 +155,15 @@ function hessian! end
 """
     hessprod!(nlp::AbstractNLPEvaluator, hessvec, u, v)
 
-Evaluate the Hessian-vector product `∇²f(u) * v` of the objective in
-the reduced space, at control `u`.
+Evaluate the Hessian-vector product `∇²f(u) * v` of the objective
+evaluated at variable `u`.
 Store the result inplace, in the vector `hessvec` (with size `n`).
 
 """
 function hessprod! end
 
 @doc raw"""
-    hessian_lagrangian_full(nlp::AbstractNLPEvaluator, u, y, σ)
+    full_hessian_lagrangian(nlp::AbstractNLPEvaluator, u, y, σ)
 
 Evaluate the Hessian of the Lagrangian in the full-space
 ```math
@@ -161,13 +175,33 @@ to `∇²Lₓₓ`, `H.xu` to `∇²Lₓᵤ` and `H.uu` to `∇²Lᵤᵤ`.
 """
 function full_hessian_lagrangian end
 
+@doc raw"""
+    hessian_lagrangian_prod!(nlp::AbstractNLPEvaluator, hessvec, u, y, σ, v)
+
+Evaluate the Hessian-vector product of the Lagrangian
+function ``L(u, y) = f(u) + \sum_i y_i c_i(u)`` with a vector `v`:
+```math
+∇²L(u, y) ⋅ v  = σ ∇²f(u) ⋅ v + \sum_i y_i ∇²c_i(u) ⋅ v
+```
+
+Store the result inplace, in the vector `hessvec`.
+
+### Arguments
+
+* `hessvec` is a `AbstractVector` with dimension `n`, which is modified inplace.
+* `u` is a `AbstractVector` with dimension `n`, storing the current variable.
+* `y` is a `AbstractVector` with dimension `n`, storing the current constraints' multipliers
+* `σ` is a scalar
+* `v` is a vector with dimension `n`.
+"""
+function hessian_lagrangian_prod! end
 
 # Utilities
 """
     primal_infeasibility(nlp::AbstractNLPEvaluator, u)
 
 Return primal infeasibility associated to current model `nlp` evaluated
-at control `u`.
+at variable `u`.
 
 """
 function primal_infeasibility end
@@ -176,7 +210,7 @@ function primal_infeasibility end
     primal_infeasibility!(nlp::AbstractNLPEvaluator, cons, u)
 
 Return primal infeasibility associated to current model `nlp` evaluated
-at control `u`. Modify vector `cons` inplace.
+at variable `u`. Modify vector `cons` inplace.
 
 """
 function primal_infeasibility! end
