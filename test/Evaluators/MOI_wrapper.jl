@@ -7,21 +7,21 @@ const MOI = MathOptInterface
 @testset "MOI wrapper" begin
     CASE57_SOLUTION = [
         1.0260825400262428,
+        1.016218932360429,
+        1.009467718490475,
+        1.027857273911734,
+        1.06,
+        0.9962215167521776,
+        0.9965415804936182,
         0.0,
         0.6,
         0.0,
         8.603379123083476,
         0.0,
         1.3982297290334753,
-        1.016218932360429,
-        1.009467718490475,
-        1.027857273911734,
-        1.06,
-        0.9962215167521776,
-        0.9965415804936182
     ]
 
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
+    datafile = joinpath(INSTANCES_DIR, "case57.m")
     nlp = ExaPF.ReducedSpaceEvaluator(datafile)
     optimizer = Ipopt.Optimizer()
     MOI.set(optimizer, MOI.RawParameter("print_level"), 0)

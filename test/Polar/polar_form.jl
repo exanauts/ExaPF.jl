@@ -15,7 +15,7 @@ import ExaPF: PowerSystem, AutoDiff
 const PS = PowerSystem
 
 @testset "Polar formulation" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case9.m")
     tolerance = 1e-8
     pf = PS.PowerNetwork(datafile)
 
@@ -97,7 +97,7 @@ const PS = PowerSystem
             jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
             # Test powerflow with cache signature
-            conv = powerflow(polar, jx, cache, tol=tolerance)
+            conv = powerflow(polar, jx, cache, NewtonRaphson(tol=tolerance))
             ExaPF.get!(polar, State(), xₖ, cache)
             # Refresh power of generators in cache
             for Power in [PS.ActivePower, PS.ReactivePower]
@@ -108,8 +108,8 @@ const PS = PowerSystem
             u_min, u_max = ExaPF.bounds(polar, Control())
             x_min, x_max = ExaPF.bounds(polar, State())
 
-            @test isequal(u_min, [0.9, 0.1, 0.1, 0.9, 0.9])
-            @test isequal(u_max, [1.1, 3.0, 2.7, 1.1, 1.1])
+            @test isequal(u_min, [0.9, 0.9, 0.9, 0.1, 0.1])
+            @test isequal(u_max, [1.1, 1.1, 1.1, 3.0, 2.7])
             @test isequal(x_min, [-Inf, -Inf, -Inf, -Inf, -Inf, -Inf, -Inf, -Inf, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])
             @test isequal(x_max, [Inf, Inf, Inf, Inf, Inf, Inf, Inf, Inf, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
 
@@ -120,11 +120,17 @@ const PS = PowerSystem
             @test isa(g, M)
             # As we run powerflow before, the balance should be below tolerance
             @test norm(g, Inf) < tolerance
+
             ## Cost Production
             c2 = ExaPF.cost_production(polar, cache.pg)
             @test isa(c2, Real)
+
             ## Inequality constraint
-            for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
+            for cons in [
+                ExaPF.state_constraint,
+                ExaPF.power_constraints,
+                ExaPF.flow_constraints,
+            ]
                 m = ExaPF.size_constraint(polar, cons)
                 @test isa(m, Int)
                 g = M{Float64, 1}(undef, m) # TODO: this signature is not great
@@ -143,3 +149,4 @@ const PS = PowerSystem
         end
     end
 end
+

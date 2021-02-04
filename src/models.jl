@@ -59,14 +59,6 @@ formulation.
 struct Control <: AbstractVariable end
 
 """
-    Parameters <: AbstractVariable
-
-Constant parameters.
-
-"""
-struct Parameters <: AbstractVariable end
-
-"""
     PhysicalState <: AbstractVariable
 
 All physical variables describing the current physical state
@@ -240,8 +232,4 @@ Evaluate the thermal limit constraints porting on the lines of the network.
 The result is stored inplace, inside the vector `g`.
 """
 function thermal_limit_constraints end
-
-include("caches.jl")
-# Polar formulation
-include("polar/polar.jl")
 

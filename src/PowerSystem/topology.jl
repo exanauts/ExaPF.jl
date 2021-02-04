@@ -77,7 +77,7 @@ function makeYbus(bus, branch, baseMVA, bus_to_indexes)
     # build Ybus
     Ybus = Cf' * Yf + Ct' * Yt + sparse(1:nb, 1:nb, Ysh, nb, nb)
 
-    return Ybus
+    return (ybus=Ybus, yff=Yff, ytt=Ytt, ytf=Ytf, yft=Yft, from_buses=f, to_buses=t)
 end
 
 """

@@ -2,9 +2,9 @@
 #
 
 """
-    AdjointStackObjective
+    AdjointStackObjective{VT}
 
-An object for storing the adjoint stack in the adjoint objective computation
+An object for storing the adjoint stack in the adjoint objective computation.
 
 """
 struct AdjointStackObjective{VT}
@@ -15,6 +15,7 @@ struct AdjointStackObjective{VT}
     ∂va::VT
     jvₓ::VT
     jvᵤ::VT
+    ∂flow::VT
 end
 
 function put_active_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, ybus_im)
@@ -84,12 +85,12 @@ function put!(
         ∂u[i] = ∂vmag[p]
     end
     for (i, p) in enumerate(polar.network.pv)
-        ∂u[nref + i] = 0.0
-        ∂u[nref + npv + i] = ∂vmag[p]
+        ∂u[nref + i] = ∂vmag[p]
+        ∂u[nref + npv + i] = 0.0
     end
 end
 
-@kernel function put_adjoint_kernel!(
+KA.@kernel function put_adjoint_kernel!(
     adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
     index_pv, index_pq, index_ref, pv_to_gen,
 )
@@ -108,8 +109,8 @@ end
         i_ = i - npq
         bus = index_pv[i_]
         i_gen = pv_to_gen[i_]
-        adj_u[nref + npv + i_] = adj_vmag[bus]
-        adj_u[nref + i_] += adj_pg[i_gen]
+        adj_u[nref + i_] = adj_vmag[bus]
+        adj_u[nref + npv + i_] += adj_pg[i_gen]
         adj_x[i_] = adj_vang[bus]
     # SLACK buses
     elseif i <= npq + npv + nref
@@ -131,6 +132,8 @@ function put(
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     index_pv = polar.indexing.index_pv
     index_ref = polar.indexing.index_ref
@@ -157,12 +160,12 @@ function put(
         i_gen = ref_to_gen[i]
         # pg[i] = inj + polar.active_load[bus]
         adj_inj = adj_pg[i_gen]
-        put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, polar.ybus_re, polar.ybus_im)
+        put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
     end
     if isa(adj_x, Array)
-        kernel! = put_adjoint_kernel!(CPU(), 1)
+        kernel! = put_adjoint_kernel!(KA.CPU(), 1)
     else
-        kernel! = put_adjoint_kernel!(CUDADevice(), 256)
+        kernel! = put_adjoint_kernel!(KA.CUDADevice(), 256)
     end
     ev = kernel!(adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
                  index_pv, index_pq, index_ref, pv_to_gen,
@@ -180,5 +183,29 @@ function ∂cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarN
     # Return adjoint of quadratic cost
     ∂obj.∂pg .= c3 .+ 2.0 .* c4 .* pg
     put(polar, PS.Generator(), PS.ActivePower(), ∂obj, buffer)
+end
+
+function hessian_cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarNetworkState)
+    coefs = polar.costs_coefficients
+    c3 = @view coefs[:, 3]
+    c4 = @view coefs[:, 4]
+    # Change ordering from pg to [ref; pv]
+    pv2gen = polar.indexing.index_pv_to_gen
+    ref2gen = polar.indexing.index_ref_to_gen
+    ∂pg = (c3 .+ 2.0 .* c4 .* buffer.pg)[ref2gen]
+    ∂²pg = 2.0 .* c4[[ref2gen; pv2gen]]
+
+    # Evaluate Hess-vec of objective function f(x, u)
+    ∂₂P = active_power_hessian(polar, buffer)
+
+    ∂Pₓ = active_power_jacobian(polar, State(), buffer)
+    ∂Pᵤ = active_power_jacobian(polar, Control(), buffer)
+
+    D = Diagonal(∂²pg)
+    ∇²fₓₓ = ∂pg .* ∂₂P.xx + ∂Pₓ' * D * ∂Pₓ
+    ∇²fᵤᵤ = ∂pg .* ∂₂P.uu + ∂Pᵤ' * D * ∂Pᵤ
+    ∇²fₓᵤ = ∂pg .* ∂₂P.xu + ∂Pᵤ' * D * ∂Pₓ
+
+    return (xx=∇²fₓₓ, xu=∇²fₓᵤ, uu=∇²fᵤᵤ)
 end
 

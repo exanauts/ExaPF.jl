@@ -9,7 +9,7 @@ using KernelAbstractions
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "RGM Optimal Power flow 9 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+    datafile = joinpath(INSTANCES_DIR, "case9.m")
 
     nlp = ExaPF.ReducedSpaceEvaluator(datafile)
     uk = ExaPF.initial(nlp)
@@ -33,7 +33,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     fill!(grad, 0)
 
     while norm_grad > norm_tol && iter < iter_max
-        ExaPF.update!(nlp, uk; verbose_level=ExaPF.VERBOSE_LEVEL_NONE)
+        ExaPF.update!(nlp, uk)
         c = ExaPF.objective(nlp, uk)
         ExaPF.gradient!(nlp, grad, uk)
         # compute control step
@@ -44,6 +44,6 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
         up .= uk
     end
     @test iter == 39
-    @test isapprox(uk, [1.1, 1.343109921105559, 0.9421135274454701, 1.1, 1.1], atol=1e-4)
+    @test isapprox(uk, [1.1, 1.1, 1.1, 1.343109921105559, 0.9421135274454701], atol=1e-4)
 end
 

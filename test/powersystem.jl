@@ -52,7 +52,7 @@ const PS = PowerSystem
     ]
 
     # form Y matrix
-    Ybus = PS.makeYbus(data, bus_to_indexes);
+    Ybus = PS.makeYbus(data, bus_to_indexes).ybus;
 
     Vm = abs.(V)
     Va = angle.(V)
@@ -103,7 +103,7 @@ const PS = PowerSystem
     @testset "Computing Jacobian of residuals" begin
         F = zeros(Float64, npv + 2*npq)
         # Compute Jacobian at point V manually and use it as reference
-        J = ExaPF.residual_jacobian(V, Ybus, ref, pv, pq)
+        J = ExaPF.residual_jacobian(State(), V, Ybus, pv, pq, ref)
         J♯ = copy(J)
         # Build the Jacobian structure
         mappv = [i + nbus for i in pv]
@@ -183,6 +183,11 @@ end
         q_min, q_max = PS.bounds(pf, PS.Generator(), PS.ReactivePower())
         @test length(q_min) == n_gen
         @test length(q_max) == n_gen
+
+        n_lines = PS.get(pf, PS.NumberOfLines())
+        f_min, f_max = PS.bounds(pf, PS.Lines(), PS.ActivePower())
+        @test length(f_min) == n_lines
+        @test length(f_max) == n_lines
     end
 
     @testset "Load from data" begin

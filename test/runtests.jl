@@ -13,33 +13,37 @@ import ExaPF: ParsePSSE, PowerSystem, IndexSet
 
 Random.seed!(2713)
 
-@testset "Problem formulations" begin
+const INSTANCES_DIR = joinpath(dirname(@__FILE__), "..", "data")
+
+@testset "ExaPF.PowerSystem" begin
     # Test PowerNetwork object and parsers
     include("powersystem.jl")
-    # Test that behavior matches Matpower
-    include("matpower.jl")
-    # Test polar formulation
-    include("polar_form.jl")
 end
 
-@testset "Iterative solvers" begin
+@testset "ExaPF.LinearSolvers" begin
     include("iterative_solvers.jl")
+end
+
+@testset "Polar formulation" begin
+    # Test that behavior matches Matpower
+    include("Polar/matpower.jl")
+    # Test polar formulation
+    include("Polar/polar_form.jl")
+    # Reduced gradient
+    include("Polar/gradient.jl")
 end
 
 @testset "Optimization evaluators" begin
     # Resolution of powerflow equations with NLPEvaluators
-    include("powerflow.jl")
-    # Reduced gradient
-    include("reduced_gradient.jl")
-    # ReducedSpaceEvaluator API
-    include("reduced_evaluator.jl")
-    include("proxal_evaluator.jl")
-    include("penalty.jl")
-    include("auglag.jl")
-    include("MOI_wrapper.jl")
-end
-
-@testset "Reduced space algorithms" begin
-    include("test_rgm.jl")
+    include("Evaluators/powerflow.jl")
+    # Test generic API
+    include("Evaluators/interface.jl")
+    # Test more in-depth each evaluator
+    include("Evaluators/reduced_evaluator.jl")
+    include("Evaluators/proxal_evaluator.jl")
+    include("Evaluators/auglag.jl")
+    include("Evaluators/MOI_wrapper.jl")
+    # Test basic reduced gradient algorithm
+    include("Evaluators/test_rgm.jl")
 end
 

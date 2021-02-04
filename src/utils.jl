@@ -1,3 +1,14 @@
+export NewtonRaphson
+
+abstract type AbstractNonLinearSolver end
+
+struct NewtonRaphson <: AbstractNonLinearSolver
+    maxiter::Int
+    tol::Float64
+    verbose::Int
+end
+NewtonRaphson(; maxiter=20, tol=1e-8, verbose=VERBOSE_LEVEL_NONE) = NewtonRaphson(maxiter, tol, verbose)
+
 struct ConvergenceStatus
     has_converged::Bool
     n_iterations::Int
@@ -24,7 +35,7 @@ end
 
 # norm
 xnorm(x::AbstractVector) = norm(x, 2)
-xnorm(x::CuVector) = CUBLAS.nrm2(x)
+xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)
 
 # Array initialization
 xzeros(S, n) = fill!(S(undef, n), zero(eltype(S)))
@@ -38,9 +49,9 @@ end
 # Utils function to solve transposed linear system  A' x = y
 # Source code taken from:
 # https://github.com/JuliaGPU/CUDA.jl/blob/master/lib/cusolver/wrappers.jl#L78L111
-function csclsvqr!(A::CuSparseMatrixCSC{Float64},
-                    b::CuVector{Float64},
-                    x::CuVector{Float64},
+function csclsvqr!(A::CUSPARSE.CuSparseMatrixCSC{Float64},
+                    b::CUDA.CuVector{Float64},
+                    x::CUDA.CuVector{Float64},
                     tol::Float64,
                     reorder::Cint,
                     inda::Char)

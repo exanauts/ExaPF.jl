@@ -14,7 +14,7 @@ const PS = PowerSystem
 
 @testset "Compute reduced gradient on CPU" begin
     @testset "Case $case" for case in ["case9.m", "case30.m"]
-        datafile = joinpath(dirname(@__FILE__), "..", "data", case)
+        datafile = joinpath(dirname(@__FILE__), "..", "..", "data", case)
         tolerance = 1e-8
         pf = PS.PowerNetwork(datafile)
 
@@ -28,8 +28,7 @@ const PS = PowerSystem
         jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
         # solve power flow
-        conv = powerflow(polar, jx, cache, tol=1e-12)
-        ExaPF.get!(polar, State(), xk, cache)
+        conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
         ∇gᵤ = ExaPF.jacobian(polar, ju, cache, AutoDiff.ControlJacobian())
@@ -40,7 +39,7 @@ const PS = PowerSystem
         # Test with Matpower's Jacobian
         V = cache.vmag .* exp.(im * cache.vang)
         Ybus = pf.Ybus
-        J = ExaPF.residual_jacobian(V, Ybus, pf.ref, pf.pv, pf.pq)
+        J = ExaPF.residual_jacobian(State(), V, Ybus, pf.pv, pf.pq, pf.ref)
         @test isapprox(∇gₓ, J)
 
         # Test gradients
@@ -66,7 +65,7 @@ const PS = PowerSystem
             function reduced_cost(u_)
                 # Ensure we remain in the manifold
                 ExaPF.transfer!(polar, cache, u_)
-                convergence = powerflow(polar, jx, cache, tol=1e-14)
+                convergence = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-14))
                 ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
                 return ExaPF.cost_production(polar, cache.pg)
             end
@@ -81,6 +80,44 @@ const PS = PowerSystem
                     ExaPF.jacobian(polar, cons, icons, ∂obj, cache)
                 end
             end
+        end
+        # We test apart this routine, as it depends on Zygote
+        @testset "Gradient of line-flow constraints" begin
+            # Adjoint of flow_constraints()
+            nbus = length(cache.vmag)
+            M = typeof(u)
+            m = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
+            x = ExaPF.xzeros(M, 2 * nbus)
+            x[1:nbus] .= cache.vmag
+            x[1+nbus:2*nbus] .= cache.vang
+            bus_gen = polar.indexing.index_generators
+            VI = typeof(bus_gen)
+
+            ## Example with using sum as a sort of lumping of all constraints
+            function lumping(x)
+                VT = typeof(x)
+                # Needed for ForwardDiff to have a cache with the right active type VT
+                adcache = ExaPF.PolarNetworkState{VI, VT}(
+                    cache.vmag, cache.vang, cache.pinj, cache.qinj,
+                    cache.pg, cache.qg, cache.balance, cache.dx, bus_gen,
+                )
+                adcache.vmag .= x[1:nbus]
+                adcache.vang .= x[1+nbus:2*nbus]
+                g = VT(undef, m) ; fill!(g, 0)
+                ExaPF.flow_constraints(polar, g, adcache)
+                return sum(g)
+            end
+            adgradg = ForwardDiff.gradient(lumping,x)
+            fdgradg = FiniteDiff.finite_difference_gradient(lumping,x)
+            ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping.
+            m_flows = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
+            weights = ones(m_flows)
+            zygradg = ExaPF.xzeros(M, 2 * nbus)
+            ExaPF.flow_constraints_grad!(polar, zygradg, cache, weights)
+            # Verify  ForwardDiff and Zygote agree on the gradient
+            @test isapprox(adgradg, fdgradg)
+            # This breaks because of issue #89
+            @test_broken isapprox(adgradg, zygradg)
         end
     end
 end

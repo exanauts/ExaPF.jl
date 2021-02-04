@@ -19,6 +19,8 @@ struct PowerNetwork <: AbstractPowerSystem
     vbus::Vector{Complex{Float64}}
     # Admittance matrix
     Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
+    # Lines
+    lines::Branches{Complex{Float64}}
     # Data
     buses::Array{Float64, 2}
     branches::Array{Float64, 2}
@@ -66,14 +68,20 @@ struct PowerNetwork <: AbstractPowerSystem
         end
 
         # form Y matrix
-        Ybus = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+        topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+
+        branches = Branches{Complex{Float64}}(
+            topology.yff, topology.yft, topology.ytf, topology.ytt,
+            topology.from_buses, topology.to_buses,
+        )
 
         # bus type indexing
         ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
 
         sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
+        Ybus = topology.ybus
 
-        new(vbus, Ybus, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
+        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
     end
 end
 
@@ -179,6 +187,19 @@ function bounds(pf::PowerNetwork, ::Generator, ::ReactivePower)
     q_min = convert.(Float64, gens[:, QMIN] / baseMVA)
     q_max = convert.(Float64, gens[:, QMAX] / baseMVA)
     return q_min, q_max
+end
+
+function bounds(pf::PowerNetwork, ::Lines, ::ActivePower)
+    RATE_A = IndexSet.idx_branch()[6]
+    n_lines = get(pf, NumberOfLines())
+    # Flow min is always set equal to 0
+    flow_min = zeros(n_lines)
+    flow_max = (pf.branches[:, RATE_A] ./ pf.baseMVA).^2
+    # According to the spec, if RATE_A is equal to 0, then the flow
+    # is unconstrained.
+    unlimited = findall(isequal(0), flow_max)
+    flow_max[unlimited] .= Inf
+    return (flow_min, flow_max)
 end
 
 """

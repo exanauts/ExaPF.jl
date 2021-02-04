@@ -13,7 +13,7 @@ end
 
 struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     network::PS.PowerNetwork
-    device::Device
+    device::KA.Device
     # bounds
     x_min::VT
     x_max::VT
@@ -27,8 +27,7 @@ struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     # Indexing of the PV, PQ and slack buses
     indexing::IndexingCache{IT}
     # struct
-    ybus_re::Spmat{IT, VT}
-    ybus_im::Spmat{IT, VT}
+    topology::NetworkTopology{IT, VT}
     AT::Type
     # Jacobian structures and indexing
     statejacobian::StateJacobianStructure
@@ -36,29 +35,32 @@ struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
 end
 
 include("kernels.jl")
+include("gradients.jl")
+include("hessians.jl")
 include("getters.jl")
 include("adjoints.jl")
 include("constraints.jl")
 
 function PolarForm(pf::PS.PowerNetwork, device)
-    if isa(device, CPU)
+    if isa(device, KA.CPU)
         IT = Vector{Int}
         VT = Vector{Float64}
         M = SparseMatrixCSC
         AT = Array
-    elseif isa(device, CUDADevice)
-        IT = CuVector{Int64}
-        VT = CuVector{Float64}
-        M = CuSparseMatrixCSR
-        AT = CuArray
+    elseif isa(device, KA.CUDADevice)
+        IT = CUDA.CuVector{Int64}
+        VT = CUDA.CuVector{Float64}
+        M = CUSPARSE.CuSparseMatrixCSR
+        AT = CUDA.CuArray
     end
 
+    nbus = PS.get(pf, PS.NumberOfBuses())
     npv = PS.get(pf, PS.NumberOfPVBuses())
     npq = PS.get(pf, PS.NumberOfPQBuses())
     nref = PS.get(pf, PS.NumberOfSlackBuses())
     ngens = PS.get(pf, PS.NumberOfGenerators())
 
-    ybus_re, ybus_im = Spmat{IT, VT}(pf.Ybus)
+    topology = NetworkTopology{IT, VT}(pf)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
     # Move load to the target device
@@ -115,64 +117,31 @@ function PolarForm(pf::PS.PowerNetwork, device)
     x_min[npv+npq+1:end] .= v_min[gidx_pq]
     x_max[npv+npq+1:end] .= v_max[gidx_pq]
     ## Bounds on v_pv
-    u_min[nref+npv+1:end] .= v_min[gidx_pv]
-    u_max[nref+npv+1:end] .= v_max[gidx_pv]
+    u_min[nref+1:nref+npv] .= v_min[gidx_pv]
+    u_max[nref+1:nref+npv] .= v_max[gidx_pv]
     ## Bounds on v_ref
     u_min[1:nref] .= v_min[gidx_ref]
     u_max[1:nref] .= v_max[gidx_ref]
     ## Bounds on p_pv
-    u_min[nref+1:nref+npv] .= p_min[gpv_to_gen]
-    u_max[nref+1:nref+npv] .= p_max[gpv_to_gen]
+    u_min[nref+npv+1:nref+2*npv] .= p_min[gpv_to_gen]
+    u_max[nref+npv+1:nref+2*npv] .= p_max[gpv_to_gen]
 
     indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen)
-    function state_jacobian(V, Ybus, ref, pv, pq)
-        n = size(V, 1)
-        Ibus = Ybus*V
-        diagV       = sparse(1:n, 1:n, V, n, n)
-        diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
-        diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
-
-        dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-        dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
-
-        j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-        j12 = real(dSbus_dVm[[pv; pq], pq])
-        j21 = imag(dSbus_dVa[pq, [pv; pq]])
-        j22 = imag(dSbus_dVm[pq, pq])
-
-        J = [j11 j12; j21 j22]
-    end
-    nvbus = length(pf.vbus)
-    mappv = [i + nvbus for i in idx_pv]
-    mappq = [i + nvbus for i in idx_pq]
+    mappv = [i + nbus for i in idx_pv]
+    mappq = [i + nbus for i in idx_pq]
     # Ordering for x is (θ_pv, θ_pq, v_pq)
     statemap = vcat(mappv, mappq, idx_pq)
-    state_jacobian_structure = StateJacobianStructure(state_jacobian, IT(statemap))
+    state_jacobian_structure = StateJacobianStructure(residual_jacobian, IT(statemap))
 
-    function control_jacobian(V, Ybus, ref, pv, pq)
-        n = size(V, 1)
-        Ibus = Ybus*V
-        diagV       = sparse(1:n, 1:n, V, n, n)
-        diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
-        diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
-
-        dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-        dSbus_dpbus = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-
-        j11 = real(dSbus_dVm[[pv; pq], [ref; pv; pv]])
-        j21 = imag(dSbus_dVm[pq, [ref; pv; pv]])
-        J = [j11; j21]
-    end
-    mappv =  [i + nvbus for i in idx_pv]
-    controlmap = vcat(idx_ref, mappv, idx_pv)
-    control_jacobian_structure = ControlJacobianStructure{IT}(control_jacobian, IT(controlmap))
+    controlmap = vcat(idx_ref, idx_pv, idx_pv .+ nbus)
+    control_jacobian_structure = ControlJacobianStructure{IT}(residual_jacobian, IT(controlmap))
 
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
         x_min, x_max, u_min, u_max,
         coefs, pload, qload,
         indexing,
-        ybus_re, ybus_im,
+        topology,
         AT,
         state_jacobian_structure, control_jacobian_structure
     )
@@ -256,12 +225,13 @@ function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     F = buffer.balance
     fill!(F, 0.0)
     residual_polar!(
         F, Vm, Va,
-        polar.ybus_re, polar.ybus_im,
+        ybus_re, ybus_im,
         pbus, qbus, pv, pq, nbus
     )
 end
@@ -272,6 +242,7 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     nₓ = get(polar, NumberOfState())
     nᵤ = get(polar, NumberOfControl())
     # Take indexing on the CPU as we initiate AutoDiff on the CPU
@@ -284,11 +255,11 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     fill!(F, zero(T))
     # Build the AutoDiff Jacobian structure
     statejacobian = AutoDiff.Jacobian(polar.statejacobian, F, Vm, Va,
-        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus,
         AutoDiff.StateJacobian()
     )
     controljacobian = AutoDiff.Jacobian(polar.controljacobian, F, Vm, Va,
-        polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus,
         AutoDiff.ControlJacobian()
     )
 
@@ -301,13 +272,15 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     # Build cache for Jacobian vector-product
     jvₓ = xzeros(VT, nₓ)
     jvᵤ = xzeros(VT, nᵤ)
-    objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ)
+    adjoint_flow = xzeros(VT, 2 * nbus)
+    objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ, adjoint_flow)
     return statejacobian, controljacobian, objectiveAD
 end
 
 function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetworkState, jac_type::AutoDiff.AbstractJacobian)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     # Indexing
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -315,18 +288,16 @@ function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetwork
     # Network state
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
     AutoDiff.residual_jacobian!(jac, residual_polar!, Vm, Va,
-                           polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, jac_type)
+                           ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, jac_type)
     return jac.J
 end
 
 function powerflow(
     polar::PolarForm{T, IT, VT, AT},
     jacobian::AutoDiff.Jacobian,
-    buffer::PolarNetworkState{IT,VT};
+    buffer::PolarNetworkState{IT,VT},
+    algo::NewtonRaphson;
     solver=DirectSolver(),
-    tol=1e-7,
-    maxiter=20,
-    verbose_level=0,
 ) where {T, IT, VT, AT}
     # Retrieve parameter and initial voltage guess
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
@@ -337,6 +308,7 @@ function powerflow(
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     n_states = get(polar, NumberOfState())
     nvbus = length(polar.network.vbus)
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -361,16 +333,17 @@ function powerflow(
     fill!(dx, zero(T))
 
     # Evaluate residual function
-    residual_polar!(F, Vm, Va,
-                            polar.ybus_re, polar.ybus_im,
-                            pbus, qbus, pv, pq, nbus)
+    residual_polar!(
+        F, Vm, Va, ybus_re, ybus_im,
+        pbus, qbus, pv, pq, nbus
+    )
 
     # check for convergence
     normF = norm(F, Inf)
-    if verbose_level >= VERBOSE_LEVEL_LOW
+    if algo.verbose >= VERBOSE_LEVEL_LOW
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
     end
-    if normF < tol
+    if normF < algo.tol
         converged = true
     end
 
@@ -382,14 +355,14 @@ function powerflow(
     dx34 = view(dx, j3:j4) # Vapq
     dx56 = view(dx, j1:j2) # Vapv
 
-    @timeit TIMER "Newton" while ((!converged) && (iter < maxiter))
+    @timeit TIMER "Newton" while ((!converged) && (iter < algo.maxiter))
 
         iter += 1
 
         @timeit TIMER "Jacobian" begin
             AutoDiff.residual_jacobian!(jacobian, residual_polar!,
                                    Vm, Va,
-                                   polar.ybus_re, polar.ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
+                                   ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
         end
         J = jacobian.J
 
@@ -418,21 +391,21 @@ function powerflow(
         fill!(F, zero(T))
         @timeit TIMER "Residual function" begin
             residual_polar!(F, Vm, Va,
-                polar.ybus_re, polar.ybus_im,
+                ybus_re, ybus_im,
                 pbus, qbus, pv, pq, nbus)
         end
 
         @timeit TIMER "Norm" normF = xnorm(F)
-        if verbose_level >= VERBOSE_LEVEL_LOW
+        if algo.verbose >= VERBOSE_LEVEL_LOW
             @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
         end
 
-        if normF < tol
+        if normF < algo.tol
             converged = true
         end
     end
 
-    if verbose_level >= VERBOSE_LEVEL_HIGH
+    if algo.verbose >= VERBOSE_LEVEL_HIGH
         if converged
             @printf("N-R converged in %d iterations.\n", iter)
         else
@@ -441,12 +414,11 @@ function powerflow(
     end
 
     # Timer outputs display
-    if verbose_level >= VERBOSE_LEVEL_MEDIUM
+    if algo.verbose >= VERBOSE_LEVEL_MEDIUM
         show(TIMER)
         println("")
     end
-    conv = ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
-    return conv
+    return ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
 end
 
 # Cost function

@@ -1,4 +1,43 @@
 
+# Default implementation of jprod!, using full Jacobian matrix
+function jprod!(nlp::AbstractNLPEvaluator, jv, u, v)
+    nᵤ = length(u)
+    m  = n_constraints(nlp)
+    @assert nᵤ == length(v)
+    jac = similar(jv, m, nᵤ)
+    jacobian!(nlp, jac, u)
+    mul!(jv, jac, v)
+end
+
+# Joint Objective Jacobian transpose vector product (default implementation)
+function ojtprod!(nlp::AbstractNLPEvaluator, jv, u, σ, v)
+    gradient!(nlp, jv, u)
+    jv .*= σ  # scale gradient
+    jtprod!(nlp, jv, u, v)
+end
+
+# Common interface for Hessian
+# Build full Hessian matrix using `n` Hessian-vector product
+function hessian!(nlp::AbstractNLPEvaluator, H, x)
+    n = n_variables(nlp)
+    v = zeros(n)
+    for i in 1:n
+        fill!(v, 0)
+        v[i] = 1.0
+        hessprod!(nlp, view(H, :, i), x, v)
+    end
+end
+
+function hessian_lagrangian_penalty_prod!(
+    nlp::AbstractNLPEvaluator, hessvec, u, y, σ, v, w,
+)
+    jv = similar(u) ; fill!(jv, 0)
+    hessian_lagrangian_prod!(nlp, hessvec, u, y, σ, v)
+    jprod!(nlp, jv, u, v)
+    jv .*= w
+    jtprod!(nlp, hessvec, u, jv)
+end
+
 # AutoDiff Factory
 abstract type AbstractAutoDiffFactory end
 
@@ -76,12 +115,14 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
     gradient!(nlp, ∇g, u0)
     s_obj = scale_factor(norm(∇g, Inf), tol, η)
 
-    # TODO: avoid forming whole Jacobian
-    jac = similar(u0, (m, n)) ; fill!(jac, 0)
-    s_cons = similar(u0, m) ; fill!(s_cons, 0)
-    jacobian!(nlp, jac, u0)
+    VT = typeof(u0)
+    ∇c = xzeros(VT, n)
+    s_cons = xzeros(VT, m)
+    v = xzeros(VT, m)
     for i in eachindex(s_cons)
-        ∇c = @view jac[i, :]
+        fill!(v, 0.0)
+        v[i] = 1.0
+        jtprod!(nlp, ∇c, u0, v)
         s_cons[i] = scale_factor(norm(∇c, Inf), tol, η)
     end
 

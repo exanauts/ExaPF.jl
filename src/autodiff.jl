@@ -1,15 +1,14 @@
 
 module AutoDiff
 
-using CUDA
-using CUDA.CUSPARSE
-# using ForwardDiff: Partials, partials, Dual
-using ForwardDiff
-using KernelAbstractions
 using SparseArrays
-using TimerOutputs
-using SparseDiffTools
-using ..ExaPF: Spmat, xzeros
+
+using CUDA
+import CUDA.CUSPARSE
+import ForwardDiff
+import SparseDiffTools
+
+using ..ExaPF: Spmat, xzeros, State, Control
 
 import Base: show
 
@@ -63,7 +62,7 @@ Creates an object for the Jacobian
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD} 
+struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
     J::SMT
     compressedJ::MT
     coloring::VI
@@ -86,12 +85,12 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
             MT = Matrix{Float64}
             SMT = SparseMatrixCSC
             A = Vector
-        elseif F isa CuArray
-            VI = CuVector{Int}
-            VT = CuVector{Float64}
-            MT = CuMatrix{Float64}
-            SMT = CuSparseMatrixCSR
-            A = CuVector
+        elseif F isa CUDA.CuArray
+            VI = CUDA.CuVector{Int}
+            VT = CUDA.CuVector{Float64}
+            MT = CUDA.CuMatrix{Float64}
+            SMT = CUSPARSE.CuSparseMatrixCSR
+            A = CUDA.CuVector
         else
             error("Wrong array type ", typeof(F))
         end
@@ -110,14 +109,19 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
         Vre = Float64.([i for i in 1:n])
         Vim = Float64.([i for i in n+1:2*n])
         V = Vre .+ 1im .* Vim
-        J = structure.sparsity(V, Y, ref, pv, pq)
-        coloring = VI(matrix_colors(J))
+        if isa(type, StateJacobian)
+            variable = State()
+        else
+            variable = Control()
+        end
+        J = structure.sparsity(variable, V, Y, pv, pq, ref)
+        coloring = VI(SparseDiffTools.matrix_colors(J))
         ncolor = size(unique(coloring),1)
-        if F isa CuArray
-            J = CuSparseMatrixCSR(J)
+        if F isa CUDA.CuArray
+            J = CUSPARSE.CuSparseMatrixCSR(J)
         end
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-        if isa(type, StateJacobian) 
+        if isa(type, StateJacobian)
             x = VT(zeros(Float64, nv_m + nv_a))
             t1sx = A{t1s{ncolor}}(x)
             t1sF = A{t1s{ncolor}}(zeros(Float64, nmap))
@@ -126,7 +130,7 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
             compressedJ = MT(zeros(Float64, ncolor, nmap))
             varx = view(x, map)
             t1svarx = view(t1sx, map)
-        elseif isa(type, ControlJacobian) 
+        elseif isa(type, ControlJacobian)
             x = VT(zeros(Float64, npbus + nv_a))
             t1sx = A{t1s{ncolor}}(x)
             t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
@@ -196,11 +200,11 @@ end
 Calling the GPU partial extraction kernel
 
 """
-function getpartials_kernel!(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
+function getpartials_kernel!(compressedJ::CUDA.CuArray{T, 2}, t1sF, nbus) where T
     nthreads = 256
     nblocks = div(nbus, nthreads, RoundUp)
     CUDA.@sync begin
-        @cuda threads=nthreads blocks=nblocks getpartials_kernel_gpu!(
+        CUDA.@cuda threads=nthreads blocks=nblocks getpartials_kernel_gpu!(
             compressedJ,
             t1sF
         )
@@ -257,13 +261,13 @@ end
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
 the GPU by calling the kernel [`uncompress_kernel_gpu!`](@ref).
 """
-function uncompress_kernel!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
+function uncompress_kernel!(J::CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
     # CSR is row oriented: nmap is equal to number of rows
     nmap = size(J, 1)
     nthreads = 256
     nblocks = div(nmap, nthreads, RoundUp)
     CUDA.@sync begin
-        @cuda threads=nthreads blocks=nblocks uncompress_kernel_gpu!(
+        CUDA.@cuda threads=nthreads blocks=nblocks uncompress_kernel_gpu!(
                 J.nzVal,
                 J.rowPtr,
                 J.colVal,
@@ -293,7 +297,7 @@ function residual_jacobian!(arrays::Jacobian,
                              type::AbstractJacobian)
     nvbus = length(v_m)
     ninj = length(pinj)
-    if isa(type, StateJacobian) 
+    if isa(type, StateJacobian)
         arrays.x[1:nvbus] .= v_m
         arrays.x[nvbus+1:2*nvbus] .= v_a
         arrays.t1sx .= arrays.x
@@ -428,10 +432,10 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         Vim = Float64.([i for i in n+1:2*n])
         V = Vre .+ 1im .* Vim
         J = residualJacobian(V, Y, pv, pq)
-        coloring = VI(matrix_colors(J))
+        coloring = VI(SparseDiffTools.matrix_colors(J))
         ncolor = size(unique(coloring),1)
-        if F isa CuArray
-            J = CuSparseMatrixCSR(J)
+        if F isa CUDA.CuArray
+            J = CUSPARSE.CuSparseMatrixCSR(J)
         end
         H = copy(J)   
         x = VT(zeros(Float64, nv_m + nv_a))

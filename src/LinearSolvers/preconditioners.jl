@@ -1,14 +1,3 @@
-
-using CUDA
-using CUDA.CUSPARSE
-using KernelAbstractions
-using LightGraphs
-using LinearAlgebra
-using Metis
-using SparseArrays
-using TimerOutputs
-
-
 """
     AbstractPreconditioner
 
@@ -47,8 +36,8 @@ mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
     cupart
     P
     id
-    function BlockJacobiPreconditioner(J, npart, device=CPU())
-        if isa(J, CuSparseMatrixCSR)
+    function BlockJacobiPreconditioner(J, npart, device=KA.CPU())
+        if isa(J, CUSPARSE.CuSparseMatrixCSR)
             J = SparseMatrixCSC(J)
         end
         m, n = size(J)
@@ -57,7 +46,7 @@ mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
                   "least 2 for partitioning in Metis")
         end
         adj = build_adjmatrix(J)
-        g = Graph(adj)
+        g = LightGraphs.Graph(adj)
         part = Metis.partition(g, npart)
         partitions = Vector{Vector{Int64}}()
         for i in 1:npart
@@ -98,19 +87,19 @@ mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
             end
         end
         P = sparse(row, col, nzval)
-        if isa(device, CUDADevice)
-            id = CuMatrix{Float64}(I, nJs, nJs)
-            cupartitions = Vector{CuVector{Int64}}(undef, npart)
+        if isa(device, KA.CUDADevice)
+            id = CUDA.CuMatrix{Float64}(I, nJs, nJs)
+            cupartitions = Vector{CUDA.CuVector{Int64}}(undef, npart)
             for i in 1:npart
-                cupartitions[i] = CuVector{Int64}(partitions[i])
+                cupartitions[i] = CUDA.CuVector{Int64}(partitions[i])
             end
-            cuJs = Vector{CuMatrix{Float64}}(undef, length(partitions))
+            cuJs = Vector{CUDA.CuMatrix{Float64}}(undef, length(partitions))
             for i in 1:length(partitions)
-                cuJs[i] = CuMatrix{Float64}(I, nJs, nJs)
+                cuJs[i] = CUDA.CuMatrix{Float64}(I, nJs, nJs)
             end
-            cumap = cu(map)
-            cupart = cu(part)
-            P = CuSparseMatrixCSR(P)
+            cumap = CUDA.cu(map)
+            cupart = CUDA.cu(part)
+            P = CUSPARSE.CuSparseMatrixCSR(P)
         else
             cuJs = nothing
             cupartitions = nothing
@@ -194,7 +183,7 @@ function _update_gpu(j_rowptr, j_colval, j_nzval, p)
     # Fill Block Jacobi" begin
     CUDA.@sync begin
         for b in 1:nblocks
-            @cuda threads=16 blocks=16 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, b)
+            CUDA.@cuda threads=16 blocks=16 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, b)
         end
     end
     # Invert blocks" begin
@@ -204,7 +193,7 @@ function _update_gpu(j_rowptr, j_colval, j_nzval, p)
     # Move blocks to P" begin
     CUDA.@sync begin
         for b in 1:nblocks
-            @cuda threads=16 blocks=16 fillP_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, b)
+            CUDA.@cuda threads=16 blocks=16 fillP_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, b)
         end
     end
     return p.P
@@ -220,11 +209,11 @@ Update the preconditioner `p` from the sparse Jacobian `J` in CSR format for the
 3) Extract the preconditioner matrix `p.P` from the dense blocks `cuJs`
 
 """
-function update(J::CuSparseMatrixCSR, p)
+function update(J::CUSPARSE.CuSparseMatrixCSR, p)
     _update_gpu(J.rowPtr, J.colVal, J.nzVal, p)
 end
-function update(J::Transpose{T, CuSparseMatrixCSR{T}}, p) where T
-    Jt = CuSparseMatrixCSC(J.parent)
+function update(J::Transpose{T, CUSPARSE.CuSparseMatrixCSR{T}}, p) where T
+    Jt = CUSPARSE.CuSparseMatrixCSC(J.parent)
     _update_gpu(Jt.colPtr, Jt.rowVal, Jt.nzVal, p)
 end
 
@@ -276,7 +265,7 @@ end
 
 is_valid(precond::BlockJacobiPreconditioner) = _check_nan(precond.P)
 _check_nan(P::SparseMatrixCSC) = !any(isnan.(P.nzval))
-_check_nan(P::CuSparseMatrixCSR) = !any(isnan.(P.nzVal))
+_check_nan(P::CUSPARSE.CuSparseMatrixCSR) = !any(isnan.(P.nzVal))
 
 function Base.show(precond::BlockJacobiPreconditioner)
     npartitions = precond.npart

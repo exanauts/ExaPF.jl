@@ -6,7 +6,7 @@ using ExaPF
 import ExaPF: ParseMAT, PowerSystem, IndexSet
 
 @testset "Power flow 9 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case9.m")
     pf = PowerSystem.PowerNetwork(datafile)
 
     # test impedance matrix entries
@@ -27,7 +27,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
     ExaPF.init_buffer!(polar, cache)
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
-    convergence = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
+    convergence = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
     ExaPF.get!(polar, State(), x, cache)
 
     x_sol = [0.16875136481876485, 0.0832709533581424,
@@ -43,7 +43,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 end
 
 @testset "Power flow 14 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case14.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case14.m")
     pf = PowerSystem.PowerNetwork(datafile)
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
@@ -53,7 +53,7 @@ end
     ExaPF.init_buffer!(polar, cache)
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
-    conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
+    conv = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
     ExaPF.get!(polar, State(), x, cache)
 
     @test conv.n_iterations == 2
@@ -66,7 +66,7 @@ end
 end
 
 @testset "Power flow 30 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case30.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case30.m")
     pf = PowerSystem.PowerNetwork(datafile)
 
     # retrieve initial state of network
@@ -78,7 +78,7 @@ end
     ExaPF.init_buffer!(polar, cache)
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
-    conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
+    conv = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
     ExaPF.get!(polar, State(), x, cache)
 
     @test conv.n_iterations == 3
@@ -90,7 +90,7 @@ end
 end
 
 @testset "Power flow 300 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case300.m")
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case300.m")
     pf = PowerSystem.PowerNetwork(datafile)
 
     polar = PolarForm(pf, CPU())
@@ -101,7 +101,7 @@ end
     ExaPF.init_buffer!(polar, cache)
     jx, ju = ExaPF.init_autodiff_factory(polar, cache)
     # solve power flow
-    conv = ExaPF.powerflow(polar, jx, cache, verbose_level=0)
+    conv = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
     ExaPF.get!(polar, State(), x, cache)
 
     @test conv.n_iterations == 5

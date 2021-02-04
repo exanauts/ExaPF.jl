@@ -39,7 +39,6 @@ mutable struct ProxALEvaluator{T} <: AbstractNLPEvaluator
     ramp_link_prev::AbstractVector{T}
     ramp_link_next::AbstractVector{T}
 end
-
 function ProxALEvaluator(
     nlp::ReducedSpaceEvaluator,
     time::ProxALTime;
@@ -67,11 +66,10 @@ function ProxALEvaluator(
         pgf, pgc, pgt, ramp_link_prev, ramp_link_next,
     )
 end
-
 function ProxALEvaluator(
     pf::PS.PowerNetwork,
     time::ProxALTime;
-    device=CPU(),
+    device=KA.CPU(),
     options...
 )
     # Build network polar formulation
@@ -82,12 +80,24 @@ function ProxALEvaluator(
     nlp = ReducedSpaceEvaluator(model, x, u; options...)
     return ProxALEvaluator(nlp, time)
 end
+function ProxALEvaluator(
+    datafile::String;
+    time::ProxALTime=Normal,
+    device=KA.CPU(),
+    options...
+)
+    nlp = ReducedSpaceEvaluator(datafile; device=device, options...)
+    return ProxALEvaluator(nlp, time; options...)
+end
 
 n_variables(nlp::ProxALEvaluator) = nlp.nu + nlp.ng
 n_constraints(nlp::ProxALEvaluator) = n_constraints(nlp.inner)
 
+constraints_type(::ProxALEvaluator) = :inequality
+
 # Getters
 get(nlp::ProxALEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
+get(nlp::ProxALEvaluator, attr::AbstractVariable) = get(nlp.inner, attr)
 get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkValues) = get(nlp.inner, attr)
 get(nlp::ProxALEvaluator, attr::PS.AbstractNetworkAttribute) = get(nlp.inner, attr)
 
@@ -169,7 +179,7 @@ end
 ## Gradient
 update_jacobian!(nlp::ProxALEvaluator, ::Control) = update_jacobian!(nlp.inner, Control())
 
-function gradient_full!(nlp::ProxALEvaluator, jvx, jvu, w)
+function full_gradient!(nlp::ProxALEvaluator, jvx, jvu, w)
     # Import model
     model = nlp.inner.model
     # Import buffer (has been updated previously in update!)
@@ -233,7 +243,7 @@ function gradient!(nlp::ProxALEvaluator, g, w)
 
     jvu = ∂obj.∇fᵤ ; jvx = ∂obj.∇fₓ
     fill!(jvx, 0)  ; fill!(jvu, 0)
-    gradient_full!(nlp, jvx, jvu, w)
+    full_gradient!(nlp, jvx, jvu, w)
 
     # Start to update Control Jacobian in reduced model
     update_jacobian!(nlp, Control())
@@ -269,19 +279,30 @@ end
 
 ## Transpose Jacobian-vector product
 ## ProxAL does not add any constraint to the reduced model
-function jtprod!(nlp::ProxALEvaluator, cons, jv, w, v; start=1)
-    u = @view w[1:nlp.nu]
-    jvu = @view jv[1:nlp.nu]
-    jtprod!(nlp.inner, cons, jvu, u, v; start=start)
-end
 function jtprod!(nlp::ProxALEvaluator, jv, w, v)
     u = @view w[1:nlp.nu]
     jvu = @view jv[1:nlp.nu]
     jtprod!(nlp.inner, jvu, u, v)
 end
-function jtprod_full!(nlp::ProxALEvaluator, jvx, jvu, w, v)
+function full_jtprod!(nlp::ProxALEvaluator, jvx, jvu, w, v)
     u = @view w[1:nlp.nu]
-    jtprod_full!(nlp.inner, jvx, jvu, u, v)
+    full_jtprod!(nlp.inner, jvx, jvu, u, v)
+end
+
+function ojtprod!(nlp::ProxALEvaluator, jv, u, σ, v)
+    autodiff = get(nlp, AutoDiffBackend())
+    ∂obj = autodiff.∇f
+    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
+    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
+    # compute gradient of objective
+    full_gradient!(nlp, jvx, jvu, u)
+    jvx .*= σ
+    jvu .*= σ
+    # compute transpose Jacobian vector product of constraints
+    full_jtprod!(nlp, jvx, jvu, u, v)
+    # Evaluate gradient in reduced space
+    update_jacobian!(nlp, Control())
+    reduced_gradient!(nlp, jv, jvx, jvu, u)
 end
 
 ## Utils function

@@ -4,10 +4,10 @@
     else
         ITERATORS = zip([CPU()], [Array])
     end
-    datafile = joinpath(dirname(@__FILE__), "..", "data", case)
+    datafile = joinpath(INSTANCES_DIR, case)
     @testset "Constructor" for (device, M) in ITERATORS
-        tol = 1e-11
-        nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device, ε_tol=tol)
+        powerflow_solver = NewtonRaphson(; tol=1e-11)
+        nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device, powerflow_solver=powerflow_solver)
         TNLP = typeof(nlp)
         for (fn, ft) in zip(fieldnames(TNLP), fieldtypes(TNLP))
             if ft <: AbstractArray{Float64, P} where P
@@ -15,7 +15,7 @@
             end
         end
         # Test that arguments are passed as expected in the constructor:
-        @test nlp.ε_tol == tol
+        @test nlp.powerflow_solver == powerflow_solver
     end
 
     pf = PowerSystem.PowerNetwork(datafile)
@@ -25,7 +25,7 @@
         u0 = ExaPF.initial(polar, Control())
 
         constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0)
+        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0; constraints=constraints)
         # Test printing
         println(devnull, nlp)
 
@@ -73,29 +73,55 @@
             return ExaPF.objective(nlp, u_)
         end
         grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
-        @test isapprox(grad_fd, g, rtol=1e-4)
+        @test isapprox(grad_fd, g, rtol=1e-6)
+
+        # Hessian (only supported on CPU)
+        if isa(device, CPU)
+            ExaPF.update!(nlp, u)
+            hv = similar(u) ; fill!(hv, 0)
+            w = similar(u) ; fill!(w, 0)
+            w[1] = 1
+            ExaPF.hessprod!(nlp, hv, u, w)
+            H = similar(u, n, n) ; fill!(H, 0)
+            ExaPF.hessian!(nlp, H, u)
+            # Is Hessian vector product relevant?
+            @test H * w == hv
+            # Is Hessian correct?
+            hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
+            @test isapprox(H, hess_fd, rtol=1e-6)
+        end
 
         # Constraint
         ## Evaluation of the constraints
         cons = similar(nlp.g_min)
         fill!(cons, 0)
         ExaPF.constraint!(nlp, cons, u)
-        ## Evaluation of the Jacobian
-        jac = M{Float64, 2}(undef, m, n)
-        fill!(jac, 0)
-        ExaPF.jacobian!(nlp, jac, u)
-        ## Evaluation of the Jacobian transpose product
+
+        ## Evaluation of the transpose-Jacobian product
         v = similar(cons) ; fill!(v, 0)
         fill!(g, 0)
         ExaPF.jtprod!(nlp, g, u, v)
         @test iszero(g)
         fill!(v, 1) ; fill!(g, 0)
         ExaPF.jtprod!(nlp, g, u, v)
-        @test isapprox(g, transpose(jac) * v)
+
+        ## Evaluation of the Jacobian (only on CPU)
+        if isa(device, CPU)
+            jac = M{Float64, 2}(undef, m, n)
+            ExaPF.jacobian!(nlp, jac, u)
+            # Test transpose Jacobian vector product
+            @test isapprox(g, transpose(jac) * v)
+            # Test Jacobian vector product
+            S = typeof(u)
+            jv = ExaPF.xzeros(S, m)
+            v = ExaPF.xzeros(S, n)
+            ExaPF.jprod!(nlp, jv, u, v)
+            @test jac * v == jv
+        end
 
         # Utils
         inf_pr1 = ExaPF.primal_infeasibility(nlp, u)
-        inf_pr2 = ExaPF.primal_infeasibility!(nlp, v, u)
+        inf_pr2 = ExaPF.primal_infeasibility!(nlp, cons, u)
         @test inf_pr1 == inf_pr2
 
         # test reset!

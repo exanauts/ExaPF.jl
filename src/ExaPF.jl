@@ -8,31 +8,35 @@
 # Covered by the 3-clause BSD License.
 module ExaPF
 
-using CUDA
-using CUDA.CUSPARSE
-using CUDA.CUSOLVER
-using ForwardDiff
-using IterativeSolvers
-using KernelAbstractions
-using Krylov
-using LinearAlgebra
-using MathOptInterface
+# Standard library
 using Printf
+using LinearAlgebra
 using SparseArrays
-using SparseDiffTools
-using TimerOutputs
+
+import CUDA
+import CUDA.CUBLAS
+import CUDA.CUSPARSE
+import CUDA.CUSOLVER
+
+import KernelAbstractions
+const KA = KernelAbstractions
+import MathOptInterface
+const MOI = MathOptInterface
+using TimerOutputs: @timeit, TimerOutput
+import Zygote
 
 import Base: show, get
-
-const MOI = MathOptInterface
-const TIMER = TimerOutput()
 
 const VERBOSE_LEVEL_HIGH = 3
 const VERBOSE_LEVEL_MEDIUM = 2
 const VERBOSE_LEVEL_LOW = 1
 const VERBOSE_LEVEL_NONE = 0
+const TIMER = TimerOutput()
 
 include("utils.jl")
+# Templates
+include("models.jl")
+
 # Import submodules
 include("autodiff.jl")
 using .AutoDiff
@@ -50,7 +54,10 @@ using .PowerSystem
 const PS = PowerSystem
 
 # Modeling
-include("models/models.jl")
+include("caches.jl")
+# Polar formulation:
+include("polar/polar.jl")
+
 # Evaluators
 include("Evaluators/Evaluators.jl")
 

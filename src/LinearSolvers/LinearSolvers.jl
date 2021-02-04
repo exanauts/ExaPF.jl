@@ -1,15 +1,25 @@
 module LinearSolvers
 
-using CUDA
-using KernelAbstractions
-using IterativeSolvers
-using Krylov
 using LinearAlgebra
 using Printf
 using SparseArrays
 
-import ..ExaPF: xnorm, csclsvqr!
 import Base: show
+
+using CUDA
+import CUDA.CUBLAS
+import CUDA.CUSOLVER
+import CUDA.CUSPARSE
+import IterativeSolvers
+import KernelAbstractions
+import Krylov
+import LightGraphs
+import Metis
+
+import ..ExaPF: xnorm, csclsvqr!
+
+const KA = KernelAbstractions
+
 
 export bicgstab, list_solvers
 export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
@@ -73,18 +83,18 @@ function ldiv!(::DirectSolver,
     return 0
 end
 function ldiv!(::DirectSolver,
-    y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSR, x::CuVector,
+    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector,
 )
     CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
 function ldiv!(::DirectSolver,
-    y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSC, x::CuVector,
+    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSC, x::CUDA.CuVector,
 )
     csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
-get_transpose(::DirectSolver, M::CUDA.CUSPARSE.CuSparseMatrixCSR) = CuSparseMatrixCSC(M)
+get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
 
 function update!(solver::AbstractIterativeLinearSolver, J)
     update(J, solver.precond)
@@ -212,7 +222,7 @@ function ldiv!(solver::KrylovBICGSTAB,
 end
 
 
-list_solvers(::CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
-list_solvers(::CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
+list_solvers(::KA.CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
+list_solvers(::KA.CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
 
 end

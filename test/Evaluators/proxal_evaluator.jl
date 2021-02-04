@@ -3,16 +3,17 @@ using Test
 import ExaPF: PS
 
 @testset "ProxALEvaluators ($time)" for time in [ExaPF.Origin, ExaPF.Normal, ExaPF.Final]
-    datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
+    datafile = joinpath(INSTANCES_DIR, "case9.m")
 
     @testset "PowerNetwork Constructor" begin
         pf = PS.PowerNetwork(datafile)
         eps = 1e-10
-        prox0 = ExaPF.ProxALEvaluator(pf, time; ε_tol=eps)
+        powerflow_solver = NewtonRaphson(tol=eps)
+        prox0 = ExaPF.ProxALEvaluator(pf, time; powerflow_solver=powerflow_solver)
         @test isa(prox0, ExaPF.ProxALEvaluator)
         @test isa(prox0.inner, ExaPF.ReducedSpaceEvaluator)
         # Test that argument was correctly set
-        @test prox0.inner.ε_tol == eps
+        @test prox0.inner.powerflow_solver == powerflow_solver
     end
 
     # Build reference evaluator
