@@ -54,7 +54,7 @@ function PolarForm(pf::PS.PowerNetwork, device)
         M = CuSparseMatrixCSR
         AT = CuArray
     end
-
+    println("Polar form constructor")
     nbus = PS.get(pf, PS.NumberOfBuses())
     npv = PS.get(pf, PS.NumberOfPVBuses())
     npq = PS.get(pf, PS.NumberOfPQBuses())
@@ -136,9 +136,24 @@ function PolarForm(pf::PS.PowerNetwork, device)
                                 gbustype, gidx_bus_pf)
     mappv = [i + nbus for i in idx_pv]
     mappq = [i + nbus for i in idx_pq]
+
     # Ordering for x is (θ_pv, θ_pq, v_pq)
-    statemap = vcat(mappv, mappq, idx_pq)
-    state_jacobian_structure = StateJacobianStructure(residual_jacobian, IT(statemap))
+    #statemap = vcat(mappv, mappq, idx_pq)
+    statemap = vcat(mappq, mappv, idx_pq)
+    statemap .= 0
+
+    for i=1:nbus
+        ptr = idx_bus_pf[i]
+        tpe = bustype[i]
+        if tpe == 2
+            statemap[ptr] = i + nbus
+        elseif tpe == 1
+            statemap[ptr] = i
+            statemap[ptr + 1] = i + nbus
+        end
+    end
+
+    state_jacobian_structure = StateJacobianStructure(residual_jacobian_bus, IT(statemap))
 
     controlmap = vcat(idx_ref, idx_pv, idx_pv .+ nbus)
     control_jacobian_structure = ControlJacobianStructure{IT}(residual_jacobian, IT(controlmap))
@@ -249,6 +264,7 @@ end
 
 # TODO: find better naming
 function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
+    println("Factory constructor")
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -260,17 +276,21 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNet
     ref = polar.network.ref
     pv = polar.network.pv
     pq = polar.network.pq
+    # get more indexes
+    bustype = polar.indexing.index_bustype
+    bus_pf = polar.indexing.index_bus_pf
+
     # Network state
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
     F = buffer.balance
     fill!(F, zero(T))
     # Build the AutoDiff Jacobian structure
     statejacobian = AutoDiff.Jacobian(polar.statejacobian, F, Vm, Va,
-        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, bustype, bus_pf,
         AutoDiff.StateJacobian()
     )
     controljacobian = AutoDiff.Jacobian(polar.controljacobian, F, Vm, Va,
-        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, bustype, bus_pf,
         AutoDiff.ControlJacobian()
     )
 
@@ -380,14 +400,18 @@ function powerflow(
     @timeit TIMER "Newton" while ((!converged) && (iter < algo.maxiter))
 
         iter += 1
-
+        println("cacacaca")
         @timeit TIMER "Jacobian" begin
-            AutoDiff.residual_jacobian!(jacobian, residual_polar!,
+            AutoDiff.residual_jacobian!(jacobian, residual_polar_bus!,
                                    Vm, Va,
-                                   ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
+                                   ybus_re, ybus_im, pbus, qbus,
+                                   pv, pq, ref, nbus, 
+                                   bustype, bus_pf,
+                                   AutoDiff.StateJacobian())
         end
         J = jacobian.J
-
+        println("Norm of Jacobian: ", norm(Array(J)))
+        println(J)
         # Find descent direction
         if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
             @timeit TIMER "Preconditioner" LinearSolvers.update!(solver, J)

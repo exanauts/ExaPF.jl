@@ -68,7 +68,9 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t1svarx::SubD
-    function Jacobian(structure, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, type)
+    function Jacobian(structure, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
+        bustype, idx_bus_pf, type)
+        println("Jacobian constructor")
         nv_m = length(v_m)
         nv_a = length(v_a)
         npbus = length(pinj)
@@ -105,10 +107,12 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
         V = Vre .+ 1im .* Vim
         if isa(type, StateJacobian)
             variable = State()
+            J = structure.sparsity(variable, bustype, idx_bus_pf, Y)
         else
             variable = Control()
+            J = structure.sparsity(variable, V, Y, pv, pq, ref)
         end
-        J = structure.sparsity(variable, V, Y, pv, pq, ref)
+        J.nzval .= 1.0
         coloring = VI(matrix_colors(J))
         ncolor = size(unique(coloring),1)
         if F isa CuArray
@@ -335,6 +339,7 @@ Update the sparse Jacobian entries using AutoDiff. No allocations are taking pla
 function residual_jacobian!(arrays::Jacobian,
                              residual_polar!,
                              v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
+                             bustype, buspf,
                              type::AbstractJacobian)
     nvbus = length(v_m)
     ninj = length(pinj)
@@ -361,7 +366,9 @@ function residual_jacobian!(arrays::Jacobian,
             view(arrays.t1sx, nvbus+1:2*nvbus),
             ybus_re, ybus_im,
             pinj, qinj,
-            pv, pq, nbus
+            pv, pq, nbus,
+            bustype,
+            buspf
         )
     elseif isa(type, ControlJacobian)
         residual_polar!(
