@@ -54,7 +54,6 @@ function PolarForm(pf::PS.PowerNetwork, device)
         M = CuSparseMatrixCSR
         AT = CuArray
     end
-    println("Polar form constructor")
     nbus = PS.get(pf, PS.NumberOfBuses())
     npv = PS.get(pf, PS.NumberOfPVBuses())
     npq = PS.get(pf, PS.NumberOfPQBuses())
@@ -264,7 +263,6 @@ end
 
 # TODO: find better naming
 function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
-    println("Factory constructor")
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -351,7 +349,6 @@ function powerflow(
     # iteration variables
     iter = 0
     converged = false
-    println(spy(jacobian.J, height=20, width=40))
 
     # indices
     j1 = 1
@@ -373,13 +370,7 @@ function powerflow(
         pbus, qbus, pv, pq, nbus,
         bustype, bus_pf
     )
-    println(norm(F,Inf))
-    fill!(F, zero(T))
-    residual_polar!(
-        F, Vm, Va, ybus_re, ybus_im,
-        pbus, qbus, pv, pq, nbus)
-    println(norm(F, Inf))
-
+    
     # check for convergence
     normF = norm(F, Inf)
     if algo.verbose >= VERBOSE_LEVEL_LOW
@@ -397,10 +388,38 @@ function powerflow(
     dx34 = view(dx, j3:j4) # Vapq
     dx56 = view(dx, j1:j2) # Vapv
 
+    # create indexings for vector views
+    # TODO: This should be moved elsewere
+    vm_idx = findall(bustype .== 1)
+    va_idx = findall((bustype .== 1) .| (bustype .== 2))
+    dx_vm_idx = zeros(Int64, npq)
+    dx_va_idx = zeros(Int64, npq + npv)
+
+    for i=1:npq
+        bs = vm_idx[i]
+        ptr = bus_pf[bs]
+        dx_vm_idx[i] = ptr
+    end
+
+    for i=1:(npq + npv)
+        bs = va_idx[i]
+        tpe = bustype[bs]
+        ptr = bus_pf[bs]
+        if tpe == 2
+            dx_va_idx[i] = ptr
+        elseif tpe == 1
+            dx_va_idx[i] = ptr + 1
+        end
+    end
+
+    vm_pf = view(Vm, vm_idx)
+    va_pf = view(Va, va_idx)
+    dx_vm = view(dx, dx_vm_idx)
+    dx_va = view(dx, dx_va_idx)
+
     @timeit TIMER "Newton" while ((!converged) && (iter < algo.maxiter))
 
         iter += 1
-        println("cacacaca")
         @timeit TIMER "Jacobian" begin
             AutoDiff.residual_jacobian!(jacobian, residual_polar_bus!,
                                    Vm, Va,
@@ -410,8 +429,7 @@ function powerflow(
                                    AutoDiff.StateJacobian())
         end
         J = jacobian.J
-        println("Norm of Jacobian: ", norm(Array(J)))
-        println(J)
+        #println("Norm of Jacobian: ", norm(Array(J)))
         # Find descent direction
         if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
             @timeit TIMER "Preconditioner" LinearSolvers.update!(solver, J)
@@ -421,24 +439,28 @@ function powerflow(
 
         # update voltage
         @timeit TIMER "Update voltage" begin
+            vm_pf .= vm_pf .- dx_vm
+            va_pf .= va_pf .- dx_va
             # Sometimes it is better to move backward
-            if (npv != 0)
+            #if (npv != 0)
                 # Va[pv] .= Va[pv] .+ dx[j5:j6]
-                Vapv .= Vapv .- dx56
-            end
-            if (npq != 0)
+                #Vapv .= Vapv .- dx56
+            #end
+            #if (npq != 0)
                 # Vm[pq] .= Vm[pq] .+ dx[j1:j2]
-                Vmpq .= Vmpq .- dx12
+                #Vmpq .= Vmpq .- dx12
                 # Va[pq] .= Va[pq] .+ dx[j3:j4]
-                Vapq .= Vapq .- dx34
-            end
+                #Vapq .= Vapq .- dx34
+            #end
         end
 
         fill!(F, zero(T))
         @timeit TIMER "Residual function" begin
-            residual_polar!(F, Vm, Va,
-                ybus_re, ybus_im,
-                pbus, qbus, pv, pq, nbus)
+        residual_polar_bus!(
+            F, Vm, Va, ybus_re, ybus_im,
+            pbus, qbus, pv, pq, nbus,
+            bustype, bus_pf
+        )
         end
 
         @timeit TIMER "Norm" normF = xnorm(F)

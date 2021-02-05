@@ -70,7 +70,6 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
     t1svarx::SubD
     function Jacobian(structure, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
         bustype, idx_bus_pf, type)
-        println("Jacobian constructor")
         nv_m = length(v_m)
         nv_a = length(v_a)
         npbus = length(pinj)
