@@ -402,7 +402,7 @@ end
 function hessian_lagrangian_penalty_prod!(
     nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, v, w,
 )
-    # Full Hessian of Lagrangian L(u, y) = f(u) + y' * h(u)
+    # Full Hessian of Lagrangian L(u, y) = f(u) + y' * h(u) + \|h(u)\|_D
     ∇²L = full_hessian_lagrangian(nlp, u, y, σ)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
     # Add Hessian of quadratic penalty
     J = full_jacobian(nlp, u)::FullSpaceJacobian{SparseMatrixCSC{Float64, Int}}
@@ -412,6 +412,42 @@ function hessian_lagrangian_penalty_prod!(
     ∇²L.uu .+= J.u' * D * J.u
     reduced_hessian!(nlp, hessvec, ∇²L.xx, ∇²L.xu, ∇²L.uu, v)
     return
+end
+
+function hessian_lagrangian_penalty!(
+    nlp::ReducedSpaceEvaluator, hess, u, y, σ, w,
+)
+    λ = -nlp.λ # take care that λ is negative of true adjoint!
+    # Jacobian
+    ∇gₓ = nlp.autodiff.Jgₓ.J
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J
+    ∇gₓF = factorize(∇gₓ)
+
+    n = length(u)
+    # Full Hessian of Lagrangian L(u, y) = f(u) + y' * h(u)
+    ∇²L = full_hessian_lagrangian(nlp, u, y, σ)
+    # Add Hessian of quadratic penalty
+    J = full_jacobian(nlp, u)
+    D = Diagonal(w)
+    ∇²L.xx .+= J.x' * D * J.x
+    ∇²L.xu .+= J.u' * D * J.x
+    ∇²L.uu .+= J.u' * D * J.u
+
+    # Evaluate Hess-vec of residual function g(x, u) = 0
+    ∇²gλ = residual_hessian(nlp.model, nlp.buffer, λ)
+    # Adjoint-adjoint
+    ∇gaₓ = ∇²L.xx + ∇²gλ.xx
+
+    v = zeros(n)
+    z = similar(λ)
+    ψ = similar(λ)
+    for i in 1:n
+        fill!(v, 0) ; v[i] = 1.0
+        hv = @view hess[:, i]
+        ldiv!(z, ∇gₓF, -∇gᵤ * v)
+        ldiv!(ψ, ∇gₓF', -(∇²L.xu' * v + ∇²gλ.xu' * v +  ∇gaₓ * z))
+        hv .= ∇²L.uu * v +  ∇²gλ.uu * v + ∇gᵤ' * ψ  + ∇²L.xu * z + ∇²gλ.xu * z
+    end
 end
 
 # Return lower-triangular matrix

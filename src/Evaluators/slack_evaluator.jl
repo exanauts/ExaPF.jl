@@ -133,11 +133,12 @@ function jtprod!(nlp::SlackEvaluator, jv, w, v)
     jtprod!(nlp.inner, jvu, u, v)
     # w.r.t. s
     jvs = @view jv[nlp.nv+1:end]
-    jvs .-= v
+    jvs .= -v
     return
 end
 
 function jacobian!(nlp::SlackEvaluator, jac, w)
+    fill!(jac, 0)
     u = @view w[1:nlp.nv]
     # w.r.t. u
     Jᵤ = @view jac[:, 1:nlp.nv]
@@ -155,7 +156,7 @@ function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
     ojtprod!(nlp.inner, jvu, u, σ, v)
     # w.r.t. s
     jvs = @view jv[nlp.nv+1:end]
-    jvs .-= v
+    jvs .= -v
     return
 end
 
@@ -211,10 +212,35 @@ function hessian_lagrangian_penalty_prod!(
     hvu .+= - u_buf
     # w.r.t. su
     jprod!(nlp.inner, y_buf, u, vᵤ)
-    hvs .+= - w .* y_buf
+    hvs .= - w .* y_buf
     # w.r.t. ss
     hvs .+= w .* vₛ
     return
+end
+
+function hessian_lagrangian_penalty!(
+    nlp::SlackEvaluator, hess, x, y, σ, w,
+)
+    n = n_variables(nlp)
+    @views begin
+        u   = x[1:nlp.nv]
+        Hᵤᵤ = hess[1:nlp.nv, 1:nlp.nv]
+        Hᵤᵥ = hess[1:nlp.nv, 1+nlp.nv:n]
+        Hᵥᵤ = hess[1+nlp.nv:n, 1:nlp.nv]
+        Hᵥᵥ = hess[1+nlp.nv:n, 1+nlp.nv:n]
+    end
+    # w.r.t. uu
+    # ∇²L + ρ Jᵤ' * Jᵤ
+    hessian_lagrangian_penalty!(nlp.inner, Hᵤᵤ, u, y, σ, w)
+
+    D = Diagonal(w)
+    Jᵤ = jacobian(nlp.inner, u)
+    copy!(Hᵤᵥ, - Jᵤ' * D)
+    copy!(Hᵥᵤ, - D * Jᵤ)
+    fill!(Hᵥᵥ, 0)
+    for i in 1:nlp.ns
+        Hᵥᵥ[i, i] = w[i]
+    end
 end
 
 # TODO: return sparse sparsity pattern for bottom-left block
