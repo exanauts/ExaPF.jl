@@ -116,7 +116,7 @@ end
             end
             # Test estimation of multipliers only on SlackEvaluator
             if isa(nlp, ExaPF.SlackEvaluator)
-                λ = @time ExaPF.estimate_multipliers(pen, u)
+                λ = ExaPF.estimate_multipliers(pen, u)
             end
         end
     end
