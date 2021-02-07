@@ -152,16 +152,55 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
 end
 
 """
-    seed_kernel!(t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t1svarx::AbstractArray{ForwardDiff.Dual{T,V,N}}, nbus) where {T,V,N}
-
-Calling the seeding kernel
+    seed_kernel_cpu!
+Seeding on the CPU, not parallelized.
+"""
+function seed_kernel_cpu!(
+    duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
+    seeds::AbstractArray{ForwardDiff.Partials{N,V}}
+) where {T,V,N}
+    for i in 1:size(duals,1)
+        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
+    end
+end
 
 """
-function seed_kernel!(t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t1svarx::AbstractArray{ForwardDiff.Dual{T,V,N}}, nbus) where {T,V,N}
-    # seed_kernel_cpu!(t1svarx, varx, t1sseeds)
-    tupseeds=NTuple{length(t1sseeds),ForwardDiff.Partials{N,V}}(t1sseeds)
-    inds = 1:length(t1svarx)
-    t1svarx[inds] .= ForwardDiff.Dual{T,V,N}.(view(varx, inds), getindex.(Ref(tupseeds), inds))
+    seed_kernel_gpu!
+Seeding on GPU parallelized over the `ncolor` number of duals
+"""
+function seed_kernel_gpu!(
+    duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
+    seeds::AbstractArray{ForwardDiff.Partials{N,V}}
+) where {T,V,N}
+    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    stride = blockDim().x * gridDim().x
+    for i in index:stride:size(duals,1)
+        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
+    end
+end
+
+"""
+    seed_kernel!
+Calling the GPU seeding kernel
+"""
+function seed_kernel!(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+    nthreads = 256
+    nblocks = div(nbus, nthreads, RoundUp)
+    CUDA.@sync begin
+        @cuda threads=nthreads blocks=nblocks seed_kernel_gpu!(
+            t1svarx,
+            varx,
+            t1sseeds,
+        )
+    end
+end
+
+"""
+    seed_kernel!(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+Calling the CPU seeding kernel
+"""
+function seed_kernel!(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+    seed_kernel_cpu!(t1svarx, varx, t1sseeds)
 end
 
 """
@@ -375,9 +414,11 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t2svarx::SubD
-    function Hessian(F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, type)
-        nv_m = size(v_m, 1)
-        nv_a = size(v_a, 1)
+    function Hessian(structure, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, type)
+        nv_m = length(v_m)
+        nv_a = length(v_a)
+        npbus = length(pinj)
+        nref = length(ref)
         if F isa Array
             VI = Vector{Int}
             VT = Vector{Float64}
@@ -397,27 +438,9 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         mappv = [i + nv_m for i in pv]
         mappq = [i + nv_m for i in pq]
         # Ordering for x is (θ_pv, θ_pq, v_pq)
-        map = VI(vcat(mappv, mappq, pq))
+        # map = VI(vcat(mappv, mappq, pq))
+        map = VI(structure.map)
         nmap = size(map,1)
-
-        # Used for sparsity detection with randomized inputs
-        function residualJacobian(V, Ybus, pv, pq)
-            n = size(V, 1)
-            Ibus = Ybus*V
-            diagV       = sparse(1:n, 1:n, V, n, n)
-            diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
-            diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
-
-            dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-            dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
-
-            j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-            j12 = real(dSbus_dVm[[pv; pq], pq])
-            j21 = imag(dSbus_dVa[pq, [pv; pq]])
-            j22 = imag(dSbus_dVm[pq, pq])
-
-            J = [j11 j12; j21 j22]
-        end
 
         # Need a host arrays for the sparsity detection below
         spmap = Vector(map)
@@ -431,8 +454,11 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         Vre = Float64.([i for i in 1:n])
         Vim = Float64.([i for i in n+1:2*n])
         V = Vre .+ 1im .* Vim
-        J = residualJacobian(V, Y, pv, pq)
-        coloring = VI(SparseDiffTools.matrix_colors(J))
+        # J = residualJacobian(V, Y, pv, pq)
+        J = structure.sparsity(State(), V, Y, pv, pq, ref)
+        # coloring = VI(SparseDiffTools.matrix_colors(J))
+        coloring = [i for i in 1:length(map)]
+        @show coloring
         ncolor = size(unique(coloring),1)
         if F isa CUDA.CuArray
             J = CUSPARSE.CuSparseMatrixCSR(J)
@@ -449,6 +475,8 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
         # Views
+        @show map
+        @show length(x)
         varx = view(x, map)
         t2svarx = view(t2sx, map)
         VP = typeof(t1sseeds)
@@ -461,42 +489,153 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
 end
 function getpartials(compressedH::Array{T, 2}, t2sF) where T
     for i in 1:length(t2sF)
+        @show ForwardDiff.partials.(ForwardDiff.partials(t2sF[i]))
         compressedH[:,i] .= t2sF[i].partials[1].partials
     end
+    @show compressedH
 end
 
 function seed_kernel!(lambda::AbstractVector,
 t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}}) where {T,V,M,N}
     n = length(varx)
-    partiallambda = ForwardDiff.Partials{1,t1s{N,V}}.(NTuple{1,t1s{N,V}}.(t1s{N,V}.(lambda)))
+    @show NTuple{1,t1s{N,V}}(lambda)
+    @show x = t1s{M,V}.(lambda)
+    @show M, N
+    @show length(lambda)
+    @show NTuple{M,t1s{N,V}}.(x)
+    @show NTuple{M,t2s{N,V}}.(t1s{N,V}(lambda))
+
+    partiallambda = ForwardDiff.Partials{M,t1s{N,V}}.(NTuple{M,t1s{N,V}}(t1s{N,V}.(lambda)))
     # List of vectors to compute H*v off. Here it is only lambda.
-    seedlambda=NTuple{1,ForwardDiff.Partials{M,t1s{N,V}}}(partiallambda[1:1])
+    @show M
+    @show typeof(partiallambda)
+    @show partiallambda
+    seedlambda=NTuple{1,ForwardDiff.Partials{M,t1s{N,V}}}.(partiallambda[1:1])
     tupt1sseeds=NTuple{length(t1sseeds),ForwardDiff.Partials{N,V}}(t1sseeds)
     seed_inds = 1:n
     dual_inds = seed_inds
+    @show seedlambda
+    @show t1sseeds
     t1svarx = ForwardDiff.Dual{T,V,N}.(view(varx, dual_inds), getindex.(Ref(tupt1sseeds), seed_inds))
     t2svarx[dual_inds] .= ForwardDiff.Dual{T,t1s{N,V},M}.(view(t1svarx, dual_inds), getindex.(Ref(seedlambda), 1:M))
 end
 
+"""
+    seed_kernel_cpu!
+Seeding on the CPU, not parallelized.
+"""
+function seed_kernel_cpu!(lambda::AbstractVector, t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}}) where {T,V,M,N}
+# function seed_kernel_cpu!(
+#     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
+#     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
+# ) where {T,V,N}
+    n = length(lambda)
+    @show n
+    # t2sseeds = ForwardDiff.Partials{M,t1s{N,V}}(NTuple{M,t1s{N,V}}(undef, length(lambda)))
+    t2sseeds = Array{ForwardDiff.Partials{M,t1s{N,V}}}(undef, n)
+    for i in 1:n
+        t2sseeds[i] = ForwardDiff.Partials{M,t1s{N,V}}(NTuple{M, t1s{N,V}}(lambda[i]))
+    end
+    # Vector has to be CuVector for GPU
+    # t2sseeds = ForwardDiff.Partials{n,t1s{N,V}}(undef, 1)
+    # t2sseedvec = zeros(t1s{N,V}, length(lambda))
+    # t2sseedvec .= 0.0
+    # t2sseeds = ForwardDiff.Partials{1,t1s{N,V}}(NTuple{1, t1s{N,V}}(t2sseedvec[1]))
+    @show lambda
+    # @inbounds for i in 1:length(lambda)
+    #     t2sseedvec .= 0.5
+    #     # t2sseedvec[2] = 1.0
+    #     # t2sseedvec[3] = 1.0
+    #     t2sseeds[i] = ForwardDiff.Partials{n, t1s{N,V}}(NTuple{M, t1s{N,V}}(t2sseedvec))
+    #     @show t2sseeds[i]
+    #     @show t2sseedvec
+    #     t2sseedvec .= 0
+    # end
+    # t1svarx = t1s{N,V}.(varx, t1sseeds)
+    # x = Vector{Float64}(varx)
+    # @show typeof(x)
+    t1svarx = t1s{N,V}.(varx)
+    # @show typeof(t1svarx)
+    # @show t1svarx
+    # @show t1sseeds[1]
+    # @show typeof(t1svarx)
+    # temp = ForwardDiff.Dual{t1s{N,V}, M}.(t1svarx)
+    # @show t2s{M,N,V}
+    # @show t2sseeds[1]
+    # temp = t2s{M,N,V}(t1svarx[1], t2sseeds[1])
+    for i in 1:length(t2svarx)
+        t2svarx[i] = ForwardDiff.Dual{T,t1s{N,V},M}(t1s{N,V}(varx[i], t1sseeds[i]), t2sseeds[i])
+        # t2svarx[i] = ForwardDiff.Dual{T,t1s{N,V},M}(t1svarx[i])
+    end
+    @show ForwardDiff.value(ForwardDiff.value(t2svarx[2]))
+    @show ForwardDiff.partials(ForwardDiff.value(t2svarx[2]))
+    @show ForwardDiff.value.(ForwardDiff.partials(t2svarx[2]))
+    @show ForwardDiff.partials.(ForwardDiff.partials(t2svarx[2]))
+    @show length(t2svarx)
+end
+
+"""
+    seed_kernel_gpu!
+Seeding on GPU parallelized over the `ncolor` number of duals
+"""
+function seed_kernel_gpu!(
+    duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
+    seeds::AbstractArray{ForwardDiff.Partials{N,V}}
+) where {T,V,N}
+    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    stride = blockDim().x * gridDim().x
+    for i in index:stride:size(duals,1)
+        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
+    end
+end
+
+"""
+    seed_kernel!
+Calling the GPU seeding kernel
+"""
+function seed_kernel!(t1sseeds::CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+    nthreads = 256
+    nblocks = div(nbus, nthreads, RoundUp)
+    CUDA.@sync begin
+        @cuda threads=nthreads blocks=nblocks seed_kernel_gpu!(
+            t1svarx,
+            varx,
+            t1sseeds,
+        )
+    end
+end
+
+"""
+    seed_kernel!(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
+Calling the CPU seeding kernel
+"""
+function seed_kernel!(lambda::AbstractVector, t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}}) where {T,V,M,N}
+    seed_kernel_cpu!(lambda, t1sseeds, varx, t2svarx)
+end
+
 function residual_hessian_vecprod!(arrays::Hessian,
                              residual_polar!,
-                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
+                             vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                              lambda::AbstractVector, type::AbstractHessian)
-    nv_m = size(v_m, 1)
-    nv_a = size(v_a, 1)
+    nvbus = length(vm)
+    @show nvbus
     nmap = size(arrays.map, 1)
-    n = nv_m + nv_a
-    arrays.x[1:nv_m] .= v_m
-    arrays.x[nv_m+1:nv_m+nv_a] .= v_a
+    arrays.x[1:nvbus] .= vm
+    arrays.x[nvbus+1:2*nvbus] .= va
     arrays.t2sx .= arrays.x
     arrays.t2sF .= 0.0
 
-    seed_kernel!(lambda, arrays.t1sseeds, arrays.varx, arrays.t2svarx)
+    seed_kernel_cpu!(lambda, arrays.t1sseeds, arrays.varx, arrays.t2svarx)
+    @show vm[1]
+    @show arrays.t2sx[1]
+    for x in arrays.t2sx
+        @show x
+    end
 
     residual_polar!(
         arrays.t2sF,
-        view(arrays.t2sx, 1:nv_m),
-        view(arrays.t2sx, nv_m+1:nv_m+nv_a),
+        view(arrays.t2sx, 1:nvbus),
+        view(arrays.t2sx, nvbus+1:2*nvbus),
         ybus_re, ybus_im,
         pinj, qinj,
         pv, pq, nbus

@@ -14,8 +14,7 @@ const PS = PowerSystem
 
 # Warning: currently works only on CPU, as depends on
 # explicit evaluation of Hessian, using MATPOWER expressions
-@testset "Compute reduced gradient on CPU" begin
-    @testset "Case $case" for case in ["case9.m", "case300.m"]
+case = "case9.m"
         ##################################################
         # Initialization
         ##################################################
@@ -89,10 +88,27 @@ const PS = PowerSystem
         end
 
         # Evaluate Hessian-vector product (full ∇²gₓₓ is a 3rd dimension tensor)
+        λ .= 0.0
+        λ[1] = 1.0
         ∇²gλ = ExaPF.residual_hessian(V, Ybus, λ, pv, pq, ref)
         H_fd = FiniteDiff.finite_difference_jacobian(jac_diff, x)
         @test isapprox(∇²gλ.xx, H_fd, rtol=1e-6)
-
+        T = Vector
+        ybus_re, ybus_im = ExaPF.Spmat{T{Int}, T{Float64}}(Ybus)
+        pbus = real(pf.sbus)
+        qbus = imag(pf.sbus)
+        F = zeros(Float64, npv + 2*npq)
+        HessianAD = ExaPF.AutoDiff.Hessian(polar.statejacobian, F, vm, va,
+                                                    ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus, ExaPF.AutoDiff.StateStateHessian())
+        @show λ
+        @show typeof(λ)
+        ExaPF.AutoDiff.residual_hessian_vecprod!(
+            HessianAD, ExaPF.residual_polar!, vm, va,
+            ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus, λ, ExaPF.AutoDiff.StateStateHessian())
+        H_xx = Array(∇²gλ.xx)
+        adH_xx = Array(HessianAD.H)
+        @show H_xx
+        @show adH_xx
         ## w.r.t. uu
         function jac_u_diff(u)
             vm_ = copy(vm)
@@ -223,6 +239,4 @@ const PS = PowerSystem
         @test isapprox(∂₂Q.uu, H_fd[nx+1:end, nx+1:end], rtol=1e-6)
         @test isapprox(∂₂Q.xx, H_fd[1:nx, 1:nx], rtol=1e-6)
         @test isapprox(∂₂Q.xu, H_fd[nx+1:end, 1:nx], rtol=1e-6)
-    end
-end
 
