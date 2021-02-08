@@ -295,6 +295,28 @@ function uncompress_kernel!(J::SparseArrays.SparseMatrixCSC, compressedJ, colori
 end
 
 """
+    uncompress_kernel!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring, coloring)
+
+Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
+the CPU.
+"""
+function uncompress_kernel!(H::SparseArrays.SparseMatrixCSC, compressedH, lambda, coloring1, coloring2)
+    # CSC is column oriented: nmap is equal to number of columns
+    n1 = size(H, 1)
+    n2 = size(H, 2)
+    n = length(lambda)
+    for i in 1:n1
+        for j in H.colptr[i]:H.colptr[i+1]-1 
+            sum = 0.0
+            for k in 1:n
+                sum += lambda[k]*compressedH[i, H.rowval[j], k]
+            end
+            @inbounds H.nzval[j] = sum
+        end
+    end
+end
+
+"""
     uncompress_kernel!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
@@ -422,7 +444,7 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         if F isa Array
             VI = Vector{Int}
             VT = Vector{Float64}
-            MT = Matrix{Float64}
+            MT = Array{Float64, 3}
             SMT = SparseMatrixCSC
             A = Vector
         elseif F isa CuArray
@@ -465,18 +487,20 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         end
         H = copy(J)   
         x = VT(zeros(Float64, nv_m + nv_a))
-        t2sx = A{t2s{1,ncolor,Float64}}(x)
-        t2sF = A{t2s{1,ncolor,Float64}}(zeros(Float64, nmap))
+        t2sx = A{t2s{ncolor,ncolor,Float64}}(x)
+        t2sF = A{t2s{ncolor,ncolor,Float64}}(zeros(Float64, nmap))
         t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-        t2sseeds = A{ForwardDiff.Partials{1,t1s{ncolor,Float64}}}(undef, nmap)
+        t2sseeds = A{ForwardDiff.Partials{ncolor,t1s{ncolor,Float64}}}(undef, nmap)
+        @show typeof(t2sseeds)
         _init_seed!(t1sseeds, coloring, ncolor, nmap)
+        _init_seed!(t2sseeds, coloring, ncolor, nmap)
 
-        compressedH = MT(zeros(Float64, ncolor, nmap))
+        compressedH = MT(zeros(Float64, ncolor, ncolor, nmap))
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
         # Views
-        @show map
-        @show length(x)
+        # @show map
+        # @show length(x)
         varx = view(x, map)
         t2svarx = view(t2sx, map)
         VP = typeof(t1sseeds)
@@ -487,91 +511,23 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         )
     end
 end
-function getpartials(compressedH::Array{T, 2}, t2sF) where T
+function getpartials(compressedH::Array{T, 3}, t2sF) where T
     for i in 1:length(t2sF)
-        @show ForwardDiff.partials.(ForwardDiff.partials(t2sF[i]))
-        compressedH[:,i] .= t2sF[i].partials[1].partials
+        for j in 1:size(compressedH, 2)
+            compressedH[:,j,i] .= t2sF[i].partials[j].partials
+        end
     end
-    @show compressedH
-end
-
-function seed_kernel!(lambda::AbstractVector,
-t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}}) where {T,V,M,N}
-    n = length(varx)
-    @show NTuple{1,t1s{N,V}}(lambda)
-    @show x = t1s{M,V}.(lambda)
-    @show M, N
-    @show length(lambda)
-    @show NTuple{M,t1s{N,V}}.(x)
-    @show NTuple{M,t2s{N,V}}.(t1s{N,V}(lambda))
-
-    partiallambda = ForwardDiff.Partials{M,t1s{N,V}}.(NTuple{M,t1s{N,V}}(t1s{N,V}.(lambda)))
-    # List of vectors to compute H*v off. Here it is only lambda.
-    @show M
-    @show typeof(partiallambda)
-    @show partiallambda
-    seedlambda=NTuple{1,ForwardDiff.Partials{M,t1s{N,V}}}.(partiallambda[1:1])
-    tupt1sseeds=NTuple{length(t1sseeds),ForwardDiff.Partials{N,V}}(t1sseeds)
-    seed_inds = 1:n
-    dual_inds = seed_inds
-    @show seedlambda
-    @show t1sseeds
-    t1svarx = ForwardDiff.Dual{T,V,N}.(view(varx, dual_inds), getindex.(Ref(tupt1sseeds), seed_inds))
-    t2svarx[dual_inds] .= ForwardDiff.Dual{T,t1s{N,V},M}.(view(t1svarx, dual_inds), getindex.(Ref(seedlambda), 1:M))
 end
 
 """
     seed_kernel_cpu!
 Seeding on the CPU, not parallelized.
 """
-function seed_kernel_cpu!(lambda::AbstractVector, t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}}) where {T,V,M,N}
-# function seed_kernel_cpu!(
-#     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
-#     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
-# ) where {T,V,N}
-    n = length(lambda)
-    @show n
-    # t2sseeds = ForwardDiff.Partials{M,t1s{N,V}}(NTuple{M,t1s{N,V}}(undef, length(lambda)))
-    t2sseeds = Array{ForwardDiff.Partials{M,t1s{N,V}}}(undef, n)
-    for i in 1:n
-        t2sseeds[i] = ForwardDiff.Partials{M,t1s{N,V}}(NTuple{M, t1s{N,V}}(lambda[i]))
-    end
-    # Vector has to be CuVector for GPU
-    # t2sseeds = ForwardDiff.Partials{n,t1s{N,V}}(undef, 1)
-    # t2sseedvec = zeros(t1s{N,V}, length(lambda))
-    # t2sseedvec .= 0.0
-    # t2sseeds = ForwardDiff.Partials{1,t1s{N,V}}(NTuple{1, t1s{N,V}}(t2sseedvec[1]))
-    @show lambda
-    # @inbounds for i in 1:length(lambda)
-    #     t2sseedvec .= 0.5
-    #     # t2sseedvec[2] = 1.0
-    #     # t2sseedvec[3] = 1.0
-    #     t2sseeds[i] = ForwardDiff.Partials{n, t1s{N,V}}(NTuple{M, t1s{N,V}}(t2sseedvec))
-    #     @show t2sseeds[i]
-    #     @show t2sseedvec
-    #     t2sseedvec .= 0
-    # end
-    # t1svarx = t1s{N,V}.(varx, t1sseeds)
-    # x = Vector{Float64}(varx)
-    # @show typeof(x)
+function seed_kernel_cpu!(t2sseeds::AbstractArray{ForwardDiff.Partials{M,t1s{N,V}}}, t1sseeds::AbstractArray{ForwardDiff.Partials{N,V}}, varx, t2svarx::AbstractArray{ForwardDiff.Dual{T,t1s{N,V},M}}) where {T,V,M,N}
     t1svarx = t1s{N,V}.(varx)
-    # @show typeof(t1svarx)
-    # @show t1svarx
-    # @show t1sseeds[1]
-    # @show typeof(t1svarx)
-    # temp = ForwardDiff.Dual{t1s{N,V}, M}.(t1svarx)
-    # @show t2s{M,N,V}
-    # @show t2sseeds[1]
-    # temp = t2s{M,N,V}(t1svarx[1], t2sseeds[1])
     for i in 1:length(t2svarx)
         t2svarx[i] = ForwardDiff.Dual{T,t1s{N,V},M}(t1s{N,V}(varx[i], t1sseeds[i]), t2sseeds[i])
-        # t2svarx[i] = ForwardDiff.Dual{T,t1s{N,V},M}(t1svarx[i])
     end
-    @show ForwardDiff.value(ForwardDiff.value(t2svarx[2]))
-    @show ForwardDiff.partials(ForwardDiff.value(t2svarx[2]))
-    @show ForwardDiff.value.(ForwardDiff.partials(t2svarx[2]))
-    @show ForwardDiff.partials.(ForwardDiff.partials(t2svarx[2]))
-    @show length(t2svarx)
 end
 
 """
@@ -618,19 +574,13 @@ function residual_hessian_vecprod!(arrays::Hessian,
                              vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                              lambda::AbstractVector, type::AbstractHessian)
     nvbus = length(vm)
-    @show nvbus
     nmap = size(arrays.map, 1)
     arrays.x[1:nvbus] .= vm
     arrays.x[nvbus+1:2*nvbus] .= va
     arrays.t2sx .= arrays.x
     arrays.t2sF .= 0.0
 
-    seed_kernel_cpu!(lambda, arrays.t1sseeds, arrays.varx, arrays.t2svarx)
-    @show vm[1]
-    @show arrays.t2sx[1]
-    for x in arrays.t2sx
-        @show x
-    end
+    seed_kernel_cpu!(arrays.t2sseeds, arrays.t1sseeds, arrays.varx, arrays.t2svarx)
 
     residual_polar!(
         arrays.t2sF,
@@ -642,7 +592,8 @@ function residual_hessian_vecprod!(arrays::Hessian,
     )
 
     getpartials(arrays.compressedH, arrays.t2sF)
-    uncompress_kernel!(arrays.H, arrays.compressedH, arrays.coloring)
+    # uncompress_kernel!(arrays.H, arrays.compressedH, arrays.coloring)
+    uncompress_kernel!(arrays.H, arrays.compressedH, lambda, arrays.coloring, arrays.coloring)
     return nothing
 end
 

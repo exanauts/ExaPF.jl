@@ -88,8 +88,6 @@ case = "case9.m"
         end
 
         # Evaluate Hessian-vector product (full ∇²gₓₓ is a 3rd dimension tensor)
-        λ .= 0.0
-        λ[1] = 1.0
         ∇²gλ = ExaPF.residual_hessian(V, Ybus, λ, pv, pq, ref)
         H_fd = FiniteDiff.finite_difference_jacobian(jac_diff, x)
         @test isapprox(∇²gλ.xx, H_fd, rtol=1e-6)
@@ -100,8 +98,6 @@ case = "case9.m"
         F = zeros(Float64, npv + 2*npq)
         HessianAD = ExaPF.AutoDiff.Hessian(polar.statejacobian, F, vm, va,
                                                     ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus, ExaPF.AutoDiff.StateStateHessian())
-        @show λ
-        @show typeof(λ)
         ExaPF.AutoDiff.residual_hessian_vecprod!(
             HessianAD, ExaPF.residual_polar!, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus, λ, ExaPF.AutoDiff.StateStateHessian())
