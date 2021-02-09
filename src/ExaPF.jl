@@ -34,6 +34,7 @@ const VERBOSE_LEVEL_NONE = 0
 const TIMER = TimerOutput()
 
 include("utils.jl")
+include("architectures.jl")
 # Templates
 include("models.jl")
 

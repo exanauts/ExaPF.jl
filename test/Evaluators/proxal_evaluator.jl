@@ -18,7 +18,7 @@ import ExaPF: PS
 
     # Build reference evaluator
     nlp = ExaPF.ReducedSpaceEvaluator(datafile)
-    S = ExaPF.type_array(nlp)
+    S = ExaPF.array_type(nlp)
 
     u0 = ExaPF.initial(nlp)
     # Build ProxAL evaluator
@@ -64,12 +64,12 @@ import ExaPF: PS
 
     @testset "Constraints" begin
         m_I = ExaPF.n_constraints(prox)
-        cons = ExaPF.xzeros(S, m_I)
+        cons = similar(w, m_I) ; fill!(cons, 0)
         # Evaluate constraints
         ExaPF.constraint!(prox, cons, w)
         # Transpose Jacobian vector product
-        v = ExaPF.xzeros(S, m_I)
-        jv = ExaPF.xzeros(S, n)
+        v = similar(w, m_I) ; fill!(v, 0)
+        jv = similar(w, n) ; fill!(jv, 0)
         ExaPF.jtprod!(prox, jv, w, v)
 
         # Jacobian structure

@@ -10,7 +10,7 @@ function state_constraint(polar::PolarForm, g, buffer)
     return
 end
 is_constraint(::typeof(state_constraint)) = true
-size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(state_constraint)) where {T, IT, VT, AT} = PS.get(polar.network, PS.NumberOfPQBuses())
+size_constraint(polar::PolarForm{T, IT, VT, MT}, ::typeof(state_constraint)) where {T, IT, VT, MT} = PS.get(polar.network, PS.NumberOfPQBuses())
 function bounds(polar::PolarForm, ::typeof(state_constraint))
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
@@ -43,7 +43,7 @@ function jacobian(polar::PolarForm, cons::typeof(state_constraint), buffer)
     V = ones(m)
     jx = sparse(I, J, V, m, nₓ)
     ju = spzeros(m, nᵤ)
-    return (x=jx, u=ju)
+    return FullSpaceJacobian(jx, ju)
 end
 function jtprod(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, v)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -58,10 +58,10 @@ end
 function hessian(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, λ)
     nu = get(polar, NumberOfControl())
     nx = get(polar, NumberOfState())
-    return (
-        xx=spzeros(nx, nx),
-        xu=spzeros(nu, nx),
-        uu=spzeros(nu, nu),
+    return FullSpaceHessian(
+        spzeros(nx, nx),
+        spzeros(nu, nx),
+        spzeros(nu, nu),
     )
 end
 
@@ -107,12 +107,12 @@ function power_constraints(polar::PolarForm, g, buffer)
     return
 end
 is_constraint(::typeof(power_constraints)) = true
-function size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(power_constraints)) where {T, IT, VT, AT}
+function size_constraint(polar::PolarForm{T, IT, VT, MT}, ::typeof(power_constraints)) where {T, IT, VT, MT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     return 2*nref + npv
 end
-function bounds(polar::PolarForm{T, IT, VT, AT}, ::typeof(power_constraints)) where {T, IT, VT, AT}
+function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(power_constraints)) where {T, IT, VT, MT}
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -131,10 +131,9 @@ function bounds(polar::PolarForm{T, IT, VT, AT}, ::typeof(power_constraints)) wh
 
     # Remind that the ordering is
     # g = [P_ref; Q_ref; Q_pv]
-    MT = polar.AT
     pq_min = [p_min[ref_to_gen]; q_min[ref_to_gen]; q_min[pv_to_gen]]
     pq_max = [p_max[ref_to_gen]; q_max[ref_to_gen]; q_max[pv_to_gen]]
-    return convert(MT, pq_min), convert(MT, pq_max)
+    return convert(VT, pq_min), convert(VT, pq_max)
 end
 # Jacobian
 function jacobian(
@@ -226,7 +225,7 @@ function jacobian(polar::PolarForm, cons::typeof(power_constraints), buffer)
         Q21u Q22u Q23u
     ]
 
-    return (x=jx, u=ju)
+    return FullSpaceJacobian(jx, ju)
 end
 # Jacobian-transpose vector product
 function jtprod(
@@ -273,10 +272,10 @@ function hessian(polar::PolarForm, ::typeof(power_constraints), ∂jac, buffer, 
     λq[ref] .= λ[2]
     λq[pv] .= λ[3:end]
     ∂₂Q = reactive_power_hessian(V, Ybus, λq, pv, pq, ref)
-    return (
-        xx=∂₂Q.xx + λₚ .* ∂₂P.xx,
-        xu=∂₂Q.xu + λₚ .* ∂₂P.xu,
-        uu=∂₂Q.uu + λₚ .* ∂₂P.uu,
+    return FullSpaceHessian(
+        ∂₂Q.xx + λₚ .* ∂₂P.xx,
+        ∂₂Q.xu + λₚ .* ∂₂P.xu,
+        ∂₂Q.uu + λₚ .* ∂₂P.uu,
     )
 end
 
@@ -344,13 +343,12 @@ function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
     return cons_grad
 end
 is_constraint(::typeof(flow_constraints)) = true
-function size_constraint(polar::PolarForm{T, IT, VT, AT}, ::typeof(flow_constraints)) where {T, IT, VT, AT}
+function size_constraint(polar::PolarForm{T, IT, VT, MT}, ::typeof(flow_constraints)) where {T, IT, VT, MT}
     return 2 * PS.get(polar.network, PS.NumberOfLines())
 end
-function bounds(polar::PolarForm, ::typeof(flow_constraints))
-    MT = polar.AT
+function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(flow_constraints)) where {T, IT, VT, MT}
     f_min, f_max = PS.bounds(polar.network, PS.Lines(), PS.ActivePower())
-    return convert(MT, [f_min; f_min]), convert(MT, [f_max; f_max])
+    return convert(VT, [f_min; f_min]), convert(VT, [f_max; f_max])
 end
 
 # Jacobian-transpose vector product

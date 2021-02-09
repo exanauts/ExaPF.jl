@@ -1,3 +1,8 @@
+struct FullSpaceJacobian{SpM}
+    x::SpM
+    u::SpM
+end
+
 function _matpower_residual_jacobian(V, Ybus)
     n = size(V, 1)
     Ibus = Ybus*V

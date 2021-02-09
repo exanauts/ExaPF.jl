@@ -11,7 +11,7 @@ struct ControlJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
     map::IT
 end
 
-struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
+struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
     network::PS.PowerNetwork
     device::KA.Device
     # bounds
@@ -20,7 +20,7 @@ struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     u_min::VT
     u_max::VT
     # costs
-    costs_coefficients::AT
+    costs_coefficients::MT
     # Constant loads
     active_load::VT
     reactive_load::VT
@@ -28,7 +28,6 @@ struct PolarForm{T, IT, VT, AT} <: AbstractFormulation where {T, IT, VT, AT}
     indexing::IndexingCache{IT}
     # struct
     topology::NetworkTopology{IT, VT}
-    AT::Type
     # Jacobian structures and indexing
     statejacobian::StateJacobianStructure
     controljacobian::ControlJacobianStructure
@@ -41,7 +40,7 @@ include("getters.jl")
 include("adjoints.jl")
 include("constraints.jl")
 
-function PolarForm(pf::PS.PowerNetwork, device)
+function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     if isa(device, KA.CPU)
         IT = Vector{Int}
         VT = Vector{Float64}
@@ -142,7 +141,6 @@ function PolarForm(pf::PS.PowerNetwork, device)
         coefs, pload, qload,
         indexing,
         topology,
-        AT,
         state_jacobian_structure, control_jacobian_structure
     )
 end
@@ -163,6 +161,8 @@ function get(polar::PolarForm, attr::PS.AbstractNetworkAttribute)
     return get(polar.network, attr)
 end
 
+array_type(polar::PolarForm) = array_type(polar.device)
+
 # Setters
 function setvalues!(polar::PolarForm, ::PS.ActiveLoad, values)
     @assert length(polar.active_load) == length(values)
@@ -174,14 +174,14 @@ function setvalues!(polar::PolarForm, ::PS.ReactiveLoad, values)
 end
 
 ## Bounds
-function bounds(polar::PolarForm{T, IT, VT, AT}, ::State) where {T, IT, VT, AT}
+function bounds(polar::PolarForm{T, IT, VT, MT}, ::State) where {T, IT, VT, MT}
     return polar.x_min, polar.x_max
 end
-function bounds(polar::PolarForm{T, IT, VT, AT}, ::Control) where {T, IT, VT, AT}
+function bounds(polar::PolarForm{T, IT, VT, MT}, ::Control) where {T, IT, VT, MT}
     return polar.u_min, polar.u_max
 end
 
-function initial(form::PolarForm{T, IT, VT, AT}, v::AbstractVariable) where {T, IT, VT, AT}
+function initial(form::PolarForm{T, IT, VT, MT}, v::AbstractVariable) where {T, IT, VT, MT}
     pbus = real.(form.network.sbus) |> VT
     qbus = imag.(form.network.sbus) |> VT
     vmag = abs.(form.network.vbus) |> VT
@@ -189,7 +189,7 @@ function initial(form::PolarForm{T, IT, VT, AT}, v::AbstractVariable) where {T, 
     return get(form, v, vmag, vang, pbus, qbus)
 end
 
-function get(form::PolarForm{T, IT, VT, AT}, ::PhysicalState) where {T, IT, VT, AT}
+function get(form::PolarForm{T, IT, VT, MT}, ::PhysicalState) where {T, IT, VT, MT}
     nbus = PS.get(form.network, PS.NumberOfBuses())
     ngen = PS.get(form.network, PS.NumberOfGenerators())
     n_state = get(form, NumberOfState())
@@ -197,7 +197,7 @@ function get(form::PolarForm{T, IT, VT, AT}, ::PhysicalState) where {T, IT, VT, 
     return PolarNetworkState{VT}(nbus, ngen, n_state, gen2bus)
 end
 
-function init_buffer!(form::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
+function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState) where {T, IT, VT, MT}
     # FIXME
     pbus = real.(form.network.sbus)
     qbus = imag.(form.network.sbus)
@@ -237,7 +237,7 @@ function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
 end
 
 # TODO: find better naming
-function init_autodiff_factory(polar::PolarForm{T, IT, VT, AT}, buffer::PolarNetworkState) where {T, IT, VT, AT}
+function init_autodiff_factory(polar::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState) where {T, IT, VT, MT}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -293,12 +293,12 @@ function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetwork
 end
 
 function powerflow(
-    polar::PolarForm{T, IT, VT, AT},
+    polar::PolarForm{T, IT, VT, MT},
     jacobian::AutoDiff.Jacobian,
     buffer::PolarNetworkState{IT,VT},
     algo::NewtonRaphson;
     solver=DirectSolver(),
-) where {T, IT, VT, AT}
+) where {T, IT, VT, MT}
     # Retrieve parameter and initial voltage guess
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
 

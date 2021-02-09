@@ -33,14 +33,6 @@ mutable struct Spmat{VTI<:AbstractVector, VTF<:AbstractVector}
     end
 end
 
-# norm
-xnorm(x::AbstractVector) = norm(x, 2)
-xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)
-
-# Array initialization
-xzeros(S, n) = fill!(S(undef, n), zero(eltype(S)))
-xones(S, n) = fill!(S(undef, n), one(eltype(S)))
-
 # projection operator
 function project!(w::VT, u::VT, u♭::VT, u♯::VT) where VT<:AbstractArray
     w .= max.(min.(u, u♯), u♭)

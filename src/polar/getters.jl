@@ -1,10 +1,10 @@
 
 function get!(
-    polar::PolarForm{T, IT, VT, AT},
+    polar::PolarForm{T, IT, VT, MT},
     ::State,
     x::AbstractVector,
     buffer::PolarNetworkState
-) where {T, IT, VT, AT}
+) where {T, IT, VT, MT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
@@ -19,13 +19,13 @@ function get!(
 end
 
 function get(
-    polar::PolarForm{T, IT, VT, AT},
+    polar::PolarForm{T, IT, VT, MT},
     ::State,
     vmag::VT,
     vang::VT,
     pbus::VT,
     qbus::VT,
-) where {T, IT, VT, AT}
+) where {T, IT, VT, MT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
@@ -39,13 +39,13 @@ function get(
     return x
 end
 function get(
-    polar::PolarForm{T, IT, VT, AT},
+    polar::PolarForm{T, IT, VT, MT},
     ::Control,
     vmag::VT,
     vang::VT,
     pbus::VT,
     qbus::VT,
-) where {T, IT, VT, AT}
+) where {T, IT, VT, MT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
@@ -61,8 +61,8 @@ function get(
     return u
 end
 function get(
-    polar::PolarForm{T, IT, VT, AT}, ::Control, buffer::PolarNetworkState,
-) where {T, IT, VT, AT}
+    polar::PolarForm{T, IT, VT, MT}, ::Control, buffer::PolarNetworkState,
+) where {T, IT, VT, MT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())

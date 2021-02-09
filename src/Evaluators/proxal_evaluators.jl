@@ -18,48 +18,46 @@ Evaluator wrapping a `ReducedSpaceEvaluator` for use inside
 decomposition algorithm implemented in [ProxAL.jl](https://github.com/exanauts/ProxAL.jl).
 
 """
-mutable struct ProxALEvaluator{T} <: AbstractNLPEvaluator
-    inner::ReducedSpaceEvaluator{T}
-    s_min::AbstractVector{T}
-    s_max::AbstractVector{T}
+mutable struct ProxALEvaluator{T, VI, VT, MT} <: AbstractNLPEvaluator
+    inner::ReducedSpaceEvaluator{T, VI, VT, MT}
+    s_min::VT
+    s_max::VT
     nu::Int
     ng::Int
     # Augmented penalties parameters
     time::ProxALTime
     scale_objective::T
     τ::T
-    λf::AbstractVector{T}
-    λt::AbstractVector{T}
+    λf::VT
+    λt::VT
     ρf::T
     ρt::T
-    pg_f::AbstractVector{T}
-    pg_ref::AbstractVector{T}
-    pg_t::AbstractVector{T}
+    pg_f::VT
+    pg_ref::VT
+    pg_t::VT
     # Buffer
-    ramp_link_prev::AbstractVector{T}
-    ramp_link_next::AbstractVector{T}
+    ramp_link_prev::VT
+    ramp_link_next::VT
 end
 function ProxALEvaluator(
-    nlp::ReducedSpaceEvaluator,
+    nlp::ReducedSpaceEvaluator{T, VI, VT, MT},
     time::ProxALTime;
     τ=0.1, ρf=0.1, ρt=0.1, scale_obj=1.0,
-)
-    S = type_array(nlp)
-
+) where {T, VI, VT, MT}
     nu = n_variables(nlp)
     ng = get(nlp, PS.NumberOfGenerators())
 
-    s_min = xzeros(S, ng)
-    s_max = xones(S, ng)
-    λf = xzeros(S, ng)
-    λt = xzeros(S, ng)
+    s_min = xzeros(VT, ng)
+    s_max = xones(VT, ng)
+    λf = xzeros(VT, ng)
+    λt = xzeros(VT, ng)
 
-    pgf = xzeros(S, ng)
-    pgc = xzeros(S, ng)
-    pgt = xzeros(S, ng)
+    pgf = xzeros(VT, ng)
+    pgc = xzeros(VT, ng)
+    pgt = xzeros(VT, ng)
 
-    ramp_link_prev = xzeros(S, ng)
-    ramp_link_next = xzeros(S, ng)
+    ramp_link_prev = xzeros(VT, ng)
+    ramp_link_next = xzeros(VT, ng)
 
     return ProxALEvaluator(
         nlp, s_min, s_max, nu, ng, time, scale_obj, τ, λf, λt, ρf, ρt,

@@ -1,3 +1,9 @@
+struct FullSpaceHessian{SpMT}
+    xx::SpMT
+    xu::SpMT
+    uu::SpMT
+end
+
 # Hessian vector-product H*λ, H = Jₓₓ (from Matpower)
 # Suppose ordering is correct
 function _matpower_hessian(V, Ybus, λ)
@@ -60,7 +66,7 @@ function residual_hessian(V, Ybus, λ, pv, pq, ref)
         H11  H12  H13
         H12' H22  H23
         H13' H23' H33
-    ]
+    ]::SparseMatrixCSC{Float64, Int}
 
     # w.r.t. uu
     H11 = Pvv[ref, ref] + Qvv[ref, ref]
@@ -71,7 +77,7 @@ function residual_hessian(V, Ybus, λ, pv, pq, ref)
          H11  H12 spzeros(nref, npv)
          H12' H22 spzeros(npv, npv)
          spzeros(npv, nref + 2 * npv)
-    ]
+    ]::SparseMatrixCSC{Float64, Int}
 
     # w.r.t. xu
     Pvθ = real.(transpose(Gp12))
@@ -87,9 +93,9 @@ function residual_hessian(V, Ybus, λ, pv, pq, ref)
         H11  H12  H13
         H21  H22  H23
         spzeros(npv, npv + 2 * npq)
-    ]
+    ]::SparseMatrixCSC{Float64, Int}
 
-    return (xx=Hxx, xu=Hxu, uu=Huu)
+    return FullSpaceHessian(Hxx, Hxu, Huu)
 end
 
 function residual_hessian(
@@ -134,7 +140,7 @@ function active_power_hessian(V, Ybus, pv, pq, ref)
         H11  H12  H13
         H12' H22  H23
         H13' H23' H33
-    ]
+    ]::SparseMatrixCSC{Float64, Int}
 
     # w.r.t. uu
     H11 = Pvv[ref, ref]
@@ -145,7 +151,7 @@ function active_power_hessian(V, Ybus, pv, pq, ref)
          H11  H12 spzeros(nref, npv)
          H12' H22 spzeros(npv, npv)
          spzeros(npv, nref + 2 * npv)
-    ]
+    ]::SparseMatrixCSC{Float64, Int}
 
     # w.r.t. xu
     Pvθ = real.(transpose(G12))
@@ -161,9 +167,9 @@ function active_power_hessian(V, Ybus, pv, pq, ref)
         H11  H12  H13
         H21  H22  H23
         spzeros(npv, npv + 2 * npq)
-    ]
+    ]::SparseMatrixCSC{Float64, Int}
 
-    return (xx=Hxx, xu=Hxu, uu=Huu)
+    return FullSpaceHessian(Hxx, Hxu, Huu)
 end
 
 function active_power_hessian(
@@ -200,7 +206,7 @@ function reactive_power_hessian(V, Ybus, λ, pv, pq, ref)
         H11  H12  H13
         H12' H22  H23
         H13' H23' H33
-    ]
+    ]::SparseMatrixCSC{Float64, Int}
 
     H11 = Qvv[ref, ref]
     H12 = Qvv[ref, pv]
@@ -210,7 +216,7 @@ function reactive_power_hessian(V, Ybus, λ, pv, pq, ref)
          H11  H12 spzeros(nref, npv)
          H12' H22 spzeros(npv, npv)
          spzeros(npv, nref + 2* npv)
-    ]
+    ]::SparseMatrixCSC{Float64, Int}
 
     Pvθ = real.(transpose(G12))
     Qvθ = imag.(transpose(G12))
@@ -225,8 +231,8 @@ function reactive_power_hessian(V, Ybus, λ, pv, pq, ref)
         H11  H12  H13
         H21  H22  H23
         spzeros(npv, 2*npq+npv)
-    ]
-    return (xx=Hxx, xu=Hxu, uu=Huu)
+    ]::SparseMatrixCSC{Float64, Int}
+    return FullSpaceHessian(Hxx, Hxu, Huu)
 end
 
 function reactive_power_hessian(
