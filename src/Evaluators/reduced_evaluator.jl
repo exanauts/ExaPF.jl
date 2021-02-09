@@ -28,21 +28,19 @@ convenient to use. Thus, the resolution of the balance equation
 involves only the physical representation `buffer`.
 
 """
-mutable struct ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
-    model::AbstractFormulation
-    λ::AbstractVector{T}
+mutable struct ReducedSpaceEvaluator{T, VI, VT, MT} <: AbstractNLPEvaluator
+    model::PolarForm{T, VI, VT, MT}
+    λ::VT
 
-    x_min::AbstractVector{T}
-    x_max::AbstractVector{T}
-    u_min::AbstractVector{T}
-    u_max::AbstractVector{T}
+    u_min::VT
+    u_max::VT
 
     constraints::Array{Function, 1}
-    g_min::AbstractVector{T}
-    g_max::AbstractVector{T}
+    g_min::VT
+    g_max::VT
 
-    buffer::AbstractNetworkBuffer
-    autodiff::AutoDiffFactory
+    buffer::PolarNetworkState{VI, VT}
+    autodiff::AutoDiffFactory{VT}
     ∇gᵗ::AbstractMatrix
     linear_solver::LinearSolvers.AbstractLinearSolver
     powerflow_solver::AbstractNonLinearSolver
@@ -64,12 +62,11 @@ function ReducedSpaceEvaluator(
     ad = AutoDiffFactory(jx, ju, adjoint_f)
 
     u_min, u_max = bounds(model, Control())
-    x_min, x_max = bounds(model, State())
-    λ = similar(x_min)
+    λ = similar(x)
 
-    MT = model.AT
-    g_min = MT{eltype(x_min), 1}()
-    g_max = MT{eltype(x_min), 1}()
+    MT = array_type(model)
+    g_min = MT{eltype(x), 1}()
+    g_max = MT{eltype(x), 1}()
     for cons in constraints
         cb, cu = bounds(model, cons)
         append!(g_min, cb)
@@ -77,7 +74,7 @@ function ReducedSpaceEvaluator(
     end
 
     return ReducedSpaceEvaluator(
-        model, λ, x_min, x_max, u_min, u_max,
+        model, λ, u_min, u_max,
         constraints, g_min, g_max,
         buffer,
         ad, jx.J, linear_solver, powerflow_solver,
@@ -100,7 +97,7 @@ function ReducedSpaceEvaluator(
     )
 end
 
-type_array(nlp::ReducedSpaceEvaluator) = typeof(nlp.u_min)
+array_type(nlp::ReducedSpaceEvaluator) = array_type(nlp.model)
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
@@ -227,7 +224,7 @@ function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     # Evaluate Jacobian of power flow equation on current u
     update_jacobian!(nlp, Control())
     reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ, u)
-    return nothing
+    return
 end
 
 function constraint!(nlp::ReducedSpaceEvaluator, g, u)
@@ -264,9 +261,10 @@ function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
 end
 
 function full_jacobian(nlp::ReducedSpaceEvaluator, u)
-    jacobians_x = [] ; jacobians_u = []
+    jacobians_x = SparseMatrixCSC{Float64, Int}[]
+    jacobians_u = SparseMatrixCSC{Float64, Int}[]
     for cons in nlp.constraints
-        J = jacobian(nlp.model, cons, nlp.buffer)
+        J = jacobian(nlp.model, cons, nlp.buffer)::FullSpaceJacobian{SparseMatrixCSC{Float64, Int}}
         push!(jacobians_x, J.x)
         push!(jacobians_u, J.u)
     end
@@ -274,7 +272,7 @@ function full_jacobian(nlp::ReducedSpaceEvaluator, u)
     Jx = vcat(jacobians_x...)
     Ju = vcat(jacobians_u...)
 
-    return (x=Jx, u=Ju)
+    return FullSpaceJacobian(Jx, Ju)
 end
 
 function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
@@ -289,6 +287,7 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     # Compute reduced Jacobian
     copy!(jac, J.u)
     mul!(jac, μ', ∇gᵤ, -1.0, 1.0)
+    return
 end
 
 function full_jtprod!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
@@ -322,6 +321,7 @@ function jtprod!(nlp::ReducedSpaceEvaluator, cons::Function, jv, u, v)
     jtprod(model, cons, ∂obj, nlp.buffer, v)
     jvx, jvu = ∂obj.∇fₓ, ∂obj.∇fᵤ
     reduced_gradient!(nlp, jv, jvx, jvx, jvu)
+    return
 end
 
 function ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)
@@ -337,39 +337,42 @@ function ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)
     # Evaluate gradient in reduced space
     update_jacobian!(nlp, Control())
     reduced_gradient!(nlp, jv, jvx, jvu, u)
+    return
 end
 
 # Compute reduced Hessian-vector product using the adjoint-adjoint method
 function reduced_hessian!(
-    nlp::ReducedSpaceEvaluator, hessvec, ∇²fₓₓ, ∇²fₓᵤ, ∇²fᵤᵤ, w,
-)
+    nlp::ReducedSpaceEvaluator, hessvec, ∇²fₓₓ::SpMT, ∇²fₓᵤ::SpMT, ∇²fᵤᵤ::SpMT, w,
+) where SpMT
     λ = -nlp.λ # take care that λ is negative of true adjoint!
     # Jacobian
-    ∇gₓ = nlp.autodiff.Jgₓ.J
-    ∇gᵤ = nlp.autodiff.Jgᵤ.J
+    ∇gₓ = nlp.autodiff.Jgₓ.J::SpMT
+    ∇gᵤ = nlp.autodiff.Jgᵤ.J::SpMT
 
     # Evaluate Hess-vec of residual function g(x, u) = 0
-    ∇²gλ = residual_hessian(nlp.model, nlp.buffer, λ)
+    ∇²gλ = residual_hessian(nlp.model, nlp.buffer, λ)::FullSpaceHessian{SpMT}
 
     # Adjoint-adjoint
     ∇gaₓ = ∇²fₓₓ + ∇²gλ.xx
     z = -(∇gₓ ) \ (∇gᵤ * w)
     ψ = -(∇gₓ') \ (∇²fₓᵤ' * w + ∇²gλ.xu' * w +  ∇gaₓ * z)
     hessvec .= ∇²fᵤᵤ * w +  ∇²gλ.uu * w + ∇gᵤ' * ψ  + ∇²fₓᵤ * z + ∇²gλ.xu * z
+    return
 end
 
 function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     buffer = nlp.buffer
     ∂f = nlp.autodiff.∇f
-    ∇²f = hessian_cost(nlp.model, ∂f, buffer)
+    ∇²f = hessian_cost(nlp.model, ∂f, buffer)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
     reduced_hessian!(nlp, hessvec, ∇²f.xx, ∇²f.xu, ∇²f.uu, w)
+    return
 end
 
 function full_hessian_lagrangian(nlp::ReducedSpaceEvaluator, u, y, σ)
     nu = n_variables(nlp)
     buffer = nlp.buffer
     ∂f = nlp.autodiff.∇f
-    ∇²f = hessian_cost(nlp.model, ∂f, buffer)
+    ∇²f = hessian_cost(nlp.model, ∂f, buffer)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
     ∇²Lₓₓ = σ .* ∇²f.xx
     ∇²Lₓᵤ = σ .* ∇²f.xu
     ∇²Lᵤᵤ = σ .* ∇²f.uu
@@ -379,36 +382,38 @@ function full_hessian_lagrangian(nlp::ReducedSpaceEvaluator, u, y, σ)
         m = size_constraint(nlp.model, cons)
         mask = shift+1:shift+m
         yc = @view y[mask]
-        ∇²h = hessian(nlp.model, cons, ∂f, nlp.buffer, yc)
+        ∇²h = hessian(nlp.model, cons, ∂f, nlp.buffer, yc)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
         ∇²Lₓₓ .+= ∇²h.xx
         ∇²Lₓᵤ .+= ∇²h.xu
         ∇²Lᵤᵤ .+= ∇²h.uu
         shift += m
     end
 
-    return (xx=∇²Lₓₓ, xu=∇²Lₓᵤ, uu=∇²Lᵤᵤ)
+    return FullSpaceHessian(∇²Lₓₓ, ∇²Lₓᵤ, ∇²Lᵤᵤ)
 end
 
 function hessian_lagrangian_prod!(
     nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, v,
 )
     # Full Hessian of Lagrangian L(u, y) = f(u) + y' * h(u)
-    ∇²L = full_hessian_lagrangian(nlp, u, y, σ)
-    reduced_hessian!(base_nlp, hessvec, ∇²L.xx, ∇²L.xu, ∇²L.uu, v)
+    ∇²L = full_hessian_lagrangian(nlp, u, y, σ)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
+    reduced_hessian!(nlp, hessvec, ∇²L.xx, ∇²L.xu, ∇²L.uu, v)
+    return
 end
 
 function hessian_lagrangian_penalty_prod!(
     nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, v, w,
 )
     # Full Hessian of Lagrangian L(u, y) = f(u) + y' * h(u)
-    ∇²L = full_hessian_lagrangian(nlp, u, y, σ)
+    ∇²L = full_hessian_lagrangian(nlp, u, y, σ)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
     # Add Hessian of quadratic penalty
-    J = full_jacobian(nlp, u)
+    J = full_jacobian(nlp, u)::FullSpaceJacobian{SparseMatrixCSC{Float64, Int}}
     D = Diagonal(w)
     ∇²L.xx .+= J.x' * D * J.x
     ∇²L.xu .+= J.u' * D * J.x
     ∇²L.uu .+= J.u' * D * J.u
     reduced_hessian!(nlp, hessvec, ∇²L.xx, ∇²L.xu, ∇²L.uu, v)
+    return
 end
 
 # Return lower-triangular matrix

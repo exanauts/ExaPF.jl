@@ -7,10 +7,10 @@ equality constrained problem, by introducing a set of slack
 variables.
 
 """
-mutable struct SlackEvaluator{T} <: AbstractNLPEvaluator
-    inner::AbstractNLPEvaluator
-    s_min::AbstractVector{T}
-    s_max::AbstractVector{T}
+mutable struct SlackEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT} <: AbstractNLPEvaluator
+    inner::Evaluator
+    s_min::VT
+    s_max::VT
     nv::Int
     ns::Int
 end
@@ -20,7 +20,7 @@ function SlackEvaluator(nlp::AbstractNLPEvaluator)
     end
     nv, ns = n_variables(nlp), n_constraints(nlp)
     s_min, s_max = bounds(nlp, Constraints())
-    return SlackEvaluator(nlp, s_min, s_max, nv, ns)
+    return SlackEvaluator{typeof(nlp), eltype(s_min), typeof(s_min)}(nlp, s_min, s_max, nv, ns)
 end
 function SlackEvaluator(
     datafile::String;
@@ -60,14 +60,12 @@ end
 
 function update!(nlp::SlackEvaluator, w)
     u = @view w[1:nlp.nv]
-    s = @view w[nlp.nv+1:end]
     return update!(nlp.inner, u)
 end
 
 # f(x) = f₀(u)   , with x = (u, s)
 function objective(nlp::SlackEvaluator, w)
     u = @view w[1:nlp.nv]
-    s = @view w[nlp.nv+1:end]
     return objective(nlp.inner, u)
 end
 
@@ -90,7 +88,7 @@ function gradient!(nlp::SlackEvaluator, grad, w)
     # w.r.t. s
     gs = @view grad[nlp.nv+1:end]
     fill!(gs, 0.0)
-    return nothing
+    return
 end
 
 ## Transpose Jacobian-vector product
@@ -106,6 +104,7 @@ function jtprod!(nlp::SlackEvaluator, jv, w, v)
     # w.r.t. s
     jvs = @view jv[nlp.nv+1:end]
     jvs .-= v
+    return
 end
 
 function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
@@ -116,6 +115,7 @@ function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
     # w.r.t. s
     jvs = @view jv[nlp.nv+1:end]
     jvs .-= v
+    return
 end
 
 # H = [ H₀   0 ]
@@ -126,6 +126,7 @@ function hessprod!(nlp::SlackEvaluator, hessvec, w, v)
     # w.r.t. s
     hus = @view hessvec[nlp.nv+1:end]
     hus .= 0.0
+    return
 end
 
 # J = [Jᵤ -I] , hence
@@ -157,6 +158,7 @@ function hessian_lagrangian_penalty_prod!(
     hvs .+= - w .* y_buf
     # w.r.t. ss
     hvs .+= w .* vₛ
+    return
 end
 
 function reset!(nlp::SlackEvaluator)

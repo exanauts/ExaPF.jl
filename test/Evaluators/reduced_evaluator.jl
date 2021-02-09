@@ -8,12 +8,6 @@
     @testset "Constructor" for (device, M) in ITERATORS
         powerflow_solver = NewtonRaphson(; tol=1e-11)
         nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device, powerflow_solver=powerflow_solver)
-        TNLP = typeof(nlp)
-        for (fn, ft) in zip(fieldnames(TNLP), fieldtypes(TNLP))
-            if ft <: AbstractArray{Float64, P} where P
-                @test isa(getfield(nlp, fn), M)
-            end
-        end
         # Test that arguments are passed as expected in the constructor:
         @test nlp.powerflow_solver == powerflow_solver
     end
@@ -29,14 +23,6 @@
         # Test printing
         println(devnull, nlp)
 
-        # Test evaluator is well instantiated on target device
-        TNLP = typeof(nlp)
-        for (fn, ft) in zip(fieldnames(TNLP), fieldtypes(TNLP))
-            if ft <: AbstractArray{Float64, P} where P
-                @test isa(getfield(nlp, fn), M)
-            end
-        end
-
         # Test consistence
         n_state = get(polar, NumberOfState())
         @test length(nlp.λ) == n_state
@@ -44,7 +30,6 @@
         m = ExaPF.n_constraints(nlp)
         @test n == length(u0)
         @test isless(nlp.u_min, nlp.u_max)
-        @test isless(nlp.x_min, nlp.x_max)
         @test isless(nlp.g_min, nlp.g_max)
         @test length(nlp.g_min) == m
 

@@ -7,6 +7,7 @@ function jprod!(nlp::AbstractNLPEvaluator, jv, u, v)
     jac = similar(jv, m, nᵤ)
     jacobian!(nlp, jac, u)
     mul!(jv, jac, v)
+    return
 end
 
 # Joint Objective Jacobian transpose vector product (default implementation)
@@ -14,6 +15,7 @@ function ojtprod!(nlp::AbstractNLPEvaluator, jv, u, σ, v)
     gradient!(nlp, jv, u)
     jv .*= σ  # scale gradient
     jtprod!(nlp, jv, u, v)
+    return
 end
 
 # Common interface for Hessian
@@ -36,15 +38,16 @@ function hessian_lagrangian_penalty_prod!(
     jprod!(nlp, jv, u, v)
     jv .*= w
     jtprod!(nlp, hessvec, u, jv)
+    return
 end
 
 # AutoDiff Factory
 abstract type AbstractAutoDiffFactory end
 
-struct AutoDiffFactory <: AbstractAutoDiffFactory
+struct AutoDiffFactory{VT} <: AbstractAutoDiffFactory
     Jgₓ::AutoDiff.Jacobian
     Jgᵤ::AutoDiff.Jacobian
-    ∇f::AdjointStackObjective
+    ∇f::AdjointStackObjective{VT}
 end
 
 # Counters
@@ -94,17 +97,17 @@ abstract type AbstractScaler end
 
 scale_factor(h, tol, η) = max(tol, η / max(1.0, h))
 
-struct MaxScaler{T} <: AbstractScaler
+struct MaxScaler{T, VT} <: AbstractScaler
     scale_obj::T
-    scale_cons::AbstractVector{T}
-    g_min::AbstractVector{T}
-    g_max::AbstractVector{T}
+    scale_cons::VT
+    g_min::VT
+    g_max::VT
 end
 function MaxScaler(g_min, g_max)
     @assert length(g_min) == length(g_max)
     m = length(g_min)
     sc = similar(g_min) ; fill!(sc, 1.0)
-    return MaxScaler(1.0, sc, g_min, g_max)
+    return MaxScaler{eltype(g_min), typeof(g_min)}(1.0, sc, g_min, g_max)
 end
 function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
                    η=100.0, tol=1e-8)
@@ -128,6 +131,6 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
 
     g♭, g♯ = bounds(nlp, Constraints())
 
-    return MaxScaler(s_obj, s_cons, s_cons .* g♭, s_cons .* g♯)
+    return MaxScaler{typeof(s_obj), typeof(s_cons)}(s_obj, s_cons, s_cons .* g♭, s_cons .* g♯)
 end
 

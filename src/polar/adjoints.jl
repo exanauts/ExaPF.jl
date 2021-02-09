@@ -53,12 +53,12 @@ function put_reactive_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, yb
 end
 
 function put!(
-    polar::PolarForm{T, IT, VT, AT},
+    polar::PolarForm{T, IT, VT, MT},
     ::State,
     ∂x::VT,
     ∂vmag::VT,
     ∂vang::VT,
-) where {T, IT, VT, AT}
+) where {T, IT, VT, MT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     # build vector x
@@ -72,12 +72,12 @@ function put!(
 end
 
 function put!(
-    polar::PolarForm{T, IT, VT, AT},
+    polar::PolarForm{T, IT, VT, MT},
     ::Control,
     ∂u::VT,
     ∂vmag::VT,
     ∂pbus::VT,
-) where {T, IT, VT, AT}
+) where {T, IT, VT, MT}
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     # build vector u
@@ -121,12 +121,12 @@ KA.@kernel function put_adjoint_kernel!(
 end
 
 function put(
-    polar::PolarForm{T, VT, AT},
+    polar::PolarForm{T, IT, VT, MT},
     ::PS.Generator,
     ::PS.ActivePower,
     obj_autodiff::AdjointStackObjective,
     buffer::PolarNetworkState
-) where {T, VT, AT}
+) where {T, IT, VT, MT}
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -183,6 +183,7 @@ function ∂cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarN
     # Return adjoint of quadratic cost
     ∂obj.∂pg .= c3 .+ 2.0 .* c4 .* pg
     put(polar, PS.Generator(), PS.ActivePower(), ∂obj, buffer)
+    return
 end
 
 function hessian_cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarNetworkState)
@@ -196,16 +197,16 @@ function hessian_cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::P
     ∂²pg = 2.0 .* c4[[ref2gen; pv2gen]]
 
     # Evaluate Hess-vec of objective function f(x, u)
-    ∂₂P = active_power_hessian(polar, buffer)
+    ∂₂P = active_power_hessian(polar, buffer)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
 
-    ∂Pₓ = active_power_jacobian(polar, State(), buffer)
-    ∂Pᵤ = active_power_jacobian(polar, Control(), buffer)
+    ∂Pₓ = active_power_jacobian(polar, State(), buffer)::SparseMatrixCSC{Float64, Int}
+    ∂Pᵤ = active_power_jacobian(polar, Control(), buffer)::SparseMatrixCSC{Float64, Int}
 
     D = Diagonal(∂²pg)
     ∇²fₓₓ = ∂pg .* ∂₂P.xx + ∂Pₓ' * D * ∂Pₓ
     ∇²fᵤᵤ = ∂pg .* ∂₂P.uu + ∂Pᵤ' * D * ∂Pᵤ
     ∇²fₓᵤ = ∂pg .* ∂₂P.xu + ∂Pᵤ' * D * ∂Pₓ
 
-    return (xx=∇²fₓₓ, xu=∇²fₓᵤ, uu=∇²fᵤᵤ)
+    return FullSpaceHessian(∇²fₓₓ, ∇²fₓᵤ, ∇²fᵤᵤ)
 end
 

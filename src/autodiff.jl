@@ -382,10 +382,5 @@ function residual_jacobian!(arrays::Jacobian,
     return nothing
 end
 
-function Base.show(io::IO, jacobian::AbstractJacobian)
-    ncolor = size(unique(jacobian.coloring), 1)
-    print(io, "Number of Jacobian colors: ", ncolor)
-end
-
 
 end

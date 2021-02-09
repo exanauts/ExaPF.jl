@@ -38,18 +38,18 @@ if `h_i` is feasible)
 φ(h_i) = \max\{0 , λ_i + ρ * (h_i - h_i♯)   \} + \min\{0 , λ_i + ρ * (h_i - h_i♭)   \}
 ```
 """
-mutable struct AugLagEvaluator{T} <: AbstractPenaltyEvaluator
-    inner::AbstractNLPEvaluator
+mutable struct AugLagEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT} <: AbstractPenaltyEvaluator
+    inner::Evaluator
     # Type
     cons_type::CONSTRAINTS_TYPE
-    cons::AbstractVector{T}
+    cons::VT
     ρ::T
-    λ::AbstractVector{T}
-    λc::AbstractVector{T}
+    λ::VT
+    λc::VT
     # Scaling
-    scaler::AbstractScaler
+    scaler::MaxScaler{T, VT}
     # Stats
-    counter::AbstractCounter
+    counter::NLPCounter
 end
 function AugLagEvaluator(
     nlp::AbstractNLPEvaluator, u0;
@@ -70,7 +70,6 @@ function AugLagEvaluator(
     cx = similar(g_min) ; fill!(cx, 0)
     λc = similar(g_min) ; fill!(λc, 0)
     λ = similar(g_min) ; fill!(λ, 0)
-
 
     scaler = scale ?  MaxScaler(nlp, u0) : MaxScaler(g_min, g_max)
     return AugLagEvaluator(nlp, cons_type, cx, c₀, λ, λc, scaler, NLPCounter())
@@ -138,21 +137,20 @@ function gradient!(ag::AugLagEvaluator, grad, u)
     mask = abs.(ag.cons) .> 0
     v = scaler.scale_cons .* ag.λc .* mask
     ojtprod!(base_nlp, grad, u, σ, v)
+    return
 end
 
 function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
-    base_nlp = ag.inner
     scaler = ag.scaler
-    # Import AutoDiff objects
-    autodiff = get(base_nlp, AutoDiffBackend())
     cx = ag.cons
     mask = abs.(cx) .> 0
 
     σ = scaler.scale_obj
-    y = scaler.scale_cons .* ag.λc .* mask
-    z = ag.ρ .* scaler.scale_cons .* scaler.scale_cons .* mask
+    y = (scaler.scale_cons .* ag.λc .* mask)
+    z = ag.ρ .* (scaler.scale_cons .* scaler.scale_cons .* mask)
 
-    hessian_lagrangian_penalty_prod!(base_nlp, hessvec, u, y, σ, w, z)
+    hessian_lagrangian_penalty_prod!(ag.inner, hessvec, u, y, σ, w, z)::Nothing
+    return
 end
 
 function reset!(ag::AugLagEvaluator)
