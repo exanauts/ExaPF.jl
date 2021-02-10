@@ -305,11 +305,12 @@ function uncompress_kernel!(H::SparseArrays.SparseMatrixCSC, compressedH, lambda
     n1 = size(H, 1)
     n2 = size(H, 2)
     n = length(lambda)
+    H.nzval .= 0.0
     for i in 1:n1
         for j in H.colptr[i]:H.colptr[i+1]-1 
             sum = 0.0
             for k in 1:n
-                sum += lambda[k]*compressedH[i, H.rowval[j], k]
+                sum += lambda[k]*compressedH[coloring1[i], H.rowval[j], k]
             end
             @inbounds H.nzval[j] = sum
         end
@@ -426,7 +427,8 @@ Creates an object for the state Jacobian
 struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
     H::SMT
     compressedH::MT
-    coloring::VI
+    coloring1::VI
+    coloring2::VI
     t1sseeds::VP
     t2sseeds::VP2
     t2sF::VD
@@ -450,7 +452,7 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         elseif F isa CuArray
             VI = CuVector{Int}
             VT = CuVector{Float64}
-            MT = CuMatrix{Float64}
+            MT = CuArray{Float64, 3}
             SMT = CuSparseMatrixCSR
             A = CuVector
         else
@@ -478,36 +480,32 @@ struct Hessian{VI, VT, MT, SMT, VP, VP2, VD, SubT, SubD}
         V = Vre .+ 1im .* Vim
         # J = residualJacobian(V, Y, pv, pq)
         J = structure.sparsity(State(), V, Y, pv, pq, ref)
-        # coloring = VI(SparseDiffTools.matrix_colors(J))
-        coloring = [i for i in 1:length(map)]
-        @show coloring
-        ncolor = size(unique(coloring),1)
+        coloring1 = VI(SparseDiffTools.matrix_colors(J))
+        coloring2 = [i for i in 1:length(map)]
+        ncolor1 = size(unique(coloring1),1)
+        ncolor2 = size(unique(coloring2),1)
         if F isa CUDA.CuArray
             J = CUSPARSE.CuSparseMatrixCSR(J)
         end
         H = copy(J)   
         x = VT(zeros(Float64, nv_m + nv_a))
-        t2sx = A{t2s{ncolor,ncolor,Float64}}(x)
-        t2sF = A{t2s{ncolor,ncolor,Float64}}(zeros(Float64, nmap))
-        t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-        t2sseeds = A{ForwardDiff.Partials{ncolor,t1s{ncolor,Float64}}}(undef, nmap)
-        @show typeof(t2sseeds)
-        _init_seed!(t1sseeds, coloring, ncolor, nmap)
-        _init_seed!(t2sseeds, coloring, ncolor, nmap)
+        t2sx = A{t2s{ncolor2,ncolor1,Float64}}(x)
+        t2sF = A{t2s{ncolor2,ncolor1,Float64}}(zeros(Float64, nmap))
+        t1sseeds = A{ForwardDiff.Partials{ncolor1,Float64}}(undef, nmap)
+        t2sseeds = A{ForwardDiff.Partials{ncolor2,t1s{ncolor1,Float64}}}(undef, nmap)
+        _init_seed!(t1sseeds, coloring1, ncolor1, nmap)
+        _init_seed!(t2sseeds, coloring2, ncolor2, nmap)
 
-        compressedH = MT(zeros(Float64, ncolor, ncolor, nmap))
+        compressedH = MT(zeros(Float64, ncolor1, ncolor2, nmap))
         nthreads=256
         nblocks=ceil(Int64, nmap/nthreads)
-        # Views
-        # @show map
-        # @show length(x)
         varx = view(x, map)
         t2svarx = view(t2sx, map)
         VP = typeof(t1sseeds)
         VP2 = typeof(t2sseeds)
         VD = typeof(t2sx)
         return new{VI, VT, MT, SMT, VP, VP2, VD, typeof(varx), typeof(t2svarx)}(
-            H, compressedH, coloring, t1sseeds, t2sseeds, t2sF, x, t2sx, map, varx, t2svarx
+            H, compressedH, coloring1, coloring2, t1sseeds, t2sseeds, t2sF, x, t2sx, map, varx, t2svarx
         )
     end
 end
@@ -593,7 +591,7 @@ function residual_hessian_vecprod!(arrays::Hessian,
 
     getpartials(arrays.compressedH, arrays.t2sF)
     # uncompress_kernel!(arrays.H, arrays.compressedH, arrays.coloring)
-    uncompress_kernel!(arrays.H, arrays.compressedH, lambda, arrays.coloring, arrays.coloring)
+    uncompress_kernel!(arrays.H, arrays.compressedH, lambda, arrays.coloring1, arrays.coloring2)
     return nothing
 end
 
