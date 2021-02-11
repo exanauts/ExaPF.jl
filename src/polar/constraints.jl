@@ -55,7 +55,7 @@ function jtprod(polar::PolarForm, ::typeof(state_constraints), ∂jac, buffer, v
     fill!(∂jac.∇fₓ, 0)
     ∂jac.∇fₓ[fr_:end] .= v
 end
-function hessian(polar::PolarForm, ::typeof(state_constraints), ∂jac, buffer, λ)
+function hessian(polar::PolarForm, ::typeof(state_constraints), buffer, λ)
     nu = get(polar, NumberOfControl())
     nx = get(polar, NumberOfState())
     return FullSpaceHessian(
@@ -250,7 +250,7 @@ function jtprod(
     ∂jac.∇fᵤ .= jvu
 end
 
-function hessian(polar::PolarForm, ::typeof(power_constraints), ∂jac, buffer, λ)
+function hessian(polar::PolarForm, ::typeof(power_constraints), buffer, λ)
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq

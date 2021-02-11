@@ -36,6 +36,7 @@ function jacobian!(ag::AbstractPenaltyEvaluator, jac, u)
     return
 end
 
+jacobian_structure(ag::AbstractPenaltyEvaluator) = (Int[], Int[])
 function jacobian_structure!(ag::AbstractPenaltyEvaluator, rows, cols)
     @assert length(rows) == length(cols) == 0
 end

@@ -33,6 +33,6 @@ const MOI = MathOptInterface
     MOI.empty!(optimizer)
     @test solution.status ∈ [MOI.OPTIMAL, MOI.LOCALLY_SOLVED]
     @test solution.minimum ≈ 3.7589338e+04
-    @test solution.minimizer ≈ CASE57_SOLUTION atol=1e-6
+    @test solution.minimizer ≈ CASE57_SOLUTION rtol=1e-5
 end
 

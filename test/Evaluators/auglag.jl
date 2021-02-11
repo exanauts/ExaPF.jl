@@ -66,6 +66,7 @@ end
         w♭, w♯ = ExaPF.bounds(nlp, ExaPF.Variables())
         # Build penalty evaluator
         for scaling in [true, false]
+            ExaPF.reset!(nlp)
             pen = ExaPF.AugLagEvaluator(nlp, u0; scale=scaling)
             u = w♭
             # Update nlp to stay on manifold
@@ -109,7 +110,7 @@ end
                 H = similar(u, n, n) ; fill!(H, 0)
                 ExaPF.hessian!(pen, H, u)
                 # Is Hessian vector product relevant?
-                @test H * w == hv
+                @test H * w ≈ hv
                 # Is Hessian correct?
                 hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
                 @test isapprox(H, hess_fd, rtol=1e-6)
