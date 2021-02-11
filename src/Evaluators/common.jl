@@ -1,3 +1,18 @@
+# Common interface for AbstractNLPEvaluator
+#
+function Base.show(io::IO, nlp::AbstractNLPEvaluator)
+    n = n_variables(nlp)
+    m = n_constraints(nlp)
+    println(io, "A Evaluator object")
+    println(io, "    * #vars: ", n)
+    println(io, "    * #cons: ", m)
+end
+
+function constraint(nlp::AbstractNLPEvaluator, x)
+    cons = similar(x, n_constraints(nlp)) ; fill!(cons, 0)
+    constraint!(nlp, cons, x)
+    return cons
+end
 
 function gradient(nlp::AbstractNLPEvaluator, x)
     ∇f = similar(x) ; fill!(∇f, 0)
@@ -68,6 +83,17 @@ struct AutoDiffFactory{VT} <: AbstractAutoDiffFactory
     Jgₓ::AutoDiff.Jacobian
     Jgᵤ::AutoDiff.Jacobian
     ∇f::AdjointStackObjective{VT}
+end
+
+struct HessianFactory{SpMT}
+    hashu::UInt64
+    fac::Factorization
+    ∇²f::FullSpaceHessian{SpMT}
+    ∇²g::FullSpaceHessian{SpMT}
+end
+struct JacobianFactory{MT}
+    hashu::UInt64
+    J::MT
 end
 
 # Counters

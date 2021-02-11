@@ -12,8 +12,8 @@ Bridge from a `ExaPF.AbstractNLPEvaluator` to a `MOI.AbstractNLPEvaluator`.
 * `has_hess::Bool` (default: `false`): if `true`, pass a Hessian structure to MOI.
 
 """
-mutable struct MOIEvaluator <: MOI.AbstractNLPEvaluator
-    nlp::AbstractNLPEvaluator
+mutable struct MOIEvaluator{Evaluator<:AbstractNLPEvaluator} <: MOI.AbstractNLPEvaluator
+    nlp::Evaluator
     hash_x::UInt
     has_hess::Bool
 end
@@ -78,7 +78,6 @@ function MOI.eval_hessian_lagrangian(ev::MOIEvaluator, H, x, σ, μ)
     n = n_variables(ev.nlp)
     hess = zeros(n, n)
     g = @view hess[1, :]
-    gradient!(ev.nlp, g, x)
     hessian!(ev.nlp, hess, x)
     # Copy back to the MOI arrray
     rows, cols = hessian_structure(ev.nlp)

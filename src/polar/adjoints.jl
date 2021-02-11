@@ -186,7 +186,7 @@ function ∂cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarN
     return
 end
 
-function hessian_cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarNetworkState)
+function hessian_cost(polar::PolarForm, buffer::PolarNetworkState)
     coefs = polar.costs_coefficients
     c3 = @view coefs[:, 3]
     c4 = @view coefs[:, 4]

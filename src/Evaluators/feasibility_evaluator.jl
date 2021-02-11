@@ -5,28 +5,23 @@
 TODO
 
 """
-mutable struct FeasibilityEvaluator{T} <: AbstractNLPEvaluator
-    inner::AbstractNLPEvaluator
-    x_min::AbstractVector{T}
-    x_max::AbstractVector{T}
-    cons::AbstractVector{T}
+mutable struct FeasibilityEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT} <: AbstractNLPEvaluator
+    inner::Evaluator
+    x_min::VT
+    x_max::VT
+    cons::VT
 end
 function FeasibilityEvaluator(nlp::AbstractNLPEvaluator)
     if !is_constrained(nlp)
         error("Input problem must have inequality constraints")
     end
-    x_min, x_max = bounds(nlp.inner, Variables())
-    cx = similar(x_min, n_constraints(nlp.inner))
-    return FeasibilityEvaluator(nlp, x_min, x_max, cx)
+    x_min, x_max = bounds(nlp, Variables())
+    cx = similar(x_min, n_constraints(nlp))
+    return FeasibilityEvaluator{typeof(nlp), eltype(x_min), typeof(x_min)}(nlp, x_min, x_max, cx)
 end
 function FeasibilityEvaluator(datafile::String)
     nlp = SlackEvaluator(datafile)
-    if !is_constrained(nlp)
-        error("Input problem must have inequality constraints")
-    end
-    x_min, x_max = bounds(nlp.inner, Variables())
-    cx = similar(x_min, n_constraints(nlp.inner))
-    return FeasibilityEvaluator(nlp, x_min, x_max, cx)
+    return FeasibilityEvaluator(nlp)
 end
 
 n_variables(nlp::FeasibilityEvaluator) = n_variables(nlp.inner)
@@ -70,7 +65,14 @@ end
 # ∇f = J' * c(x)
 function gradient!(nlp::FeasibilityEvaluator, grad, u)
     σ = 0.0
-    ojtprod!(nlp.inner, grad, u, 0.0, nlp.cons)
+    ojtprod!(nlp.inner, grad, u, σ, nlp.cons)
+    return
+end
+
+jacobian_structure(ag::FeasibilityEvaluator) = (Int[], Int[])
+function jacobian!(ag::FeasibilityEvaluator, jac, u)
+    @assert length(jac) == 0
+    return
 end
 
 # H = ∇²c(x) + J'*J
@@ -80,6 +82,17 @@ function hessprod!(nlp::FeasibilityEvaluator, hessvec, u, v)
     hessian_lagrangian_prod!(nlp.inner, hessvec, u, nlp.cons, σ, v)
     J = jacobian(nlp.inner, u)
     hessvec .+= J' * J * v
+    return
+end
+
+function hessian!(nlp::FeasibilityEvaluator, hess, u)
+    σ = 0.0 # remove objective
+    w = zeros() # remove penalties
+    y = nlp.cons
+    hessian_lagrangian_penalty!(nlp.inner, hess, u, y, σ, w)
+    J = jacobian(nlp.inner, u)
+    hess .+= J' * J
+    return
 end
 
 function hessian_structure(nlp::FeasibilityEvaluator)

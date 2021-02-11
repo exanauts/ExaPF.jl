@@ -84,8 +84,9 @@ bounds(nlp::SlackEvaluator, ::Constraints) = (zeros(nlp.ns), zeros(nlp.ns))
 
 function initial(nlp::SlackEvaluator)
     u0 = initial(nlp.inner)
-    s0 = copy(nlp.s_min)
-    return [u0; s0]
+    update!(nlp.inner, u0)
+    cons = constraint(nlp.inner, u0)
+    return [u0; -cons]
 end
 
 function update!(nlp::SlackEvaluator, w)
@@ -205,16 +206,18 @@ function hessian_lagrangian_penalty_prod!(
     # ∇²L + ρ Jᵤ' * Jᵤ
     hessian_lagrangian_penalty_prod!(nlp.inner, hvu, u, y, σ, vᵤ, w)
 
-    # w.r.t. us
-    y_buf .= w .* vₛ
-    # - Jᵤ' * vₛ
-    jtprod!(nlp.inner, u_buf, u, y_buf)
-    hvu .+= - u_buf
-    # w.r.t. su
-    jprod!(nlp.inner, y_buf, u, vᵤ)
-    hvs .= - w .* y_buf
-    # w.r.t. ss
-    hvs .+= w .* vₛ
+    if !iszero(w)
+        # w.r.t. us
+        y_buf .= w .* vₛ
+        # - Jᵤ' * vₛ
+        jtprod!(nlp.inner, u_buf, u, y_buf)
+        hvu .+= - u_buf
+        # w.r.t. su
+        jprod!(nlp.inner, y_buf, u, vᵤ)
+        hvs .= - w .* y_buf
+        # w.r.t. ss
+        hvs .+= w .* vₛ
+    end
     return
 end
 
@@ -233,13 +236,19 @@ function hessian_lagrangian_penalty!(
     # ∇²L + ρ Jᵤ' * Jᵤ
     hessian_lagrangian_penalty!(nlp.inner, Hᵤᵤ, u, y, σ, w)
 
-    D = Diagonal(w)
-    Jᵤ = jacobian(nlp.inner, u)
-    copy!(Hᵤᵥ, - Jᵤ' * D)
-    copy!(Hᵥᵤ, - D * Jᵤ)
-    fill!(Hᵥᵥ, 0)
-    for i in 1:nlp.ns
-        Hᵥᵥ[i, i] = w[i]
+    if !iszero(w)
+        D = Diagonal(w)
+        Jᵤ = jacobian(nlp.inner, u)
+        copy!(Hᵤᵥ, - Jᵤ' * D)
+        copy!(Hᵥᵤ, - D * Jᵤ)
+        fill!(Hᵥᵥ, 0)
+        for i in 1:nlp.ns
+            Hᵥᵥ[i, i] = w[i]
+        end
+    else
+        fill!(Hᵤᵥ, 0)
+        fill!(Hᵥᵤ, 0)
+        fill!(Hᵥᵥ, 0)
     end
 end
 

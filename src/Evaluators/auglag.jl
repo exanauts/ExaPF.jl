@@ -154,6 +154,7 @@ function gradient!(ag::AugLagEvaluator, grad, u)
 end
 
 function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
+    ag.counter.hprod += 1
     scaler = ag.scaler
     cx = ag.cons
     mask = abs.(cx) .> 0
@@ -167,6 +168,7 @@ function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
 end
 
 function hessian!(ag::AugLagEvaluator, hess, u)
+    ag.counter.hessian += 1
     base_nlp = ag.inner
     scaler = ag.scaler
     # Import AutoDiff objects
