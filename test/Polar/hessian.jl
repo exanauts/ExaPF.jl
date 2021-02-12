@@ -92,6 +92,17 @@ const PS = PowerSystem
         ∇²gλ = ExaPF.residual_hessian(V, Ybus, λ, pv, pq, ref)
         H_fd = FiniteDiff.finite_difference_jacobian(jac_diff, x)
         @test isapprox(∇²gλ.xx, H_fd, rtol=1e-6)
+        # Hessian-vector product using forward over adjoint AD
+        ybus_re, ybus_im = ExaPF.Spmat{Vector{Int}, Vector{Float64}}(Ybus)
+        pbus = real(pf.sbus)
+        qbus = imag(pf.sbus)
+        F = zeros(Float64, npv + 2*npq)
+        HessianAD = ExaPF.AutoDiff.Jacobian(polar.statejacobian, F, vm, va,
+                                                    ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus, ExaPF.AutoDiff.StateJacobian())
+        ExaPF.AutoDiff.residual_hessian!(
+            HessianAD, ExaPF.residual_adj_polar!, λ, vm, va,
+            ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus, ExaPF.AutoDiff.StateJacobian())
+        @test isapprox(HessianAD.J, ∇²gλ.xx)
 
         ## w.r.t. uu
         function jac_u_diff(u)

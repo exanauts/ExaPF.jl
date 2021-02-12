@@ -441,6 +441,77 @@ function residual_jacobian_adj!(arrays::Jacobian,
     return sparse(dJ)
 end
 
+function residual_hessian!(arrays::Jacobian,
+                             residual_adj_polar!,
+                             lambda,
+                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
+                             type::AbstractJacobian)
+    x = arrays.x
+    nvbus = length(v_m)
+    ninj = length(pinj)
+    t1sx = arrays.t1sx
+    adj_t1sx = similar(t1sx)
+    t1sF = arrays.t1sF
+    adj_t1sF = similar(t1sF)
+    if isa(type, StateJacobian)
+        x[1:nvbus] .= v_m
+        x[nvbus+1:2*nvbus] .= v_a
+        t1sx .= arrays.x
+        adj_t1sx .= 0.0
+        t1sF .= 0.0
+        adj_t1sF .= 0.0
+    elseif isa(type, ControlJacobian)
+        x[1:nvbus] .= v_m
+        x[nvbus+1:nvbus+ninj] .= pinj
+        t1sx .= arrays.x
+        adj_t1sx .= 0.0
+        t1sF .= 0.0
+        adj_t1sF .= 0.0
+    else
+        error("Unsupported Jacobian structure")
+    end
+    t1sF .= 0.0
+    adj_t1sF .= lambda
+    adj_t1sx .= 0.0
+    seed_kernel!(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
+    if isa(type, StateJacobian)
+        residual_adj_polar!(
+            t1sF, adj_t1sF,
+            view(t1sx, 1:nvbus),
+            view(adj_t1sx, 1:nvbus),
+            view(t1sx, nvbus+1:2*nvbus),
+            view(adj_t1sx, nvbus+1:2*nvbus),
+            ybus_re, ybus_im,
+            pinj, zeros(eltype(pinj), length(pinj)),
+            qinj, zeros(eltype(qinj), length(qinj)),
+            pv, pq, nbus
+        )
+        ps = ForwardDiff.partials.(adj_t1sx[arrays.map])
+        for i in 1:size(arrays.J,1)
+            arrays.compressedJ[:,i] .= ps[i].values
+        end
+    elseif isa(type, ControlJacobian)
+        residual_adj_polar!(
+            t1sF, adj_t1sF,
+            view(t1sx, 1:nvbus),
+            view(adj_t1sx, 1:nvbus),
+            v_a, zeros(eltype(v_a), length(v_a)),
+            ybus_re, ybus_im,
+            view(t1sx, nvbus+1:nvbus+ninj),
+            view(adj_t1sx, nvbus+1:nvbus+ninj),
+            qinj, zeros(eltype(qinj), length(qinj)),
+            pv, pq, nbus
+        )
+        ps = ForwardDiff.partials.(adj_t1sx[arrays.map])
+        for i in 1:size(arrays.J,1)
+            arrays.compressedJ[:,i] .= ps[i].values
+        end
+    else
+        error("Unsupported Jacobian structure")
+    end
+    uncompress_kernel!(arrays.J, arrays.compressedJ, arrays.coloring)
+end
+
 function Base.show(io::IO, jacobian::AbstractJacobian)
     ncolor = size(unique(jacobian.coloring), 1)
     print(io, "Number of Jacobian colors: ", ncolor)
