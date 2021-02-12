@@ -177,10 +177,11 @@ KA.@kernel function residual_adj_kernel!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
         adj_v_a[fr] += adj_aij
         adj_v_a[to] -= adj_aij
     end
-    if i > npv
-        adj_qinj[fr] -= adj_F[i + npq]
-    end
-    adj_pinj[fr] -= adj_F[i]
+    # TODO: LHS is not always a dual
+    # if i > npv
+    #     adj_qinj[fr] -= adj_F[i + npq]
+    # end
+    # adj_pinj[fr] -= adj_F[i]
 end
 
 function residual_adj_polar!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
