@@ -382,5 +382,69 @@ function residual_jacobian!(arrays::Jacobian,
     return nothing
 end
 
+function residual_jacobian_adj!(arrays::Jacobian,
+                             residual_adj_polar!,
+                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
+                             type::AbstractJacobian)
+    nvbus = length(v_m)
+    ninj = length(pinj)
+    F = zeros(Float64, length(arrays.t1sF))
+    adj_F = zeros(Float64, length(arrays.t1sF))
+    if isa(type, StateJacobian)
+        arrays.x[1:nvbus] .= v_m
+        arrays.x[nvbus+1:2*nvbus] .= v_a
+        global dJ = zeros(Float64, length(F), length(arrays.map))
+    elseif isa(type, ControlJacobian)
+        arrays.x[1:nvbus] .= v_m
+        arrays.x[nvbus+1:nvbus+ninj] .= pinj
+        global dJ = zeros(Float64, length(F), length(arrays.map))
+    else
+        error("Unsupported Jacobian structure")
+    end
+    x = arrays.x
+    adj_x = zeros(Float64, length(x))
+    for i in 1:length(F)
+        F .= 0
+        adj_F .= 0.0
+        adj_F[i] = 1.0
+        adj_x .= 0.0
+        if isa(type, StateJacobian)
+            residual_adj_polar!(
+                F, adj_F,
+                view(x, 1:nvbus),
+                view(adj_x, 1:nvbus),
+                view(x, nvbus+1:2*nvbus),
+                view(adj_x, nvbus+1:2*nvbus),
+                ybus_re, ybus_im,
+                pinj, zeros(eltype(pinj), length(pinj)),
+                qinj, zeros(eltype(qinj), length(qinj)),
+                pv, pq, nbus
+            )
+            dJ[i,:] .= adj_x[arrays.map]
+        elseif isa(type, ControlJacobian)
+            residual_adj_polar!(
+                F, adj_F,
+                view(x, 1:nvbus),
+                view(adj_x, 1:nvbus),
+                v_a, zeros(eltype(v_a), length(v_a)),
+                ybus_re, ybus_im,
+                view(x, nvbus+1:nvbus+ninj),
+                view(adj_x, nvbus+1:nvbus+ninj),
+                qinj, zeros(eltype(qinj), length(qinj)),
+                pv, pq, nbus
+            )
+            dJ[i,:] .= adj_x[arrays.map]
+        else
+            error("Unsupported Jacobian structure")
+        end
+    end
+    return sparse(dJ)
+end
+
+function Base.show(io::IO, jacobian::AbstractJacobian)
+    ncolor = size(unique(jacobian.coloring), 1)
+    print(io, "Number of Jacobian colors: ", ncolor)
+end
+
 
 end
