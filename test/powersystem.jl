@@ -120,6 +120,10 @@ const PS = PowerSystem
             jacobianAD, ExaPF.residual_polar!, Vm, Va,
             ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, ExaPF.AutoDiff.StateJacobian())
         @test jacobianAD.J ≈ J♯
+        J = ExaPF.AutoDiff.residual_jacobian_adj!(
+            jacobianAD, ExaPF.residual_adj_polar!, Vm, Va,
+            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, ExaPF.AutoDiff.StateJacobian())
+        @test J ≈ J♯
     end
 end
 
