@@ -26,6 +26,7 @@ This is currently not done because the abstraction of the indexing is not yet re
 abstract type AbstractJacobian end
 struct StateJacobian <: AbstractJacobian end
 struct ControlJacobian <: AbstractJacobian end
+abstract type AbstractHessian end
 
 function _init_seed!(t1sseeds, coloring, ncolor, nmap)
     t1sseedvec = zeros(Float64, ncolor)
@@ -68,22 +69,21 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t1svarx::SubD
-    function Jacobian(structure, F, v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus, type)
-        nv_m = length(v_m)
-        nv_a = length(v_a)
+    function Jacobian(structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, type)
+        nvbus = length(vm)
         npbus = length(pinj)
         nref = length(ref)
         if F isa Array
             VI = Vector{Int}
             VT = Vector{Float64}
             MT = Matrix{Float64}
-            SMT = SparseMatrixCSC
+            SMT = SparseMatrixCSC{Float64,Int}
             A = Vector
         elseif F isa CUDA.CuArray
             VI = CUDA.CuVector{Int}
             VT = CUDA.CuVector{Float64}
             MT = CUDA.CuMatrix{Float64}
-            SMT = CUSPARSE.CuSparseMatrixCSR
+            SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
             A = CUDA.CuVector
         else
             error("Wrong array type ", typeof(F))
@@ -95,7 +95,7 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
         spmap = Vector(map)
         hybus_re = Spmat{Vector{Int}, Vector{Float64}}(ybus_re)
         hybus_im = Spmat{Vector{Int}, Vector{Float64}}(ybus_im)
-        n = nv_a
+        n = nvbus
         Yre = SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
         Yim = SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
         Y = Yre .+ 1im .* Yim
@@ -116,7 +116,7 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
         end
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
         if isa(type, StateJacobian)
-            x = VT(zeros(Float64, nv_m + nv_a))
+            x = VT(zeros(Float64, 2*nvbus))
             t1sx = A{t1s{ncolor}}(x)
             t1sF = A{t1s{ncolor}}(zeros(Float64, nmap))
             t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
@@ -125,7 +125,7 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
             varx = view(x, map)
             t1svarx = view(t1sx, map)
         elseif isa(type, ControlJacobian)
-            x = VT(zeros(Float64, npbus + nv_a))
+            x = VT(zeros(Float64, npbus + nvbus))
             t1sx = A{t1s{ncolor}}(x)
             t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
             t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
@@ -141,6 +141,65 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
         VD = typeof(t1sx)
         return new{VI, VT, MT, SMT, VP, VD, typeof(varx), typeof(t1svarx)}(
             J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+        )
+    end
+end
+
+"""
+    Hessian
+
+Creates an object for computing Hessian adjoint tangent projections
+
+* `t1sseeds::VP`: The seeding vector for AD built based on the coloring.
+* `t1sF::VD`: Output array of active (AD) type.
+* `x::VT`: Input array of passive type. This includes both state and control.
+* `t1sx::VD`: Input array of active type.
+* `map::VI`: State and control mapping to array `x`
+* `varx::SubT`: View of `map` on `x`
+* `t1svarx::SubD`: Active (AD) view of `map` on `x`
+"""
+struct Hessian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractHessian
+    t1sseeds::VP
+    t1sF::VD
+    x::VT
+    t1sx::VD
+    map::VI
+    # Cache views on x and its dual vector to avoid reallocating on the GPU
+    varx::SubT
+    t1svarx::SubD
+    function Hessian(structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref)
+        nvbus = length(vm)
+        npbus = length(pinj)
+        nref = length(ref)
+        if F isa Array
+            VI = Vector{Int}
+            VT = Vector{Float64}
+            MT = Matrix{Float64}
+            SMT = SparseMatrixCSC
+            A = Vector
+        elseif F isa CUDA.CuArray
+            VI = CUDA.CuVector{Int}
+            VT = CUDA.CuVector{Float64}
+            MT = CUDA.CuMatrix{Float64}
+            SMT = CUSPARSE.CuSparseMatrixCSR
+            A = CUDA.CuVector
+        else
+            error("Wrong array type ", typeof(F))
+        end
+
+        map = VI(structure.map)
+        nmap = length(structure.map)
+        t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
+        x = VT(zeros(Float64, 2*nvbus + npbus))
+        t1sx = A{t1s{1}}(x)
+        t1sF = A{t1s{1}}(zeros(Float64, length(F)))
+        t1sseeds = A{ForwardDiff.Partials{1,Float64}}(undef, nmap)
+        varx = view(x, map)
+        t1svarx = view(t1sx, map)
+        VP = typeof(t1sseeds)
+        VD = typeof(t1sx)
+        return new{VI, VT, MT, SMT, VP, VD, typeof(varx), typeof(t1svarx)}(
+            t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
         )
     end
 end
@@ -319,203 +378,133 @@ function uncompress_kernel!(J::CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring
 end
 
 """
-    residual_jacobian!(arrays::StateJacobian,
+    residual_jacobian!(J::Jacobian,
                         residual_polar!,
-                        v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
-                        timer = nothing)
+                        vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref,
+                        nbus, type::AbstractJacobian)
 
 Update the sparse Jacobian entries using AutoDiff. No allocations are taking place in this function.
 
-* `arrays::StateJacobian`: Factory created Jacobian object to update
+* `J::Jacobian`: Factory created Jacobian object to update
 * `residual_polar`: Primal function
-* `v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both
+* `vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both
   active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
-
+* `type::AbstractJacobian`: Either `StateJacobian` or `ControlJacobian`
 """
-function residual_jacobian!(arrays::Jacobian,
+function residual_jacobian!(J::Jacobian,
                              residual_polar!,
-                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
+                             vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
                              type::AbstractJacobian)
-    nvbus = length(v_m)
+    nvbus = length(vm)
     ninj = length(pinj)
     if isa(type, StateJacobian)
-        arrays.x[1:nvbus] .= v_m
-        arrays.x[nvbus+1:2*nvbus] .= v_a
-        arrays.t1sx .= arrays.x
-        arrays.t1sF .= 0.0
+        J.x[1:nvbus] .= vm
+        J.x[nvbus+1:2*nvbus] .= va
+        J.t1sx .= J.x
+        J.t1sF .= 0.0
     elseif isa(type, ControlJacobian)
-        arrays.x[1:nvbus] .= v_m
-        arrays.x[nvbus+1:nvbus+ninj] .= pinj
-        arrays.t1sx .= arrays.x
-        arrays.t1sF .= 0.0
+        J.x[1:nvbus] .= vm
+        J.x[nvbus+1:nvbus+ninj] .= pinj
+        J.t1sx .= J.x
+        J.t1sF .= 0.0
     else
         error("Unsupported Jacobian structure")
     end
 
-    seed_kernel!(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
+    seed_kernel!(J.t1sseeds, J.varx, J.t1svarx, nbus)
 
     if isa(type, StateJacobian)
         residual_polar!(
-            arrays.t1sF,
-            view(arrays.t1sx, 1:nvbus),
-            view(arrays.t1sx, nvbus+1:2*nvbus),
+            J.t1sF,
+            view(J.t1sx, 1:nvbus),
+            view(J.t1sx, nvbus+1:2*nvbus),
             ybus_re, ybus_im,
             pinj, qinj,
             pv, pq, nbus
         )
     elseif isa(type, ControlJacobian)
         residual_polar!(
-            arrays.t1sF,
-            view(arrays.t1sx, 1:nvbus),
-            v_a,
+            J.t1sF,
+            view(J.t1sx, 1:nvbus),
+            va,
             ybus_re, ybus_im,
-            view(arrays.t1sx, nvbus+1:nvbus+ninj), qinj,
+            view(J.t1sx, nvbus+1:nvbus+ninj), qinj,
             pv, pq, nbus
         )
     else
         error("Unsupported Jacobian structure")
     end
 
-    getpartials_kernel!(arrays.compressedJ, arrays.t1sF, nbus)
-    uncompress_kernel!(arrays.J, arrays.compressedJ, arrays.coloring)
+    getpartials_kernel!(J.compressedJ, J.t1sF, nbus)
+    uncompress_kernel!(J.J, J.compressedJ, J.coloring)
 
     return nothing
 end
 
-function residual_jacobian_adj!(arrays::Jacobian,
-                             residual_adj_polar!,
-                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
-                             type::AbstractJacobian)
-    nvbus = length(v_m)
-    ninj = length(pinj)
-    F = zeros(Float64, length(arrays.t1sF))
-    adj_F = zeros(Float64, length(arrays.t1sF))
-    if isa(type, StateJacobian)
-        arrays.x[1:nvbus] .= v_m
-        arrays.x[nvbus+1:2*nvbus] .= v_a
-        global dJ = zeros(Float64, length(F), length(arrays.map))
-    elseif isa(type, ControlJacobian)
-        arrays.x[1:nvbus] .= v_m
-        arrays.x[nvbus+1:nvbus+ninj] .= pinj
-        global dJ = zeros(Float64, length(F), length(arrays.map))
-    else
-        error("Unsupported Jacobian structure")
-    end
-    x = arrays.x
-    adj_x = zeros(Float64, length(x))
-    for i in 1:length(F)
-        F .= 0
-        adj_F .= 0.0
-        adj_F[i] = 1.0
-        adj_x .= 0.0
-        if isa(type, StateJacobian)
-            residual_adj_polar!(
-                F, adj_F,
-                view(x, 1:nvbus),
-                view(adj_x, 1:nvbus),
-                view(x, nvbus+1:2*nvbus),
-                view(adj_x, nvbus+1:2*nvbus),
-                ybus_re, ybus_im,
-                pinj, zeros(eltype(pinj), length(pinj)),
-                qinj, zeros(eltype(qinj), length(qinj)),
-                pv, pq, nbus
-            )
-            dJ[i,:] .= adj_x[arrays.map]
-        elseif isa(type, ControlJacobian)
-            residual_adj_polar!(
-                F, adj_F,
-                view(x, 1:nvbus),
-                view(adj_x, 1:nvbus),
-                v_a, zeros(eltype(v_a), length(v_a)),
-                ybus_re, ybus_im,
-                view(x, nvbus+1:nvbus+ninj),
-                view(adj_x, nvbus+1:nvbus+ninj),
-                qinj, zeros(eltype(qinj), length(qinj)),
-                pv, pq, nbus
-            )
-            dJ[i,:] .= adj_x[arrays.map]
-        else
-            error("Unsupported Jacobian structure")
-        end
-    end
-    return sparse(dJ)
-end
+"""
+    residual_hessian_adj_tgt!(H::Hessian,
+                        residual_adj_polar!,
+                        lambda, tgt,
+                        vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref,
+                        nbus)
 
-function residual_hessian!(arrays::Jacobian,
+Update the sparse Jacobian entries using AutoDiff. No allocations are taking place in this function.
+
+* `H::Hessian`: Factory created Jacobian object to update
+* `residual_adj_polar`: Adjoint function of residual
+* `lambda`: Input adjoint, usually lambda from a Langrangian
+* `tgt`: A tangent direction or vector that the Hessian should be multiplied with
+* `vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both
+  active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
+"""
+function residual_hessian_adj_tgt!(H::Hessian,
                              residual_adj_polar!,
-                             lambda,
-                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
-                             type::AbstractJacobian)
-    x = arrays.x
+                             lambda, tgt,
+                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    x = H.x
+    ntgt = length(tgt)
     nvbus = length(v_m)
     ninj = length(pinj)
-    t1sx = arrays.t1sx
+    t1sx = H.t1sx
     adj_t1sx = similar(t1sx)
-    t1sF = arrays.t1sF
+    t1sF = H.t1sF
     adj_t1sF = similar(t1sF)
-    if isa(type, StateJacobian)
-        x[1:nvbus] .= v_m
-        x[nvbus+1:2*nvbus] .= v_a
-        t1sx .= arrays.x
-        adj_t1sx .= 0.0
-        t1sF .= 0.0
-        adj_t1sF .= 0.0
-    elseif isa(type, ControlJacobian)
-        x[1:nvbus] .= v_m
-        x[nvbus+1:nvbus+ninj] .= pinj
-        t1sx .= arrays.x
-        adj_t1sx .= 0.0
-        t1sF .= 0.0
-        adj_t1sF .= 0.0
-    else
-        error("Unsupported Jacobian structure")
-    end
+    x[1:nvbus] .= v_m
+    x[nvbus+1:2*nvbus] .= v_a
+    x[2*nvbus+1:2*nvbus+ninj] .= pinj
+    t1sx .= H.x
+    adj_t1sx .= 0.0
     t1sF .= 0.0
     adj_t1sF .= lambda
-    adj_t1sx .= 0.0
-    seed_kernel!(arrays.t1sseeds, arrays.varx, arrays.t1svarx, nbus)
-    if isa(type, StateJacobian)
-        residual_adj_polar!(
-            t1sF, adj_t1sF,
-            view(t1sx, 1:nvbus),
-            view(adj_t1sx, 1:nvbus),
-            view(t1sx, nvbus+1:2*nvbus),
-            view(adj_t1sx, nvbus+1:2*nvbus),
-            ybus_re, ybus_im,
-            pinj, zeros(eltype(pinj), length(pinj)),
-            qinj, zeros(eltype(qinj), length(qinj)),
-            pv, pq, nbus
-        )
-        ps = ForwardDiff.partials.(adj_t1sx[arrays.map])
-        for i in 1:size(arrays.J,1)
-            arrays.compressedJ[:,i] .= ps[i].values
-        end
-    elseif isa(type, ControlJacobian)
-        residual_adj_polar!(
-            t1sF, adj_t1sF,
-            view(t1sx, 1:nvbus),
-            view(adj_t1sx, 1:nvbus),
-            v_a, zeros(eltype(v_a), length(v_a)),
-            ybus_re, ybus_im,
-            view(t1sx, nvbus+1:nvbus+ninj),
-            view(adj_t1sx, nvbus+1:nvbus+ninj),
-            qinj, zeros(eltype(qinj), length(qinj)),
-            pv, pq, nbus
-        )
-        ps = ForwardDiff.partials.(adj_t1sx[arrays.map])
-        for i in 1:size(arrays.J,1)
-            arrays.compressedJ[:,i] .= ps[i].values
-        end
-    else
-        error("Unsupported Jacobian structure")
+    # Seeding
+    nmap = length(H.map)
+    t1sseedvec = zeros(Float64, length(x))
+    for i in 1:nmap
+        H.t1sseeds[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(tgt[i]))
     end
-    uncompress_kernel!(arrays.J, arrays.compressedJ, arrays.coloring)
+    seed_kernel!(H.t1sseeds, H.varx, H.t1svarx, nbus)
+    residual_adj_polar!(
+        t1sF, adj_t1sF,
+        view(t1sx, 1:nvbus), view(adj_t1sx, 1:nvbus),
+        view(t1sx, nvbus+1:2*nvbus), view(adj_t1sx, nvbus+1:2*nvbus),
+        ybus_re, ybus_im,
+        view(t1sx, 2*nvbus+1:2*nvbus+ninj), view(adj_t1sx, 2*nvbus+1:2*nvbus+ninj),
+        qinj,
+        pv, pq, nbus
+    )
+    # TODO, this is redundant
+    ps = ForwardDiff.partials.(adj_t1sx[H.map])
+    res = similar(tgt)
+    res .= 0.0
+    for i in 1:length(ps)
+        res[i] = ps[i].values[1]
+    end
+    return res
 end
 
 function Base.show(io::IO, jacobian::AbstractJacobian)
     ncolor = size(unique(jacobian.coloring), 1)
     print(io, "Number of Jacobian colors: ", ncolor)
 end
-
 
 end

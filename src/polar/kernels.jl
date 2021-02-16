@@ -116,7 +116,7 @@ end
 KA.@kernel function residual_adj_kernel!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
                                   ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
                                   ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
-                                  pinj, adj_pinj, qinj, adj_qinj, pv, pq, nbus)
+                                  pinj, adj_pinj, qinj, pv, pq, nbus)
 
     npv = size(pv, 1)
     npq = size(pq, 1)
@@ -145,9 +145,6 @@ KA.@kernel function residual_adj_kernel!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
         if i > npv
             F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
         end
-        if i > npv
-            F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
-        end
         # Reverse loop
         adj_coef_cos = 0.0
         adj_coef_sin = 0.0
@@ -166,8 +163,8 @@ KA.@kernel function residual_adj_kernel!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
         adj_cos_val  +=  coef_cos * adj_F[i]
         adj_sin_val  +=  coef_sin * adj_F[i]
 
-        adj_aij =   cos(aij)*adj_sin_val
-        adj_aij += -sin(aij)*adj_cos_val
+        adj_aij =   cos_val*adj_sin_val
+        adj_aij += -sin_val*adj_cos_val
 
         adj_v_m[fr] += v_m[to]*ybus_im_nzval[c]*adj_coef_sin
         adj_v_m[to] += v_m[fr]*ybus_im_nzval[c]*adj_coef_sin
@@ -177,16 +174,16 @@ KA.@kernel function residual_adj_kernel!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
         adj_v_a[fr] += adj_aij
         adj_v_a[to] -= adj_aij
     end
-    # TODO: LHS is not always a dual
+    # qinj is not active
     # if i > npv
     #     adj_qinj[fr] -= adj_F[i + npq]
     # end
-    # adj_pinj[fr] -= adj_F[i]
+    adj_pinj[fr] -= adj_F[i]
 end
 
 function residual_adj_polar!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
                          ybus_re, ybus_im,
-                         pinj, adj_pinj, qinj, adj_qinj, pv, pq, nbus)
+                         pinj, adj_pinj, qinj, pv, pq, nbus)
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
@@ -197,7 +194,7 @@ function residual_adj_polar!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
     ev = kernel!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
                  ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
-                 pinj, adj_pinj, qinj, adj_qinj, pv, pq, nbus,
+                 pinj, adj_pinj, qinj, pv, pq, nbus,
                  ndrange=npv+npq)
     wait(ev)
 end

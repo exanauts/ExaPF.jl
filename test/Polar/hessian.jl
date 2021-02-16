@@ -97,12 +97,35 @@ const PS = PowerSystem
         pbus = real(pf.sbus)
         qbus = imag(pf.sbus)
         F = zeros(Float64, npv + 2*npq)
-        HessianAD = ExaPF.AutoDiff.Jacobian(polar.statejacobian, F, vm, va,
-                                                    ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus, ExaPF.AutoDiff.StateJacobian())
-        ExaPF.AutoDiff.residual_hessian!(
-            HessianAD, ExaPF.residual_adj_polar!, λ, vm, va,
-            ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus, ExaPF.AutoDiff.StateJacobian())
-        @test isapprox(HessianAD.J, ∇²gλ.xx)
+        nx = size(∇²gλ.xx,1)
+        nu = size(∇²gλ.uu,1)
+        HessianAD = ExaPF.AutoDiff.Hessian(polar.hessianstructure, F, vm, va,
+                                                    ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref)
+        tgt = rand(nx + nu)
+        # set tangets only for x direction
+        tgt[nx+1:end] .= 0.0
+        projxx = ExaPF.AutoDiff.residual_hessian_adj_tgt!(
+            HessianAD, ExaPF.residual_adj_polar!, λ, tgt, vm, va,
+            ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
+        @test isapprox(projxx[1:nx], ∇²gλ.xx * tgt[1:nx])
+        tgt = rand(nx + nu)
+        # set tangets only for u direction
+        tgt[1:nx] .= 0.0
+        projuu = ExaPF.AutoDiff.residual_hessian_adj_tgt!(
+            HessianAD, ExaPF.residual_adj_polar!, λ, tgt, vm, va,
+            ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
+        @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
+        # check cross terms ux
+        tgt = rand(nx + nu)
+        # Build full Hessian
+        H = [
+            ∇²gλ.xx ∇²gλ.xu';
+            ∇²gλ.xu ∇²gλ.uu
+        ]
+        projxu = ExaPF.AutoDiff.residual_hessian_adj_tgt!(
+            HessianAD, ExaPF.residual_adj_polar!, λ, tgt, vm, va,
+            ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
+        @test isapprox(projxu, H * tgt)
 
         ## w.r.t. uu
         function jac_u_diff(u)
