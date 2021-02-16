@@ -8,7 +8,7 @@ The user may specify a mapping to the single input vector x for AD.
 
 """
 
-abstract type AbstractJacobianStructure end
+abstract type AbstractStructure end
 
 """
     AbstractFormulation

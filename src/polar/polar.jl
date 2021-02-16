@@ -1,13 +1,17 @@
 # Polar formulation
 #
 
-struct StateJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
+struct StateJacobianStructure{IT} <: AbstractStructure where {IT}
     sparsity::Function
     map::IT
 end
 
-struct ControlJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
+struct ControlJacobianStructure{IT} <: AbstractStructure where {IT}
     sparsity::Function
+    map::IT
+end
+
+struct HessianStructure{IT} <: AbstractStructure where {IT}
     map::IT
 end
 
@@ -29,8 +33,10 @@ struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
     # struct
     topology::NetworkTopology{IT, VT}
     # Jacobian structures and indexing
-    statejacobian::StateJacobianStructure
-    controljacobian::ControlJacobianStructure
+    statejacobianstructure::StateJacobianStructure
+    controljacobianstructure::ControlJacobianStructure
+    # Hessian structures and indexing
+    hessianstructure::HessianStructure
 end
 
 include("kernels.jl")
@@ -130,18 +136,19 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     mappq = [i + nbus for i in idx_pq]
     # Ordering for x is (θ_pv, θ_pq, v_pq)
     statemap = vcat(mappv, mappq, idx_pq)
-    state_jacobian_structure = StateJacobianStructure(residual_jacobian, IT(statemap))
-
+    statejacobianstructure = StateJacobianStructure(residual_jacobian, IT(statemap))
     controlmap = vcat(idx_ref, idx_pv, idx_pv .+ nbus)
-    control_jacobian_structure = ControlJacobianStructure{IT}(residual_jacobian, IT(controlmap))
-
+    controljacobianstructure = ControlJacobianStructure{IT}(residual_jacobian, IT(controlmap))
+    hessianmap = vcat(statemap, idx_ref, idx_pv, idx_pv .+ 2*nbus)
+    hessianstructure = HessianStructure(IT(hessianmap))
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
         x_min, x_max, u_min, u_max,
         coefs, pload, qload,
         indexing,
         topology,
-        state_jacobian_structure, control_jacobian_structure
+        statejacobianstructure, controljacobianstructure,
+        hessianstructure
     )
 end
 
@@ -254,12 +261,12 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, MT}, buffer::PolarNet
     F = buffer.balance
     fill!(F, zero(T))
     # Build the AutoDiff Jacobian structure
-    statejacobian = AutoDiff.Jacobian(polar.statejacobian, F, Vm, Va,
-        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus,
+    statejacobian = AutoDiff.Jacobian(polar.statejacobianstructure, F, Vm, Va,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref,
         AutoDiff.StateJacobian()
     )
-    controljacobian = AutoDiff.Jacobian(polar.controljacobian, F, Vm, Va,
-        ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus,
+    controljacobian = AutoDiff.Jacobian(polar.controljacobianstructure, F, Vm, Va,
+        ybus_re, ybus_im, pbus, qbus, pv, pq, ref,
         AutoDiff.ControlJacobian()
     )
 
