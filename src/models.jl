@@ -2,12 +2,11 @@ export PolarForm, bounds, powerflow
 export State, Control, Parameters, NumberOfState, NumberOfControl
 
 """
-    AbstractJacobianStructure
+    AbstractStructure
 
-The user may specify a mapping to the single input vector x for AD.
+The user may specify a mapping to the single input vector `x` for AD.
 
 """
-
 abstract type AbstractStructure end
 
 """
@@ -141,7 +140,8 @@ function initial end
 """
     powerflow(form::AbstractFormulation,
               jacobian::AutoDiff.StateJacobian,
-              buffer::AbstractNetworkBuffer;
+              buffer::AbstractNetworkBuffer,
+              algo::AbstractNonLinearSolver;
               kwargs...) where VT <: AbstractVector
 
 Solve the power flow equations `g(x, u) = 0` w.r.t. the state `x`,
@@ -151,28 +151,27 @@ The current state `x` and control `u` are specified in
 `buffer`. The object `buffer` is modified inplace.
 
 The algorithm stops when a tolerance `tol` or a maximum number of
-irations `maxiter` are reached.
+irations `maxiter` are reached (these parameters being specified
+in the argument `algo`).
 
 ## Arguments
 
 * `form::AbstractFormulation`: formulation of the power flow equation
 * `jacobian::AutoDiff.StateJacobian`: Jacobian
 * `buffer::AbstractNetworkBuffer`: buffer storing current state `x` and control `u`
+* `algo::AbstractNonLinearSolver`: non-linear solver. Currently only `NewtonRaphson` is being implemented.
 
 ## Optional arguments
 
-* `linear_solver::AbstractLinearSolver` (default `DirectSolver()`): solver to solve the linear systems `J x = y` arising at each iteration of the Newton-Raphson algorithm.
-* `tol::Float64` (default `1e-7`): tolerance of the Newton-Raphson algorithm.
-* `maxiter::Int` (default `20`): maximum number of iterations.
-* `verbose_level::Int` (default `O`, max value: `3`): verbose level.
+* `linear_solver::AbstractLinearSolver` (default `DirectSolver()`): solver to solve the linear systems ``J x = y`` arising at each iteration of the Newton-Raphson algorithm.
 
 """
 function powerflow end
 
 """
-    power_balance!(form::AbstractFormulation, x::VT, u::VT, p::VT) where {VT<:AbstractVector}
+    power_balance!(form::AbstractFormulation, buffer::AbstractNetworkBuffer)
 
-Get power balance at buses, depending on the state `x` and the control `u`.
+Get power balance at buses. All input variables specified in `buffer`.
 
 """
 function power_balance! end
@@ -207,7 +206,7 @@ function size_constraint end
     state_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
 
 Evaluate the constraints porting on the state `x`, as a
-function of `x` and `u`. The result is stored inplace, inside `g`.
+function of `x` and `u`. The result is stored inplace, inside `cons`.
 """
 function state_constraints end
 
@@ -220,16 +219,16 @@ account in
 * the box constraints on the control `u`
 * the box constraints on the state `x` (implemented in `state_constraints`)
 
-The result is stored inplace, inside `g`.
+The result is stored inplace, inside the vector `cons`.
 """
 function power_constraints end
 
 """
-    thermal_limit_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer) where {VT<:AbstractVector}
+    flow_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer) where {VT<:AbstractVector}
 
 Evaluate the thermal limit constraints porting on the lines of the network.
 
-The result is stored inplace, inside the vector `g`.
+The result is stored inplace, inside the vector `cons`.
 """
-function thermal_limit_constraints end
+function flow_constraints end
 

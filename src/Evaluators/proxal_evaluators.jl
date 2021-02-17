@@ -12,9 +12,9 @@ struct Next <: AbstractTimeStep end
 
 
 """
-    ProxALEvaluator{T} <: AbstractNLPEvaluator
+    ProxALEvaluator{T, VI, VT, MT} <: AbstractNLPEvaluator
 
-Evaluator wrapping a `ReducedSpaceEvaluator` for use inside
+Evaluator wrapping a `ReducedSpaceEvaluator` for use inside the
 decomposition algorithm implemented in [ProxAL.jl](https://github.com/exanauts/ProxAL.jl).
 
 """
@@ -211,7 +211,7 @@ function full_gradient!(nlp::ProxALEvaluator, jvx, jvu, w)
     ## Evaluate conjointly
     # ∇fₓ = v' * J,  with J = ∂pg / ∂x
     # ∇fᵤ = v' * J,  with J = ∂pg / ∂u
-    put(model, PS.Generator(), PS.ActivePower(), ∂obj, buffer)
+    put(model, PS.Generators(), PS.ActivePower(), ∂obj, buffer)
 
     copyto!(jvx, ∂obj.∇fₓ)
     copyto!(jvu, ∂obj.∇fᵤ)

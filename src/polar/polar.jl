@@ -104,7 +104,7 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
 
     # Bounds
     ## Get bounds on active power
-    p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
+    p_min, p_max = PS.bounds(pf, PS.Generators(), PS.ActivePower())
     p_min = convert(VT, p_min)
     p_max = convert(VT, p_max)
     ## Get bounds on voltage magnitude

@@ -101,7 +101,7 @@ const PS = PowerSystem
             ExaPF.get!(polar, State(), xₖ, cache)
             # Refresh power of generators in cache
             for Power in [PS.ActivePower, PS.ReactivePower]
-                ExaPF.update!(polar, PS.Generator(), Power(), cache)
+                ExaPF.update!(polar, PS.Generators(), Power(), cache)
             end
 
             # Bounds on state and control
@@ -127,7 +127,7 @@ const PS = PowerSystem
 
             ## Inequality constraint
             for cons in [
-                ExaPF.state_constraint,
+                ExaPF.state_constraints,
                 ExaPF.power_constraints,
                 ExaPF.flow_constraints,
             ]

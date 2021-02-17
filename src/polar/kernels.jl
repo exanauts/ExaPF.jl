@@ -280,7 +280,7 @@ KA.@kernel function active_power_kernel!(
 end
 
 # Refresh active power (needed to evaluate objective)
-function update!(polar::PolarForm, ::PS.Generator, ::PS.ActivePower, buffer::PolarNetworkState)
+function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
         kernel! = active_power_kernel!(KA.CPU(), 1)
     else
@@ -340,7 +340,7 @@ KA.@kernel function reactive_power_kernel!(
     qg[i_gen] = inj + qload[bus]
 end
 
-function update!(polar::PolarForm, ::PS.Generator, ::PS.ReactivePower, buffer::PolarNetworkState)
+function update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
         kernel! = reactive_power_kernel!(KA.CPU(), 1)
     else

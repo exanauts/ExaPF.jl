@@ -16,9 +16,9 @@ const REF_BUS_TYPE  = 3
 First layer of the package. Store the topology of a given
 transmission network, including:
 
-- the power injection at each bus
-- the admittance matrix
-- the default voltage at each bus
+- the power injection at each bus ;
+- the admittance matrix ;
+- the default voltage at each bus.
 
 Data are imported either from a matpower file, or a PSSE file.
 
@@ -53,11 +53,11 @@ Lines of a transmission network.
 struct Lines <: AbstractNetworkElement end
 
 """
-    Generator <: AbstractElement
+    Generators <: AbstractElement
 
-Generator in a transmission network
+Generators in a transmission network
 """
-struct Generator <: AbstractNetworkElement end
+struct Generators <: AbstractNetworkElement end
 
 """
     AbstractNetworkAttribute

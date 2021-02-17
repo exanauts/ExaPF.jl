@@ -2,23 +2,31 @@
 CurrentModule = ExaPF.LinearSolvers
 ```
 
-## Linear solvers
+# Linear solvers
 
+## Description
 `ExaPF` allows to solve linear systems with either
-direct and indirect linear algebra.
+direct and indirect linear algebra, both on CPU and on GPU.
+To solve a linear system $Ax = b$, `ExaPF` uses the function `ldiv!`.
 ```@docs
 ldiv!
+```
+
+## Direct solvers
+
+`ExaPF` wraps UMFPACK (shipped with Julia) on the CPU,
+and CUSPARSE on CUDA device.
+
+```@docs
 DirectSolver
+```
+
+## Iterative solvers
+
+```@docs
 KrylovBICGSTAB
 BICGSTAB
 EigenBICGSTAB
-
-```
-
-Available linear solvers could be queried with
-```@docs
-list_solvers
-
 ```
 
 `ExaPF.jl` is shipped with a custom BICGSTAB implementation.
@@ -29,6 +37,11 @@ bicgstab
 
 ```
 
+Available linear solvers could be queried with
+```@docs
+list_solvers
+
+```
 
 ## Preconditioning
 

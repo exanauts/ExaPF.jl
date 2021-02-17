@@ -11,7 +11,7 @@ PSSE input file. However, a correspondence between the two indexing
 attribute `bus_to_indexes`.
 
 ## Note
-The object `PowerNetwork` is created in the main memory.
+The object `PowerNetwork` is created in the host memory.
 Use a `AbstractFormulation` object to move data to the target device.
 
 """
@@ -163,7 +163,7 @@ function bounds(pf::PowerNetwork, ::Buses, ::VoltageMagnitude)
     return v_min, v_max
 end
 
-function bounds(pf::PowerNetwork, ::Generator, ::ActivePower)
+function bounds(pf::PowerNetwork, ::Generators, ::ActivePower)
     GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
@@ -176,7 +176,7 @@ function bounds(pf::PowerNetwork, ::Generator, ::ActivePower)
     return p_min, p_max
 end
 
-function bounds(pf::PowerNetwork, ::Generator, ::ReactivePower)
+function bounds(pf::PowerNetwork, ::Generators, ::ReactivePower)
     GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()

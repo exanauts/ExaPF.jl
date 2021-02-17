@@ -19,7 +19,6 @@ AbstractFormulation
 AbstractVariable
 State
 Control
-Parameters
 PhysicalState
 
 ```
@@ -49,6 +48,8 @@ get
 
 ```@docs
 powerflow
+NewtonRaphson
+
 power_balance!
 
 ```
@@ -65,7 +66,7 @@ Current supported constraints are:
 ```@docs
 state_constraints
 power_constraints
-thermal_limit_constraints
+flow_constraints
 
 ```
 

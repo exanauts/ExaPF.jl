@@ -1,10 +1,40 @@
 
-"""
-    SlackEvaluator{T} <: AbstractNLPEvaluator
+@doc raw"""
+    SlackEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT} <: AbstractNLPEvaluator
 
 Reformulate a problem with inequality constraints as an
 equality constrained problem, by introducing a set of slack
 variables.
+
+### Description
+A `SlackEvaluator` takes as input an original `AbstractNLPEvaluator`,
+subject to inequality constraints
+```math
+\begin{aligned}
+       \min_{u \in \mathbb{R}^n} \quad & f(u)\\
+\mathrm{s.t.} \quad & h^♭ ≤ h(u) ≤ h^♯,\\
+                    & u^♭ ≤  u   ≤ u^♯.
+\end{aligned}
+```
+The `SlackEvaluator` instance rewrites this problem with inequalities
+as a new problem comprising only *equality constraints*, by introducing
+$m$ slack variables $s_1, ⋯, s_m$. The new problem writes out
+```math
+\begin{aligned}
+       \min_{u \in \mathbb{R}^n, s \in \mathbb{R}^m} \quad & f(u)\\
+    \mathrm{s.t.} \quad & h(u) - s = 0 \\
+                    & u^♭ ≤  u   ≤ u^♯, \\
+                    & h^♭ ≤  s   ≤ h^♯.
+\end{aligned}
+```
+
+### Attributes
+
+- `inner::Evaluator`: original evaluator
+- `s_min::VT`: stores lower bounds for slack variables
+- `s_max::VT`: stores upper bounds for slack variables
+- `nv::Int`: number of original variables
+- `ns::Int`: number of slack variables
 
 """
 mutable struct SlackEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT} <: AbstractNLPEvaluator

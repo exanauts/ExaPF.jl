@@ -5,10 +5,13 @@
 const CONSTRAINTS_TYPE = Union{Val{:inequality}, Val{:equality}, Val{:mixed}}
 
 @doc raw"""
-    AugLagEvaluator{T} <: AbstractPenaltyEvaluator
+    AugLagEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT} <: AbstractPenaltyEvaluator
 
-Augmented-Lagrangian evaluator. Takes as input any `AbstractNLPEvaluator`
-encoding a non-linear problem
+Augmented-Lagrangian evaluator.
+
+### Description
+
+Takes as input any `AbstractNLPEvaluator` encoding a non-linear problem
 ```math
 \begin{aligned}
        \min_u \quad & f(u)\\
@@ -17,26 +20,36 @@ encoding a non-linear problem
 \end{aligned}
 ```
 and return a new evaluator reformulating the original problem
-by moving the `m` constraints `h♭ ≤ h(u) ≤ h♯` into the objective
-using a set of penalties `ϕ_1, ⋯, ϕ_m`:
+by moving the $m$ constraints $h♭ ≤ h(u) ≤ h♯$ into the objective
+using a set of penalties $ϕ_1, ⋯, ϕ_m$ and multiplier estimates
+$λ_1, ⋯, λ_m$:
 ```math
 \begin{aligned}
-    \min_u \quad & f(u) + \sum_i ϕ_i(h_i)   \\
+    \min_u \quad & f(u) + \sum_{i=1}^m ϕ_i(h_i, λ_i)   \\
 \mathrm{s.t.} \quad &  u♭ ≤  u   ≤  u♯,
 \end{aligned}
 ```
 
 This evaluator considers explicitly the inequality constraints,
 without reformulating them by introducing slack variables. Each
-penalty `ϕ_i` writes
+penalty $ϕ_i$ is defined as
 ```math
-ϕ_i(h_i) = λ_i' * φ(h_i) + \frac \rho2 \| φ(h_i) \|_2^2
+ϕ_i(h_i, λ_i) = λ_i^⊤ φ_i(h_i) + \frac \rho2 \| φ_i(h_i) \|_2^2
 ```
-with `φ` a function to compute the current infeasibility (hence equal to 0
-if `h_i` is feasible)
+with $φ_i$ a function to compute the current infeasibility
 ```math
-φ(h_i) = \max\{0 , λ_i + ρ * (h_i - h_i♯)   \} + \min\{0 , λ_i + ρ * (h_i - h_i♭)   \}
+φ_i(h_i, λ_i) = \max\{0 , λ_i + ρ (h_i - h_i♯)   \} + \min\{0 , λ_i + ρ (h_i - h_i♭)   \}
 ```
+
+### Attributes
+
+* `inner::Evaluator`: original problem.
+* `cons_type`: type of the constraints of the original problem (equalities or inequalities).
+* `cons::VT`: a buffer storing the current evaluation of the constraints for the inner evaluator.
+* `rho::T`: current penalty.
+* `λ::VT`: current multiplier.
+* `scaler::MaxScaler{T,VT}`: a scaler to rescale the range of the constraints in the original problem.
+
 """
 mutable struct AugLagEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT} <: AbstractPenaltyEvaluator
     inner::Evaluator
