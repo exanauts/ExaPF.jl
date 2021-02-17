@@ -169,10 +169,10 @@ end
         @test length(v_max) == n_bus
 
         n_gen = PS.get(pf, PS.NumberOfGenerators())
-        p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
+        p_min, p_max = PS.bounds(pf, PS.Generators(), PS.ActivePower())
         @test length(p_min) == n_gen
         @test length(p_max) == n_gen
-        q_min, q_max = PS.bounds(pf, PS.Generator(), PS.ReactivePower())
+        q_min, q_max = PS.bounds(pf, PS.Generators(), PS.ReactivePower())
         @test length(q_min) == n_gen
         @test length(q_max) == n_gen
 

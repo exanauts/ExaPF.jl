@@ -12,7 +12,7 @@ struct IndexingCache{IVT} <: AbstractBuffer
 end
 
 """
-    PolarNetworkState{VI,VT} <: AbstractNetworkBuffer
+    PolarNetworkState{VI, VT} <: AbstractNetworkBuffer
 
 Buffer to store current values of all the variables describing
 the network, in polar formulation. Attributes are:

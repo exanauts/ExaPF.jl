@@ -1,6 +1,7 @@
 ```@meta
 CurrentModule = ExaPF.AutoDiff
 ```
+# AutoDiff
 
 ## Description
 ```@docs
@@ -9,8 +10,7 @@ AbstractJacobian
 
 ## API Reference
 ```@docs
-StateJacobian
-ControlJacobian
+Jacobian
 seed_kernel_cpu!
 seed_kernel_gpu!
 seed_kernel!

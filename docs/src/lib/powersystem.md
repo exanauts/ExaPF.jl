@@ -24,7 +24,7 @@ List of elements:
 ```@docs
 Buses
 Lines
-Generator
+Generators
 ```
 
 ### Network attributes
@@ -33,10 +33,6 @@ Generator
 AbstractNetworkAttribute
 ```
 
-Function for getting attributes from a network:
-```@docs
-get
-```
 
 List of attributes:
 ```@docs

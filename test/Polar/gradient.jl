@@ -45,7 +45,7 @@ const PS = PowerSystem
         # Test gradients
         @testset "Reduced gradient" begin
             # Refresh cache with new values of vmag and vang
-            ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
+            ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
             ExaPF.∂cost(polar, ∂obj, cache)
@@ -66,7 +66,7 @@ const PS = PowerSystem
                 # Ensure we remain in the manifold
                 ExaPF.transfer!(polar, cache, u_)
                 convergence = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-14))
-                ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
+                ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
                 return ExaPF.cost_production(polar, cache.pg)
             end
 
@@ -74,7 +74,7 @@ const PS = PowerSystem
             @test isapprox(grad_fd, grad_adjoint, rtol=1e-4)
         end
         @testset "Reduced Jacobian" begin
-            for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
+            for cons in [ExaPF.state_constraints, ExaPF.power_constraints]
                 m = ExaPF.size_constraint(polar, cons)
                 for icons in 1:m
                     ExaPF.jacobian(polar, cons, icons, ∂obj, cache)

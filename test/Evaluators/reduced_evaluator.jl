@@ -18,7 +18,7 @@
         x0 = ExaPF.initial(polar, State())
         u0 = ExaPF.initial(polar, Control())
 
-        constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
+        constraints = Function[ExaPF.state_constraints, ExaPF.power_constraints]
         nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0; constraints=constraints)
         # Test printing
         println(devnull, nlp)

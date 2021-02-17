@@ -4,78 +4,95 @@ In `ExaPF.jl`, the evaluators are the final layer of the structure.
 They take as input a given `AbstractFormulation` and implement the
 callbacks for the optimization solvers.
 
-## Overview
+## Overview of the AbstractNLPEvaluator
 
-An `AbstractEvaluator` is tailored to the optimization problem
+An `AbstractNLPEvaluator` implements an optimization problem
 associated with an underlying `AbstractFormulation`:
 ```math
 \begin{aligned}
-\min_{x, u} \;          & f(x, u)     \\
-\text{subject to} \quad & g(x, u) = 0 \\
-                        & h(x, u) \leq 0.
+\min_{u \in \mathbb{R}^n} \;             & f(u)     \\
+\text{subject to} \quad & g(u) = 0 \\
+                        & h(u) \leq 0.
 \end{aligned}
 ```
-In this problem, we recognize the state $x$ and the control $u$ introduced earlier.
-The objective function $f(x, u)$, the equality constraints $g(x, u) = 0$
-and the inequality constraints $h(x, u) \leq 0$ all depend on the
-state $x$ and the control $u$. The non-linear
-functions are all specified inside the `AbstractFormulation`.
+with $f: \mathbb{R}^n \to \mathbb{R}$ the objective function,
+$g: \mathbb{R}^n \to \mathbb{R}^{m_E}$ non-linear equality constraints and
+$h: \mathbb{R}^n \to \mathbb{R}^{m_I}$ non-linear inequality constraints.
 
-
-## Callbacks
+### Callbacks
 
 Most non-linear optimization algorithms rely on *callbacks* to pass
 information about the structure of the problem to the optimizer.
-The evaluator allows to have a proper splitting
+In `ExaPF`, the implementation of the evaluators allows to have a proper splitting
 between the model (formulated in the `AbstractFormulation` layer)
 and the optimization algorithms. By design, the implementation
-of an `AbstractEvaluator` is similar in spirit than the implementations
+of an `AbstractEvaluator` shares a similar spirit with the implementations
 introduced in other packages, as
 
 - MathOptInterface.jl's [AbstractNLPEvaluator](https://jump.dev/MathOptInterface.jl/stable/apireference/#MathOptInterface.AbstractNLPEvaluator)
 - NLPModels' [AbstractNLPModel](https://juliasmoothoptimizers.github.io/NLPModels.jl/stable/api/#AbstractNLPModel-functions)
 
-The evaluator caches internally all the information needed to evaluate
-the callbacks. Once a new point $u$ passed to the evaluator,
-a function `update!` is being called to update all the internal structures,
+Internally, the evaluator caches all the information needed to evaluate
+the callbacks (e.g. the polar representation of the problem, with voltage
+magnitudes and angles). This cache allows to reduce the number of memory allocations to
+its minimum.
+Once a new variable $u$ passed to the evaluator
+a function `update!` is being called to update the cache,
 according to the model specified in the underlying `AbstractFormulation`.
-Also, this cache allows to reduce the number of memory allocations to
-its minimum. In a sense, the evaluator is equivalent to Julia's closures,
-but tailored to `ExaPF.jl` usage.
+Denoting by `nlp` an instance of AbstractNLPEvaluator, the cache is
+updated via
+```julia-repl
+julia> ExaPF.update!(nlp, u)
+```
+
+Once the internal structure updated, we are ready to call the different
+callbacks, in every order. For instance, computing the objective, the
+gradient and the constraints amounts to
+```julia-repl
+# Objective
+julia> obj = ExaPF.objective(nlp, u)
+# Gradient
+julia> g = zeros(n_variables(nlp))
+julia> ExaPF.gradient!(nlp, g, u)
+# Constraints
+julia> cons = zeros(n_constraints(nlp))
+julia> ExaPF.constraint!(nlp, cons, u)
+
+```
 
 
-## A journey in the reduced space
+## A journey to the reduced space with the ReducedSpaceEvaluator
 
-When we aim at optimizing the problem directly in the reduced
-space manifold, the `ReducedSpaceNLPEvaluator` is our workhorse.
-We recall that the reduced space is defined implicitly by the
+When we aim at optimizing the problem directly in the powerflow
+manifold, the `ReducedSpaceEvaluator` is our workhorse.
+We recall that the powerflow manifold is defined implicitly by the
 powerflow equations:
 ```math
     g(x(u), u) = 0.
 ```
-By design, the `ReducedSpaceNLPEvaluator` works in the powerflow
-manifold $(x(u), u)$. Hence, the reduced optimization problem
-writes out
+By design, the `ReducedSpaceEvaluator` works in the reduced
+space $(x(u), u)$. Hence, the reduced optimization problem writes out
 ```math
 \begin{aligned}
-\min_{u} \;          & f(x(u), u)     \\
-\text{subject to} \quad & h(x(u), u) \leq 0.
+\min_{u \in \mathbb{R}^n} \; & f(x(u), u) \\
+\text{subject to} \quad      & h(x(u), u) \leq 0.
 \end{aligned}
 ```
 This formulation comes with two advantages:
 
 - if the dimension of the state is large, the reduced problem has
-  a lower dimension rendering it more amenable for the optimization algorithm.
+  a lower dimension.
 - the powerflow equality constraints $g(x, u) = 0$ disappear in the reduced problem.
 
-### Playing with the ReducedSpaceNLPEvaluator
+
+### Playing with the ReducedSpaceEvaluator
 
 #### Constructor
-To create a `ReducedSpaceNLPEvaluator`, we need a given formulation
-`form::AbstractFormulation`, together with an initial control `u0`,
-an initial state `x0` and a vector of parameters `p`:
+To create a `ReducedSpaceEvaluator`, we need a given polar formulation
+`polar::PolarForm`, together with an initial control `u0`
+and an initial state `x0`.
 ```julia-repl
-julia> nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0, p)
+julia> nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0)
 
 ```
 or we could alternatively instantiate the evaluator directly from
@@ -88,7 +105,7 @@ A ReducedSpaceEvaluator object
     * #vars: 5
     * #cons: 10
     * constraints:
-        - state_constraint
+        - state_constraints
         - power_constraints
     * linear solver: ExaPF.LinearSolvers.DirectSolver()
 
@@ -98,20 +115,20 @@ Let's describe the output of the last command.
 
 * `device: KernelAbstractions.CPU()`: the evaluator is instantiated on the CPU ;
 * `#vars: 5`: it has 5 optimization variables ;
-* `#cons: 10`: the problem has 10 inequality constraints ;
-* `constraints:` by default, `nlp` has two inequality constraints: `state_constraint` (specifying the bounds $x_L \leq x(u) \leq x_U$ on the state $x$) and `power_constraints` (bounding the active and reactive power of the generators) ;
+* `#cons: 10`: and 10 inequality constraints ;
+* `constraints:` by default, `nlp` has two inequality constraints: `state_constraints` (specifying the bounds $x_L \leq x(u) \leq x_U$ on the state $x$) and `power_constraints` (bounding the active and reactive power of the generators) ;
 * `linear solver: ExaPF.LinearSolvers.DirectSolver()`: to solve the linear systems, the evaluator uses a direct linear algebra solver.
 
 Of course, these settings are only specified by default, and the user is free
 to choose the parameters she wants. For instance,
 
-* we could remove all constraints by passing an empty array of constraints
+* We could remove all constraints by passing an empty array of constraints
   to the evaluator:
   ```julia-repl
   julia> constraints = Function[]
   julia> nlp = ExaPF.ReducedSpaceEvaluator(datafile; constraints=constraints)
   ```
-* we could load the evaluator on the GPU simply by changing the device:
+* We could load the evaluator on the GPU simply by changing the device:
   ```julia-repl
   julia> nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=CUDADevice())
   ```
@@ -124,24 +141,28 @@ To juggle between the mathematical description (characterized
 by a state $x$ and a control $u$) and the physical description (characterized
 by the voltage and power injection at each bus), the evaluator `nlp`
 stores internally a cache `nlp.buffer`, with type `AbstractNetworkBuffer`.
+```julia-repl
+julia> buffer = get(nlp, ExaPF.PhysicalState())
+```
 
 #### Evaluation of the callbacks
 
-Now that we have a `nlp` evaluator available, we could embed it in any
+Now that we have a `nlp` evaluator available, we can embed it in any
 optimization routine. For instance, suppose we have a new control `uk`
-available. First, we need to find the corresponding state `xk`
-in the powerflow manifold. In the evaluator's API, this sums up to:
+available. First, we need to find the corresponding state `xk`,
+such that ``g(x_k, u_k) = 0``.
+In the evaluator's API, this sums up to:
 ```julia-repl
 ExaPF.update!(nlp, uk)
+
 ```
 The function `update!` will
 - Feed the physical description `nlp.buffer` with the values stored in the new control `uk`.
 - Solve the powerflow equations corresponding to the formulation specified in `form`. This operation
   updates the cache `nlp.buffer` inplace.
-- Update internally the state `x`.
 
-Once the function `update!` called (and only once), we could evaluate
-all the different callbacks independently from one other.
+Once the function `update!` called (and only after that), we can evaluate
+all the different callbacks independently of one other.
 
 * Objective
   ```julia-repl
@@ -172,8 +193,7 @@ all the different callbacks independently from one other.
   ```
 
 !!! note
-    Once the powerflow equations solved in a `update!` call, the solution `x` is stored in memory in the attribute `nlp.x`. The state `x` will be used as a starting point for the next resolution of powerflow equations.
-
+    Once the powerflow equations solved in a `update!` call, the solution ``x_k`` is stored implicitly in `nlp.buffer`. These values will be used as a starting point for the next resolution of powerflow equations.
 
 ## Passing the problem to an optimization solver with MathOptInterface
 
@@ -183,48 +203,16 @@ optimization problem. That allows to solve the corresponding
 optimal power flow problem using any non-linear optimization solver compatible
 with MOI.
 
-For instance, we could solve the reduced problem specified
-in `nlp` with Ipopt in a few lines of code:
+For instance, we can solve the reduced problem specified
+in `nlp` with Ipopt. In a few lines of code:
 
 ```julia
 using Ipopt
 optimizer = Ipopt.Optimizer()
-
-block_data = MOI.NLPBlockData(nlp)
-
-u♭, u♯ = ExaPF.bounds(nlp, ExaPF.Variables())
-u0 = ExaPF.initial(nlp)
-n = ExaPF.n_variables(nlp)
-vars = MOI.add_variables(optimizer, n)
-
-# Set bounds and initial values
-for i in 1:n
-    MOI.add_constraint(
-        optimizer,
-        MOI.SingleVariable(vars[i]),
-        MOI.LessThan(u♯[i])
-    )
-    MOI.add_constraint(
-        optimizer,
-        MOI.SingleVariable(vars[i]),
-        MOI.GreaterThan(u♭[i])
-    )
-    MOI.set(optimizer, MOI.VariablePrimalStart(), vars[i], u0[i])
-end
-
-MOI.set(optimizer, MOI.NLPBlock(), block_data)
-MOI.set(optimizer, MOI.ObjectiveSense(), MOI.MIN_SENSE)
-MOI.optimize!(optimizer)
-
-solution = (
-    minimum=MOI.get(optimizer, MOI.ObjectiveValue()),
-    minimizer=[MOI.get(optimizer, MOI.VariablePrimal(), v) for v in vars],
-)
+MOI.set(optimizer, MOI.RawParameter("print_level"), 5)
+MOI.set(optimizer, MOI.RawParameter("limited_memory_max_history"), 50)
+MOI.set(optimizer, MOI.RawParameter("hessian_approximation"), "limited-memory")
+solution = ExaPF.optimize!(optimizer, nlp)
 MOI.empty!(optimizer)
+
 ```
-
-
-## Going back to the full space
-
-In the long term, we are planning to implement a `FullSpaceNLPEvaluator` as well.
-

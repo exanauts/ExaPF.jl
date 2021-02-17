@@ -31,11 +31,17 @@ The third layer is for users working in optimization whereas the first layer is 
 
 ## Table of contents
 
+```@contents
+Pages = [
+    "quickstart.md",
+]
+Depth=1
+```
+
 ### Manual
 
 ```@contents
 Pages = [
-    "quickstart.md",
     "man/autodiff.md",
     "man/linearsolver.md",
     "man/powersystem.md",

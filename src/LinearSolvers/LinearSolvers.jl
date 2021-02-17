@@ -68,7 +68,7 @@ function ldiv! end
 """
     DirectSolver <: AbstractLinearSolver
 
-Solve linear system ``A * x = y`` with direct linear algebra.
+Solve linear system ``A  x = y`` with direct linear algebra.
 
 * On the CPU, `DirectSolver` uses UMFPACK to solve the linear system
 * On CUDA GPU, `DirectSolver` redirects the resolution to the method `CUSOLVER.csrlsvqr`
@@ -105,7 +105,7 @@ end
     BICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false)
 
 Custom BICGSTAB implementation to solve iteratively the linear system
-``A * x = y``.
+``A  x = y``.
 """
 struct BICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
@@ -132,7 +132,7 @@ end
     EigenBICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false)
 
 Julia's port of Eigen's BICGSTAB to solve iteratively the linear system
-``A * x = y``.
+``A x = y``.
 """
 struct EigenBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
@@ -198,10 +198,10 @@ end
 
 """
     KrylovBICGSTAB <: AbstractIterativeLinearSolver
-    KrylovBICGSTAB(precond; verbose=false, rtol=1e-10, atol=1e-10)
+    KrylovBICGSTAB(precond; verbose=0, rtol=1e-10, atol=1e-10)
 
 Wrap `Krylov.jl` BICGSTAB algorithm to solve iteratively the linear system
-``A * x = y``.
+``A x = y``.
 """
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner

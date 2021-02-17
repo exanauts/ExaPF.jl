@@ -5,8 +5,14 @@
 AbstractNLPEvaluator implements the bridge between the
 problem formulation (see `AbstractFormulation`) and the optimization
 solver. Once the problem formulation bridged, the evaluator allows
-to evaluate in a straightfoward fashion the objective and the different
-constraints, but also the corresponding gradient and Jacobian objects.
+to evaluate:
+- the objective;
+- the gradient of the objective;
+- the constraints;
+- the Jacobian of the constraints;
+- the Jacobian-vector and transpose-Jacobian vector products of the constraints;
+- the Hessian of the objective;
+- the Hessian of the Lagrangian.
 
 """
 abstract type AbstractNLPEvaluator end
@@ -53,15 +59,15 @@ function n_constraints end
 """
     objective(nlp::AbstractNLPEvaluator, u)::Float64
 
-Evaluate the objective at point `u`.
+Evaluate the objective at given variable `u`.
 """
 function objective end
 
 """
     gradient!(nlp::AbstractNLPEvaluator, g, u)
 
-Evaluate the gradient of the objective, at
-given variable `u`. Store the result inplace in the vector `g`, which should
+Evaluate the gradient of the objective, at given variable `u`.
+Store the result inplace in the vector `g`, which should
 have the same dimension as `u`.
 
 """
@@ -70,7 +76,7 @@ function gradient! end
 """
     constraint!(nlp::AbstractNLPEvaluator, cons, u)
 
-Evaluate the constraints of the problem at point `u`. Store
+Evaluate the constraints of the problem at given variable `u`. Store
 the result inplace, in the vector `cons`.
 
 ## Note
@@ -83,22 +89,35 @@ function constraint! end
 """
     jacobian_structure!(nlp::AbstractNLPEvaluator, rows, cols)
 
-Return the sparsity pattern of the Jacobian matrix.
+Return the sparsity pattern of the Jacobian matrix. Stores
+the results inplace, in the vectors `rows` and `cols` (whose
+dimension should match the number of non-zero in the Jacobian matrix).
+
 """
 function jacobian_structure! end
 
 """
     jacobian!(nlp::AbstractNLPEvaluator, jac, u)
 
-Evaluate the Jacobian of the constraints in the reduced space,
-at variable `u`. Store the result inplace, in the `m x n` matrix `jac`.
+Evaluate the Jacobian of the constraints, at variable `u`.
+Store the result inplace, in the `m x n` dense matrix `jac`.
+
 """
 function jacobian! end
 
 """
+    full_jacobian(nlp::AbstractNLPEvaluator, u)
+
+Evaluate the Jacobian of the constraints ``h(x, u)`` in the full-space.
+Returns a `FullSpaceJacobian` object.
+
+"""
+function full_jacobian end
+
+"""
     jprod!(nlp::AbstractNLPEvaluator, jv, u, v)
 
-Evaluate the Jacobian-vector product ``J v`` for the constraints.
+Evaluate the Jacobian-vector product ``J v`` of the constraints.
 The vector `jv` is modified inplace.
 
 Let `(n, m) = n_variables(nlp), n_constraints(nlp)`.
@@ -113,7 +132,7 @@ function jprod! end
 """
     jtprod!(nlp::AbstractNLPEvaluator, jv, u, v)
 
-Evaluate the transpose Jacobian-vector product ``J^{\top} v`` of the constraints.
+Evaluate the transpose Jacobian-vector product ``J^{T} v`` of the constraints.
 The vector `jv` is modified inplace.
 
 Let `(n, m) = n_variables(nlp), n_constraints(nlp)`.
@@ -147,7 +166,7 @@ function ojtprod! end
     hessian!(nlp::AbstractNLPEvaluator, H, u)
 
 Evaluate the Hessian `∇²f(u)` of the objective function `f(u)`.
-Store the result inplace, in the `n x n` matrix `H`.
+Store the result inplace, in the `n x n` dense matrix `H`.
 
 """
 function hessian! end
@@ -169,7 +188,7 @@ Evaluate the Hessian of the Lagrangian in the full-space
 ```math
 ∇²L(x, u, y) = σ ∇²f(x, u) + \sum_i y_i ∇²c_i(x, u)
 ```
-Return a named-tuple `H`, with entries `H.xx` corresponding
+Return `H::FullSpaceHessian`, with entries `H.xx` corresponding
 to `∇²Lₓₓ`, `H.xu` to `∇²Lₓᵤ` and `H.uu` to `∇²Lᵤᵤ`.
 
 """

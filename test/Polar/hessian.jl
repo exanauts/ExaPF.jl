@@ -45,7 +45,7 @@ const PS = PowerSystem
         # Step 1: computation of first-order adjoint
         ##################################################
         conv = powerflow(polar, jx, cache, NewtonRaphson())
-        ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
+        ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
         @test conv.has_converged
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
@@ -173,7 +173,7 @@ const PS = PowerSystem
             cache.vang[pv] .= x_[1:npv]
             cache.vang[pq] .= x_[npv+1:npv+npq]
             cache.vmag[pq] .= x_[npv+npq+1:end]
-            ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
+            ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
             return ExaPF.cost_production(polar, cache.pg)
         end
 
@@ -248,7 +248,7 @@ const PS = PowerSystem
             cache.vang[pv] .= x_[1:npv]
             cache.vang[pq] .= x_[npv+1:npv+npq]
             cache.vmag[pq] .= x_[npv+npq+1:end]
-            ExaPF.update!(polar, PS.Generator(), PS.ActivePower(), cache)
+            ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
             J = ExaPF.jacobian(polar, ExaPF.power_constraints, cache)
             return [J.x J.u]' * μ
         end

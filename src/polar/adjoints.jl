@@ -122,7 +122,7 @@ end
 
 function put(
     polar::PolarForm{T, IT, VT, MT},
-    ::PS.Generator,
+    ::PS.Generators,
     ::PS.ActivePower,
     obj_autodiff::AdjointStackObjective,
     buffer::PolarNetworkState
@@ -182,7 +182,7 @@ function ∂cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarN
     c4 = @view coefs[:, 4]
     # Return adjoint of quadratic cost
     ∂obj.∂pg .= c3 .+ 2.0 .* c4 .* pg
-    put(polar, PS.Generator(), PS.ActivePower(), ∂obj, buffer)
+    put(polar, PS.Generators(), PS.ActivePower(), ∂obj, buffer)
     return
 end
 

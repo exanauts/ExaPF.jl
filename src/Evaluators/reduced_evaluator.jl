@@ -1,16 +1,16 @@
 
 """
-    ReducedSpaceEvaluator{T} <: AbstractNLPEvaluator
+    ReducedSpaceEvaluator{T, VI, VT, MT} <: AbstractNLPEvaluator
 
 Evaluator working in the reduced space corresponding to the
 control variable `u`. Once a new point `u` is passed to the evaluator,
 the user needs to call the method `update!` to find the corresponding
 state `x(u)` satisfying the balance equation `g(x(u), u) = 0`.
 
-Taking as input a given `AbstractFormulation`, the reduced evaluator
-builds the bounds corresponding to the control `u` and the state `x`,
+Taking as input a formulation given as a `PolarForm` structure, the reduced evaluator
+builds the bounds corresponding to the control `u`,
 and initiate an `AutoDiffFactory` tailored to the problem. The reduced evaluator
-could be instantiated on the main memory, or on a specific device (currently,
+could be instantiated on the host memory, or on a specific device (currently,
 only CUDA is supported).
 
 ## Note
@@ -20,12 +20,11 @@ values of the network.
 In the implementation of `ReducedSpaceEvaluator`,
 we only deal with a control `u` and an attribute `buffer`,
 storing all the physical values needed to describe the network.
-This attribute `buffer` stores the values of the control `u`, the state `x`
+The attribute `buffer` stores the values of the control `u`, the state `x`
 and the by-product `y`. Each time we are calling the method `update!`,
-the values of the control are copied to the buffer, so as
-the algorithm use only the physical representation of the network, more
-convenient to use. Thus, the resolution of the balance equation
-involves only the physical representation `buffer`.
+the values of the control are copied to the buffer.
+The algorithm use only the physical representation of the network, more
+convenient to use.
 
 """
 mutable struct ReducedSpaceEvaluator{T, VI, VT, MT} <: AbstractNLPEvaluator
@@ -48,7 +47,7 @@ end
 
 function ReducedSpaceEvaluator(
     model, x, u;
-    constraints=Function[state_constraint, power_constraints],
+    constraints=Function[state_constraints, power_constraints],
     linear_solver=DirectSolver(),
     powerflow_solver=NewtonRaphson(tol=1e-12),
 )
@@ -173,7 +172,7 @@ function update!(nlp::ReducedSpaceEvaluator, u)
     end
 
     # Refresh values of active and reactive powers at generators
-    update!(nlp.model, PS.Generator(), PS.ActivePower(), nlp.buffer)
+    update!(nlp.model, PS.Generators(), PS.ActivePower(), nlp.buffer)
     return conv
 end
 

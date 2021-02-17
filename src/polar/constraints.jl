@@ -4,14 +4,14 @@ is_constraint(::Function) = false
 
 # Generic inequality constraints
 # We add constraint only on vmag_pq
-function state_constraint(polar::PolarForm, g, buffer)
+function state_constraints(polar::PolarForm, g, buffer)
     index_pq = polar.indexing.index_pq
     g .= @view buffer.vmag[index_pq]
     return
 end
-is_constraint(::typeof(state_constraint)) = true
-size_constraint(polar::PolarForm{T, IT, VT, MT}, ::typeof(state_constraint)) where {T, IT, VT, MT} = PS.get(polar.network, PS.NumberOfPQBuses())
-function bounds(polar::PolarForm, ::typeof(state_constraint))
+is_constraint(::typeof(state_constraints)) = true
+size_constraint(polar::PolarForm{T, IT, VT, MT}, ::typeof(state_constraints)) where {T, IT, VT, MT} = PS.get(polar.network, PS.NumberOfPQBuses())
+function bounds(polar::PolarForm, ::typeof(state_constraints))
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     fr_ = npq + npv + 1
@@ -19,7 +19,7 @@ function bounds(polar::PolarForm, ::typeof(state_constraint))
     return polar.x_min[fr_:to_], polar.x_max[fr_:to_]
 end
 # State Jacobian: Jx_i = [0, ..., 1, ... 0] where
-function jacobian(polar::PolarForm, ::typeof(state_constraint), i_cons::Int, ∂jac, buffer)
+function jacobian(polar::PolarForm, ::typeof(state_constraints), i_cons::Int, ∂jac, buffer)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     fr_ = npq + npv
@@ -30,7 +30,7 @@ function jacobian(polar::PolarForm, ::typeof(state_constraint), i_cons::Int, ∂
     # Adjoint / Control
     fill!(∂jac.∇fᵤ, 0)
 end
-function jacobian(polar::PolarForm, cons::typeof(state_constraint), buffer)
+function jacobian(polar::PolarForm, cons::typeof(state_constraints), buffer)
     m = size_constraint(polar, cons)
     nᵤ = get(polar, NumberOfControl())
     nₓ = get(polar, NumberOfState())
@@ -45,7 +45,7 @@ function jacobian(polar::PolarForm, cons::typeof(state_constraint), buffer)
     ju = spzeros(m, nᵤ)
     return FullSpaceJacobian(jx, ju)
 end
-function jtprod(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, v)
+function jtprod(polar::PolarForm, ::typeof(state_constraints), ∂jac, buffer, v)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     fr_ = npq + npv + 1
@@ -55,7 +55,7 @@ function jtprod(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, v)
     fill!(∂jac.∇fₓ, 0)
     ∂jac.∇fₓ[fr_:end] .= v
 end
-function hessian(polar::PolarForm, ::typeof(state_constraint), ∂jac, buffer, λ)
+function hessian(polar::PolarForm, ::typeof(state_constraints), ∂jac, buffer, λ)
     nu = get(polar, NumberOfControl())
     nx = get(polar, NumberOfState())
     return FullSpaceHessian(
@@ -84,7 +84,7 @@ function power_constraints(polar::PolarForm, g, buffer)
     g[cnt] = buffer.pg[ref_to_gen[1]]
     cnt += 1
     # Refresh reactive power generation in buffer
-    update!(polar, PS.Generator(), PS.ReactivePower(), buffer)
+    update!(polar, PS.Generators(), PS.ReactivePower(), buffer)
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
     # Careful: g could be a view
     if isa(g, SubArray)
@@ -120,8 +120,8 @@ function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(power_constraints)) wh
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
 
     # Get all bounds (lengths of p_min, p_max, q_min, q_max equal to ngen)
-    p_min, p_max = PS.bounds(polar.network, PS.Generator(), PS.ActivePower())
-    q_min, q_max = PS.bounds(polar.network, PS.Generator(), PS.ReactivePower())
+    p_min, p_max = PS.bounds(polar.network, PS.Generators(), PS.ActivePower())
+    q_min, q_max = PS.bounds(polar.network, PS.Generators(), PS.ReactivePower())
 
     index_ref = polar.indexing.index_ref
     index_pv = polar.indexing.index_pv
