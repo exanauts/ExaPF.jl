@@ -7,10 +7,12 @@ using CUDA
 import CUDA.CUSPARSE
 import ForwardDiff
 import SparseDiffTools
+using KernelAbstractions
 
 using ..ExaPF: Spmat, xzeros, State, Control
 
 import Base: show
+const KA = KernelAbstractions
 
 """
     AbstractJacobian
@@ -28,17 +30,15 @@ struct StateJacobian <: AbstractJacobian end
 struct ControlJacobian <: AbstractJacobian end
 abstract type AbstractHessian end
 
-function _init_seed!(t1sseeds, coloring, ncolor, nmap)
-    t1sseedvec = zeros(Float64, ncolor)
-    @inbounds for i in 1:nmap
-        for j in 1:ncolor
-            if coloring[i] == j
-                t1sseedvec[j] = 1.0
-            end
+KA.@kernel function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor)
+    i = @index(Global, Linear)
+    t1sseedvecs[:,i] .= 0
+    @inbounds for j in 1:ncolor
+        if coloring[i] == j
+            t1sseedvecs[j,i] = 1.0
         end
-        t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvec))
-        t1sseedvec .= 0
     end
+    t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvecs[:,i]))
 end
 
 """
@@ -91,22 +91,22 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
 
         map = VI(structure.map)
         nmap = length(structure.map)
-        # Need a host arrays for the sparsity detection below
-        spmap = Vector(map)
         hybus_re = Spmat{Vector{Int}, Vector{Float64}}(ybus_re)
         hybus_im = Spmat{Vector{Int}, Vector{Float64}}(ybus_im)
-        n = nvbus
-        Yre = SparseMatrixCSC{Float64,Int64}(n, n, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
-        Yim = SparseMatrixCSC{Float64,Int64}(n, n, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
+        Yre = SparseMatrixCSC{Float64,Int64}(nvbus, nvbus, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
+        Yim = SparseMatrixCSC{Float64,Int64}(nvbus, nvbus, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
         Y = Yre .+ 1im .* Yim
-        # Randomized inputs
-        Vre = Float64.([i for i in 1:n])
-        Vim = Float64.([i for i in n+1:2*n])
+        Vre = Float64.([i for i in 1:nvbus])
+        Vim = Float64.([i for i in nvbus+1:2*nvbus])
         V = Vre .+ 1im .* Vim
         if isa(type, StateJacobian)
             variable = State()
-        else
+            x = VT(zeros(Float64, 2*nvbus))
+        elseif isa(type, ControlJacobian)
             variable = Control()
+            x = VT(zeros(Float64, npbus + nvbus))
+        else
+            error("Unsupported Jacobian type. Must be either ControlJacobian or StateJacobian.")
         end
         J = structure.sparsity(variable, V, Y, pv, pq, ref)
         coloring = VI(SparseDiffTools.matrix_colors(J))
@@ -115,32 +115,22 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
             J = CUSPARSE.CuSparseMatrixCSR(J)
         end
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-        if isa(type, StateJacobian)
-            x = VT(zeros(Float64, 2*nvbus))
-            t1sx = A{t1s{ncolor}}(x)
-            t1sF = A{t1s{ncolor}}(zeros(Float64, nmap))
-            t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-            _init_seed!(t1sseeds, coloring, ncolor, nmap)
-            compressedJ = MT(zeros(Float64, ncolor, nmap))
-            varx = view(x, map)
-            t1svarx = view(t1sx, map)
-        elseif isa(type, ControlJacobian)
-            x = VT(zeros(Float64, npbus + nvbus))
-            t1sx = A{t1s{ncolor}}(x)
-            t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
-            t1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-            _init_seed!(t1sseeds, coloring, ncolor, nmap)
-            compressedJ = MT(zeros(Float64, ncolor, length(F)))
-            varx = view(x, map)
-            t1svarx = view(t1sx, map)
-        else
-            error("Unsupported Jacobian type. Must be either ControlJacobian or StateJacobian.")
-        end
-
-        VP = typeof(t1sseeds)
-        VD = typeof(t1sx)
-        return new{VI, VT, MT, SMT, VP, VD, typeof(varx), typeof(t1svarx)}(
-            J, compressedJ, coloring, t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+        # The seeding is always done on the CPU since it's faster
+        init_seed_kernel! = _init_seed!(KA.CPU(), 4)
+        t1sx = A{t1s{ncolor}}(x)
+        t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
+        t1sseeds = Array{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
+        # Do the seeding on the CPU
+        t1sseedvecs = zeros(Float64, ncolor, nmap)
+        ev = init_seed_kernel!(t1sseeds, t1sseedvecs, Array(coloring), ncolor, ndrange=nmap)
+        wait(ev)
+        # Move the seeds over to the GPU
+        gput1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(t1sseeds)
+        compressedJ = MT(zeros(Float64, ncolor, length(F)))
+        varx = view(x, map)
+        t1svarx = view(t1sx, map)
+        return new{VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
+            J, compressedJ, coloring, gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
         )
     end
 end
