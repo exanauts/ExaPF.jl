@@ -31,6 +31,19 @@ const LS = ExaPF.LinearSolvers
         resid = norm(r) / norm(b)
         @test(resid ≤ 1e-6)
     end
+    if has_cuda_gpu()
+        cuspA = CuSparseMatrixCSR(spA)
+        cux = CuVector(x)
+        cub = CuVector(b)
+        cuprecond = LS.BlockJacobiPreconditioner(cuspA, nblocks, CUDADevice())
+        LS.update(cuspA, cuprecond)
+        @testset "BICGSTAB" begin
+            LS.ldiv!(LS.BICGSTAB(precond), cux, cuspA, cub)
+            cur = cub - cuspA * cux
+            resid = norm(cur) / norm(cub)
+            @test(resid ≤ 1e-6)
+        end
+    end
     # Embed preconditioner in linear solvers
     @testset "($LinSolver)" for LinSolver in ExaPF.list_solvers(CPU())
         algo = LinSolver(precond)
