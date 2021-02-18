@@ -101,7 +101,7 @@ function residual_polar!(F, v_m, v_a,
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
-        kernel! = residual_kernel!(KA.CPU(), 4)
+        kernel! = residual_kernel!(KA.CPU(), Threads.nthreads())
     else
         kernel! = residual_kernel!(KA.CUDADevice(), 256)
     end
@@ -187,7 +187,7 @@ function residual_adj_polar!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
-        kernel! = residual_adj_kernel!(KA.CPU(), 4)
+        kernel! = residual_adj_kernel!(KA.CPU(), Threads.nthreads())
     else
         kernel! = residual_adj_kernel!(KA.CUDADevice(), 256)
     end
@@ -227,7 +227,7 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
     if isa(u, CUDA.CuArray)
         kernel! = transfer_kernel!(KA.CUDADevice(), 256)
     else
-        kernel! = transfer_kernel!(KA.CPU(), 1)
+        kernel! = transfer_kernel!(KA.CPU(), Threads.nthreads())
     end
     nbus = length(buffer.vmag)
     pv = polar.indexing.index_pv
@@ -282,7 +282,7 @@ end
 # Refresh active power (needed to evaluate objective)
 function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
-        kernel! = active_power_kernel!(KA.CPU(), 1)
+        kernel! = active_power_kernel!(KA.CPU(), Threads.nthreads())
     else
         kernel! = active_power_kernel!(KA.CUDADevice(), 256)
     end
@@ -342,7 +342,7 @@ end
 
 function update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
-        kernel! = reactive_power_kernel!(KA.CPU(), 1)
+        kernel! = reactive_power_kernel!(KA.CPU(), Threads.nthreads())
     else
         kernel! = reactive_power_kernel!(KA.CUDADevice(), 256)
     end

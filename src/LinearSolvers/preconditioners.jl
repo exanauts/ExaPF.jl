@@ -1,3 +1,4 @@
+using KernelAbstractions
 """
     AbstractPreconditioner
 
@@ -23,22 +24,45 @@ Creates an object for the block-Jacobi preconditioner
 * `cupart`: `part` transferred to the GPU
 * `P`: The sparse precondition matrix whose values are updated at each iteration
 """
-mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
-    npart::Int64
-    nJs::Int64
-    partitions::Vector{Vector{Int64}}
-    cupartitions
-    Js
-    cuJs
-    map
-    cumap
-    part
-    cupart
-    P
-    id
-    function BlockJacobiPreconditioner(J, npart, device=KA.CPU())
-        if isa(J, CUSPARSE.CuSparseMatrixCSR)
+struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPreconditioner
+    nblocks::Int64
+    blocksize::Int64
+    partitions::MI
+    cupartitions::Union{GMI,Nothing}
+    lpartitions::VI
+    culpartitions::Union{GVI,Nothing}
+    blocks::AT
+    cublocks::Union{GAT,Nothing}
+    map::VI
+    cumap::Union{GVI,Nothing}
+    part::VI
+    cupart::Union{GVI,Nothing}
+    P::SMT
+    id::Union{GMT,Nothing}
+    function BlockJacobiPreconditioner(J, npart, device=KA.CPU()) where {}
+        if device == KA.CPU()
+            AT  = Array{Float64,3}
+            GAT = Nothing
+            VI  = Vector{Int64}
+            GVI = Nothing
+            MT = Matrix{Float64}
+            GMT = Nothing
+            MI  = Matrix{Int64}
+            GMI  = Nothing
+            SMT = SparseMatrixCSC{Float64,Int64}
+        elseif device == KA.CUDADevice()
+            AT  = Array{Float64,3}
+            GAT = CuArray{Float64,3}
+            VI  = Vector{Int64}
+            GVI = CuVector{Int64}
+            MT = Matrix{Float64}
+            GMT = CuMatrix{Float64}
+            MI  = Matrix{Int64}
+            GMI = CuMatrix{Int64} 
+            SMT = CUDA.CUSPARSE.CuSparseMatrixCSR{Float64}
             J = SparseMatrixCSC(J)
+        else
+            error("Unknown device type")
         end
         m, n = size(J)
         if npart < 2
@@ -55,18 +79,26 @@ mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
         for (i,v) in enumerate(part)
             push!(partitions[v], i)
         end
-        Js = Vector{Matrix{Float64}}(undef, npart)
-        nJs = maximum(length.(partitions))
-        id = Matrix{Float64}(I, nJs, nJs)
+        lpartitions = VI(undef, npart)
+        lpartitions = length.(partitions)
+        blocksize = maximum(length.(partitions))
+        blocks = AT(undef, blocksize, blocksize, npart)
+        # Get partitions into bit typed structure
+        bpartitions = MI(undef, blocksize, npart)
+        bpartitions .= 0.0
         for i in 1:npart
-            Js[i] = Matrix{Float64}(I, nJs, nJs)
+            bpartitions[1:length(partitions[i]),i] .= VI(partitions[i])
+        end
+        id = MT(I, blocksize, blocksize)
+        for i in 1:npart
+            blocks[:,:,i] .= id
         end
         nmap = 0
         for b in partitions
             nmap += length(b)
         end
-        map = Vector{Int64}(undef, nmap)
-        part = Vector{Int64}(undef, nmap)
+        map = VI(undef, nmap)
+        part = VI(undef, nmap)
         for b in 1:npart
             for (i,el) in enumerate(partitions[b])
                 map[el] = i
@@ -88,26 +120,22 @@ mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
         end
         P = sparse(row, col, nzval)
         if isa(device, KA.CUDADevice)
-            id = CUDA.CuMatrix{Float64}(I, nJs, nJs)
-            cupartitions = Vector{CUDA.CuVector{Int64}}(undef, npart)
-            for i in 1:npart
-                cupartitions[i] = CUDA.CuVector{Int64}(partitions[i])
-            end
-            cuJs = Vector{CUDA.CuMatrix{Float64}}(undef, length(partitions))
-            for i in 1:length(partitions)
-                cuJs[i] = CUDA.CuMatrix{Float64}(I, nJs, nJs)
-            end
+            id = GMT(I, blocksize, blocksize)
+            cubpartitions = GMI(bpartitions)
+            culpartitions = GVI(lpartitions)
+            cublocks = GAT(blocks)
             cumap = CUDA.cu(map)
             cupart = CUDA.cu(part)
-            P = CUSPARSE.CuSparseMatrixCSR(P)
+            P = SMT(P)
         else
-            cuJs = nothing
-            cupartitions = nothing
+            cublocks = nothing
+            cubpartitions = nothing
             cumap = nothing
             cupart = nothing
             id = nothing
+            culpartitions = nothing
         end
-        return new(npart, nJs, partitions, cupartitions, Js, cuJs, map, cumap, part, cupart, P, id)
+        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, blocks, cublocks, map, cumap, part, cupart, P, id)
     end
 end
 
@@ -140,62 +168,64 @@ end
 """
     fillblock_gpu
 
-Fill the dense blocks of the preconditioner from the sparse CSC matrix arrays
+Fill the dense blocks of the preconditioner from the sparse CSR matrix arrays
 
 """
-function fillblock_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
-    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    stride = blockDim().x * gridDim().x
-    for i in index:stride:length(partition)
-        for j in rowPtr[partition[i]]:rowPtr[partition[i]+1]-1
+KA.@kernel function fillblock_gpu!(blocks, blocksize, partition, map, rowPtr, colVal, nzVal, part, lpartitions, id)
+    b = KA.@index(Global, Linear)
+    for i in 1:blocksize
+        for j in 1:blocksize
+            blocks[i,j,b] = id[i,j]
+        end
+    end
+
+    @inbounds for i in 1:lpartitions[b]
+        @inbounds for j in rowPtr[partition[i,b]]:rowPtr[partition[i,b]+1]-1
             if b == part[colVal[j]]
-                @inbounds cuJs[map[partition[i]], map[colVal[j]]] = nzVal[j]
+                @inbounds blocks[map[partition[i,b]], map[colVal[j]], b] = nzVal[j]
             end
         end
     end
-    return nothing
 end
 
 """
-    fillblock_gpu
+    fillP_gpu
 
 Update the values of the preconditioner matrix from the dense Jacobi blocks
 
 """
-function fillP_gpu!(cuJs, partition, map, rowPtr, colVal, nzVal, part, b)
-    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    stride = blockDim().x * gridDim().x
-    for i in index:stride:length(partition)
-        for j in rowPtr[partition[i]]:rowPtr[partition[i]+1]-1
+KA.@kernel function fillP_gpu!(blocks, partition, map, rowPtr, colVal, nzVal, part, lpartitions)
+    b = KA.@index(Global, Linear)
+    @inbounds for i in 1:lpartitions[b]
+        @inbounds for j in rowPtr[partition[i,b]]:rowPtr[partition[i,b]+1]-1
             if b == part[colVal[j]]
-                @inbounds nzVal[j] += cuJs[map[partition[i]], map[colVal[j]]]
+                @inbounds nzVal[j] += blocks[map[partition[i,b]], map[colVal[j]],b]
             end
         end
     end
-    return nothing
 end
 
 function _update_gpu(j_rowptr, j_colval, j_nzval, p)
-    nblocks = length(p.partitions)
-    for el in p.cuJs
-        el .= p.id
-    end
+    nblocks = p.nblocks
+    fillblock_gpu_kernel! = fillblock_gpu!(KA.CUDADevice(), nblocks)
+    fillP_gpu_kernel! = fillP_gpu!(KA.CUDADevice(), nblocks)
     # Fill Block Jacobi" begin
-    CUDA.@sync begin
-        for b in 1:nblocks
-            CUDA.@cuda threads=16 blocks=16 fillblock_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, b)
-        end
+    ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks)
+    wait(ev)
+    # Invert blocks begin
+    blocklist = Array{CuArray{Float64,2}}(undef, nblocks)
+    for b in 1:nblocks
+        blocklist[b] = p.cublocks[:,:,b]
     end
-    # Invert blocks" begin
-    CUDA.@sync pivot, info = CUDA.CUBLAS.getrf_batched!(p.cuJs, true)
-    CUDA.@sync pivot, info, p.cuJs = CUDA.CUBLAS.getri_batched(p.cuJs, pivot)
+    CUDA.@sync pivot, info = CUDA.CUBLAS.getrf_batched!(blocklist, true)
+    CUDA.@sync pivot, info, blocklist = CUDA.CUBLAS.getri_batched(blocklist, pivot)
+    for b in 1:nblocks
+        p.cublocks[:,:,b] .= blocklist[b]
+    end
     p.P.nzVal .= 0.0
     # Move blocks to P" begin
-    CUDA.@sync begin
-        for b in 1:nblocks
-            CUDA.@cuda threads=16 blocks=16 fillP_gpu!(p.cuJs[b], p.cupartitions[b], p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, b)
-        end
-    end
+    ev = fillP_gpu_kernel!(p.cublocks, p.cupartitions, p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, p.culpartitions, ndrange=nblocks)
+    wait(ev)
     return p.P
 end
 
@@ -217,34 +247,29 @@ function update(J::Transpose{T, CUSPARSE.CuSparseMatrixCSR{T}}, p) where T
     _update_gpu(Jt.colPtr, Jt.rowVal, Jt.nzVal, p)
 end
 
-function _update_cpu(colptr, rowval, nzval, p)
+KA.@kernel function update_cpu_kernel!(colptr, rowval, nzval, p, lpartitions)
     nblocks = length(p.partitions)
     # Fill Block Jacobi
-    @inbounds for b in 1:nblocks
-        for i in p.partitions[b]
-            for j in colptr[i]:colptr[i+1]-1
-                if b == p.part[rowval[j]]
-                    p.Js[b][p.map[rowval[j]], p.map[i]] = nzval[j]
-                end
+    b = @index(Global, Linear)
+    for k in 1:lpartitions[b]
+        i = p.partitions[k,b]
+        for j in colptr[i]:colptr[i+1]-1
+            if b == p.part[rowval[j]]
+                @inbounds p.blocks[p.map[rowval[j]], p.map[i], b] = nzval[j]
             end
         end
     end
     # Invert blocks
-    for b in 1:nblocks
-        p.Js[b] = inv(p.Js[b])
-    end
-    p.P.nzval .= 0.0
+    p.blocks[:,:,b] .= inv(p.blocks[:,:,b])
     # Move blocks to P
-    @inbounds for b in 1:nblocks
-        for i in p.partitions[b]
-            for j in p.P.colptr[i]:p.P.colptr[i+1]-1
-                if b == p.part[p.P.rowval[j]]
-                    p.P.nzval[j] += p.Js[b][p.map[p.P.rowval[j]], p.map[i]]
-                end
+    for k in 1:lpartitions[b]
+        i = p.partitions[k,b]
+        for j in p.P.colptr[i]:p.P.colptr[i+1]-1
+            if b == p.part[p.P.rowval[j]]
+                @inbounds p.P.nzval[j] += p.blocks[p.map[p.P.rowval[j]], p.map[i], b]
             end
         end
     end
-    return p.P
 end
 
 """
@@ -256,7 +281,11 @@ Note that this implements the same algorithm as for the GPU and becomes very slo
 
 """
 function update(J::SparseMatrixCSC, p)
-    _update_cpu(J.colptr, J.rowval, J.nzval, p)
+    kernel! = update_cpu_kernel!(KA.CPU(), Threads.nthreads())
+    p.P.nzval .= 0.0
+    ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks)
+    wait(ev)
+    return p.P
 end
 function update(J::Transpose{T, SparseMatrixCSC{T, I}}, p) where {T, I}
     ix, jx, zx = findnz(J.parent)
