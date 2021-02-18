@@ -95,7 +95,7 @@ function power_constraints(polar::PolarForm, g, buffer)
         shift = nref
     end
     if isa(gg, Array)
-        kernel! = load_power_constraint_kernel!(KA.CPU(), 4)
+        kernel! = load_power_constraint_kernel!(KA.CPU(), Threads.nthreads())
     else
         kernel! = load_power_constraint_kernel!(KA.CUDADevice(), 256)
     end
@@ -180,7 +180,7 @@ function jacobian(
         put_reactive_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
     end
     if isa(adj_x, Array)
-        kernel! = put_adjoint_kernel!(KA.CPU(), 1)
+        kernel! = put_adjoint_kernel!(KA.CPU(), Threads.nthreads())
     else
         kernel! = put_adjoint_kernel!(KA.CUDADevice(), 256)
     end
@@ -285,7 +285,7 @@ function flow_constraints(polar::PolarForm, cons, buffer)
     if isa(cons, CUDA.CuArray)
         kernel! = branch_flow_kernel!(KA.CUDADevice(), 256)
     else
-        kernel! = branch_flow_kernel!(KA.CPU(), 1)
+        kernel! = branch_flow_kernel!(KA.CPU(), Threads.nthreads())
     end
     nlines = PS.get(polar.network, PS.NumberOfLines())
     ev = kernel!(
@@ -302,7 +302,7 @@ end
 function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
     T = typeof(buffer.vmag)
     if isa(buffer.vmag, Array)
-        kernel! = accumulate_view!(KA.CPU(), 1)
+        kernel! = accumulate_view!(KA.CPU(), Threads.nthreads())
     else
         kernel! = accumulate_view!(KA.CUDADevice(), 256)
     end
@@ -381,7 +381,7 @@ function jtprod(
     copyto!(adj_vmag, ∇Jv[1:nbus])
     copyto!(adj_vang, ∇Jv[nbus+1:2*nbus])
     if isa(adj_x, Array)
-        kernel! = put_adjoint_kernel!(KA.CPU(), 1)
+        kernel! = put_adjoint_kernel!(KA.CPU(), Threads.nthreads())
     else
         kernel! = put_adjoint_kernel!(KA.CUDADevice(), 256)
     end
