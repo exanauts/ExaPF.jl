@@ -38,7 +38,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
     part::VI
     cupart::Union{GVI,Nothing}
     P::SMT
-    id::Union{GMT,Nothing}
+    id::Union{GMT,MT}
     function BlockJacobiPreconditioner(J, npart, device=KA.CPU()) where {}
         if device == KA.CPU()
             AT  = Array{Float64,3}
@@ -132,7 +132,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             cubpartitions = nothing
             cumap = nothing
             cupart = nothing
-            id = nothing
+            id = MT(I, blocksize, blocksize)
             culpartitions = nothing
         end
         return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, blocks, cublocks, map, cumap, part, cupart, P, id)
@@ -251,6 +251,12 @@ KA.@kernel function update_cpu_kernel!(colptr, rowval, nzval, p, lpartitions)
     nblocks = length(p.partitions)
     # Fill Block Jacobi
     b = @index(Global, Linear)
+    blocksize = size(p.id,1)
+    for i in 1:blocksize
+        for j in 1:blocksize
+            p.blocks[i,j,b] = p.id[i,j]
+        end
+    end
     for k in 1:lpartitions[b]
         i = p.partitions[k,b]
         for j in colptr[i]:colptr[i+1]-1
