@@ -47,3 +47,12 @@ end
     include("Evaluators/test_rgm.jl")
 end
 
+@testset "Benchmark script" begin
+    empty!(ARGS)
+    push!(ARGS, "KrylovBICGSTAB")
+    push!(ARGS, "CPU")
+    push!(ARGS, "case300.m")
+    include("../benchmark/benchmarks.jl")
+    @test convergence.has_converged
+end
+
