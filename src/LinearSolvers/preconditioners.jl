@@ -1,4 +1,3 @@
-using KernelAbstractions
 """
     AbstractPreconditioner
 
@@ -39,8 +38,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
     cupart::Union{GVI,Nothing}
     P::SMT
     id::Union{GMT,MT}
-    function BlockJacobiPreconditioner(J, npart, device=KA.CPU()) where {}
-        if device == KA.CPU()
+    function BlockJacobiPreconditioner(J, npart, device=CPU()) where {}
+        if device == CPU()
             AT  = Array{Float64,3}
             GAT = Nothing
             VI  = Vector{Int64}
@@ -50,7 +49,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             MI  = Matrix{Int64}
             GMI  = Nothing
             SMT = SparseMatrixCSC{Float64,Int64}
-        elseif device == KA.CUDADevice()
+        elseif device == CUDADevice()
             AT  = Array{Float64,3}
             GAT = CuArray{Float64,3}
             VI  = Vector{Int64}
@@ -119,7 +118,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             end
         end
         P = sparse(row, col, nzval)
-        if isa(device, KA.CUDADevice)
+        if isa(device, CUDADevice)
             id = GMT(I, blocksize, blocksize)
             cubpartitions = GMI(bpartitions)
             culpartitions = GVI(lpartitions)
@@ -171,8 +170,8 @@ end
 Fill the dense blocks of the preconditioner from the sparse CSR matrix arrays
 
 """
-KA.@kernel function fillblock_gpu!(blocks, blocksize, partition, map, rowPtr, colVal, nzVal, part, lpartitions, id)
-    b = KA.@index(Global, Linear)
+@kernel function fillblock_gpu!(blocks, blocksize, partition, map, rowPtr, colVal, nzVal, part, lpartitions, id)
+    b = @index(Global, Linear)
     for i in 1:blocksize
         for j in 1:blocksize
             blocks[i,j,b] = id[i,j]
@@ -194,8 +193,8 @@ end
 Update the values of the preconditioner matrix from the dense Jacobi blocks
 
 """
-KA.@kernel function fillP_gpu!(blocks, partition, map, rowPtr, colVal, nzVal, part, lpartitions)
-    b = KA.@index(Global, Linear)
+@kernel function fillP_gpu!(blocks, partition, map, rowPtr, colVal, nzVal, part, lpartitions)
+    b = @index(Global, Linear)
     @inbounds for i in 1:lpartitions[b]
         @inbounds for j in rowPtr[partition[i,b]]:rowPtr[partition[i,b]+1]-1
             if b == part[colVal[j]]
@@ -207,8 +206,8 @@ end
 
 function _update_gpu(j_rowptr, j_colval, j_nzval, p)
     nblocks = p.nblocks
-    fillblock_gpu_kernel! = fillblock_gpu!(KA.CUDADevice())
-    fillP_gpu_kernel! = fillP_gpu!(KA.CUDADevice())
+    fillblock_gpu_kernel! = fillblock_gpu!(CUDADevice())
+    fillP_gpu_kernel! = fillP_gpu!(CUDADevice())
     # Fill Block Jacobi" begin
     ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks)
     wait(ev)
@@ -247,7 +246,7 @@ function update(J::Transpose{T, CUSPARSE.CuSparseMatrixCSR{T}}, p) where T
     _update_gpu(Jt.colPtr, Jt.rowVal, Jt.nzVal, p)
 end
 
-KA.@kernel function update_cpu_kernel!(colptr, rowval, nzval, p, lpartitions)
+@kernel function update_cpu_kernel!(colptr, rowval, nzval, p, lpartitions)
     nblocks = length(p.partitions)
     # Fill Block Jacobi
     b = @index(Global, Linear)
@@ -287,7 +286,7 @@ Note that this implements the same algorithm as for the GPU and becomes very slo
 
 """
 function update(J::SparseMatrixCSC, p)
-    kernel! = update_cpu_kernel!(KA.CPU())
+    kernel! = update_cpu_kernel!(CPU())
     p.P.nzval .= 0.0
     ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks)
     wait(ev)

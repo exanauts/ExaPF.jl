@@ -7,11 +7,11 @@ using SparseArrays
 import Base: show
 
 using CUDA
+using KernelAbstractions
 import CUDA.CUBLAS
 import CUDA.CUSOLVER
 import CUDA.CUSPARSE
 import IterativeSolvers
-import KernelAbstractions
 import Krylov
 import LightGraphs
 import Metis

@@ -18,7 +18,7 @@ import CUDA.CUBLAS
 import CUDA.CUSPARSE
 import CUDA.CUSOLVER
 
-import KernelAbstractions
+using KernelAbstractions
 const KA = KernelAbstractions
 import MathOptInterface
 const MOI = MathOptInterface
