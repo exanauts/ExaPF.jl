@@ -207,8 +207,8 @@ end
 
 function _update_gpu(j_rowptr, j_colval, j_nzval, p)
     nblocks = p.nblocks
-    fillblock_gpu_kernel! = fillblock_gpu!(KA.CUDADevice(), nblocks)
-    fillP_gpu_kernel! = fillP_gpu!(KA.CUDADevice(), nblocks)
+    fillblock_gpu_kernel! = fillblock_gpu!(KA.CUDADevice())
+    fillP_gpu_kernel! = fillP_gpu!(KA.CUDADevice())
     # Fill Block Jacobi" begin
     ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks)
     wait(ev)
@@ -287,7 +287,7 @@ Note that this implements the same algorithm as for the GPU and becomes very slo
 
 """
 function update(J::SparseMatrixCSC, p)
-    kernel! = update_cpu_kernel!(KA.CPU(), Threads.nthreads())
+    kernel! = update_cpu_kernel!(KA.CPU())
     p.P.nzval .= 0.0
     ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks)
     wait(ev)

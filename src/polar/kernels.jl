@@ -101,9 +101,9 @@ function residual_polar!(F, v_m, v_a,
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
-        kernel! = residual_kernel!(KA.CPU(), Threads.nthreads())
+        kernel! = residual_kernel!(KA.CPU())
     else
-        kernel! = residual_kernel!(KA.CUDADevice(), 256)
+        kernel! = residual_kernel!(KA.CUDADevice())
     end
     ev = kernel!(F, v_m, v_a,
                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
@@ -187,9 +187,9 @@ function residual_adj_polar!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
-        kernel! = residual_adj_kernel!(KA.CPU(), Threads.nthreads())
+        kernel! = residual_adj_kernel!(KA.CPU())
     else
-        kernel! = residual_adj_kernel!(KA.CUDADevice(), 256)
+        kernel! = residual_adj_kernel!(KA.CUDADevice())
     end
     ev = kernel!(F, adj_F, v_m, adj_v_m, v_a, adj_v_a,
                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
@@ -225,9 +225,9 @@ end
 # Transfer values in (x, u) to buffer
 function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
     if isa(u, CUDA.CuArray)
-        kernel! = transfer_kernel!(KA.CUDADevice(), 256)
+        kernel! = transfer_kernel!(KA.CUDADevice())
     else
-        kernel! = transfer_kernel!(KA.CPU(), Threads.nthreads())
+        kernel! = transfer_kernel!(KA.CPU())
     end
     nbus = length(buffer.vmag)
     pv = polar.indexing.index_pv
@@ -282,9 +282,9 @@ end
 # Refresh active power (needed to evaluate objective)
 function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
-        kernel! = active_power_kernel!(KA.CPU(), Threads.nthreads())
+        kernel! = active_power_kernel!(KA.CPU())
     else
-        kernel! = active_power_kernel!(KA.CUDADevice(), 256)
+        kernel! = active_power_kernel!(KA.CUDADevice())
     end
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
@@ -342,9 +342,9 @@ end
 
 function update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buffer::PolarNetworkState)
     if isa(buffer.vmag, Array)
-        kernel! = reactive_power_kernel!(KA.CPU(), Threads.nthreads())
+        kernel! = reactive_power_kernel!(KA.CPU())
     else
-        kernel! = reactive_power_kernel!(KA.CUDADevice(), 256)
+        kernel! = reactive_power_kernel!(KA.CUDADevice())
     end
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
