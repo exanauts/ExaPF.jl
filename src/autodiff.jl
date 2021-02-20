@@ -116,7 +116,7 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
         end
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
         # The seeding is always done on the CPU since it's faster
-        init_seed_kernel! = _init_seed!(KA.CPU(), 4)
+        init_seed_kernel! = _init_seed!(KA.CPU())
         t1sx = A{t1s{ncolor}}(x)
         t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
         t1sseeds = Array{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
