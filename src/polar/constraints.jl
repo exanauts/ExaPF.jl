@@ -95,9 +95,9 @@ function power_constraints(polar::PolarForm, g, buffer)
         shift = nref
     end
     if isa(gg, Array)
-        kernel! = load_power_constraint_kernel!(KA.CPU(), Threads.nthreads())
+        kernel! = load_power_constraint_kernel!(KA.CPU())
     else
-        kernel! = load_power_constraint_kernel!(KA.CUDADevice(), 256)
+        kernel! = load_power_constraint_kernel!(KA.CUDADevice())
     end
     ev = kernel!(
         gg, buffer.qg, ref_to_gen, pv_to_gen, nref, npv, shift,
@@ -180,9 +180,9 @@ function jacobian(
         put_reactive_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
     end
     if isa(adj_x, Array)
-        kernel! = put_adjoint_kernel!(KA.CPU(), Threads.nthreads())
+        kernel! = put_adjoint_kernel!(KA.CPU())
     else
-        kernel! = put_adjoint_kernel!(KA.CUDADevice(), 256)
+        kernel! = put_adjoint_kernel!(KA.CUDADevice())
     end
     ev = kernel!(adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
                  index_pv, index_pq, index_ref, pv_to_gen,
@@ -283,9 +283,9 @@ end
 # Branch flow constraints
 function flow_constraints(polar::PolarForm, cons, buffer)
     if isa(cons, CUDA.CuArray)
-        kernel! = branch_flow_kernel!(KA.CUDADevice(), 256)
+        kernel! = branch_flow_kernel!(KA.CUDADevice())
     else
-        kernel! = branch_flow_kernel!(KA.CPU(), Threads.nthreads())
+        kernel! = branch_flow_kernel!(KA.CPU())
     end
     nlines = PS.get(polar.network, PS.NumberOfLines())
     ev = kernel!(
@@ -302,9 +302,9 @@ end
 function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
     T = typeof(buffer.vmag)
     if isa(buffer.vmag, Array)
-        kernel! = accumulate_view!(KA.CPU(), Threads.nthreads())
+        kernel! = accumulate_view!(KA.CPU())
     else
-        kernel! = accumulate_view!(KA.CUDADevice(), 256)
+        kernel! = accumulate_view!(KA.CUDADevice())
     end
 
     nlines = PS.get(polar.network, PS.NumberOfLines())
@@ -381,9 +381,9 @@ function jtprod(
     copyto!(adj_vmag, ∇Jv[1:nbus])
     copyto!(adj_vang, ∇Jv[nbus+1:2*nbus])
     if isa(adj_x, Array)
-        kernel! = put_adjoint_kernel!(KA.CPU(), Threads.nthreads())
+        kernel! = put_adjoint_kernel!(KA.CPU())
     else
-        kernel! = put_adjoint_kernel!(KA.CUDADevice(), 256)
+        kernel! = put_adjoint_kernel!(KA.CUDADevice())
     end
     ev = kernel!(adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
                  index_pv, index_pq, index_ref, pv_to_gen,
