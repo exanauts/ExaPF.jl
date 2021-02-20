@@ -12,7 +12,6 @@ using KernelAbstractions
 using ..ExaPF: Spmat, xzeros, State, Control
 
 import Base: show
-const KA = KernelAbstractions
 
 """
     AbstractJacobian
@@ -30,7 +29,7 @@ struct StateJacobian <: AbstractJacobian end
 struct ControlJacobian <: AbstractJacobian end
 abstract type AbstractHessian end
 
-KA.@kernel function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor)
+@kernel function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor)
     i = @index(Global, Linear)
     t1sseedvecs[:,i] .= 0
     @inbounds for j in 1:ncolor
@@ -116,7 +115,7 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
         end
         t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
         # The seeding is always done on the CPU since it's faster
-        init_seed_kernel! = _init_seed!(KA.CPU())
+        init_seed_kernel! = _init_seed!(CPU())
         t1sx = A{t1s{ncolor}}(x)
         t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
         t1sseeds = Array{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
@@ -195,35 +194,17 @@ struct Hessian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractHessian
 end
 
 """
-    seed_kernel_cpu!
-
-Seeding on the CPU, not parallelized.
-
-"""
-function seed_kernel_cpu!(
-    duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
-    seeds::AbstractArray{ForwardDiff.Partials{N,V}}
-) where {T,V,N}
-    for i in 1:size(duals,1)
-        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
-    end
-end
-
-"""
-    seed_kernel_gpu!
+    seed_kernel!
 
 Seeding on GPU parallelized over the `ncolor` number of duals
 
 """
-function seed_kernel_gpu!(
+@kernel function seed_kernel!(
     duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N,V}}
 ) where {T,V,N}
-    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    stride = blockDim().x * gridDim().x
-    for i in index:stride:size(duals,1)
-        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
-    end
+    i = @index(Global, Linear)
+    duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
 end
 
 """
@@ -232,26 +213,14 @@ end
 Calling the GPU seeding kernel
 
 """
-function seed_kernel!(t1sseeds::CUDA.CuVector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
-    nthreads = 256
-    nblocks = div(nbus, nthreads, RoundUp)
-    CUDA.@sync begin
-        CUDA.@cuda threads=nthreads blocks=nblocks seed_kernel_gpu!(
-            t1svarx,
-            varx,
-            t1sseeds,
-        )
+function seed!(t1sseeds, varx, t1svarx, nbus) where {N, V}
+    if isa(t1sseeds, Vector)
+        kernel! = seed_kernel!(CPU())
+    else
+        kernel! = seed_kernel!(CUDADevice())
     end
-end
-
-"""
-    seed_kernel!(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
-
-Calling the CPU seeding kernel
-
-"""
-function seed_kernel!(t1sseeds::Vector{ForwardDiff.Partials{N,V}}, varx, t1svarx, nbus) where {N, V}
-    seed_kernel_cpu!(t1svarx, varx, t1sseeds)
+    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=length(t1svarx))
+    wait(ev)
 end
 
 """
@@ -261,10 +230,9 @@ Extract the partials from the AutoDiff dual type on the CPU and put it in the
 compressed Jacobian
 
 """
-function getpartials_kernel_cpu!(compressedJ, t1sF)
-    for i in 1:size(t1sF,1) # Go over outputs
-        compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
-    end
+@kernel function getpartials_kernel_cpu!(compressedJ, t1sF)
+    i = @index(Global, Linear)
+    compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
 end
 
 """
@@ -274,97 +242,70 @@ Extract the partials from the AutoDiff dual type on the GPU and put it in the
 compressed Jacobian
 
 """
-function getpartials_kernel_gpu!(compressedJ, t1sF)
-    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    stride = blockDim().x * gridDim().x
-    for i in index:stride:size(t1sF, 1) # Go over outputs
-        for j in eachindex(ForwardDiff.partials.(t1sF[i]).values)
-            @inbounds compressedJ[j, i] = ForwardDiff.partials.(t1sF[i]).values[j]
-        end
+@kernel function getpartials_kernel_gpu!(compressedJ, t1sF)
+    i = @index(Global, Linear)
+    for j in eachindex(ForwardDiff.partials.(t1sF[i]).values)
+        @inbounds compressedJ[j, i] = ForwardDiff.partials.(t1sF[i]).values[j]
     end
 end
 
 """
-    getpartials_kernel!(compressedJ::CuArray{T, 2}, t1sF, nbus) where T
+    getpartials_kernel!(compressedJ, t1sF, nbus)
 
-Calling the GPU partial extraction kernel
+Calling the partial extraction kernel
 
 """
-function getpartials_kernel!(compressedJ::CUDA.CuArray{T, 2}, t1sF, nbus) where T
-    nthreads = 256
-    nblocks = div(nbus, nthreads, RoundUp)
-    CUDA.@sync begin
-        CUDA.@cuda threads=nthreads blocks=nblocks getpartials_kernel_gpu!(
-            compressedJ,
-            t1sF
-        )
+function getpartials_kernel!(compressedJ, t1sF, nbus)
+    if isa(compressedJ, Array)
+        kernel! = getpartials_kernel_cpu!(CPU())
+    else
+        kernel! = getpartials_kernel_gpu!(CUDADevice())
     end
+    ev = kernel!(compressedJ, t1sF, ndrange=length(t1sF))
+    wait(ev)
 end
 
 """
-    getpartials_kernel!(compressedJ::Array{T, 2}, t1sF, nbus) where T
-
-Calling the CPU partial extraction kernel
-
-"""
-function getpartials_kernel!(compressedJ::Array{T, 2}, t1sF, nbus) where T
-    getpartials_kernel_cpu!(compressedJ, t1sF)
-end
-
-"""
-    uncompress_kernel_gpu!(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
+    uncompress_kernel_gpu!(J_rowPtr, J_colVal, J_nzVal, compressedJ, coloring, nmap)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSR on
-the GPU. Only bitarguments are allowed for the kernel.
-(for GPU only) TODO: should convert to @kernel
+the GPU. 
 """
-function uncompress_kernel_gpu!(J_nzVal, J_rowPtr, J_colVal, compressedJ, coloring, nmap)
-    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    stride = blockDim().x * gridDim().x
-    for i in index:stride:nmap
-        for j in J_rowPtr[i]:J_rowPtr[i+1]-1
-            @inbounds J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
-        end
+@kernel function uncompress_kernel_gpu!(J_rowPtr, J_colVal, J_nzVal, compressedJ, coloring)
+    i = @index(Global, Linear)
+    @inbounds for j in J_rowPtr[i]:J_rowPtr[i+1]-1
+        @inbounds J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
     end
 end
 
 """
-    uncompress_kernel!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
+    uncompress_kernel_gpu!(J_colptr, J_rowval, J_nzval, compressedJ, coloring, nmap)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
 the CPU.
 """
-function uncompress_kernel!(J::SparseArrays.SparseMatrixCSC, compressedJ, coloring)
+@kernel function uncompress_kernel_cpu!(J_colptr, J_rowval, J_nzval, compressedJ, coloring)
     # CSC is column oriented: nmap is equal to number of columns
-    nmap = size(J, 2)
-    @assert(maximum(coloring) == size(compressedJ,1))
-    for i in 1:nmap
-        for j in J.colptr[i]:J.colptr[i+1]-1
-            @inbounds J.nzval[j] = compressedJ[coloring[i], J.rowval[j]]
-        end
+    i = @index(Global, Linear)
+    @inbounds for j in J_colptr[i]:J_colptr[i+1]-1
+        @inbounds J_nzval[j] = compressedJ[coloring[i], J_rowval[j]]
     end
 end
 
 """
-    uncompress_kernel!(J::CUDA.CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
+    uncompress_kernel!(J, compressedJ, coloring)
 
-Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
-the GPU by calling the kernel [`uncompress_kernel_gpu!`](@ref).
+Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC or CSR.
 """
-function uncompress_kernel!(J::CUSPARSE.CuSparseMatrixCSR, compressedJ, coloring)
-    # CSR is row oriented: nmap is equal to number of rows
-    nmap = size(J, 1)
-    nthreads = 256
-    nblocks = div(nmap, nthreads, RoundUp)
-    CUDA.@sync begin
-        CUDA.@cuda threads=nthreads blocks=nblocks uncompress_kernel_gpu!(
-                J.nzVal,
-                J.rowPtr,
-                J.colVal,
-                compressedJ,
-                coloring, nmap
-        )
+function uncompress_kernel!(J, compressedJ, coloring)
+    if isa(J, SparseArrays.SparseMatrixCSC)
+        kernel! = uncompress_kernel_cpu!(CPU())
+        ev = kernel!(J.colptr, J.rowval, J.nzval, compressedJ, coloring, ndrange=size(J,2))
+    else
+        kernel! = uncompress_kernel_gpu!(CUDADevice())
+        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, compressedJ, coloring, ndrange=size(J,1))
     end
+    wait(ev)
 end
 
 """
@@ -401,7 +342,7 @@ function residual_jacobian!(J::Jacobian,
         error("Unsupported Jacobian structure")
     end
 
-    seed_kernel!(J.t1sseeds, J.varx, J.t1svarx, nbus)
+    seed!(J.t1sseeds, J.varx, J.t1svarx, nbus)
 
     if isa(type, StateJacobian)
         residual_polar!(
@@ -472,7 +413,7 @@ function residual_hessian_adj_tgt!(H::Hessian,
     for i in 1:nmap
         H.t1sseeds[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(tgt[i]))
     end
-    seed_kernel!(H.t1sseeds, H.varx, H.t1svarx, nbus)
+    seed!(H.t1sseeds, H.varx, H.t1svarx, nbus)
     residual_adj_polar!(
         t1sF, adj_t1sF,
         view(t1sx, 1:nvbus), view(adj_t1sx, 1:nvbus),
