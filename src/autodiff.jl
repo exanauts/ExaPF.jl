@@ -65,7 +65,9 @@ Creates an object for the Jacobian.
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
+struct Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD}
+    func::Func
+    var::Union{State,Control}
     J::SMT
     compressedJ::MT
     coloring::VI
@@ -80,7 +82,7 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
 end
 
 function Jacobian(
-    structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, type
+    func, structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, type
 )
     nvbus = length(vm)
     npbus = length(pinj)
@@ -141,8 +143,8 @@ function Jacobian(
     compressedJ = MT(zeros(Float64, ncolor, length(F)))
     varx = view(x, map)
     t1svarx = view(t1sx, map)
-    return Jacobian{VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
-            J, compressedJ, coloring, gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+    return Jacobian{typeof(func), VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
+        func, type, J, compressedJ, coloring, gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
     )
 end
 
@@ -213,8 +215,8 @@ Seeding on GPU parallelized over the `ncolor` number of duals
 
 """
 @kernel function seed_kernel!(
-    duals::AbstractArray{ForwardDiff.Dual{T,V,N}}, x,
-    seeds::AbstractArray{ForwardDiff.Partials{N,V}}
+    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, x,
+    seeds::AbstractArray{ForwardDiff.Partials{N, V}}
 ) where {T,V,N}
     i = @index(Global, Linear)
     duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
@@ -446,8 +448,9 @@ function residual_hessian_adj_tgt!(H::Hessian,
     return res
 end
 
-function Base.show(io::IO, jacobian::AbstractJacobian)
-    ncolor = size(unique(jacobian.coloring), 1)
+function Base.show(io::IO, jacobian::Jacobian)
+    println(io, "A AutoDiff Jacobian for $(jacobian.func) (w.r.t. $(jacobian.var))")
+    ncolor = size(jacobian.compressedJ, 1)
     print(io, "Number of Jacobian colors: ", ncolor)
 end
 

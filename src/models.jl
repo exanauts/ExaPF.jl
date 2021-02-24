@@ -168,14 +168,6 @@ in the argument `algo`).
 """
 function powerflow end
 
-"""
-    power_balance!(form::AbstractFormulation, buffer::AbstractNetworkBuffer)
-
-Get power balance at buses. All input variables specified in `buffer`.
-
-"""
-function power_balance! end
-
 # Cost function
 """
     cost_production(form::AbstractFormulation, pg::AbstractVector)::Float64

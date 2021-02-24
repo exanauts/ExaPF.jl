@@ -98,6 +98,7 @@ const PS = PowerSystem
 
             # Test powerflow with cache signature
             conv = powerflow(polar, jx, cache, NewtonRaphson(tol=tolerance))
+            # Get current state
             ExaPF.get!(polar, State(), xₖ, cache)
             # Refresh power of generators in cache
             for Power in [PS.ActivePower, PS.ReactivePower]
@@ -115,11 +116,10 @@ const PS = PowerSystem
 
             # Test callbacks
             ## Power Balance
-            ExaPF.power_balance!(polar, cache)
-            g = cache.balance
-            @test isa(g, M)
+            cons = cache.balance
+            ExaPF.power_balance(polar, cons, cache)
             # As we run powerflow before, the balance should be below tolerance
-            @test norm(g, Inf) < tolerance
+            @test norm(cons, Inf) < tolerance
 
             ## Cost Production
             c2 = ExaPF.cost_production(polar, cache.pg)
@@ -131,6 +131,7 @@ const PS = PowerSystem
                 ExaPF.active_power_constraints,
                 ExaPF.reactive_power_constraints,
                 ExaPF.flow_constraints,
+                ExaPF.power_balance,
             ]
                 m = ExaPF.size_constraint(polar, cons)
                 @test isa(m, Int)
@@ -145,7 +146,7 @@ const PS = PowerSystem
                 @test isa(g_min, M)
                 @test isa(g_max, M)
                 # Test constraints are consistent
-                @test isless(g_min, g_max)
+                @test g_min <= g_max
             end
         end
     end

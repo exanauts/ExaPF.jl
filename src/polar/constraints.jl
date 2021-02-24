@@ -3,10 +3,13 @@
 is_constraint(::Function) = false
 
 # Generic inequality constraints
+
+##################################################
+# VOLTAGE MAGNITUDE
 # We add constraint only on vmag_pq
-function voltage_magnitude_constraints(polar::PolarForm, g, buffer)
+function voltage_magnitude_constraints(polar::PolarForm, cons, buffer)
     index_pq = polar.indexing.index_pq
-    g .= @view buffer.vmag[index_pq]
+    cons .= @view buffer.vmag[index_pq]
     return
 end
 
@@ -72,14 +75,49 @@ function hessian(polar::PolarForm, ::typeof(voltage_magnitude_constraints), buff
     )
 end
 
+##################################################
+# REACTIVE POWER
 # Here, the power constraints are ordered as:
 # g = [qg_gen]
+function _reactive_power_constraints(
+    qg, v_m, v_a, pinj, qinj, qload,
+    ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus
+)
+    if isa(qg, Array)
+        kernel! = reactive_power_kernel!(KA.CPU())
+    else
+        kernel! = reactive_power_kernel!(KA.CUDADevice())
+    end
+    range_ = length(pv) + length(ref)
+    ev = kernel!(
+        qg,
+        v_m, v_a, pinj, qinj,
+        pv, ref, pv_to_gen, ref_to_gen,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+        ybus_im.nzval, qload,
+        ndrange=range_
+    )
+    wait(ev)
+end
 function reactive_power_constraints(polar::PolarForm, cons, buffer)
     # Refresh reactive power generation in buffer
     update!(polar, PS.Generators(), PS.ReactivePower(), buffer)
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
     copy!(cons, buffer.qg)
     return
+end
+function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
+    nbus = length(vm)
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ref = polar.indexing.index_ref
+    pv_to_gen = polar.indexing.index_pv_to_gen
+    ref_to_gen = polar.indexing.index_ref_to_gen
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    _reactive_power_constraints(
+        cons, vm, va, pbus, qbus, polar.reactive_load,
+        ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus
+    )
 end
 
 is_constraint(::typeof(reactive_power_constraints)) = true
@@ -206,6 +244,8 @@ function hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer,
 end
 
 
+##################################################
+# FLOW CONSTRAINTS
 # Branch flow constraints
 function flow_constraints(polar::PolarForm, cons, buffer)
     if isa(cons, CUDA.CuArray)
@@ -320,7 +360,9 @@ function jtprod(
     wait(ev)
 end
 
-# g = [P_ref; Q_ref; Q_pv]
+##################################################
+# ACTIVE POWER
+# g = [P_ref]
 function active_power_constraints(polar::PolarForm, cons, buffer)
     ref_to_gen = polar.indexing.index_ref_to_gen
     # Constraint on P_ref (generator) (P_inj = P_g - P_load)
@@ -450,5 +492,110 @@ function hessian(polar::PolarForm, ::typeof(active_power_constraints), buffer, �
         λₚ .* ∂₂P.xu,
         λₚ .* ∂₂P.uu,
     )
+end
+
+
+##################################################
+# POWER BALANCE
+function _power_balance!(F, v_m, v_a, pinj, qinj,
+                         ybus_re, ybus_im,
+                         pv, pq, ref, nbus)
+    npv = length(pv)
+    npq = length(pq)
+    if isa(F, Array)
+        kernel! = residual_kernel!(KA.CPU())
+    else
+        kernel! = residual_kernel!(KA.CUDADevice())
+    end
+    ev = kernel!(F, v_m, v_a,
+                 ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+                 ybus_im.nzval,
+                 pinj, qinj, pv, pq, nbus,
+                 ndrange=npv+npq)
+    wait(ev)
+end
+
+function power_balance(polar::PolarForm, cons, buffer::PolarNetworkState)
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    # Indexing
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
+    fill!(cons, 0.0)
+    _power_balance!(
+        cons, Vm, Va, pbus, qbus,
+        ybus_re, ybus_im,
+        pv, pq, ref, nbus
+    )
+end
+function power_balance(polar::PolarForm, cons, vm, va, pbus, qbus)
+    nbus = get(polar, PS.NumberOfBuses())
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
+    fill!(cons, 0.0)
+    _power_balance!(
+        cons, vm, va, pbus, qbus,
+        ybus_re, ybus_im,
+        pv, pq, ref, nbus
+    )
+end
+
+function size_constraint(polar::PolarForm{T, IT, VT, MT}, ::typeof(power_balance)) where {T, IT, VT, MT}
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    return 2 * npq + npv
+end
+
+function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(power_balance)) where {T, IT, VT, MT}
+    # Get all bounds (lengths of p_min, p_max, q_min, q_max equal to ngen)
+    m = size_constraint(polar, power_balance)
+    return xzeros(VT, m) , xzeros(VT, m)
+end
+
+function matpower_jacobian(polar::PolarForm, ::State, ::typeof(power_balance), buffer)
+    nbus = get(polar, PS.NumberOfBuses())
+    pf = polar.network
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
+    V = buffer.vmag .* exp.(1im .* buffer.vang)
+    Ybus = pf.Ybus
+
+    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
+    j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
+    j12 = real(dSbus_dVm[[pv; pq], pq])
+    j21 = imag(dSbus_dVa[pq, [pv; pq]])
+    j22 = imag(dSbus_dVm[pq, pq])
+
+    return [j11 j12; j21 j22]
+end
+function matpower_jacobian(polar::PolarForm, ::Control, ::typeof(power_balance), buffer)
+    nbus = get(polar, PS.NumberOfBuses())
+    pf = polar.network
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
+    V = buffer.vmag .* exp.(1im .* buffer.vang)
+    Ybus = pf.Ybus
+
+    dSbus_dVm, _ = _matpower_residual_jacobian(V, Ybus)
+    j11 = real(dSbus_dVm[[pv; pq], [ref; pv; pv]])
+    j21 = imag(dSbus_dVm[pq, [ref; pv; pv]])
+    return [j11; j21]
+end
+
+function jacobian_sparsity(polar::PolarForm, ::typeof(power_balance), v::AbstractVariable)
+    Vre = Float64[i for i in 1:nbus]
+    Vim = Float64[i for i in nbus+1:2*nbus]
+    return matpower_jacobian(polar, power_balance, v)
 end
 

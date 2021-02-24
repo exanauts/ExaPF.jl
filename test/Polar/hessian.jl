@@ -49,10 +49,10 @@ const PS = PowerSystem
         @test conv.has_converged
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
-        ∇gᵤ = ExaPF.jacobian(polar, ju, cache, AutoDiff.ControlJacobian())
+        ∇gᵤ = ju(polar, cache)
         # test jacobian wrt x
-        ∇gᵥ = ExaPF.jacobian(polar, jx, cache, AutoDiff.StateJacobian())
-        @test isapprox(∇gₓ, ∇gᵥ)
+        ∇gᵥ = jx(polar, cache)
+        @test isequal(∇gₓ, ∇gᵥ)
 
         # Fetch values found by Newton-Raphson algorithm
         vm = cache.vmag

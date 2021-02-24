@@ -182,7 +182,7 @@ function objective(nlp::ReducedSpaceEvaluator, u)
 end
 
 function update_jacobian!(nlp::ReducedSpaceEvaluator, ::Control)
-    jacobian(nlp.model, nlp.autodiff.Jgᵤ, nlp.buffer, AutoDiff.ControlJacobian())
+    nlp.autodiff.Jgᵤ(nlp.model, nlp.buffer)
 end
 
 ###
