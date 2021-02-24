@@ -26,6 +26,7 @@ balance function [`power_balance`](@ref).
 Code adapted from MATPOWER.
 """
 function residual_jacobian(::State, V, Ybus, pv, pq, ref)
+    # @warn("deprecated residual_jacobian")
     dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
     j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
     j12 = real(dSbus_dVm[[pv; pq], pq])
@@ -37,6 +38,7 @@ end
 
 # Jacobian Jᵤ (from Matpower)
 function residual_jacobian(::Control, V, Ybus, pv, pq, ref)
+    # @warn("deprecated residual_jacobian")
     dSbus_dVm, _ = _matpower_residual_jacobian(V, Ybus)
     j11 = real(dSbus_dVm[[pv; pq], [ref; pv; pv]])
     j21 = imag(dSbus_dVm[pq, [ref; pv; pv]])
@@ -44,6 +46,7 @@ function residual_jacobian(::Control, V, Ybus, pv, pq, ref)
 end
 
 function residual_jacobian(A::Attr, polar::PolarForm) where {Attr <: Union{State, Control}}
+    # @warn("deprecated residual_jacobian")
     pf = polar.network
     ref = polar.network.ref
     pv = polar.network.pv
@@ -111,7 +114,7 @@ function reactive_power_jacobian(::Control, V, Ybus, pv, pq, ref)
 end
 
 function AutoDiff.Jacobian(
-    polar::PolarForm{T, VI, VT, MT}, structure, variable,
+    func, polar::PolarForm{T, VI, VT, MT}, structure, variable,
 ) where {T, VI, VT, MT}
 
     if isa(polar.device, CPU)
@@ -158,8 +161,55 @@ function AutoDiff.Jacobian(
     varx = view(x, map)
     t1svarx = view(t1sx, map)
 
-    return AutoDiff.Jacobian{VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
-        J, compressedJ, coloring, gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+    return AutoDiff.Jacobian{typeof(func), VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
+        func, variable, J, compressedJ, coloring,
+        gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
     )
+end
+
+function (jac::AutoDiff.Jacobian)(polar::PolarForm, buffer)
+    nbus = get(polar, PS.NumberOfBuses())
+    type = jac.var
+    if isa(type, State)
+        jac.x[1:nbus] .= buffer.vmag
+        jac.x[nbus+1:2*nbus] .= buffer.vang
+        jac.t1sx .= jac.x
+        jac.t1sF .= 0.0
+    elseif isa(type, Control)
+        jac.x[1:nbus] .= buffer.vmag
+        jac.x[nbus+1:2*nbus] .= buffer.pinj
+        jac.t1sx .= jac.x
+        jac.t1sF .= 0.0
+    else
+        error("Unsupported Jacobian structure")
+    end
+
+    AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx, nbus)
+
+    if isa(type, State)
+        jac.func(
+            polar,
+            jac.t1sF,
+            view(jac.t1sx, 1:nbus),
+            view(jac.t1sx, nbus+1:2*nbus),
+            buffer.pinj,
+            buffer.qinj,
+        )
+    elseif isa(type, Control)
+        jac.func(
+            polar,
+            jac.t1sF,
+            view(jac.t1sx, 1:nbus),
+            buffer.vang,
+            view(jac.t1sx, nbus+1:2*nbus),
+            buffer.qinj,
+        )
+    else
+        error("Unsupported Jacobian structure")
+    end
+
+    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, nbus)
+    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring)
+    return jac.J
 end
 

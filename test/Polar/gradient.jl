@@ -28,18 +28,19 @@ const PS = PowerSystem
         jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
         # solve power flow
-        conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
+        conv = @time powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
-        ∇gᵤ = ExaPF.jacobian(polar, ju, cache, AutoDiff.ControlJacobian())
+        ∇gᵤ = ju(polar, cache)
         # test jacobian wrt x
-        ∇gᵥ = ExaPF.jacobian(polar, jx, cache, AutoDiff.StateJacobian())
-        @test isapprox(∇gₓ, ∇gᵥ)
+        jx(polar, cache)
+        ∇gᵥ = jx(polar, cache)
+        @test isequal(∇gₓ, ∇gᵥ)
 
         # Test with Matpower's Jacobian
         V = cache.vmag .* exp.(im * cache.vang)
         Ybus = pf.Ybus
-        J = ExaPF.residual_jacobian(State(), V, Ybus, pf.pv, pf.pq, pf.ref)
+        J = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, cache)
         @test isapprox(∇gₓ, J)
 
         # Test gradients
