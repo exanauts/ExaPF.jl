@@ -237,40 +237,28 @@ function power_balance!(polar::PolarForm, buffer::PolarNetworkState)
     F = buffer.balance
     fill!(F, 0.0)
     residual_polar!(
-        F, Vm, Va,
+        F, Vm, Va, pbus, qbus,
         ybus_re, ybus_im,
-        pbus, qbus, pv, pq, nbus
+        pv, pq, ref, nbus
     )
 end
 
 # TODO: find better naming
 function init_autodiff_factory(polar::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState) where {T, IT, VT, MT}
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    ngen = PS.get(polar.network, PS.NumberOfGenerators())
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-    nₓ = get(polar, NumberOfState())
-    nᵤ = get(polar, NumberOfControl())
-    # Take indexing on the CPU as we initiate AutoDiff on the CPU
-    ref = polar.network.ref
-    pv = polar.network.pv
-    pq = polar.network.pq
-    # Network state
-    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
-    F = buffer.balance
-    fill!(F, zero(T))
+
     # Build the AutoDiff Jacobian structure
-    statejacobian = AutoDiff.Jacobian(polar.statejacobianstructure, F, Vm, Va,
-        ybus_re, ybus_im, pbus, qbus, pv, pq, ref,
-        AutoDiff.StateJacobian()
+    statejacobian = AutoDiff.Jacobian(
+        polar, polar.statejacobianstructure, State(),
     )
-    controljacobian = AutoDiff.Jacobian(polar.controljacobianstructure, F, Vm, Va,
-        ybus_re, ybus_im, pbus, qbus, pv, pq, ref,
-        AutoDiff.ControlJacobian()
+    controljacobian = AutoDiff.Jacobian(
+        polar, polar.controljacobianstructure, Control(),
     )
 
     # Build the AutoDiff structure for the objective
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    nₓ = get(polar, NumberOfState())
+    nᵤ = get(polar, NumberOfControl())
+    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
     ∇fₓ = xzeros(VT, nₓ)
     ∇fᵤ = xzeros(VT, nᵤ)
     adjoint_pg = similar(buffer.pg)
@@ -281,6 +269,7 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, MT}, buffer::PolarNet
     jvᵤ = xzeros(VT, nᵤ)
     adjoint_flow = xzeros(VT, 2 * nbus)
     objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ, adjoint_flow)
+
     return statejacobian, controljacobian, objectiveAD
 end
 
@@ -341,8 +330,8 @@ function powerflow(
 
     # Evaluate residual function
     residual_polar!(
-        F, Vm, Va, ybus_re, ybus_im,
-        pbus, qbus, pv, pq, nbus
+        F, Vm, Va, pbus, qbus, ybus_re, ybus_im,
+        pv, pq, ref, nbus
     )
 
     # check for convergence
@@ -367,9 +356,10 @@ function powerflow(
         iter += 1
 
         @timeit TIMER "Jacobian" begin
-            AutoDiff.residual_jacobian!(jacobian, residual_polar!,
-                                   Vm, Va,
-                                   ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
+            AutoDiff.residual_jacobian!(
+                jacobian, residual_polar!,
+                Vm, Va,
+                ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, AutoDiff.StateJacobian())
         end
         J = jacobian.J
 
@@ -397,9 +387,10 @@ function powerflow(
 
         fill!(F, zero(T))
         @timeit TIMER "Residual function" begin
-            residual_polar!(F, Vm, Va,
-                ybus_re, ybus_im,
-                pbus, qbus, pv, pq, nbus)
+            residual_polar!(
+                F, Vm, Va, pbus, qbus,
+                ybus_re, ybus_im, pv, pq, ref, nbus
+            )
         end
 
         @timeit TIMER "Norm" normF = xnorm(F)

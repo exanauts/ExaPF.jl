@@ -95,9 +95,9 @@ const PS = PowerSystem
         F♯ = ExaPF.power_balance(V, Ybus, Sbus, pv, pq)
         # residual_polar! uses only binary types as this function is meant
         # to be deported on the GPU
-        ExaPF.residual_polar!(F, Vm, Va,
+        ExaPF.residual_polar!(F, Vm, Va, pbus, qbus,
             ybus_re, ybus_im,
-            pbus, qbus, pv, pq, nbus)
+            pv, pq, ref , nbus)
         @test F ≈ F♯
     end
     @testset "Computing Jacobian of residuals" begin
