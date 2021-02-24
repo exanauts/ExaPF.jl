@@ -31,6 +31,8 @@ end
     include("Polar/polar_form.jl")
     # Reduced gradient
     include("Polar/gradient.jl")
+    # Reduced Hessian
+    include("Polar/hessian.jl")
 end
 
 @testset "Optimization evaluators" begin
