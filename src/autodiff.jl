@@ -40,10 +40,19 @@ abstract type AbstractHessian end
     t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvecs[:,i]))
 end
 
+function init_seed(coloring, ncolor, nmap)
+    t1sseeds = Vector{ForwardDiff.Partials{ncolor, Float64}}(undef, nmap)
+    t1sseedvecs = zeros(Float64, ncolor, nmap)
+    # The seeding is always done on the CPU since it's faster
+    ev = _init_seed!(CPU())(t1sseeds, t1sseedvecs, Array(coloring), ncolor, ndrange=nmap)
+    wait(ev)
+    return t1sseeds
+end
+
 """
     Jacobian
 
-Creates an object for the Jacobian
+Creates an object for the Jacobian.
 
 * `J::SMT`: Sparse uncompressed Jacobian to be used by linear solver. This is either of type `SparseMatrixCSC` or `CuSparseMatrixCSR`.
 * `compressedJ::MT`: Dense compressed Jacobian used for updating values through AD either of type `Matrix` or `CuMatrix`.
@@ -68,76 +77,79 @@ struct Jacobian{VI, VT, MT, SMT, VP, VD, SubT, SubD}
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t1svarx::SubD
-    function Jacobian(structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, type)
-        nvbus = length(vm)
-        npbus = length(pinj)
-        nref = length(ref)
-        if F isa Array
-            VI = Vector{Int}
-            VT = Vector{Float64}
-            MT = Matrix{Float64}
-            SMT = SparseMatrixCSC{Float64,Int}
-            A = Vector
-        elseif F isa CUDA.CuArray
-            VI = CUDA.CuVector{Int}
-            VT = CUDA.CuVector{Float64}
-            MT = CUDA.CuMatrix{Float64}
-            SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
-            A = CUDA.CuVector
-        else
-            error("Wrong array type ", typeof(F))
-        end
+end
 
-        map = VI(structure.map)
-        nmap = length(structure.map)
-        hybus_re = Spmat{Vector{Int}, Vector{Float64}}(ybus_re)
-        hybus_im = Spmat{Vector{Int}, Vector{Float64}}(ybus_im)
-        Yre = SparseMatrixCSC{Float64,Int64}(nvbus, nvbus, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
-        Yim = SparseMatrixCSC{Float64,Int64}(nvbus, nvbus, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
-        Y = Yre .+ 1im .* Yim
-        Vre = Float64.([i for i in 1:nvbus])
-        Vim = Float64.([i for i in nvbus+1:2*nvbus])
-        V = Vre .+ 1im .* Vim
-        if isa(type, StateJacobian)
-            variable = State()
-            x = VT(zeros(Float64, 2*nvbus))
-        elseif isa(type, ControlJacobian)
-            variable = Control()
-            x = VT(zeros(Float64, npbus + nvbus))
-        else
-            error("Unsupported Jacobian type. Must be either ControlJacobian or StateJacobian.")
-        end
-        J = structure.sparsity(variable, V, Y, pv, pq, ref)
-        coloring = VI(SparseDiffTools.matrix_colors(J))
-        ncolor = size(unique(coloring),1)
-        if F isa CUDA.CuArray
-            J = CUSPARSE.CuSparseMatrixCSR(J)
-        end
-        t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-        # The seeding is always done on the CPU since it's faster
-        init_seed_kernel! = _init_seed!(CPU())
-        t1sx = A{t1s{ncolor}}(x)
-        t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
-        t1sseeds = Array{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
-        # Do the seeding on the CPU
-        t1sseedvecs = zeros(Float64, ncolor, nmap)
-        ev = init_seed_kernel!(t1sseeds, t1sseedvecs, Array(coloring), ncolor, ndrange=nmap)
-        wait(ev)
-        # Move the seeds over to the GPU
-        gput1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(t1sseeds)
-        compressedJ = MT(zeros(Float64, ncolor, length(F)))
-        varx = view(x, map)
-        t1svarx = view(t1sx, map)
-        return new{VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
-            J, compressedJ, coloring, gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
-        )
+function Jacobian(
+    structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, type
+)
+    nvbus = length(vm)
+    npbus = length(pinj)
+    nref = length(ref)
+    if F isa Array
+        VI = Vector{Int}
+        VT = Vector{Float64}
+        MT = Matrix{Float64}
+        SMT = SparseMatrixCSC{Float64,Int}
+        A = Vector
+    elseif F isa CUDA.CuArray
+        VI = CUDA.CuVector{Int}
+        VT = CUDA.CuVector{Float64}
+        MT = CUDA.CuMatrix{Float64}
+        SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
+        A = CUDA.CuVector
+    else
+        error("Wrong array type ", typeof(F))
     end
+
+    map = VI(structure.map)
+    nmap = length(structure.map)
+    hybus_re = Spmat{Vector{Int}, Vector{Float64}}(ybus_re)
+    hybus_im = Spmat{Vector{Int}, Vector{Float64}}(ybus_im)
+    Yre = SparseMatrixCSC{Float64,Int64}(nvbus, nvbus, hybus_re.colptr, hybus_re.rowval, hybus_re.nzval)
+    Yim = SparseMatrixCSC{Float64,Int64}(nvbus, nvbus, hybus_im.colptr, hybus_im.rowval, hybus_im.nzval)
+    Y = Yre .+ 1im .* Yim
+    Vre = Float64.([i for i in 1:nvbus])
+    Vim = Float64.([i for i in nvbus+1:2*nvbus])
+    V = Vre .+ 1im .* Vim
+    if isa(type, StateJacobian)
+        variable = State()
+        x = VT(zeros(Float64, 2*nvbus))
+    elseif isa(type, ControlJacobian)
+        variable = Control()
+        x = VT(zeros(Float64, npbus + nvbus))
+    else
+        error("Unsupported Jacobian type. Must be either ControlJacobian or StateJacobian.")
+    end
+    J = structure.sparsity(variable, V, Y, pv, pq, ref)
+    coloring = VI(SparseDiffTools.matrix_colors(J))
+    ncolor = size(unique(coloring),1)
+    if F isa CUDA.CuArray
+        J = CUSPARSE.CuSparseMatrixCSR(J)
+    end
+    t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
+    # The seeding is always done on the CPU since it's faster
+    init_seed_kernel! = _init_seed!(CPU())
+    t1sx = A{t1s{ncolor}}(x)
+    t1sF = A{t1s{ncolor}}(zeros(Float64, length(F)))
+    t1sseeds = Array{ForwardDiff.Partials{ncolor,Float64}}(undef, nmap)
+    # Do the seeding on the CPU
+    t1sseedvecs = zeros(Float64, ncolor, nmap)
+    ev = init_seed_kernel!(t1sseeds, t1sseedvecs, Array(coloring), ncolor, ndrange=nmap)
+    wait(ev)
+    # Move the seeds over to the GPU
+    gput1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(t1sseeds)
+    compressedJ = MT(zeros(Float64, ncolor, length(F)))
+    varx = view(x, map)
+    t1svarx = view(t1sx, map)
+    return Jacobian{VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
+            J, compressedJ, coloring, gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+    )
 end
 
 """
     Hessian
 
-Creates an object for computing Hessian adjoint tangent projections
+Creates an object for computing Hessian adjoint tangent projections.
 
 * `t1sseeds::VP`: The seeding vector for AD built based on the coloring.
 * `t1sF::VD`: Output array of active (AD) type.
@@ -156,41 +168,42 @@ struct Hessian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractHessian
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t1svarx::SubD
-    function Hessian(structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref)
-        nvbus = length(vm)
-        npbus = length(pinj)
-        nref = length(ref)
-        if F isa Array
-            VI = Vector{Int}
-            VT = Vector{Float64}
-            MT = Matrix{Float64}
-            SMT = SparseMatrixCSC
-            A = Vector
-        elseif F isa CUDA.CuArray
-            VI = CUDA.CuVector{Int}
-            VT = CUDA.CuVector{Float64}
-            MT = CUDA.CuMatrix{Float64}
-            SMT = CUSPARSE.CuSparseMatrixCSR
-            A = CUDA.CuVector
-        else
-            error("Wrong array type ", typeof(F))
-        end
+end
 
-        map = VI(structure.map)
-        nmap = length(structure.map)
-        t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-        x = VT(zeros(Float64, 2*nvbus + npbus))
-        t1sx = A{t1s{1}}(x)
-        t1sF = A{t1s{1}}(zeros(Float64, length(F)))
-        t1sseeds = A{ForwardDiff.Partials{1,Float64}}(undef, nmap)
-        varx = view(x, map)
-        t1svarx = view(t1sx, map)
-        VP = typeof(t1sseeds)
-        VD = typeof(t1sx)
-        return new{VI, VT, MT, SMT, VP, VD, typeof(varx), typeof(t1svarx)}(
-            t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
-        )
+function Hessian(structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref)
+    nvbus = length(vm)
+    npbus = length(pinj)
+    nref = length(ref)
+    if F isa Array
+        VI = Vector{Int}
+        VT = Vector{Float64}
+        MT = Matrix{Float64}
+        SMT = SparseMatrixCSC
+        A = Vector
+    elseif F isa CUDA.CuArray
+        VI = CUDA.CuVector{Int}
+        VT = CUDA.CuVector{Float64}
+        MT = CUDA.CuMatrix{Float64}
+        SMT = CUSPARSE.CuSparseMatrixCSR
+        A = CUDA.CuVector
+    else
+        error("Wrong array type ", typeof(F))
     end
+
+    map = VI(structure.map)
+    nmap = length(structure.map)
+    t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
+    x = VT(zeros(Float64, 2*nvbus + npbus))
+    t1sx = A{t1s{1}}(x)
+    t1sF = A{t1s{1}}(zeros(Float64, length(F)))
+    t1sseeds = A{ForwardDiff.Partials{1,Float64}}(undef, nmap)
+    varx = view(x, map)
+    t1svarx = view(t1sx, map)
+    VP = typeof(t1sseeds)
+    VD = typeof(t1sx)
+    return Hessian{VI, VT, MT, SMT, VP, VD, typeof(varx), typeof(t1svarx)}(
+        t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+    )
 end
 
 """
@@ -269,7 +282,7 @@ end
     uncompress_kernel_gpu!(J_rowPtr, J_colVal, J_nzVal, compressedJ, coloring, nmap)
 
 Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSR on
-the GPU. 
+the GPU.
 """
 @kernel function uncompress_kernel_gpu!(J_rowPtr, J_colVal, J_nzVal, compressedJ, coloring)
     i = @index(Global, Linear)
@@ -349,18 +362,18 @@ function residual_jacobian!(J::Jacobian,
             J.t1sF,
             view(J.t1sx, 1:nvbus),
             view(J.t1sx, nvbus+1:2*nvbus),
-            ybus_re, ybus_im,
             pinj, qinj,
-            pv, pq, nbus
+            ybus_re, ybus_im,
+            pv, pq, ref, nbus
         )
     elseif isa(type, ControlJacobian)
         residual_polar!(
             J.t1sF,
             view(J.t1sx, 1:nvbus),
             va,
-            ybus_re, ybus_im,
             view(J.t1sx, nvbus+1:nvbus+ninj), qinj,
-            pv, pq, nbus
+            ybus_re, ybus_im,
+            pv, pq, ref, nbus
         )
     else
         error("Unsupported Jacobian structure")

@@ -64,7 +64,7 @@ end
 
 KA.@kernel function residual_kernel!(F, v_m, v_a,
                                   ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-                                  ybus_im_nzval, ybus_im_colptr, ybus_im_rowval,
+                                  ybus_im_nzval,
                                   pinj, qinj, pv, pq, nbus)
 
     npv = size(pv, 1)
@@ -95,9 +95,9 @@ KA.@kernel function residual_kernel!(F, v_m, v_a,
     end
 end
 
-function residual_polar!(F, v_m, v_a,
+function residual_polar!(F, v_m, v_a, pinj, qinj,
                          ybus_re, ybus_im,
-                         pinj, qinj, pv, pq, nbus)
+                         pv, pq, ref, nbus)
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
@@ -107,7 +107,7 @@ function residual_polar!(F, v_m, v_a,
     end
     ev = kernel!(F, v_m, v_a,
                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-                 ybus_im.nzval, ybus_im.colptr, ybus_im.rowval,
+                 ybus_im.nzval,
                  pinj, qinj, pv, pq, nbus,
                  ndrange=npv+npq)
     wait(ev)

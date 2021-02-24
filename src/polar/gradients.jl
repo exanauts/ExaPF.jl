@@ -95,3 +95,71 @@ function active_power_jacobian(
     return active_power_jacobian(r, V, polar.network.Ybus, pv, pq, ref)
 end
 
+# Jacobian wrt active power generation
+function reactive_power_jacobian(::State, V, Ybus, pv, pq, ref)
+    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
+    j11 = imag(dSbus_dVa[[ref; pv], [pv; pq]])
+    j12 = imag(dSbus_dVm[[ref; pv], pq])
+    return [j11 j12]
+end
+
+function reactive_power_jacobian(::Control, V, Ybus, pv, pq, ref)
+    ngen = length(pv) + length(ref)
+    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
+    j11 = imag(dSbus_dVm[[ref; pv], [ref; pv]])
+    return [j11 spzeros(ngen, length(pv))]
+end
+
+function AutoDiff.Jacobian(
+    polar::PolarForm{T, VI, VT, MT}, structure, variable,
+) where {T, VI, VT, MT}
+
+    if isa(polar.device, CPU)
+        SMT = SparseMatrixCSC{Float64,Int}
+        A = Vector
+    elseif isa(polar.device, CUDADevice)
+        SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
+        A = CUDA.CuVector
+    end
+
+    pf = polar.network
+    nbus = PS.get(pf, PS.NumberOfBuses())
+    map = VI(structure.map)
+    nmap = length(structure.map)
+
+    # Sparsity pattern
+    Vre = Float64[i for i in 1:nbus]
+    Vim = Float64[i for i in nbus+1:2*nbus]
+    V = Vre .+ 1im .* Vim
+    Y = pf.Ybus
+    J = structure.sparsity(variable, V, Y, pf.pv, pf.pq, pf.ref)
+
+    # Coloring
+    coloring = AutoDiff.SparseDiffTools.matrix_colors(J)
+    ncolor = size(unique(coloring),1)
+
+    # TODO: clean
+    nx = 2 * nbus
+    x = VT(zeros(Float64, nx))
+    m = size(J, 1)
+
+    J = convert(SMT, J)
+
+    t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
+    t1sx = A{t1s{ncolor}}(x)
+    t1sF = A{t1s{ncolor}}(zeros(Float64, m))
+
+    t1sseeds = AutoDiff.init_seed(coloring, ncolor, nmap)
+
+    # Move the seeds over to the GPU
+    gput1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(t1sseeds)
+    compressedJ = MT(zeros(Float64, ncolor, m))
+
+    varx = view(x, map)
+    t1svarx = view(t1sx, map)
+
+    return AutoDiff.Jacobian{VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
+        J, compressedJ, coloring, gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+    )
+end
+
