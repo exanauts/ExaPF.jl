@@ -15,7 +15,7 @@ const PS = PowerSystem
 # Warning: currently works only on CPU, as depends on
 # explicit evaluation of Hessian, using MATPOWER expressions
 @testset "Compute reduced gradient on CPU" begin
-    @testset "Case $case" for case in ["case9.m", "case300.m"]
+    @testset "Case $case" for case in ["case9.m", "case30.m"]
         ##################################################
         # Initialization
         ##################################################
@@ -196,7 +196,7 @@ const PS = PowerSystem
         H_ffd = FiniteDiff.finite_difference_hessian(cost_x, [x; u])
 
         # Hessians of objective
-        ∇²f = ExaPF.hessian_cost(polar, ∂obj, cache)
+        ∇²f = ExaPF.hessian_cost(polar, cache)
         ∇²fₓₓ = ∇²f.xx
         ∇²fᵤᵤ = ∇²f.uu
         ∇²fₓᵤ = ∇²f.xu
@@ -231,14 +231,14 @@ const PS = PowerSystem
         # h2 (by-product) : yl <= y <= yu
         # Test sequential evaluation of Hessian
         local ∂₂Q
-        for cons in [ExaPF.state_constraint, ExaPF.power_constraints]
+        for cons in [ExaPF.state_constraints, ExaPF.power_constraints]
             m = ExaPF.size_constraint(polar, cons)
             λq = ones(m)
-            ∂₂Q = ExaPF.hessian(polar, cons, ∂obj, cache, λq)
+            ∂₂Q = ExaPF.hessian(polar, cons, cache, λq)
         end
 
         μ = rand(ngen+1)
-        ∂₂Q = ExaPF.hessian(polar, ExaPF.power_constraints, ∂obj, cache, μ)
+        ∂₂Q = ExaPF.hessian(polar, ExaPF.power_constraints, cache, μ)
         function jac_x(z)
             x_ = z[1:nx]
             u_ = z[1+nx:end]
