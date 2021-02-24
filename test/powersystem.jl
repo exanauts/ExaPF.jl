@@ -84,43 +84,6 @@ const PS = PowerSystem
         -0.11665673277410679 - 0.05281302692126483im,
         -0.13051302125309594 - 0.04527619677595794im
     ]
-
-    ref, pv, pq = PS.bustypeindex(bus, gen, bus_to_indexes)
-    npv = size(pv, 1)
-    npq = size(pq, 1)
-
-    @testset "Computing residuals" begin
-        F = zeros(Float64, npv + 2*npq)
-        # First compute a reference value for resisual computed at V
-        F♯ = ExaPF.power_balance(V, Ybus, Sbus, pv, pq)
-        # residual_polar! uses only binary types as this function is meant
-        # to be deported on the GPU
-        ExaPF.residual_polar!(F, Vm, Va, pbus, qbus,
-            ybus_re, ybus_im,
-            pv, pq, ref , nbus)
-        @test F ≈ F♯
-    end
-    @testset "Computing Jacobian of residuals" begin
-        F = zeros(Float64, npv + 2*npq)
-        # Compute Jacobian at point V manually and use it as reference
-        J = ExaPF.residual_jacobian(State(), V, Ybus, pv, pq, ref)
-        J♯ = copy(J)
-        # Build the Jacobian structure
-        mappv = [i + nbus for i in pv]
-        mappq = [i + nbus for i in pq]
-        # Ordering for x is (θ_pv, θ_pq, v_pq)
-        statemap = vcat(mappv, mappq, pq)
-        jacobian_structure = ExaPF.StateJacobianStructure{Vector{Float64}}(ExaPF.residual_jacobian, statemap)
-
-        # Then, create a Jacobian object
-        jacobianAD = ExaPF.AutoDiff.Jacobian(jacobian_structure, F, Vm, Va,
-                                              ybus_re, ybus_im, pbus, qbus, pv, pq, ref, ExaPF.AutoDiff.StateJacobian())
-        # and compute Jacobian with ForwardDiff
-        ExaPF.AutoDiff.residual_jacobian!(
-            jacobianAD, ExaPF.residual_polar!, Vm, Va,
-            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, ExaPF.AutoDiff.StateJacobian())
-        @test jacobianAD.J ≈ J♯
-    end
 end
 
 @testset "PowerNetwork object" begin

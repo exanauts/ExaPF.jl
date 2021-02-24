@@ -64,7 +64,7 @@ const PS = PowerSystem
         # Test with Matpower's Jacobian
         V = vm .* exp.(im * va)
         Ybus = pf.Ybus
-        Jₓ = ExaPF.residual_jacobian(State(), V, Ybus, pf.pv, pf.pq, pf.ref)
+        Jₓ = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
         @test isapprox(∇gₓ, Jₓ )
         # Hessian vector product
         ExaPF.∂cost(polar, ∂obj, cache)
@@ -84,7 +84,7 @@ const PS = PowerSystem
             va_[pq] = x[npv+1:npv+npq]
             vm_[pq] = x[npv+npq+1:end]
             V = vm_ .* exp.(im * va_)
-            Jx = ExaPF.residual_jacobian(State(), V, Ybus, pf.pv, pf.pq, pf.ref)
+            Jx = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
             return Jx' * λ
         end
 

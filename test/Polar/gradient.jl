@@ -39,8 +39,7 @@ const PS = PowerSystem
 
         # Test with Matpower's Jacobian
         V = cache.vmag .* exp.(im * cache.vang)
-        Ybus = pf.Ybus
-        J = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, cache)
+        J = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
         @test isapprox(∇gₓ, J)
 
         # Test gradients

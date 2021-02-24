@@ -40,11 +40,11 @@ struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
 end
 
 include("kernels.jl")
-include("gradients.jl")
+include("autodiff.jl")
 include("hessians.jl")
 include("getters.jl")
 include("adjoints.jl")
-include("constraints.jl")
+include("Constraints/constraints.jl")
 
 function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     if isa(device, KA.CPU)
@@ -228,10 +228,10 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, MT}, buffer::PolarNet
 
     # Build the AutoDiff Jacobian structure
     statejacobian = AutoDiff.Jacobian(
-        power_balance, polar, polar.statejacobianstructure, State(),
+        power_balance, polar, polar.statejacobianstructure.map, State(),
     )
     controljacobian = AutoDiff.Jacobian(
-        power_balance, polar, polar.controljacobianstructure, Control(),
+        power_balance, polar, polar.controljacobianstructure.map, Control(),
     )
 
     # Build the AutoDiff structure for the objective
