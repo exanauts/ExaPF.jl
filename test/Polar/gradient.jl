@@ -74,7 +74,11 @@ const PS = PowerSystem
             @test isapprox(grad_fd, grad_adjoint, rtol=1e-4)
         end
         @testset "Reduced Jacobian" begin
-            for cons in [ExaPF.state_constraints, ExaPF.power_constraints]
+            for cons in [
+                ExaPF.voltage_magnitude_constraints,
+                ExaPF.active_power_constraints,
+                ExaPF.reactive_power_constraints
+            ]
                 m = ExaPF.size_constraint(polar, cons)
                 for icons in 1:m
                     ExaPF.jacobian(polar, cons, icons, ∂obj, cache)

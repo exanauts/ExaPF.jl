@@ -116,7 +116,7 @@ of the constraints specified by the function `cons_func`.
 
 ```julia
 u_min, u_max = bounds(form, Control())
-h_min, h_max = bounds(form, power_constraints)
+h_min, h_max = bounds(form, reactive_power_constraints)
 
 ```
 """
@@ -203,32 +203,46 @@ in the formulation `form`.
 function size_constraint end
 
 """
-    state_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+    voltage_magnitude_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
 
 Evaluate the constraints porting on the state `x`, as a
 function of `x` and `u`. The result is stored inplace, inside `cons`.
 """
-function state_constraints end
+function voltage_magnitude_constraints end
 
 """
-    power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer) where {VT<:AbstractVector}
+    active_power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
 
-Evaluate the constraints on the **power production** that are not taken into
-account in
-
-* the box constraints on the control `u`
-* the box constraints on the state `x` (implemented in `state_constraints`)
-
+Evaluate the constraints on the **active power production** at the generators
+that are not already taken into account in the box constraints.
 The result is stored inplace, inside the vector `cons`.
 """
-function power_constraints end
+function active_power_constraints end
 
 """
-    flow_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer) where {VT<:AbstractVector}
+    reactive_power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+
+Evaluate the constraints on the **reactive power production** at the generators.
+The result is stored inplace, inside the vector `cons`.
+"""
+function reactive_power_constraints end
+
+"""
+    flow_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
 
 Evaluate the thermal limit constraints porting on the lines of the network.
 
 The result is stored inplace, inside the vector `cons`.
 """
 function flow_constraints end
+
+"""
+    power_balance(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+
+Evaluate the power balance in the network.
+
+The result is stored inplace, inside the vector `cons`.
+
+"""
+function power_balance end
 

@@ -231,14 +231,14 @@ const PS = PowerSystem
         # h2 (by-product) : yl <= y <= yu
         # Test sequential evaluation of Hessian
         local ∂₂Q
-        for cons in [ExaPF.state_constraints, ExaPF.power_constraints]
+        for cons in [ExaPF.voltage_magnitude_constraints, ExaPF.active_power_constraints, ExaPF.reactive_power_constraints]
             m = ExaPF.size_constraint(polar, cons)
             λq = ones(m)
             ∂₂Q = ExaPF.hessian(polar, cons, cache, λq)
         end
 
-        μ = rand(ngen+1)
-        ∂₂Q = ExaPF.hessian(polar, ExaPF.power_constraints, cache, μ)
+        μ = rand(ngen)
+        ∂₂Q = ExaPF.hessian(polar, ExaPF.reactive_power_constraints, cache, μ)
         function jac_x(z)
             x_ = z[1:nx]
             u_ = z[1+nx:end]
@@ -249,7 +249,7 @@ const PS = PowerSystem
             cache.vang[pq] .= x_[npv+1:npv+npq]
             cache.vmag[pq] .= x_[npv+npq+1:end]
             ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
-            J = ExaPF.jacobian(polar, ExaPF.power_constraints, cache)
+            J = ExaPF.jacobian(polar, ExaPF.reactive_power_constraints, cache)
             return [J.x J.u]' * μ
         end
 

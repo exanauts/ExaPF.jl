@@ -13,7 +13,7 @@ function build_nlp(datafile, device)
     x0 = ExaPF.initial(polar, State())
     u0 = ExaPF.initial(polar, Control())
 
-    constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
+    constraints = Function[ExaPF.voltage_magnitude_constraints, ExaPF.reactive_power_constraints]
     print("Constructor\t")
     powerflow_solver = NewtonRaphson(tol=1e-10)
     nlp = @time ExaPF.ReducedSpaceEvaluator(polar, x0, u0; constraints=constraints,
