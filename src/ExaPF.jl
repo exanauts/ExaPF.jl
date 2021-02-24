@@ -58,7 +58,7 @@ const PS = PowerSystem
 # Modeling
 include("caches.jl")
 # Polar formulation:
-include("polar/polar.jl")
+include("Polar/polar.jl")
 
 # Evaluators
 include("Evaluators/Evaluators.jl")
