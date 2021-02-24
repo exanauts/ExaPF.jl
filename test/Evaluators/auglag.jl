@@ -1,8 +1,9 @@
 
 function init(datafile, ::Type{ExaPF.ReducedSpaceEvaluator})
     constraints = Function[
-        ExaPF.state_constraints,
-        ExaPF.power_constraints,
+        ExaPF.voltage_magnitude_constraints,
+        ExaPF.reactive_power_constraints,
+        ExaPF.active_power_constraints,
         # ExaPF.flow_constraints,
     ]
     return ExaPF.ReducedSpaceEvaluator(datafile; constraints=constraints)

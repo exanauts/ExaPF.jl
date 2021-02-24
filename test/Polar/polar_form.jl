@@ -127,8 +127,9 @@ const PS = PowerSystem
 
             ## Inequality constraint
             for cons in [
-                ExaPF.state_constraints,
-                ExaPF.power_constraints,
+                ExaPF.voltage_magnitude_constraints,
+                ExaPF.active_power_constraints,
+                ExaPF.reactive_power_constraints,
                 ExaPF.flow_constraints,
             ]
                 m = ExaPF.size_constraint(polar, cons)

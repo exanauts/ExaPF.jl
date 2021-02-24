@@ -48,7 +48,7 @@ end
 
 function ReducedSpaceEvaluator(
     model, x, u;
-    constraints=Function[state_constraints, power_constraints],
+    constraints=Function[voltage_magnitude_constraints, active_power_constraints, reactive_power_constraints],
     linear_solver=DirectSolver(),
     powerflow_solver=NewtonRaphson(tol=1e-12),
 )

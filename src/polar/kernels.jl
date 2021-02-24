@@ -365,21 +365,6 @@ function update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buffer::
     wait(ev)
 end
 
-KA.@kernel function load_power_constraint_kernel!(
-    g, qg, ref_to_gen, pv_to_gen, nref, npv, shift
-)
-    i = @index(Global, Linear)
-    # Evaluate reactive power at PV nodes
-    if i <= npv
-        ig = pv_to_gen[i]
-        g[i + nref + shift] = qg[ig]
-    else i <= npv + nref
-        i_ = i - npv
-        ig = ref_to_gen[i_]
-        g[i_ + shift] = qg[ig]
-    end
-end
-
 KA.@kernel function branch_flow_kernel!(
         slines, vmag, vang,
         yff_re, yft_re, ytf_re, ytt_re,
