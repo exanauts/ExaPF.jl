@@ -206,13 +206,12 @@ KA.@kernel function adj_residual_node_kernel!(F, adj_F, vm, adj_vm, va, adj_va,
     # REAL PV: 1:npv
     # REAL PQ: (npv+1:npv+npq)
     # IMAG PQ: (npv+npq+1:npv+2npq)
-    fr = (i <= npv) ? pv[i] : pq[i - npv]
-    @inbounds for c in colptr[fr]:colptr[fr+1]-1
+    @inbounds for c in colptr[i]:colptr[i+1]-1
         to = rowval[c]
-        adj_vm[fr] += edge_vm_from[c]
-        adj_vm[to] += edge_vm_to[c]
-        adj_va[fr] += edge_va_from[c]
-        adj_va[to] += edge_va_to[c]
+        adj_vm[i] += edge_vm_from[c]
+        adj_vm[i] += edge_vm_to[c]
+        adj_va[i] += edge_va_from[c]
+        adj_va[i] += edge_va_to[c]
     end
 end
 
@@ -221,22 +220,24 @@ function adj_residual_polar!(F, adj_F, vm, adj_vm, va, adj_va,
                          pinj, adj_pinj, qinj, pv, pq, nbus)
     npv = length(pv)
     npq = length(pq)
+    nvbus = length(vm)
+    nnz = length(ybus_re.nzval)
+    T = eltype(vm)
+    edge_vm_from = zeros(T, nnz)
+    edge_vm_to   = zeros(T, nnz)
+    edge_va_from = zeros(T, nnz)
+    edge_va_to   = zeros(T, nnz)
+    colptr = ybus_re.colptr
+    rowval = ybus_re.rowval
     if isa(F, Array)
         kernel_edge! = adj_residual_edge_kernel!(KA.CPU())
         kernel_node! = adj_residual_node_kernel!(KA.CPU())
-        nnz = length(ybus_re.nzval)
+        spedge_vm_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_vm_to)
+        spedge_va_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_va_to)
     else
         kernel_edge! = adj_residual_edge_kernel!(KA.CUDADevice())
         kernel_node! = adj_residual_node_kernel!(KA.CUDADevice())
-        nnz = length(ybus_re.nzVal)
     end
-    @show npv, npq
-    @show pv
-    @show pq
-    edge_vm_from = zeros(eltype(vm), nnz)
-    edge_vm_to   = zeros(eltype(vm), nnz)
-    edge_va_from = zeros(eltype(vm), nnz)
-    edge_va_to   = zeros(eltype(vm), nnz)
     ev = kernel_edge!(F, adj_F, vm, adj_vm, va, adj_va,
                  ybus_re.colptr, ybus_re.rowval,
                  ybus_re.nzval, ybus_im.nzval,
@@ -245,16 +246,20 @@ function adj_residual_polar!(F, adj_F, vm, adj_vm, va, adj_va,
                  pinj, adj_pinj, qinj, pv, pq,
                  ndrange=npv+npq)
     wait(ev)
+    spedge_vm_to.nzval .= edge_vm_to
+    I, J, V = findnz(spedge_vm_to)
+    spedge_vm_to = sparse(J,I,V)
+    spedge_va_to.nzval .= edge_va_to
+    I, J, V = findnz(spedge_va_to)
+    spedge_va_to = sparse(J,I,V)
     ev = kernel_node!(F, adj_F, vm, adj_vm, va, adj_va,
                  ybus_re.colptr, ybus_re.rowval,
                  ybus_re.nzval, ybus_im.nzval,
-                 edge_vm_from, edge_vm_to,
-                 edge_va_from, edge_va_to,
+                 edge_vm_from, spedge_vm_to.nzval,
+                 edge_va_from, spedge_va_to.nzval,
                  pinj, adj_pinj, qinj, pv, pq,
-                 ndrange=npv+npq)
+                 ndrange=nvbus)
     wait(ev)
-    @show ForwardDiff.partials.(adj_va)
-    @show ForwardDiff.partials.(adj_vm)
 end
 
 KA.@kernel function transfer_kernel!(

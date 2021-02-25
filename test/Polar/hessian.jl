@@ -118,6 +118,7 @@ const PS = PowerSystem
         @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
         # check cross terms ux
         tgt = rand(nx + nu)
+        tgt .= 1.0
         # Build full Hessian
         H = [
             ∇²gλ.xx ∇²gλ.xu';
