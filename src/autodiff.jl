@@ -321,8 +321,8 @@ Update the sparse Jacobian entries using AutoDiff. No allocations are taking pla
 * `vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both
   active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
 """
-function residual_hessian_adj_tgt!(H::Hessian,
-                             residual_adj_polar!,
+function tgt_adj_residual_hessian!(H::Hessian,
+                             adj_residual_polar!,
                              lambda, tgt,
                              v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
     x = H.x
@@ -347,7 +347,7 @@ function residual_hessian_adj_tgt!(H::Hessian,
         H.t1sseeds[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(tgt[i]))
     end
     seed!(H.t1sseeds, H.varx, H.t1svarx, nbus)
-    residual_adj_polar!(
+    adj_residual_polar!(
         t1sF, adj_t1sF,
         view(t1sx, 1:nvbus), view(adj_t1sx, 1:nvbus),
         view(t1sx, nvbus+1:2*nvbus), view(adj_t1sx, nvbus+1:2*nvbus),

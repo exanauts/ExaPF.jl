@@ -104,26 +104,27 @@ const PS = PowerSystem
         tgt = rand(nx + nu)
         # set tangets only for x direction
         tgt[nx+1:end] .= 0.0
-        projxx = ExaPF.AutoDiff.residual_hessian_adj_tgt!(
-            HessianAD, ExaPF.residual_adj_polar!, λ, tgt, vm, va,
+        projxx = ExaPF.AutoDiff.tgt_adj_residual_hessian!(
+            HessianAD, ExaPF.adj_residual_polar!, λ, tgt, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
         @test isapprox(projxx[1:nx], ∇²gλ.xx * tgt[1:nx])
         tgt = rand(nx + nu)
         # set tangets only for u direction
         tgt[1:nx] .= 0.0
-        projuu = ExaPF.AutoDiff.residual_hessian_adj_tgt!(
-            HessianAD, ExaPF.residual_adj_polar!, λ, tgt, vm, va,
+        projuu = ExaPF.AutoDiff.tgt_adj_residual_hessian!(
+            HessianAD, ExaPF.adj_residual_polar!, λ, tgt, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
         @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
         # check cross terms ux
         tgt = rand(nx + nu)
+        tgt .= 1.0
         # Build full Hessian
         H = [
             ∇²gλ.xx ∇²gλ.xu';
             ∇²gλ.xu ∇²gλ.uu
         ]
-        projxu = ExaPF.AutoDiff.residual_hessian_adj_tgt!(
-            HessianAD, ExaPF.residual_adj_polar!, λ, tgt, vm, va,
+        projxu = ExaPF.AutoDiff.tgt_adj_residual_hessian!(
+            HessianAD, ExaPF.adj_residual_polar!, λ, tgt, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
         @test isapprox(projxu, H * tgt)
 
