@@ -29,6 +29,8 @@ end
     include("Polar/matpower.jl")
     # Test polar formulation
     include("Polar/polar_form.jl")
+    # Autodiff's Jacobians
+    include("Polar/autodiff.jl")
     # Reduced gradient
     include("Polar/gradient.jl")
     # Reduced Hessian
