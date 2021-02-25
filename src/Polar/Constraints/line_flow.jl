@@ -1,15 +1,10 @@
 is_constraint(::typeof(flow_constraints)) = true
 
 # Branch flow constraints
-function flow_constraints(polar::PolarForm, cons, buffer)
-    if isa(cons, CUDA.CuArray)
-        kernel! = branch_flow_kernel!(KA.CUDADevice())
-    else
-        kernel! = branch_flow_kernel!(KA.CPU())
-    end
+function _flow_constraints(polar::PolarForm, cons, vmag, vang)
     nlines = PS.get(polar.network, PS.NumberOfLines())
-    ev = kernel!(
-        cons, buffer.vmag, buffer.vang,
+    ev = branch_flow_kernel!(polar.device)(
+        cons, vmag, vang,
         polar.topology.yff_re, polar.topology.yft_re, polar.topology.ytf_re, polar.topology.ytt_re,
         polar.topology.yff_im, polar.topology.yft_im, polar.topology.ytf_im, polar.topology.ytt_im,
         polar.topology.f_buses, polar.topology.t_buses, nlines,
@@ -17,6 +12,15 @@ function flow_constraints(polar::PolarForm, cons, buffer)
     )
     wait(ev)
     return
+end
+
+function flow_constraints(polar::PolarForm, cons, buffer::PolarNetworkState)
+    _flow_constraints(polar, cons, buffer.vmag, buffer.vang)
+end
+
+# Specialized function for AD with ForwardDiff
+function flow_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
+    _flow_constraints(polar, cons, vm, va)
 end
 
 function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
@@ -110,5 +114,34 @@ function jtprod(
                  index_pv, index_pq, index_ref, pv_to_gen,
                  ndrange=nbus)
     wait(ev)
+end
+
+function matpower_jacobian(polar::PolarForm, ::State, ::typeof(flow_constraints), V)
+    nbus = get(polar, PS.NumberOfBuses())
+    pf = polar.network
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
+    lines = pf.lines
+
+    dSl_dVm, dSl_dVa = _matpower_lineflow_power_jacobian(V, lines)
+    j11 = dSl_dVa[:, [pv; pq]]
+    j12 = dSl_dVm[:, pq]
+    return [j11 j12]
+end
+
+function matpower_jacobian(polar::PolarForm, ::Control, ::typeof(flow_constraints), V)
+    nbus   = get(polar, PS.NumberOfBuses())
+    nlines = get(polar, PS.NumberOfLines())
+    pf = polar.network
+    ref = pf.ref ; nref = length(ref)
+    pv  = pf.pv  ; npv  = length(pv)
+    pq  = pf.pq  ; npq  = length(pq)
+    lines = pf.lines
+
+    dSl_dVm, _ = _matpower_lineflow_power_jacobian(V, lines)
+    j11 = dSl_dVm[:, [ref; pv]]
+    j12 = spzeros(2 * nlines, npv)
+    return [j11 j12]
 end
 

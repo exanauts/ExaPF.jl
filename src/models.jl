@@ -139,7 +139,7 @@ function initial end
 
 """
     powerflow(form::AbstractFormulation,
-              jacobian::AutoDiff.StateJacobian,
+              jacobian::AutoDiff.Jacobian,
               buffer::AbstractNetworkBuffer,
               algo::AbstractNonLinearSolver;
               kwargs...) where VT <: AbstractVector
@@ -157,7 +157,7 @@ in the argument `algo`).
 ## Arguments
 
 * `form::AbstractFormulation`: formulation of the power flow equation
-* `jacobian::AutoDiff.StateJacobian`: Jacobian
+* `jacobian::AutoDiff.Jacobian`: Jacobian
 * `buffer::AbstractNetworkBuffer`: buffer storing current state `x` and control `u`
 * `algo::AbstractNonLinearSolver`: non-linear solver. Currently only `NewtonRaphson` is being implemented.
 

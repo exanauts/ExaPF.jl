@@ -28,13 +28,12 @@ const PS = PowerSystem
         jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
 
         # solve power flow
-        conv = @time powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
+        conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
-        ∇gᵤ = ju(polar, cache)
+        ∇gᵤ = AutoDiff.jacobian!(polar, ju, cache)
         # test jacobian wrt x
-        jx(polar, cache)
-        ∇gᵥ = jx(polar, cache)
+        ∇gᵥ = AutoDiff.jacobian!(polar, jx, cache)
         @test isequal(∇gₓ, ∇gᵥ)
 
         # Test with Matpower's Jacobian

@@ -23,6 +23,7 @@ function _reactive_power_constraints(
     )
     wait(ev)
 end
+
 function reactive_power_constraints(polar::PolarForm, cons, buffer)
     # Refresh reactive power generation in buffer
     update!(polar, PS.Generators(), PS.ReactivePower(), buffer)
@@ -30,6 +31,8 @@ function reactive_power_constraints(polar::PolarForm, cons, buffer)
     copy!(cons, buffer.qg)
     return
 end
+
+# Function for AD with ForwardDiff
 function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
     nbus = length(vm)
     pv = polar.indexing.index_pv
@@ -44,8 +47,7 @@ function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
     )
 end
 
-
-function size_constraint(polar::PolarForm{T, IT, VT, MT}, ::typeof(reactive_power_constraints)) where {T, IT, VT, MT}
+function size_constraint(polar::PolarForm, ::typeof(reactive_power_constraints))
     return PS.get(polar.network, PS.NumberOfGenerators())
 end
 
@@ -191,13 +193,5 @@ function matpower_jacobian(polar::PolarForm, ::Control, ::typeof(reactive_power_
     dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
     j11 = imag(dSbus_dVm[gen2bus, [ref; pv]])
     return [j11 spzeros(length(gen2bus), length(pv))]
-end
-
-function jacobian_sparsity(polar::PolarForm, ::typeof(reactive_power_constraints), xx::AbstractVariable)
-    nbus = get(polar, PS.NumberOfBuses())
-    Vre = Float64[i for i in 1:nbus]
-    Vim = Float64[i for i in nbus+1:2*nbus]
-    V = Vre .+ im .* Vim
-    return matpower_jacobian(polar, xx, reactive_power_constraints, V)
 end
 

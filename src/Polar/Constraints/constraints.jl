@@ -14,7 +14,16 @@ include("active_power.jl")
 include("reactive_power.jl")
 include("line_flow.jl")
 
+function jacobian_sparsity(polar::PolarForm, func::Function, xx::AbstractVariable)
+    nbus = get(polar, PS.NumberOfBuses())
+    Vre = Float64[i for i in 1:nbus]
+    Vim = Float64[i for i in nbus+1:2*nbus]
+    V = Vre .+ im .* Vim
+    return matpower_jacobian(polar, xx, func, V)
+end
+
 # MATPOWER's Jacobians
+Base.@deprecate(residual_jacobian, matpower_jacobian)
 
 # Jacobian Jₓ (from Matpower)
 """
@@ -36,6 +45,7 @@ function residual_jacobian(::State, V, Ybus, pv, pq, ref)
 
     J = [j11 j12; j21 j22]
 end
+
 
 # Jacobian Jᵤ (from Matpower)
 function residual_jacobian(::Control, V, Ybus, pv, pq, ref)

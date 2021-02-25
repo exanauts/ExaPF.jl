@@ -25,18 +25,12 @@
         for cons in [
             ExaPF.power_balance,
             ExaPF.reactive_power_constraints,
+            ExaPF.flow_constraints,
         ]
             m = ExaPF.size_constraint(polar, cons)
-            mappv = [i + nbus for i in pv]
-            mappq = [i + nbus for i in pq]
-            # Ordering for x is (θ_pv, θ_pq, v_pq)
-            statemap = vcat(mappv, mappq, pq)
-
-            # Then, create a Jacobian object
-            xjacobianAD = ExaPF.AutoDiff.Jacobian(cons, polar, statemap, State())
-
+            xjacobianAD = ExaPF.AutoDiff.Jacobian(polar, cons, State())
             # Evaluate Jacobian with AD
-            J = xjacobianAD(polar, cache)
+            J = AutoDiff.jacobian!(polar, xjacobianAD, cache)
 
             # Compare with FiniteDiff
             function jac_fd_x(x)
@@ -49,21 +43,19 @@
             end
             x = [cache.vang[pv]; cache.vang[pq]; cache.vmag[pq]]
             Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x)
-            @test isapprox(Jd, xjacobianAD.J, rtol=1e-6)
+            @test isapprox(Jd, xjacobianAD.J, rtol=1e-5)
         end
 
         # w.r.t. Control
         for cons in [
             ExaPF.power_balance,
             ExaPF.reactive_power_constraints,
+            ExaPF.flow_constraints,
         ]
             m = ExaPF.size_constraint(polar, cons)
-            mapu = polar.controljacobianstructure.map
-            # Then, create a Jacobian object
-            ujacobianAD = ExaPF.AutoDiff.Jacobian(cons, polar, mapu, Control())
-
+            ujacobianAD = ExaPF.AutoDiff.Jacobian(polar, cons, Control())
             # Evaluate Jacobian with AD
-            J = ujacobianAD(polar, cache)
+            J = AutoDiff.jacobian!(polar, ujacobianAD, cache)
 
             # Compare with FiniteDiff
             function jac_fd_u(u)
@@ -76,7 +68,7 @@
             end
             u = [cache.vmag[ref]; cache.vmag[pv]; cache.pinj[pv]]
             Jd = FiniteDiff.finite_difference_jacobian(jac_fd_u, u)
-            @test isapprox(Jd, ujacobianAD.J, rtol=1e-6)
+            @test isapprox(Jd, ujacobianAD.J, rtol=1e-5)
         end
 
     end

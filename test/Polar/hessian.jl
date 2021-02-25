@@ -49,9 +49,9 @@ const PS = PowerSystem
         @test conv.has_converged
         # No need to recompute ∇gₓ
         ∇gₓ = jx.J
-        ∇gᵤ = ju(polar, cache)
+        ∇gᵤ = AutoDiff.jacobian!(polar, ju, cache)
         # test jacobian wrt x
-        ∇gᵥ = jx(polar, cache)
+        ∇gᵥ = AutoDiff.jacobian!(polar, jx, cache)
         @test isequal(∇gₓ, ∇gᵥ)
 
         # Fetch values found by Newton-Raphson algorithm

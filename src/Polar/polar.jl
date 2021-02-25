@@ -1,16 +1,6 @@
 # Polar formulation
 #
 
-struct StateJacobianStructure{IT} <: AbstractStructure where {IT}
-    sparsity::Function
-    map::IT
-end
-
-struct ControlJacobianStructure{IT} <: AbstractStructure where {IT}
-    sparsity::Function
-    map::IT
-end
-
 struct HessianStructure{IT} <: AbstractStructure where {IT}
     map::IT
 end
@@ -32,15 +22,15 @@ struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
     indexing::IndexingCache{IT}
     # struct
     topology::NetworkTopology{IT, VT}
-    # Jacobian structures and indexing
-    statejacobianstructure::StateJacobianStructure
-    controljacobianstructure::ControlJacobianStructure
+    # Jacobian indexing
+    mapx::IT
+    mapu::IT
     # Hessian structures and indexing
     hessianstructure::HessianStructure
 end
 
 include("kernels.jl")
-include("autodiff.jl")
+include("derivatives.jl")
 include("hessians.jl")
 include("getters.jl")
 include("adjoints.jl")
@@ -136,9 +126,7 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     mappq = [i + nbus for i in idx_pq]
     # Ordering for x is (θ_pv, θ_pq, v_pq)
     statemap = vcat(mappv, mappq, idx_pq)
-    statejacobianstructure = StateJacobianStructure(residual_jacobian, IT(statemap))
     controlmap = vcat(idx_ref, idx_pv, idx_pv .+ nbus)
-    controljacobianstructure = ControlJacobianStructure{IT}(residual_jacobian, IT(controlmap))
     hessianmap = vcat(statemap, idx_ref, idx_pv, idx_pv .+ 2*nbus)
     hessianstructure = HessianStructure(IT(hessianmap))
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
@@ -147,7 +135,7 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
         coefs, pload, qload,
         indexing,
         topology,
-        statejacobianstructure, controljacobianstructure,
+        statemap, controlmap,
         hessianstructure
     )
 end
@@ -228,10 +216,10 @@ function init_autodiff_factory(polar::PolarForm{T, IT, VT, MT}, buffer::PolarNet
 
     # Build the AutoDiff Jacobian structure
     statejacobian = AutoDiff.Jacobian(
-        power_balance, polar, polar.statejacobianstructure.map, State(),
+        polar, power_balance, State(),
     )
     controljacobian = AutoDiff.Jacobian(
-        power_balance, polar, polar.controljacobianstructure.map, Control(),
+        polar, power_balance, Control(),
     )
 
     # Build the AutoDiff structure for the objective
@@ -333,9 +321,8 @@ function powerflow(
         iter += 1
 
         @timeit TIMER "Jacobian" begin
-            jacobian(polar, buffer)
+            J = AutoDiff.jacobian!(polar, jacobian, buffer)
         end
-        J = jacobian.J
 
         # Find descent direction
         if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
@@ -390,13 +377,7 @@ function powerflow(
     return ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
 end
 
-# Cost function
-function cost_production(polar::PolarForm, x, u, p)
-    # TODO: this getter is particularly inefficient on GPU
-    power_generations = get(polar, PS.Generator(), PS.ActivePower(), x, u, p)
-    return cost_production(polar, power_generations)
-end
-# TODO: write up a function more efficient in GPU
+# TODO: write up a function more efficient on GPU
 function cost_production(polar::PolarForm, pg)
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     coefs = polar.costs_coefficients

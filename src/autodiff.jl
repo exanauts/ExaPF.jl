@@ -29,31 +29,17 @@ struct StateJacobian <: AbstractJacobian end
 struct ControlJacobian <: AbstractJacobian end
 abstract type AbstractHessian end
 
-@kernel function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor)
-    i = @index(Global, Linear)
-    t1sseedvecs[:,i] .= 0
-    @inbounds for j in 1:ncolor
-        if coloring[i] == j
-            t1sseedvecs[j,i] = 1.0
-        end
-    end
-    t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvecs[:,i]))
-end
-
-function init_seed(coloring, ncolor, nmap)
-    t1sseeds = Vector{ForwardDiff.Partials{ncolor, Float64}}(undef, nmap)
-    t1sseedvecs = zeros(Float64, ncolor, nmap)
-    # The seeding is always done on the CPU since it's faster
-    ev = _init_seed!(CPU())(t1sseeds, t1sseedvecs, Array(coloring), ncolor, ndrange=nmap)
-    wait(ev)
-    return t1sseeds
-end
+function jacobian! end
 
 """
-    Jacobian
+    AutoDiff.Jacobian
 
 Creates an object for the Jacobian.
 
+### Attributes
+
+* `func::Func`: base function to differentiate
+* `var::Union{State,Control}`: specify whether we are differentiating w.r.t. the state or the control.
 * `J::SMT`: Sparse uncompressed Jacobian to be used by linear solver. This is either of type `SparseMatrixCSC` or `CuSparseMatrixCSR`.
 * `compressedJ::MT`: Dense compressed Jacobian used for updating values through AD either of type `Matrix` or `CuMatrix`.
 * `coloring::VI`: Row coloring of the Jacobian.
@@ -64,6 +50,7 @@ Creates an object for the Jacobian.
 * `map::VI`: State and control mapping to array `x`
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
+
 """
 struct Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD}
     func::Func
@@ -141,12 +128,28 @@ function Hessian(structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref
     )
 end
 
-"""
-    seed_kernel!
 
-Seeding on GPU parallelized over the `ncolor` number of duals
+# Seeding
+@kernel function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor)
+    i = @index(Global, Linear)
+    t1sseedvecs[:,i] .= 0
+    @inbounds for j in 1:ncolor
+        if coloring[i] == j
+            t1sseedvecs[j,i] = 1.0
+        end
+    end
+    t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvecs[:,i]))
+end
 
-"""
+function init_seed(coloring, ncolor, nmap)
+    t1sseeds = Vector{ForwardDiff.Partials{ncolor, Float64}}(undef, nmap)
+    t1sseedvecs = zeros(Float64, ncolor, nmap)
+    # The seeding is always done on the CPU since it's faster
+    ev = _init_seed!(CPU())(t1sseeds, t1sseedvecs, Array(coloring), ncolor, ndrange=nmap)
+    wait(ev)
+    return t1sseeds
+end
+
 @kernel function seed_kernel!(
     duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N, V}}
@@ -156,9 +159,10 @@ Seeding on GPU parallelized over the `ncolor` number of duals
 end
 
 """
-    seed_kernel!
+    seed!
 
-Calling the GPU seeding kernel
+Calling the seeding kernel.
+Seeding is parallelized over the `ncolor` number of duals.
 
 """
 function seed!(t1sseeds, varx, t1svarx, nbus) where {N, V}
@@ -171,25 +175,13 @@ function seed!(t1sseeds, varx, t1svarx, nbus) where {N, V}
     wait(ev)
 end
 
-"""
-    getpartials_kernel_cpu!(compressedJ, t1sF)
 
-Extract the partials from the AutoDiff dual type on the CPU and put it in the
-compressed Jacobian
-
-"""
+# Get partials
 @kernel function getpartials_kernel_cpu!(compressedJ, t1sF)
     i = @index(Global, Linear)
     compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
 end
 
-"""
-    getpartials_kernel_gpu!(compressedJ, t1sF)
-
-Extract the partials from the AutoDiff dual type on the GPU and put it in the
-compressed Jacobian
-
-"""
 @kernel function getpartials_kernel_gpu!(compressedJ, t1sF)
     i = @index(Global, Linear)
     for j in eachindex(ForwardDiff.partials.(t1sF[i]).values)
@@ -200,7 +192,9 @@ end
 """
     getpartials_kernel!(compressedJ, t1sF, nbus)
 
-Calling the partial extraction kernel
+Calling the partial extraction kernel.
+Extract the partials from the AutoDiff dual type on the target
+device and put it in the compressed Jacobian `compressedJ`.
 
 """
 function getpartials_kernel!(compressedJ, t1sF, nbus)
@@ -213,12 +207,8 @@ function getpartials_kernel!(compressedJ, t1sF, nbus)
     wait(ev)
 end
 
-"""
-    uncompress_kernel_gpu!(J_rowPtr, J_colVal, J_nzVal, compressedJ, coloring, nmap)
 
-Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSR on
-the GPU.
-"""
+# Uncompress kernels
 @kernel function uncompress_kernel_gpu!(J_rowPtr, J_colVal, J_nzVal, compressedJ, coloring)
     i = @index(Global, Linear)
     @inbounds for j in J_rowPtr[i]:J_rowPtr[i+1]-1
@@ -226,12 +216,6 @@ the GPU.
     end
 end
 
-"""
-    uncompress_kernel_gpu!(J_colptr, J_rowval, J_nzval, compressedJ, coloring, nmap)
-
-Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC on
-the CPU.
-"""
 @kernel function uncompress_kernel_cpu!(J_colptr, J_rowval, J_nzval, compressedJ, coloring)
     # CSC is column oriented: nmap is equal to number of columns
     i = @index(Global, Linear)
@@ -243,7 +227,8 @@ end
 """
     uncompress_kernel!(J, compressedJ, coloring)
 
-Uncompress the compressed Jacobian matrix from `compressedJ` to sparse CSC or CSR.
+Uncompress the compressed Jacobian matrix from `compressedJ`
+to sparse CSC (on the CPU) or CSR (on the GPU).
 """
 function uncompress_kernel!(J, compressedJ, coloring)
     if isa(J, SparseArrays.SparseMatrixCSC)
