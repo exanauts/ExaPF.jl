@@ -11,8 +11,8 @@ function _power_balance!(
         kernel! = residual_kernel!(KA.CUDADevice())
     end
     ev = kernel!(F, v_m, v_a,
-                 ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-                 ybus_im.nzval,
+                 ybus_re.colptr, ybus_re.rowval,
+                 ybus_re.nzval, ybus_im.nzval,
                  pinj, qinj, pv, pq, nbus,
                  ndrange=npv+npq)
     wait(ev)
