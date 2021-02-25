@@ -102,7 +102,6 @@ const PS = PowerSystem
         HessianAD = ExaPF.AutoDiff.Hessian(polar.hessianstructure, F, vm, va,
                                                     ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref)
         tgt = rand(nx + nu)
-        tgt .= 1.0
         # set tangets only for x direction
         tgt[nx+1:end] .= 0.0
         projxx = ExaPF.AutoDiff.tgt_adj_residual_hessian!(
