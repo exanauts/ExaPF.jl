@@ -24,46 +24,19 @@ function flow_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
 end
 
 function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
-    T = typeof(buffer.vmag)
-    if isa(buffer.vmag, Array)
-        kernel! = accumulate_view!(KA.CPU())
-    else
-        kernel! = accumulate_view!(KA.CUDADevice())
-    end
-
     nlines = PS.get(polar.network, PS.NumberOfLines())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
-    f = polar.topology.f_buses
-    t = polar.topology.t_buses
-    # Statements references below (1)
-    fr_vmag = buffer.vmag[f]
-    to_vmag = buffer.vmag[t]
-    fr_vang = buffer.vang[f]
-    to_vang = buffer.vang[t]
-    function lumping(fr_vmag, to_vmag, fr_vang, to_vang)
-        Δθ = fr_vang .- to_vang
-        cosθ = cos.(Δθ)
-        sinθ = sin.(Δθ)
-        cons = branch_flow_kernel_zygote(
-            polar.topology.yff_re, polar.topology.yft_re, polar.topology.ytf_re, polar.topology.ytt_re,
-            polar.topology.yff_im, polar.topology.yft_im, polar.topology.ytf_im, polar.topology.ytt_im,
-            fr_vmag, to_vmag,
-            cosθ, sinθ
-        )
-        return dot(weights, cons)
-    end
-    grad = Zygote.gradient(lumping, fr_vmag, to_vmag, fr_vang, to_vang)
-    gvmag = @view cons_grad[1:nbus]
-    gvang = @view cons_grad[nbus+1:2*nbus]
-    # This is basically the adjoint of the statements above (1). = becomes +=.
-    ev_vmag = kernel!(gvmag, grad[1], f, ndrange = nbus)
-    ev_vang = kernel!(gvang, grad[3], f, ndrange = nbus)
-    wait(ev_vmag)
-    wait(ev_vang)
-    ev_vmag = kernel!(gvmag, grad[2], t, ndrange = nbus)
-    ev_vang = kernel!(gvang, grad[4], t, ndrange = nbus)
-    wait(ev_vmag)
-    wait(ev_vang)
+    PT = polar.topology
+    fill!(cons_grad, 0)
+    adj_vmag = @view cons_grad[1:nbus]
+    adj_vang = @view cons_grad[nbus+1:2*nbus]
+    ev = adj_branch_flow_kernel!(polar.device)(weights, buffer.vmag, adj_vmag, 
+            buffer.vang, adj_vang,
+            PT.yff_re, PT.yft_re, PT.ytf_re, PT.ytt_re,
+            PT.yff_im, PT.yft_im, PT.ytf_im, PT.ytt_im,
+            PT.f_buses, PT.t_buses, nlines, ndrange = nlines
+    )
+    wait(ev)
     return cons_grad
 end
 
