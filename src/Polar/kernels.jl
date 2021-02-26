@@ -588,7 +588,6 @@ KA.@kernel function adj_reactive_power_edge_kernel!(
 
     # Reverse run
     adj_inj = adj_qg[i_gen]
-    adj_qload[bus] = adj_qg[i_gen]
     @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
         to = ybus_re_rowval[c]
         aij = vang[bus] - vang[to]
@@ -604,8 +603,8 @@ KA.@kernel function adj_reactive_power_edge_kernel!(
         adj_coef_sin = -cos_val  * adj_inj
         adj_cos_val  = -coef_sin * adj_inj
 
-        adj_aij =   cos_val*adj_cos_val
-        adj_aij += -sin_val*adj_sin_val
+        adj_aij =   coef_cos * cos_val * adj_inj
+        adj_aij +=  coef_sin * sin_val * adj_inj
 
         edge_vmag_bus[c] += vmag[to] *ybus_re_nzval[c]*adj_coef_cos
         edge_vmag_to[c]  += vmag[bus]*ybus_re_nzval[c]*adj_coef_cos
@@ -625,12 +624,10 @@ KA.@kernel function adj_reactive_power_node_kernel!(
     pv, ref, pv_to_gen, ref_to_gen,
     edge_vmag_bus, edge_vmag_to,
     edge_vang_bus, edge_vang_to,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-    ybus_im_nzval, pload
+    colptr, rowval,
 )
 
     npv = size(pv, 1)
-    npq = size(pq, 1)
 
     i = @index(Global, Linear)
     @inbounds for c in colptr[i]:colptr[i+1]-1
@@ -644,14 +641,27 @@ end
 
 
 # Refresh active power (needed to evaluate objective)
-function adj_update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buffer::PolarNetworkState)
-    T = eltype(buffer.adj_vmag)
+function adj_reactive_power!(
+    F, adj_F, vm, adj_vm, va, adj_va,
+    ybus_re, ybus_im,
+    pinj, adj_pinj, qinj, adj_qinj, reactive_load,
+    pv, pq, ref, pv_to_gen, ref_to_gen, nbus
+)
+    npv = length(pv)
+    npq = length(pq)
+    nvbus = length(vm)
+    nnz = length(ybus_re.nzval)
+    T = eltype(adj_vm)
+
     edge_vmag_bus = zeros(T, nnz)
     edge_vmag_to   = zeros(T, nnz)
-    nvbus = length(buffer.vmag)
+    edge_vang_bus = zeros(T, nnz)
+    edge_vang_to   = zeros(T, nnz)
+
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
-    if isa(buffer.vmag, Array)
+
+    if isa(vm, Array)
         kernel_edge! = adj_reactive_power_edge_kernel!(KA.CPU())
         kernel_node! = adj_reactive_power_node_kernel!(KA.CPU())
         spedge_vmag_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_vmag_to)
@@ -660,25 +670,20 @@ function adj_update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buff
         kernel_edge! = adj_reactive_power_edge_kernel!(KA.CUDADevice())
         kernel_node! = adj_reactive_power_node_kernel!(KA.CUDADevice())
     end
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    ref = polar.indexing.index_ref
-    pv_to_gen = polar.indexing.index_pv_to_gen
-    ref_to_gen = polar.indexing.index_ref_to_gen
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     range_ = length(pv) + length(ref)
 
     ev = kernel_edge!(
-        buffer.pg,
-        buffer.adj_pg,
-        buffer.vmag, buffer.adj_vmag, buffer.vang, buffer.adj_vang,
-        buffer.pinj, buffer.adj_pinj, buffer.qinj, buffer.adj_qinj,
+        F, adj_F,
+        vm, adj_vm,
+        va, adj_va,
+        pinj, adj_pinj,
+        qinj, adj_qinj,
         pv, ref, pv_to_gen, ref_to_gen,
         edge_vmag_bus, edge_vmag_to,
         edge_vang_bus, edge_vang_to,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, polar.active_load,
+        ybus_im.nzval, reactive_load,
         ndrange=range_
     )
     wait(ev)
@@ -689,15 +694,15 @@ function adj_update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buff
     transpose!(spedge_vang_to, copy(spedge_vang_to))
 
     ev = kernel_node!(
-        buffer.pg,
-        buffer.adj_pg,
-        buffer.vmag, buffer.adj_vmag, buffer.vang, buffer.adj_vang,
-        buffer.pinj, buffer.adj_pinj, buffer.qinj, buffer.adj_qinj,
+        F, adj_F,
+        vm, adj_vm,
+        va, adj_va,
+        pinj, adj_pinj,
+        qinj, adj_qinj,
         pv, ref, pv_to_gen, ref_to_gen,
         edge_vmag_bus, spedge_vmag_to.nzval,
         edge_vang_bus, spedge_vang_to.nzval,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, polar.active_load,
+        ybus_re.colptr, ybus_re.rowval,
         ndrange=nvbus
     )
     wait(ev)

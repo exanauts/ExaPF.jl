@@ -49,6 +49,32 @@ function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(power_balance)) where 
     return xzeros(VT, m) , xzeros(VT, m)
 end
 
+# Adjoint
+function adjoint!(
+    polar::PolarForm,
+    ::typeof(power_balance),
+    cons, ∂cons,
+    vm, ∂vm,
+    va, ∂va,
+    pinj, ∂pinj,
+    qinj, ∂qinj,
+)
+    nbus = get(polar, PS.NumberOfBuses())
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
+    adj_residual_polar!(
+        cons, ∂cons,
+        vm, ∂vm,
+        va, ∂va,
+        ybus_re, ybus_im,
+        pinj, ∂pinj,
+        qinj, pv, pq, nbus,
+    )
+end
+
 function matpower_jacobian(polar::PolarForm, ::State, ::typeof(power_balance), V)
     nbus = get(polar, PS.NumberOfBuses())
     pf = polar.network
