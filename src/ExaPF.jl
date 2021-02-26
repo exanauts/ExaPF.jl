@@ -24,7 +24,6 @@ const KA = KernelAbstractions
 import MathOptInterface
 const MOI = MathOptInterface
 using TimerOutputs: @timeit, TimerOutput
-import Zygote
 
 import Base: show, get
 

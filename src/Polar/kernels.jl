@@ -1,5 +1,4 @@
 import KernelAbstractions: @index
-using ForwardDiff
 # Implement kernels for polar formulation
 
 """
@@ -730,7 +729,7 @@ KA.@kernel function branch_flow_kernel!(
 
     fr_flow = vmag[fr_bus]^2 * (
         yff_abs * vmag[fr_bus]^2 + yft_abs * vmag[to_bus]^2 +
-        2 * vmag[fr_bus] * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
+        2.0 * vmag[fr_bus] * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
     )
     slines[ℓ] = fr_flow
 
@@ -742,13 +741,13 @@ KA.@kernel function branch_flow_kernel!(
 
     to_flow = vmag[to_bus]^2 * (
         ytf_abs * vmag[fr_bus]^2 + ytt_abs * vmag[to_bus]^2 +
-        2 * vmag[fr_bus] * vmag[to_bus] * (yre_to * cosθ - yim_to * sinθ)
+        2.0 * vmag[fr_bus] * vmag[to_bus] * (yre_to * cosθ - yim_to * sinθ)
     )
     slines[ℓ + nlines] = to_flow
 end
 
 KA.@kernel function adj_branch_flow_kernel!(
-        slines, adj_slines, vmag, adj_vmag, vang, adj_vang,
+        adj_slines, vmag, adj_vmag, vang, adj_vang,
         yff_re, yft_re, ytf_re, ytt_re,
         yff_im, yft_im, ytf_im, ytt_im,
         f, t, nlines,
@@ -767,11 +766,12 @@ KA.@kernel function adj_branch_flow_kernel!(
     yre_fr =   yff_re[ℓ] * yft_re[ℓ] + yff_im[ℓ] * yft_im[ℓ]
     yim_fr = - yff_re[ℓ] * yft_im[ℓ] + yff_im[ℓ] * yft_re[ℓ]
 
-    fr_flow = vmag[fr_bus]^2 * (
-        yff_abs * vmag[fr_bus]^2 + yft_abs * vmag[to_bus]^2 +
-        2 * vmag[fr_bus] * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
-    )
-    slines[ℓ] = fr_flow
+    # not needed in the reverse run
+    # fr_flow = vmag[fr_bus]^2 * (
+    #     yff_abs * vmag[fr_bus]^2 + yft_abs * vmag[to_bus]^2 +
+    #     2 * vmag[fr_bus] * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
+    # )
+    # slines[ℓ] = fr_flow
 
     # branch apparent power limits - to bus
     ytf_abs = ytf_re[ℓ]^2 + ytf_im[ℓ]^2
@@ -779,86 +779,37 @@ KA.@kernel function adj_branch_flow_kernel!(
     yre_to =   ytf_re[ℓ] * ytt_re[ℓ] + ytf_im[ℓ] * ytt_im[ℓ]
     yim_to = - ytf_re[ℓ] * ytt_im[ℓ] + ytf_im[ℓ] * ytt_re[ℓ]
 
-    to_flow = vmag[to_bus]^2 * (
-        ytf_abs * vmag[fr_bus]^2 + ytt_abs * vmag[to_bus]^2 +
-        2 * vmag[fr_bus] * vmag[to_bus] * (yre_to * cosθ - yim_to * sinθ)
-    )
-    slines[ℓ + nlines] = to_flow
+    # not needed in the reverse run
+    # to_flow = vmag[to_bus]^2 * (
+    #     ytf_abs * vmag[fr_bus]^2 + ytt_abs * vmag[to_bus]^2 +
+    #     2 * vmag[fr_bus] * vmag[to_bus] * (yre_to * cosθ - yim_to * sinθ)
+    # )
+    # slines[ℓ + nlines] = to_flow
 
     adj_to_flow = adj_slines[ℓ + nlines]
-    adj_vmag[to_bus] += (2 * vmag[to_bus] * ytf_abs * vmag[fr_bus]^2
-                      + 4 * vmag[to_bus]^3 * ytt_abs
-                      + 6 * vmag[fr_bus] * vmag[to_bus]^2 * (yre_to * cosθ - yim_to * sinθ)
+    adj_vmag[to_bus] += (2.0 * vmag[to_bus] * ytf_abs * vmag[fr_bus]^2
+                      + 4.0 * vmag[to_bus]^3 * ytt_abs
+                      + 6.0 * vmag[fr_bus] * vmag[to_bus]^2 * (yre_to * cosθ - yim_to * sinθ)
                        ) * adj_to_flow
-    adj_vmag[fr_bus] += (2 * vmag[to_bus]^2 * vmag[fr_bus] * ytf_abs
-                      + 2 * vmag[to_bus]^3 * (yre_to * cosθ - yim_to * sinθ)
+    adj_vmag[fr_bus] += (2.0 * vmag[to_bus]^2 * vmag[fr_bus] * ytf_abs
+                      + 2.0 * vmag[to_bus]^3 * (yre_to * cosθ - yim_to * sinθ)
                         ) * adj_to_flow
-    adj_cosθ = 2 * vmag[to_bus]^3 * vmag[fr_bus] * yre_to * adj_to_flow
-    adj_sinθ = -2 * vmag[to_bus]^3 * vmag[fr_bus] * yim_to * adj_to_flow
+    adj_cosθ = 2.0 * vmag[to_bus]^3 * vmag[fr_bus] *   yre_to  * adj_to_flow
+    adj_sinθ = 2.0 * vmag[to_bus]^3 * vmag[fr_bus] * (-yim_to) * adj_to_flow
 
     adj_from_flow = adj_slines[ℓ]
-    adj_vmag[fr_bus] += (4 * yff_abs * vmag[fr_bus]^3
-                      + 2 * vmag[to_bus]^2 * vmag[fr_bus] * yft_abs
-                      + 6 * vmag[fr_bus]^2 * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
+    adj_vmag[fr_bus] += (4.0 * yff_abs * vmag[fr_bus]^3
+                      + 2.0 * vmag[to_bus]^2 * vmag[fr_bus] * yft_abs
+                      + 6.0 * vmag[fr_bus]^2 * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
                        ) * adj_from_flow
-    adj_vmag[to_bus] += (2 * yft_abs * vmag[fr_bus]^2 * vmag[to_bus]
-                       + 2 * vmag[fr_bus]^3 * (yre_fr * cosθ - yim_fr * sinθ)
+    adj_vmag[to_bus] += (2.0 * yft_abs * vmag[fr_bus]^2 * vmag[to_bus]
+                       + 2.0 * vmag[fr_bus]^3 * (yre_fr * cosθ - yim_fr * sinθ)
                         ) * adj_from_flow
-    adj_cosθ += 2 * vmag[to_bus] * vmag[fr_bus]^3 * yre_fr * adj_from_flow
-    adj_sinθ += -2 * vmag[to_bus] * vmag[fr_bus]^3 * yim_fr * adj_from_flow
-
+    adj_cosθ += 2.0 * vmag[to_bus] * vmag[fr_bus]^3 *   yre_fr  * adj_from_flow
+    adj_sinθ += 2.0 * vmag[to_bus] * vmag[fr_bus]^3 * (-yim_fr) * adj_from_flow
 
     adj_Δθ =   cosθ * adj_sinθ
-    adj_Δθ += -sinθ * adj_cosθ
+    adj_Δθ -=  sinθ * adj_cosθ
     adj_vang[fr_bus] += adj_Δθ
     adj_vang[to_bus] -= adj_Δθ
 end
-
-function branch_flow_kernel_zygote(
-        yff_re, yft_re, ytf_re, ytt_re,
-        yff_im, yft_im, ytf_im, ytt_im,
-        fr_vmag, to_vmag,
-        cosθ, sinθ
-   )
-
-    # branch apparent power limits - from bus
-    yff_abs = yff_re.^2 .+ yff_im.^2
-    yft_abs = yft_re.^2 .+ yft_im.^2
-    yre_fr =   yff_re .* yft_re .+ yff_im .* yft_im
-    yim_fr = .- yff_re .* yft_im .+ yff_im .* yft_re
-
-    fr_flow = fr_vmag.^2 .* (
-        yff_abs .* fr_vmag.^2 .+ yft_abs .* to_vmag.^2 .+
-        2 .* fr_vmag .* to_vmag .* (yre_fr .* cosθ .- yim_fr .* sinθ)
-    )
-
-    # branch apparent power limits - to bus
-    ytf_abs = ytf_re.^2 + ytf_im.^2
-    ytt_abs = ytt_re.^2 + ytt_im.^2
-    yre_to =   ytf_re .* ytt_re .+ ytf_im .* ytt_im
-    yim_to = - ytf_re .* ytt_im .+ ytf_im .* ytt_re
-
-    to_flow = to_vmag.^2 .* (
-        ytf_abs .* fr_vmag.^2 .+ ytt_abs .* to_vmag.^2 .+
-        2 .* fr_vmag .* to_vmag .* (yre_to .* cosθ .- yim_to .* sinθ)
-    )
-    return vcat(fr_flow, to_flow)
-end
-
-"""
-    accumulate_view(x, vx, indices)
-
-.+= is broken on views with redundant indices in CUDA.jl leading to a bug Zygote (see #89).
-This implements the .+= operator.
-
-"""
-KA.@kernel function accumulate_view!(x, vx, indices)
-    # This is parallelizable
-    id = @index(Global, Linear)
-    for (j, idx) in enumerate(indices)
-        if id == idx
-            x[id] += vx[j]
-        end
-    end
-end
-

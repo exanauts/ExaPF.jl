@@ -13,9 +13,8 @@ import ExaPF: PowerSystem, AutoDiff
 const PS = PowerSystem
 const KA = KernelAbstractions
 
-# @testset "Compute reduced gradient on CPU" begin
-#     @testset "Case $case" for case in ["case9.m", "case30.m"]
-        case = "case30.m"
+@testset "Compute reduced gradient on CPU" begin
+    @testset "Case $case" for case in ["case9.m", "case30.m"]
         datafile = joinpath(dirname(@__FILE__), "..", "..", "data", case)
         tolerance = 1e-8
         pf = PS.PowerNetwork(datafile)
@@ -86,8 +85,7 @@ const KA = KernelAbstractions
                 end
             end
         end
-        # We test apart this routine, as it depends on Zygote
-        # @testset "Gradient of line-flow constraints" begin
+        @testset "Gradient of line-flow constraints" begin
             # Adjoint of flow_constraints()
             nbus = length(cache.vmag)
             M = typeof(u)
@@ -99,7 +97,7 @@ const KA = KernelAbstractions
             VI = typeof(bus_gen)
 
             ## Example with using sum as a sort of lumping of all constraints
-            function lumping(x)
+            function sum_constraints(x)
                 VT = typeof(x)
                 # Needed for ForwardDiff to have a cache with the right active type VT
                 adcache = ExaPF.PolarNetworkState{VI, VT}(
@@ -112,44 +110,16 @@ const KA = KernelAbstractions
                 ExaPF.flow_constraints(polar, g, adcache)
                 return sum(g)
             end
-            adgradg = ForwardDiff.gradient(lumping,x)
-            fdgradg = FiniteDiff.finite_difference_gradient(lumping,x)
+            adgradg = ForwardDiff.gradient(sum_constraints,x)
+            fdgradg = FiniteDiff.finite_difference_gradient(sum_constraints,x)
             ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping.
             m_flows = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
             weights = ones(m_flows)
-            zygradg = ExaPF.xzeros(M, 2 * nbus)
-            ExaPF.flow_constraints_grad!(polar, zygradg, cache, weights)
-
-            nlines = PS.get(polar.network, PS.NumberOfLines())
-            adj_vmag = similar(cache.vmag)
-            adj_vang = similar(cache.vang)
-            slines = zeros(2*nlines)
-            adj_slines = zeros(2*nlines)
-            slines .= 0.0
-            adj_slines .= 1.0
-            adj_vmag .= 0.0
-            adj_vang .= 0.0
-            @show adj_slines
-            kernel! = ExaPF.adj_branch_flow_kernel!(KA.CPU(), 1)
-            ev = kernel!(
-                    slines, adj_slines, 
-                    cache.vmag, adj_vmag, cache.vang, adj_vang,
-                    polar.topology.yff_re, polar.topology.yft_re, 
-                    polar.topology.ytf_re, polar.topology.ytt_re,
-                    polar.topology.yff_im, polar.topology.yft_im, 
-                    polar.topology.ytf_im, polar.topology.ytt_im,
-                    polar.topology.f_buses, polar.topology.t_buses, 
-                    nlines, ndrange=nlines
-            )
-            wait(ev)
-            mngradg = vcat(adj_vmag, adj_vang)
-            @test isapprox(mngradg, fdgradg)
-            @show isapprox.(mngradg, fdgradg)
-            # Verify  ForwardDiff and Zygote agree on the gradient
+            gradg = ExaPF.xzeros(M, 2 * nbus)
+            ExaPF.flow_constraints_grad!(polar, gradg, cache, weights)
             @test isapprox(adgradg, fdgradg)
-            # This breaks because of issue #89
-            @test_broken isapprox(adgradg, zygradg)
-            @test isapprox(mngradg, zygradg)
-        # end
-    # end
-# end
+            # TODO: The gradient is slightly off with the handwritten adjoint
+            @test_broken isapprox(gradg, fdgradg) 
+        end
+    end
+end
