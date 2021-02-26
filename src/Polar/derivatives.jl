@@ -125,6 +125,87 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
     return jac.J
 end
 
+#structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref)
+function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
+    @assert is_constraint(func)
+
+    if isa(polar.device, CPU)
+        A = Vector
+    elseif isa(polar.device, CUDADevice)
+        A = CUDA.CuVector
+    end
+
+    pf = polar.network
+    nbus = PS.get(pf, PS.NumberOfBuses())
+    n_cons = size_constraint(polar, func)
+
+    map = VI(polar.hessianstructure.map)
+    nmap = length(map)
+
+    x = VT(zeros(Float64, 4*nbus))
+
+    t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
+    t1sx = A{t1s{1}}(x)
+    t1sF = A{t1s{1}}(zeros(Float64, n_cons))
+    t1sseeds = A{ForwardDiff.Partials{1,Float64}}(undef, nmap)
+    varx = view(x, map)
+    t1svarx = view(t1sx, map)
+    VP = typeof(t1sseeds)
+    VD = typeof(t1sx)
+    return AutoDiff.Hessian{typeof(func), VI, VT, MT, Nothing, VP, VD, typeof(varx), typeof(t1svarx)}(
+        func, t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+    )
+end
+
+# λ' * H * v
+function AutoDiff.adj_hessian_prod!(
+    polar, H::AutoDiff.Hessian, buffer, λ, v,
+)
+    nbus = get(polar, PS.NumberOfBuses())
+    x = H.x
+    ntgt = length(v)
+    t1sx = H.t1sx
+    adj_t1sx = similar(t1sx)
+    t1sF = H.t1sF
+    adj_t1sF = similar(t1sF)
+    # Move data
+    x[1:nbus] .= buffer.vmag
+    x[nbus+1:2*nbus] .= buffer.vang
+    x[2*nbus+1:3*nbus] .= buffer.pinj
+    x[3*nbus+1:4*nbus] .= buffer.qinj
+    # Init dual variables
+    t1sx .= H.x
+    adj_t1sx .= 0.0
+    t1sF .= 0.0
+    adj_t1sF .= λ
+    # Seeding
+    nmap = length(H.map)
+
+    # Init seed
+    for i in 1:nmap
+        H.t1sseeds[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i]))
+    end
+    AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx, nbus)
+
+    adjoint!(
+        polar, H.func,
+        t1sF, adj_t1sF,
+        view(t1sx, 1:nbus), view(adj_t1sx, 1:nbus), # vmag
+        view(t1sx, nbus+1:2*nbus), view(adj_t1sx, nbus+1:2*nbus), # vang
+        view(t1sx, 2*nbus+1:3*nbus), view(adj_t1sx, 2*nbus+1:3*nbus), # pinj
+        view(t1sx, 3*nbus+1:4*nbus), view(adj_t1sx, 3*nbus+1:4*nbus), # qinj
+    )
+
+    # TODO, this is redundant
+    ps = ForwardDiff.partials.(adj_t1sx[H.map])
+    res = similar(v)
+    res .= 0.0
+    for i in 1:length(ps)
+        res[i] = ps[i].values[1]
+    end
+    return res
+end
+
 ## Utils
 # Expression of Jacobians from MATPOWER
 function _matpower_residual_jacobian(V, Ybus)

@@ -92,29 +92,37 @@ const PS = PowerSystem
         ∇²gλ = ExaPF.residual_hessian(V, Ybus, λ, pv, pq, ref)
         H_fd = FiniteDiff.finite_difference_jacobian(jac_diff, x)
         @test isapprox(∇²gλ.xx, H_fd, rtol=1e-6)
-        # Hessian-vector product using forward over adjoint AD
         ybus_re, ybus_im = ExaPF.Spmat{Vector{Int}, Vector{Float64}}(Ybus)
         pbus = real(pf.sbus)
         qbus = imag(pf.sbus)
         F = zeros(Float64, npv + 2*npq)
         nx = size(∇²gλ.xx,1)
         nu = size(∇²gλ.uu,1)
-        HessianAD = ExaPF.AutoDiff.Hessian(polar.hessianstructure, F, vm, va,
-                                                    ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref)
+
+        # Hessian-vector product using forward over adjoint AD
+        HessianAD = AutoDiff.Hessian(polar, ExaPF.power_balance)
+
         tgt = rand(nx + nu)
-        # set tangets only for x direction
+        # set tangents only for x direction
         tgt[nx+1:end] .= 0.0
         projxx = ExaPF.AutoDiff.tgt_adj_residual_hessian!(
             HessianAD, ExaPF.adj_residual_polar!, λ, tgt, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
         @test isapprox(projxx[1:nx], ∇²gλ.xx * tgt[1:nx])
+        projp = AutoDiff.adj_hessian_prod!(polar, HessianAD, cache, λ, tgt)
+        @test isapprox(projp[1:nx], ∇²gλ.xx * tgt[1:nx])
+
+
         tgt = rand(nx + nu)
-        # set tangets only for u direction
+        # set tangents only for u direction
         tgt[1:nx] .= 0.0
-        projuu = ExaPF.AutoDiff.tgt_adj_residual_hessian!(
+        projuu = AutoDiff.tgt_adj_residual_hessian!(
             HessianAD, ExaPF.adj_residual_polar!, λ, tgt, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
         @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
+        projp = AutoDiff.adj_hessian_prod!(polar, HessianAD, cache, λ, tgt)
+        @test isapprox(projp[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
+
         # check cross terms ux
         tgt = rand(nx + nu)
         tgt .= 1.0
@@ -127,6 +135,8 @@ const PS = PowerSystem
             HessianAD, ExaPF.adj_residual_polar!, λ, tgt, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
         @test isapprox(projxu, H * tgt)
+        projp = AutoDiff.adj_hessian_prod!(polar, HessianAD, cache, λ, tgt)
+        @test isapprox(projp, H * tgt)
 
         ## w.r.t. uu
         function jac_u_diff(u)
@@ -232,7 +242,11 @@ const PS = PowerSystem
         # h2 (by-product) : yl <= y <= yu
         # Test sequential evaluation of Hessian
         local ∂₂Q
-        for cons in [ExaPF.voltage_magnitude_constraints, ExaPF.active_power_constraints, ExaPF.reactive_power_constraints]
+        for cons in [
+            ExaPF.voltage_magnitude_constraints,
+            ExaPF.active_power_constraints,
+            ExaPF.reactive_power_constraints
+        ]
             m = ExaPF.size_constraint(polar, cons)
             λq = ones(m)
             ∂₂Q = ExaPF.hessian(polar, cons, cache, λq)
@@ -258,6 +272,30 @@ const PS = PowerSystem
         @test isapprox(∂₂Q.uu, H_fd[nx+1:end, nx+1:end], rtol=1e-6)
         @test isapprox(∂₂Q.xx, H_fd[1:nx, 1:nx], rtol=1e-6)
         @test isapprox(∂₂Q.xu, H_fd[nx+1:end, 1:nx], rtol=1e-6)
+
+        # Test with AutoDiff.Hessian
+        hess_reactive = AutoDiff.Hessian(polar, ExaPF.reactive_power_constraints)
+
+        # XX
+        tgt = rand(nx + nu)
+        tgt[nx+1:end] .= 0.0
+        projp = AutoDiff.adj_hessian_prod!(polar, hess_reactive, cache, μ, tgt)
+        @test isapprox(projp[1:nx], ∂₂Q.xx * tgt[1:nx])
+
+        # UU
+        tgt = rand(nx + nu)
+        tgt[1:nx] .= 0.0
+        projp = AutoDiff.adj_hessian_prod!(polar, hess_reactive, cache, μ, tgt)
+        @test isapprox(projp[1+nx:end], ∂₂Q.uu * tgt[1+nx:end])
+
+        # XU
+        tgt = rand(nx + nu)
+        projp = AutoDiff.adj_hessian_prod!(polar, hess_reactive, cache, μ, tgt)
+        H = [
+            ∂₂Q.xx ∂₂Q.xu' ;
+            ∂₂Q.xu ∂₂Q.uu
+        ]
+        @test isapprox(projp, H * tgt)
     end
 end
 
