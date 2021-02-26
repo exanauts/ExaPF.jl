@@ -20,6 +20,8 @@ jobs:
       - uses: julia-actions/julia-runtest@latest
 
   test-moonshot:
+    env:
+      CUDA_VISIBLE_DEVICES: 1
     runs-on: self-hosted
     strategy:
       matrix:
