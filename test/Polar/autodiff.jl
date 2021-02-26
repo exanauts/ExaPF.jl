@@ -71,5 +71,25 @@
             @test isapprox(Jd, ujacobianAD.J, rtol=1e-5)
         end
 
+        # Test adjoint
+        for cons in [
+            ExaPF.power_balance,
+            ExaPF.reactive_power_constraints,
+        ]
+            m = ExaPF.size_constraint(polar, cons)
+            λ = rand(m)
+            c = zeros(m)
+            ExaPF.adjoint!(polar, cons, c, λ, ∂obj, cache)
+            function test_fd(vvm)
+                cache.vmag .= vvm[1:nbus]
+                cache.vang .= vvm[1+nbus:2*nbus]
+                cons(polar, c, cache)
+                return dot(c, λ)
+            end
+            vv = [cache.vmag; cache.vang]
+            vv_fd = FiniteDiff.finite_difference_gradient(test_fd, vv)
+            @test isapprox(vv_fd[1:nbus], ∂obj.∂vm, rtol=1e-5)
+            @test isapprox(vv_fd[1+nbus:2*nbus], ∂obj.∂va, rtol=1e-5)
+        end
     end
 end

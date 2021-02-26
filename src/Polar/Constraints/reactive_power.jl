@@ -56,6 +56,36 @@ function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(reactive_power_constra
     return convert(VT, q_min), convert(VT, q_max)
 end
 
+# Adjoint
+function adjoint!(
+    polar::PolarForm,
+    ::typeof(reactive_power_constraints),
+    cons, ∂cons,
+    vm, ∂vm,
+    va, ∂va,
+    pinj, ∂pinj,
+    qinj, ∂qinj,
+)
+    nbus = get(polar, PS.NumberOfBuses())
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    pv_to_gen = polar.indexing.index_pv_to_gen
+    ref_to_gen = polar.indexing.index_ref_to_gen
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
+    adj_reactive_power!(
+        cons, ∂cons,
+        vm, ∂vm,
+        va, ∂va,
+        ybus_re, ybus_im,
+        pinj, ∂pinj,
+        qinj, ∂qinj,
+        polar.reactive_load,
+        pv, pq, ref, pv_to_gen, ref_to_gen, nbus,
+    )
+end
+
 # Jacobian
 function jacobian(
     polar::PolarForm,
