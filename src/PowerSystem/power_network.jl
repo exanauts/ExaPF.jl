@@ -1,3 +1,5 @@
+using UnicodePlots
+using CuthillMcKee
 """
     PowerNetwork <: AbstractPowerSystem
 
@@ -40,7 +42,7 @@ struct PowerNetwork <: AbstractPowerSystem
     sbus::Vector{Complex{Float64}}
     sload::Vector{Complex{Float64}}
 
-    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
+    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[], reorder=false)
         # Parsed data indexes
         BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
         LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
@@ -52,6 +54,8 @@ struct PowerNetwork <: AbstractPowerSystem
         SBASE = data["baseMVA"][1]
         costs = Base.get(data, "cost", nothing)
 
+        # THIS IS A HACK. I REPEAT THE SAME PROCESS TWO TIMES
+        # HACK HACK HACK
         bus_id_to_indexes = get_bus_id_to_indexes(data["bus"])
 
         # Remove specified lines
@@ -69,6 +73,27 @@ struct PowerNetwork <: AbstractPowerSystem
 
         # form Y matrix
         topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+        println(spy(imag.(topology.ybus), width=40, height=20))
+
+        if reorder
+            # FIND PERMUTATION
+            yperm = rcmpermute(topology.ybus)
+            perm_idx = symrcm(topology.ybus)
+
+            # RE-ORGANIZE BUS STRUCTURE
+            bus = bus[perm_idx, :]
+            bus_id_to_indexes = get_bus_id_to_indexes(bus)
+            
+            # obtain V0 from raw data
+            vbus = zeros(Complex{Float64}, nbus)
+            for i in 1:nbus
+                vbus[i] = bus[i, VM]*exp(1im * pi/180 * bus[i, VA])
+            end
+            
+            # form Y matrix
+            topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+            println(spy(imag.(topology.ybus), width=40, height=20))
+        end
 
         branches = Branches{Complex{Float64}}(
             topology.yff, topology.yft, topology.ytf, topology.ytt,
@@ -85,9 +110,9 @@ struct PowerNetwork <: AbstractPowerSystem
     end
 end
 
-function PowerNetwork(datafile::String)
+function PowerNetwork(datafile::String; reorder=false)
     data = import_dataset(datafile)
-    return PowerNetwork(data)
+    return PowerNetwork(data; reorder)
 end
 
 # Getters
