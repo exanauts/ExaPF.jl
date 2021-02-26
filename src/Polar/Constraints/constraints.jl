@@ -14,6 +14,28 @@ include("active_power.jl")
 include("reactive_power.jl")
 include("line_flow.jl")
 
+# Generic functions
+function adjoint!(
+    polar::PolarForm,
+    func::Function,
+    ∂cons, cons,
+    stack, buffer,
+)
+    @assert is_constraint(func)
+    ∂pinj = similar(buffer.vmag) ; fill(∂pinj, 0)
+    ∂qinj = nothing # TODO
+    fill!(stack.∂vm, 0)
+    fill!(stack.∂va, 0)
+    adjoint!(
+        polar, func,
+        ∂cons, cons,
+        buffer.vmag, stack.∂vm,
+        buffer.vang, stack.∂va,
+        buffer.pinj, ∂pinj,
+        buffer.qinj, ∂qinj,
+    )
+end
+
 function jacobian_sparsity(polar::PolarForm, func::Function, xx::AbstractVariable)
     nbus = get(polar, PS.NumberOfBuses())
     Vre = Float64[i for i in 1:nbus]
