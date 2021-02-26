@@ -31,6 +31,8 @@ abstract type AbstractHessian end
 
 function jacobian! end
 
+function adj_hessian_prod! end
+
 """
     AutoDiff.Jacobian
 
@@ -52,7 +54,7 @@ Creates an object for the Jacobian.
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 
 """
-struct Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD}
+struct Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
     func::Func
     var::Union{State,Control}
     J::SMT
@@ -81,7 +83,8 @@ Creates an object for computing Hessian adjoint tangent projections.
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct Hessian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractHessian
+struct Hessian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractHessian
+    func::Func
     t1sseeds::VP
     t1sF::VD
     x::VT
@@ -90,42 +93,6 @@ struct Hessian{VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractHessian
     # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t1svarx::SubD
-end
-
-function Hessian(structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref)
-    nvbus = length(vm)
-    npbus = length(pinj)
-    nref = length(ref)
-    if F isa Array
-        VI = Vector{Int}
-        VT = Vector{Float64}
-        MT = Matrix{Float64}
-        SMT = SparseMatrixCSC
-        A = Vector
-    elseif F isa CUDA.CuArray
-        VI = CUDA.CuVector{Int}
-        VT = CUDA.CuVector{Float64}
-        MT = CUDA.CuMatrix{Float64}
-        SMT = CUSPARSE.CuSparseMatrixCSR
-        A = CUDA.CuVector
-    else
-        error("Wrong array type ", typeof(F))
-    end
-
-    map = VI(structure.map)
-    nmap = length(structure.map)
-    t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-    x = VT(zeros(Float64, 2*nvbus + npbus))
-    t1sx = A{t1s{1}}(x)
-    t1sF = A{t1s{1}}(zeros(Float64, length(F)))
-    t1sseeds = A{ForwardDiff.Partials{1,Float64}}(undef, nmap)
-    varx = view(x, map)
-    t1svarx = view(t1sx, map)
-    VP = typeof(t1sseeds)
-    VD = typeof(t1sx)
-    return Hessian{VI, VT, MT, SMT, VP, VD, typeof(varx), typeof(t1svarx)}(
-        t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
-    )
 end
 
 

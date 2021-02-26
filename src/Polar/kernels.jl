@@ -661,14 +661,14 @@ function adj_reactive_power!(
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
 
-    if isa(vm, Array)
+    if isa(vm, CUDA.CuArray) # TODO
+        kernel_edge! = adj_reactive_power_edge_kernel!(KA.CUDADevice())
+        kernel_node! = adj_reactive_power_node_kernel!(KA.CUDADevice())
+    else
         kernel_edge! = adj_reactive_power_edge_kernel!(KA.CPU())
         kernel_node! = adj_reactive_power_node_kernel!(KA.CPU())
         spedge_vmag_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_vmag_to)
         spedge_vang_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_vang_to)
-    else
-        kernel_edge! = adj_reactive_power_edge_kernel!(KA.CUDADevice())
-        kernel_node! = adj_reactive_power_node_kernel!(KA.CUDADevice())
     end
 
     range_ = length(pv) + length(ref)
