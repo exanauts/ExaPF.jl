@@ -75,6 +75,7 @@
         for cons in [
             ExaPF.power_balance,
             ExaPF.reactive_power_constraints,
+            ExaPF.flow_constraints,
         ]
             m = ExaPF.size_constraint(polar, cons)
             λ = rand(m)

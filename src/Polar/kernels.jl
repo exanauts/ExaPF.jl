@@ -113,12 +113,14 @@ function residual_polar!(F, vm, va, pinj, qinj,
     wait(ev)
 end
 
-KA.@kernel function adj_residual_edge_kernel!(F, adj_F, vm, adj_vm, va, adj_va,
-                                  colptr, rowval,
-                                  ybus_re_nzval, ybus_im_nzval,
-                                  edge_vm_from, edge_vm_to,
-                                  edge_va_from, edge_va_to,
-                                  pinj, adj_pinj, qinj, pv, pq)
+KA.@kernel function adj_residual_edge_kernel!(
+    F, adj_F, vm, adj_vm, va, adj_va,
+    colptr, rowval,
+    ybus_re_nzval, ybus_im_nzval,
+    edge_vm_from, edge_vm_to,
+    edge_va_from, edge_va_to,
+    pinj, adj_pinj, qinj, pv, pq
+)
 
     npv = size(pv, 1)
     npq = size(pq, 1)
@@ -202,9 +204,11 @@ KA.@kernel function adj_residual_node_kernel!(F, adj_F, vm, adj_vm, va, adj_va,
     end
 end
 
-function adj_residual_polar!(F, adj_F, vm, adj_vm, va, adj_va,
-                         ybus_re, ybus_im,
-                         pinj, adj_pinj, qinj, pv, pq, nbus)
+function adj_residual_polar!(
+    F, adj_F, vm, adj_vm, va, adj_va,
+    ybus_re, ybus_im,
+    pinj, adj_pinj, qinj, pv, pq, nbus
+)
     npv = length(pv)
     npq = length(pq)
     nvbus = length(vm)
@@ -813,3 +817,4 @@ KA.@kernel function adj_branch_flow_kernel!(
     adj_vang[fr_bus] += adj_Δθ
     adj_vang[to_bus] -= adj_Δθ
 end
+

@@ -296,6 +296,31 @@ const PS = PowerSystem
             ∂₂Q.xu ∂₂Q.uu
         ]
         @test isapprox(projp, H * tgt)
+
+
+        # Line-flow
+        hess_lineflow = AutoDiff.Hessian(polar, ExaPF.flow_constraints)
+        ncons = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
+        μ = rand(ncons)
+        function flow_jac_x(z)
+            x_ = z[1:nx]
+            u_ = z[1+nx:end]
+            # Transfer control
+            ExaPF.transfer!(polar, cache, u_)
+            # Transfer state (manually)
+            cache.vang[pv] .= x_[1:npv]
+            cache.vang[pq] .= x_[npv+1:npv+npq]
+            cache.vmag[pq] .= x_[npv+npq+1:end]
+            V = cache.vmag .* exp.(im .* cache.vang)
+            Jx = ExaPF.matpower_jacobian(polar, State(), ExaPF.flow_constraints, V)
+            Ju = ExaPF.matpower_jacobian(polar, Control(), ExaPF.flow_constraints, V)
+            return [Jx Ju]' * μ
+        end
+
+        H_fd = FiniteDiff.finite_difference_jacobian(flow_jac_x, [x; u])
+        tgt = rand(nx + nu)
+        projp = AutoDiff.adj_hessian_prod!(polar, hess_lineflow, cache, μ, tgt)
+        @test isapprox(projp, H_fd * tgt, rtol=1e-5)
     end
 end
 
