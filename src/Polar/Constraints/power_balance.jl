@@ -104,6 +104,6 @@ function matpower_jacobian(polar::PolarForm, ::Control, ::typeof(power_balance),
     j12 = sparse(I, npv + npq, npv)
     j21 = imag(dSbus_dVm[pq, [ref; pv]])
     j22 = spzeros(npq, npv)
-    return [j11 j12; j21 j22]
+    return [j11 -j12; j21 j22]
 end
 

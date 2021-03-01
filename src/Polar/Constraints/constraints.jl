@@ -15,6 +15,7 @@ include("reactive_power.jl")
 include("line_flow.jl")
 
 # Generic functions
+## Adjoint
 function adjoint!(
     polar::PolarForm,
     func::Function,
@@ -22,13 +23,13 @@ function adjoint!(
     stack, buffer,
 )
     @assert is_constraint(func)
-    ∂pinj = similar(buffer.vmag) ; fill(∂pinj, 0)
+    ∂pinj = similar(buffer.vmag) ; fill!(∂pinj, 0.0)
     ∂qinj = nothing # TODO
     fill!(stack.∂vm, 0)
     fill!(stack.∂va, 0)
     adjoint!(
         polar, func,
-        ∂cons, cons,
+        cons, ∂cons,
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
         buffer.pinj, ∂pinj,
@@ -36,12 +37,54 @@ function adjoint!(
     )
 end
 
+## Jacobian-transpose vector product
+function jtprod(
+    polar::PolarForm,
+    func::Function,
+    stack,
+    buffer,
+    v::AbstractVector,
+)
+    @assert is_constraint(func)
+
+    m = size_constraint(polar, func)
+    # Adjoint w.r.t. vm, va, pinj, qinj
+    ∂pinj = similar(buffer.vmag) ; fill!(∂pinj, 0.0)
+    ∂qinj = nothing # TODO
+    fill!(stack.∂vm, 0)
+    fill!(stack.∂va, 0)
+    cons = similar(buffer.vmag, m) ; fill!(cons, 0.0)
+    adjoint!(
+        polar, func,
+        cons, v,
+        buffer.vmag, stack.∂vm,
+        buffer.vang, stack.∂va,
+        buffer.pinj, ∂pinj,
+        buffer.qinj, ∂qinj,
+    )
+
+    # Adjoint w.r.t. x and u
+    ∂x = stack.∇fₓ ; fill!(∂x, 0.0)
+    ∂u = stack.∇fᵤ ; fill!(∂u, 0.0)
+    adjoint_transfer!(
+        polar,
+        ∂u, ∂x,
+        stack.∂vm, stack.∂va, ∂pinj, ∂qinj,
+    )
+end
+
+## Sparsity detection
 function jacobian_sparsity(polar::PolarForm, func::Function, xx::AbstractVariable)
     nbus = get(polar, PS.NumberOfBuses())
     Vre = Float64[i for i in 1:nbus]
     Vim = Float64[i for i in nbus+1:2*nbus]
     V = Vre .+ im .* Vim
     return matpower_jacobian(polar, xx, func, V)
+end
+
+function matpower_jacobian(polar::PolarForm, func::Function, X::AbstractVariable, buffer::PolarNetworkState)
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    return matpower_jacobian(polar, X, func, V)
 end
 
 # MATPOWER's Jacobians
@@ -78,38 +121,3 @@ function residual_jacobian(::Control, V, Ybus, pv, pq, ref)
     J = [j11; j21]
 end
 
-
-# Jacobian wrt active power generation
-function active_power_jacobian(::State, V, Ybus, pv, pq, ref)
-    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
-    j11 = real(dSbus_dVa[ref, [pv; pq]])
-    j12 = real(dSbus_dVm[ref, pq])
-    J = [
-        j11 j12
-        spzeros(length(pv), length(pv) + 2 * length(pq))
-    ]
-end
-
-function active_power_jacobian(::Control, V, Ybus, pv, pq, ref)
-    ngen = length(pv) + length(ref)
-    npv = length(pv)
-    dSbus_dVm, _ = _matpower_residual_jacobian(V, Ybus)
-    j11 = real(dSbus_dVm[ref, [ref; pv]])
-    j12 = sparse(I, npv, npv)
-    return [
-        j11 spzeros(length(ref), npv)
-        spzeros(npv, ngen) j12
-    ]
-end
-
-function active_power_jacobian(
-    polar::PolarForm,
-    r::AbstractVariable,
-    buffer::PolarNetworkState,
-)
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    V = buffer.vmag .* exp.(im .* buffer.vang)
-    return active_power_jacobian(r, V, polar.network.Ybus, pv, pq, ref)
-end

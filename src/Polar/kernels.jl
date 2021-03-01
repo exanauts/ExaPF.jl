@@ -299,47 +299,48 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
 end
 
 KA.@kernel function adj_transfer_kernel!(
-    adj_vmag, adj_vang, adj_pinj, adj_qinj, adj_u, pv, pq, ref, adj_pload, adj_qload
+    adj_u, adj_x, adj_vmag, adj_vang, adj_pinj, adj_qinj, pv, pq, ref,
 )
     i = @index(Global, Linear)
     npv = length(pv)
     npq = length(pq)
     nref = length(ref)
 
-    # PV bus
-    if i <= npv
-        bus = pv[i]
-        adj_u[nref + i] = adj_vmag[bus]
-        # Adjoint of P = Pg - Pd
-        adj_u[nref + npv + i] = adj_pinj[bus]
-        adj_pload[bus] = -adj_pinj[bus]
-
-    # REF bus
-    else
-        i_ref = i - npv
-        bus = ref[i_ref]
-        adj_u[i_ref] = adj_vmag[bus]
+    # PQ buses
+    if i <= npq
+        bus = pq[i]
+        adj_x[npv+i] =  adj_vang[bus]
+        adj_x[npv+npq+i] = adj_vmag[bus]
+    # PV buses
+    elseif i <= npq + npv
+        i_ = i - npq
+        bus = pv[i_]
+        adj_u[nref + i_] = adj_vmag[bus]
+        adj_u[nref + npv + i_] += adj_pinj[bus]
+        adj_x[i_] = adj_vang[bus]
+    # SLACK buses
+    elseif i <= npq + npv + nref
+        i_ = i - npq - npv
+        bus = ref[i_]
+        adj_u[i_] = adj_vmag[bus]
     end
 end
 
 # Transfer values in (x, u) to buffer
-function adj_transfer!(polar::PolarForm, buffer::PolarNetworkState, adj_u)
-    if isa(u, CUDA.CuArray)
-        kernel! = adj_transfer_kernel!(KA.CUDADevice())
-    else
-        kernel! = adj_transfer_kernel!(KA.CPU())
-    end
-    nbus = length(buffer.vmag)
+function adjoint_transfer!(
+    polar::PolarForm,
+    ∂u, ∂x,
+    ∂vm, ∂va, ∂pinj, ∂qinj,
+)
+    nbus = get(polar, PS.NumberOfBuses())
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-    ev = kernel!(
-        buffer.adj_vmag, nothing, buffer.adj_pinj, nothing,
-        adj_u,
-        pv, pq, ref,
-        polar.adj_active_load, nothing,
-        ndrange=(length(pv)+length(ref)),
+    ev = adj_transfer_kernel!(polar.device)(
+        ∂u, ∂x,
+        ∂vm, ∂va, ∂pinj, ∂qinj,
+        pv, pq, ref;
+        ndrange=nbus,
     )
     wait(ev)
 end
@@ -575,7 +576,7 @@ KA.@kernel function adj_reactive_power_edge_kernel!(
         bus = ref[i_]
         i_gen = ref_to_gen[i_]
     end
-    inj = 0
+    inj = 0.0
     @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
         to = ybus_re_rowval[c]
         aij = vang[bus] - vang[to]

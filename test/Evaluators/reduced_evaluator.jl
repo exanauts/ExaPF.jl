@@ -86,16 +86,16 @@
         fill!(cons, 0)
         ExaPF.constraint!(nlp, cons, u)
 
-        ## Evaluation of the transpose-Jacobian product
-        v = similar(cons) ; fill!(v, 0)
-        fill!(g, 0)
-        ExaPF.jtprod!(nlp, g, u, v)
-        @test iszero(g)
-        fill!(v, 1) ; fill!(g, 0)
-        ExaPF.jtprod!(nlp, g, u, v)
-
         ## Evaluation of the Jacobian (only on CPU)
         if isa(device, CPU)
+            ## Evaluation of the transpose-Jacobian product
+            v = similar(cons) ; fill!(v, 0)
+            fill!(g, 0)
+            ExaPF.jtprod!(nlp, g, u, v)
+            @test iszero(g)
+            fill!(v, 1) ; fill!(g, 0)
+            ExaPF.jtprod!(nlp, g, u, v)
+
             jac = M{Float64, 2}(undef, m, n)
             ExaPF.jacobian!(nlp, jac, u)
             # Test transpose Jacobian vector product

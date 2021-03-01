@@ -191,18 +191,6 @@ const PS = PowerSystem
         # Update variables
         x = [va[pv] ; va[pq] ; vm[pq]]
         u = [vm[ref]; vm[pv]; pg[pv2gen]]
-        # Reset voltage
-        V = vm .* exp.(im * va)
-        # Adjoint
-        coefs = polar.costs_coefficients
-        c3 = @view coefs[:, 3]
-        c4 = @view coefs[:, 4]
-        # Return adjoint of quadratic cost
-        adj_cost = c3 .+ 2.0 .* c4 .* pg
-        # Adjoint of reference generator
-        ∂c = adj_cost[ref2gen][1]
-        ∂²c = 2.0 * c4[ref2gen][1]
-        ∂²cpv = 2.0 * c4[pv2gen]
 
         H_ffd = FiniteDiff.finite_difference_hessian(cost_x, [x; u])
 
@@ -241,16 +229,6 @@ const PS = PowerSystem
         # h1 (state)      : xl <= x <= xu
         # h2 (by-product) : yl <= y <= yu
         # Test sequential evaluation of Hessian
-        local ∂₂Q
-        for cons in [
-            ExaPF.voltage_magnitude_constraints,
-            ExaPF.active_power_constraints,
-            ExaPF.reactive_power_constraints
-        ]
-            m = ExaPF.size_constraint(polar, cons)
-            λq = ones(m)
-            ∂₂Q = ExaPF.hessian(polar, cons, cache, λq)
-        end
 
         μ = rand(ngen)
         ∂₂Q = ExaPF.hessian(polar, ExaPF.reactive_power_constraints, cache, μ)
@@ -297,8 +275,7 @@ const PS = PowerSystem
         ]
         @test isapprox(projp, H * tgt)
 
-
-        # Line-flow
+        # Hessian w.r.t. Line-flow
         hess_lineflow = AutoDiff.Hessian(polar, ExaPF.flow_constraints)
         ncons = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
         μ = rand(ncons)
@@ -321,6 +298,17 @@ const PS = PowerSystem
         tgt = rand(nx + nu)
         projp = AutoDiff.adj_hessian_prod!(polar, hess_lineflow, cache, μ, tgt)
         @test isapprox(projp, H_fd * tgt, rtol=1e-5)
+
+        # Hessian w.r.t. Active-power generation
+        hess_pg = AutoDiff.Hessian(polar, ExaPF.active_power_constraints)
+        μ = rand(1)
+        projp = AutoDiff.adj_hessian_prod!(polar, hess_pg, cache, μ, tgt)
+        ∂₂P = ExaPF.hessian(polar, ExaPF.active_power_constraints, cache, μ)
+        H = [
+            ∂₂P.xx ∂₂P.xu' ;
+            ∂₂P.xu ∂₂P.uu
+        ]
+        @test isapprox(projp, (H * tgt))
     end
 end
 

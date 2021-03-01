@@ -33,8 +33,8 @@ include("kernels.jl")
 include("derivatives.jl")
 include("hessians.jl")
 include("getters.jl")
-include("adjoints.jl")
 include("Constraints/constraints.jl")
+include("cost.jl")
 
 function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     if isa(device, KA.CPU)
@@ -375,20 +375,6 @@ function powerflow(
         println("")
     end
     return ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
-end
-
-# TODO: write up a function more efficient on GPU
-function cost_production(polar::PolarForm, pg)
-    ngen = PS.get(polar.network, PS.NumberOfGenerators())
-    coefs = polar.costs_coefficients
-    c2 = @view coefs[:, 2]
-    c3 = @view coefs[:, 3]
-    c4 = @view coefs[:, 4]
-    # Return quadratic cost
-    # NB: this operation induces three allocations on the GPU,
-    #     but is faster than writing the sum manually
-    cost = sum(c2 .+ c3 .* pg .+ c4 .* pg.^2)
-    return cost
 end
 
 # Utils

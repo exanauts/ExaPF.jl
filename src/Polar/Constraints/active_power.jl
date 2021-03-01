@@ -22,44 +22,46 @@ function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(active_power_constrain
     return convert(VT, pq_min), convert(VT, pq_max)
 end
 
-# Jacobian
-function jacobian(
+function _put_active_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybus_re, ybus_im)
+    @inbounds for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
+        to = ybus_re.rowval[c]
+        aij = v_a[fr] - v_a[to]
+        cθ = ybus_re.nzval[c]*cos(aij)
+        sθ = ybus_im.nzval[c]*sin(aij)
+        adj_v_m[fr] += v_m[to] * (cθ + sθ) * adj_P
+        adj_v_m[to] += v_m[fr] * (cθ + sθ) * adj_P
+
+        adj_aij = -(v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij)))
+        adj_aij += v_m[fr]*v_m[to]*(ybus_im.nzval[c]*cos(aij))
+        adj_aij *= adj_P
+        adj_v_a[to] += -adj_aij
+        adj_v_a[fr] += adj_aij
+    end
+end
+
+# Adjoint
+function adjoint!(
     polar::PolarForm,
     ::typeof(active_power_constraints),
-    i_cons,
-    ∂jac,
-    buffer
+    pg, ∂pg,
+    vm, ∂vm,
+    va, ∂va,
+    pinj, ∂pinj,
+    qinj, ∂qinj,
 )
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    index_pv = polar.indexing.index_pv
-    index_pq = polar.indexing.index_pq
     index_ref = polar.indexing.index_ref
-    pv_to_gen = polar.indexing.index_pv_to_gen
+    ref_to_gen = polar.indexing.index_ref_to_gen
 
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-
-    vmag = buffer.vmag
-    vang = buffer.vang
-    adj_x = ∂jac.∇fₓ
-    adj_u = ∂jac.∇fᵤ
-    adj_vmag = ∂jac.∂vm
-    adj_vang = ∂jac.∂va
-    adj_pg = ∂jac.∂pg
-    fill!(adj_pg, 0.0)
-    fill!(adj_vmag, 0.0)
-    fill!(adj_vang, 0.0)
-    fill!(adj_x, 0.0)
-    fill!(adj_u, 0.0)
-
-    adj_inj = 1.0
     # Constraint on P_ref (generator) (P_inj = P_g - P_load)
-    bus = index_ref[i_cons]
-    put_active_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
-    ev = put_adjoint_kernel!(polar.device)(adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
-                 index_pv, index_pq, index_ref, pv_to_gen,
-                 ndrange=nbus)
-    wait(ev)
+    for i in 1:nref
+        ibus = index_ref[i]
+        igen = ref_to_gen[i]
+        _put_active_power_injection!(ibus, vm, va, ∂vm, ∂va, ∂pg[igen], ybus_re, ybus_im)
+    end
+    return
 end
 
 function jacobian(polar::PolarForm, cons::typeof(active_power_constraints), buffer)
@@ -86,29 +88,6 @@ function jacobian(polar::PolarForm, cons::typeof(active_power_constraints), buff
     return FullSpaceJacobian(jx, ju)
 end
 
-# Jacobian-transpose vector product
-function jtprod(
-    polar::PolarForm,
-    ::typeof(active_power_constraints),
-    ∂jac,
-    buffer,
-    v::AbstractVector,
-)
-    m = size_constraint(polar, active_power_constraints)
-    jvx = similar(∂jac.∇fₓ) ; fill!(jvx, 0)
-    jvu = similar(∂jac.∇fᵤ) ; fill!(jvu, 0)
-    for i_cons in 1:m
-        if !iszero(v[i_cons])
-            jacobian(polar, active_power_constraints, i_cons, ∂jac, buffer)
-            jx, ju = ∂jac.∇fₓ, ∂jac.∇fᵤ
-            jvx .+= jx .* v[i_cons]
-            jvu .+= ju .* v[i_cons]
-        end
-    end
-    ∂jac.∇fₓ .= jvx
-    ∂jac.∇fᵤ .= jvu
-end
-
 function hessian(polar::PolarForm, ::typeof(active_power_constraints), buffer, λ)
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -129,3 +108,35 @@ function hessian(polar::PolarForm, ::typeof(active_power_constraints), buffer, �
         λₚ .* ∂₂P.uu,
     )
 end
+
+# MATPOWER Jacobian
+function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(active_power_constraints), V)
+    nbus = get(polar, PS.NumberOfBuses())
+    pf = polar.network
+    ref = pf.ref ; nref = length(ref)
+    pv = pf.pv ; npv = length(pv)
+    pq = pf.pq ; npq = length(pq)
+    gen2bus = polar.indexing.index_generators
+    ngen = length(gen2bus)
+    Ybus = pf.Ybus
+
+    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
+    # w.r.t. state
+    if isa(X, State)
+        j11 = real(dSbus_dVa[ref, [pv; pq]])
+        j12 = real(dSbus_dVm[ref, pq])
+        return [
+            j11 j12 ;
+            spzeros(length(pv), length(pv) + 2 * length(pq))
+        ]::SparseMatrixCSC{Float64, Int}
+    # w.r.t. control
+    elseif isa(X, Control)
+        j11 = real(dSbus_dVm[ref, [ref; pv]])
+        j12 = sparse(I, npv, npv)
+        return [
+            j11 spzeros(length(ref), npv) ;
+            spzeros(npv, ngen) j12
+        ]::SparseMatrixCSC{Float64, Int}
+    end
+end
+

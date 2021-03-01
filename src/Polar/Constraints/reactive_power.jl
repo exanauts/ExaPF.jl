@@ -87,46 +87,6 @@ function adjoint!(
 end
 
 # Jacobian
-function jacobian(
-    polar::PolarForm,
-    ::typeof(reactive_power_constraints),
-    i_cons,
-    ∂jac,
-    buffer
-)
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    gen2bus = polar.indexing.index_generators
-    index_pv = polar.indexing.index_pv
-    index_pq = polar.indexing.index_pq
-    index_ref = polar.indexing.index_ref
-    pv_to_gen = polar.indexing.index_pv_to_gen
-
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-
-    vmag = buffer.vmag
-    vang = buffer.vang
-    adj_x = ∂jac.∇fₓ
-    adj_u = ∂jac.∇fᵤ
-    adj_vmag = ∂jac.∂vm
-    adj_vang = ∂jac.∂va
-    adj_pg = ∂jac.∂pg
-    fill!(adj_pg, 0.0)
-    fill!(adj_vmag, 0.0)
-    fill!(adj_vang, 0.0)
-    fill!(adj_x, 0.0)
-    fill!(adj_u, 0.0)
-
-    adj_inj = 1.0
-    bus = gen2bus[i_cons]
-    put_reactive_power_injection!(bus, vmag, vang, adj_vmag, adj_vang, adj_inj, ybus_re, ybus_im)
-    ev = put_adjoint_kernel!(polar.device)(
-        adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
-        index_pv, index_pq, index_ref, pv_to_gen,
-        ndrange=nbus
-    )
-    wait(ev)
-end
-
 function jacobian(polar::PolarForm, cons::typeof(reactive_power_constraints), buffer)
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -150,29 +110,6 @@ function jacobian(polar::PolarForm, cons::typeof(reactive_power_constraints), bu
     ju = [Q21u Q22u Q23u]
 
     return FullSpaceJacobian(jx, ju)
-end
-
-# Jacobian-transpose vector product
-function jtprod(
-    polar::PolarForm,
-    ::typeof(reactive_power_constraints),
-    ∂jac,
-    buffer,
-    v::AbstractVector,
-)
-    m = size_constraint(polar, reactive_power_constraints)
-    jvx = similar(∂jac.∇fₓ) ; fill!(jvx, 0)
-    jvu = similar(∂jac.∇fᵤ) ; fill!(jvu, 0)
-    for i_cons in 1:m
-        if !iszero(v[i_cons])
-            jacobian(polar, reactive_power_constraints, i_cons, ∂jac, buffer)
-            jx, ju = ∂jac.∇fₓ, ∂jac.∇fᵤ
-            jvx .+= jx .* v[i_cons]
-            jvu .+= ju .* v[i_cons]
-        end
-    end
-    ∂jac.∇fₓ .= jvx
-    ∂jac.∇fᵤ .= jvu
 end
 
 function hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer, λ)

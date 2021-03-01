@@ -74,46 +74,6 @@ function adjoint!(
     wait(ev)
 end
 
-# Jacobian-transpose vector product
-function jtprod(
-    polar::PolarForm,
-    ::typeof(flow_constraints),
-    ∂jac,
-    buffer,
-    v::AbstractVector,
-)
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    index_pv = polar.indexing.index_pv
-    index_pq = polar.indexing.index_pq
-    index_ref = polar.indexing.index_ref
-    pv_to_gen = polar.indexing.index_pv_to_gen
-    # Init buffer
-    adj_x = ∂jac.∇fₓ
-    adj_u = ∂jac.∇fᵤ
-    adj_vmag = ∂jac.∂vm
-    adj_vang = ∂jac.∂va
-    adj_pg = ∂jac.∂pg
-    ∇Jv = ∂jac.∂flow
-    fill!(adj_pg, 0.0)
-    fill!(adj_x, 0.0)
-    fill!(adj_u, 0.0)
-    fill!(∇Jv, 0.0)
-    # Compute gradient w.r.t. vmag and vang
-    flow_constraints_grad!(polar, ∇Jv, buffer, v)
-    # Copy results into buffer
-    copyto!(adj_vmag, ∇Jv[1:nbus])
-    copyto!(adj_vang, ∇Jv[nbus+1:2*nbus])
-    if isa(adj_x, Array)
-        kernel! = put_adjoint_kernel!(KA.CPU())
-    else
-        kernel! = put_adjoint_kernel!(KA.CUDADevice())
-    end
-    ev = kernel!(adj_u, adj_x, adj_vmag, adj_vang, adj_pg,
-                 index_pv, index_pq, index_ref, pv_to_gen,
-                 ndrange=nbus)
-    wait(ev)
-end
-
 function matpower_jacobian(polar::PolarForm, ::State, ::typeof(flow_constraints), V)
     nbus = get(polar, PS.NumberOfBuses())
     pf = polar.network

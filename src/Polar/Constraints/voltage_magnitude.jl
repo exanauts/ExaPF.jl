@@ -1,6 +1,11 @@
 is_constraint(::typeof(voltage_magnitude_constraints)) = true
 
 # We add constraint only on vmag_pq
+function voltage_magnitude_constraints(polar::PolarForm, cons, vm, va, pinj, qinj)
+    index_pq = polar.indexing.index_pq
+    cons .= @view vm[index_pq]
+    return
+end
 function voltage_magnitude_constraints(polar::PolarForm, cons, buffer)
     index_pq = polar.indexing.index_pq
     cons .= @view buffer.vmag[index_pq]
@@ -19,17 +24,17 @@ function bounds(polar::PolarForm, ::typeof(voltage_magnitude_constraints))
     return polar.x_min[fr_:to_], polar.x_max[fr_:to_]
 end
 
-# State Jacobian: Jx_i = [0, ..., 1, ... 0] where
-function jacobian(polar::PolarForm, ::typeof(voltage_magnitude_constraints), i_cons::Int, ∂jac, buffer)
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    fr_ = npq + npv
-
-    # Adjoint / State
-    fill!(∂jac.∇fₓ, 0)
-    ∂jac.∇fₓ[fr_ + i_cons] = 1.0
-    # Adjoint / Control
-    fill!(∂jac.∇fᵤ, 0)
+function adjoint!(
+    polar::PolarForm,
+    ::typeof(voltage_magnitude_constraints),
+    cons, ∂cons,
+    vm, ∂vm,
+    va, ∂va,
+    pinj, ∂pinj,
+    qinj, ∂qinj,
+)
+    index_pq = polar.indexing.index_pq
+    ∂vm[index_pq] .= ∂cons
 end
 
 function jacobian(polar::PolarForm, cons::typeof(voltage_magnitude_constraints), buffer)
@@ -48,7 +53,7 @@ function jacobian(polar::PolarForm, cons::typeof(voltage_magnitude_constraints),
     return FullSpaceJacobian(jx, ju)
 end
 
-function jtprod(polar::PolarForm, ::typeof(voltage_magnitude_constraints), ∂jac, buffer, v)
+function jtprod(polar::PolarForm, ::typeof(voltage_magnitude_constraints), ∂jac, buffer, v::AbstractVector)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     fr_ = npq + npv + 1
@@ -67,5 +72,28 @@ function hessian(polar::PolarForm, ::typeof(voltage_magnitude_constraints), buff
         spzeros(nu, nx),
         spzeros(nu, nu),
     )
+end
+
+function matpower_jacobian(
+    polar::PolarForm,
+    X::Union{State,Control},
+    cons::typeof(voltage_magnitude_constraints),
+    V,
+)
+    m = size_constraint(polar, cons)
+    nᵤ = get(polar, NumberOfControl())
+    nₓ = get(polar, NumberOfState())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    shift = npq + npv
+
+    I = 1:m
+    J = (shift+1):(shift+npq)
+    V = ones(m)
+    if isa(X, State)
+        return sparse(I, J, V, m, nₓ)
+    elseif isa(X, Control)
+        return spzeros(m, nᵤ)
+    end
 end
 

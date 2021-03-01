@@ -73,18 +73,6 @@ const KA = KernelAbstractions
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, uk)
             @test isapprox(grad_fd, grad_adjoint, rtol=1e-4)
         end
-        @testset "Reduced Jacobian" begin
-            for cons in [
-                ExaPF.voltage_magnitude_constraints,
-                ExaPF.active_power_constraints,
-                ExaPF.reactive_power_constraints
-            ]
-                m = ExaPF.size_constraint(polar, cons)
-                for icons in 1:m
-                    ExaPF.jacobian(polar, cons, icons, ∂obj, cache)
-                end
-            end
-        end
         @testset "Gradient of line-flow constraints" begin
             # Adjoint of flow_constraints()
             nbus = length(cache.vmag)
@@ -119,7 +107,7 @@ const KA = KernelAbstractions
             ExaPF.flow_constraints_grad!(polar, gradg, cache, weights)
             @test isapprox(adgradg, fdgradg)
             # TODO: The gradient is slightly off with the handwritten adjoint
-            @test_broken isapprox(gradg, fdgradg) 
+            @test_broken isapprox(gradg, fdgradg)
         end
     end
 end
