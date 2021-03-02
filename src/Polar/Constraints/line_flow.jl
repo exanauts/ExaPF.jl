@@ -30,13 +30,12 @@ function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
     fill!(cons_grad, 0)
     adj_vmag = @view cons_grad[1:nbus]
     adj_vang = @view cons_grad[nbus+1:2*nbus]
-    ev = adj_branch_flow_kernel!(polar.device)(weights, buffer.vmag, adj_vmag,
+    adj_branch_flow!(weights, buffer.vmag, adj_vmag,
             buffer.vang, adj_vang,
             PT.yff_re, PT.yft_re, PT.ytf_re, PT.ytt_re,
             PT.yff_im, PT.yft_im, PT.ytf_im, PT.ytt_im,
-            PT.f_buses, PT.t_buses, nlines, ndrange = nlines
+            PT.f_buses, PT.t_buses, nlines, polar.device
     )
-    wait(ev)
     return cons_grad
 end
 
@@ -62,16 +61,14 @@ function adjoint!(
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     top = polar.topology
 
-    ev = adj_branch_flow_kernel!(polar.device)(
+    adj_branch_flow!(
         ∂cons,
         vm, ∂vm,
         va, ∂va,
         top.yff_re, top.yft_re, top.ytf_re, top.ytt_re,
         top.yff_im, top.yft_im, top.ytf_im, top.ytt_im,
-        top.f_buses, top.t_buses, nlines,
-        ndrange = nlines
+        top.f_buses, top.t_buses, nlines, polar.device
     )
-    wait(ev)
 end
 
 function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(flow_constraints), V)
