@@ -1,6 +1,8 @@
 # Polar formulation
 #
 using UnicodePlots
+using HDF5
+using JLD
 
 struct StateJacobianStructure{IT} <: AbstractJacobianStructure where {IT}
     sparsity::Function
@@ -429,13 +431,21 @@ function powerflow(
                                    AutoDiff.StateJacobian())
         end
         J = jacobian.J
-        #println("Norm of Jacobian: ", norm(Array(J)))
         # Find descent direction
         if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
             @timeit TIMER "Preconditioner" LinearSolvers.update!(solver, J)
         end
         @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
         push!(linsol_iters, n_iters)
+        if iter == 1
+            fname = joinpath(pwd(), "system13k.jld")
+            file = jldopen(fname, "w")
+            write(file, "A", J)
+            write(file, "b", F)
+            write(file, "npv", npv)
+            write(file, "npq", npq)
+            close(file)
+        end
 
         # update voltage
         @timeit TIMER "Update voltage" begin

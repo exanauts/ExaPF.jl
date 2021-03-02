@@ -208,6 +208,15 @@ function ldiv!(solver::KrylovBICGSTAB,
     #println("Preconditioner and Jacobian")
     #println(spy(sparse(Matrix(P)), height=20, width=40))
     #println(spy(J, height=20, width=40))
+    println(spy(J, height=20, width=40))
+    println(spy(P, height=20, width=40))
+    println("Condition J: ", cond(Array(J)))
+    println("Condition P: ", cond(Array(P)))
+    println("Condition PJ: ", cond(Array(P*J)))
+
+    C = Array(P*J)
+    println(C[1:10,1:10])
+
     (y[:], status) = Krylov.bicgstab(J, x, N=P,
                                      atol=solver.atol,
                                      rtol=solver.rtol,

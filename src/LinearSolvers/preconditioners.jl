@@ -72,8 +72,18 @@ mutable struct BlockJacobiPreconditioner <: AbstractPreconditioner
         for i in 1:npart
             Js[i] = Matrix{Float64}(I, nJs, nJs)
         end
+        
+        iter = 1 #HACK HACK
+        for b in partitions
+            for j=1:length(b)
+                b[j] = iter
+                iter += 1
+            end
+        end
+        
         nmap = 0
         for b in partitions
+            println(b)
             nmap += length(b)
         end
         map = Vector{Int64}(undef, nmap)
@@ -242,6 +252,8 @@ function _update_cpu(colptr, rowval, nzval, p)
     end
     # Invert blocks
     for b in 1:nblocks
+        println("Block ", b)
+        println("Condition ", cond(Array(p.Js[b])))
         p.Js[b] = inv(p.Js[b])
     end
     p.P.nzval .= 0.0

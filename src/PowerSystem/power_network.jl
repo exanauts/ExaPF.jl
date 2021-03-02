@@ -1,3 +1,4 @@
+using CuthillMcKee
 """
     PowerNetwork <: AbstractPowerSystem
 
@@ -69,6 +70,20 @@ struct PowerNetwork <: AbstractPowerSystem
         end
 
         # form Y matrix
+        topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+
+        yperm = rcmpermute(topology.ybus)
+        perm_idx = symrcm(topology.ybus)
+
+        bus = bus[perm_idx, :]
+        bus_id_to_indexes = get_bus_id_to_indexes(bus)
+        
+        # obtain V0 from raw data
+        vbus = zeros(Complex{Float64}, nbus)
+        for i in 1:nbus
+            vbus[i] = bus[i, VM]*exp(1im * pi/180 * bus[i, VA])
+        end
+        
         topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
 
         branches = Branches{Complex{Float64}}(

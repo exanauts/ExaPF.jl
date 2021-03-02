@@ -4,10 +4,15 @@ authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@an
 version = "0.4.0"
 
 [deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CuthillMcKee = "17f17636-5e38-52e3-a803-7ae3aaaf3da9"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 IterativeSolvers = "42fd0dbc-a981-5370-80f2-aaf504508153"
+JLD = "4138dd39-2aa7-5051-a626-17a0bb65d9c8"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
 LightGraphs = "093fc24a-ae57-5d10-9952-331d41423f4d"
