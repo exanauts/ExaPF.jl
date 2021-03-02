@@ -67,6 +67,7 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     idx_ref = PS.get(pf, PS.SlackIndexes())
     idx_pv = PS.get(pf, PS.PVIndexes())
     idx_pq = PS.get(pf, PS.PQIndexes())
+    bustype = PS.get(pf, PS.BusTypeIndex())
     # Build-up reverse index for performance
     pv_to_gen = similar(idx_pv)
     ref_to_gen = similar(idx_ref)
@@ -91,6 +92,7 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     gidx_pq = convert(IT, idx_pq)
     gref_to_gen = convert(IT, ref_to_gen)
     gpv_to_gen = convert(IT, pv_to_gen)
+    gbustype = convert(IT, bustype)
 
     # Bounds
     ## Get bounds on active power
@@ -121,11 +123,15 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     u_min[nref+npv+1:nref+2*npv] .= p_min[gpv_to_gen]
     u_max[nref+npv+1:nref+2*npv] .= p_max[gpv_to_gen]
 
-    indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen)
+    indexing = IndexingCache(gidx_pv, gidx_pq, gidx_ref, gidx_gen, gpv_to_gen, gref_to_gen, gbustype)
     mappv = [i + nbus for i in idx_pv]
     mappq = [i + nbus for i in idx_pq]
+    angle_idx = vcat(mappv, mappq)
+    sort!(angle_idx)
+
     # Ordering for x is (θ_pv, θ_pq, v_pq)
-    statemap = vcat(mappv, mappq, idx_pq)
+    statemap = vcat(angle_idx, idx_pq)
+    #statemap = vcat(mappv, mappq, idx_pq)
     controlmap = vcat(idx_ref, idx_pv, idx_pv .+ nbus)
     hessianmap = vcat(statemap, idx_ref, idx_pv, idx_pv .+ 2*nbus)
     hessianstructure = HessianStructure(IT(hessianmap))
@@ -277,6 +283,13 @@ function powerflow(
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
+    bustype = polar.indexing.index_bustype
+    
+    # auxiliary data structure
+    mappv = [i + nbus for i in pv]
+    mappq = [i + nbus for i in pq]
+    angle_idx = vcat(mappv, mappq)
+    sort!(angle_idx)
 
     # iteration variables
     iter = 0
@@ -309,12 +322,10 @@ function powerflow(
     end
 
     linsol_iters = Int[]
-    Vapv = view(Va, pv)
-    Vapq = view(Va, pq)
-    Vmpq = view(Vm, pq)
-    dx12 = view(dx, j5:j6) # Vmqp
-    dx34 = view(dx, j3:j4) # Vapq
-    dx56 = view(dx, j1:j2) # Vapv
+    Va_view = view(Va, sort!(vcat(pv, pq)))
+    Vm_view = view(Vm, pq)
+    dx_a = view(dx, 1:npv + npq) # Vmqp
+    dx_m = view(dx, npv + npq + 1:npv + 2*npq) # Vapv
 
     @timeit TIMER "Newton" while ((!converged) && (iter < algo.maxiter))
 
@@ -334,16 +345,8 @@ function powerflow(
         # update voltage
         @timeit TIMER "Update voltage" begin
             # Sometimes it is better to move backward
-            if (npv != 0)
-                # Va[pv] .= Va[pv] .+ dx[j5:j6]
-                Vapv .= Vapv .- dx56
-            end
-            if (npq != 0)
-                # Vm[pq] .= Vm[pq] .+ dx[j1:j2]
-                Vmpq .= Vmpq .- dx12
-                # Va[pq] .= Va[pq] .+ dx[j3:j4]
-                Vapq .= Vapq .- dx34
-            end
+            Va_view .= Va_view .- dx_a
+            Vm_view .= Vm_view .- dx_m
         end
 
         fill!(F, zero(T))

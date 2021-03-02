@@ -1,7 +1,7 @@
 is_constraint(::typeof(power_balance)) = true
 
 function _power_balance!(
-    F, v_m, v_a, pinj, qinj, ybus_re, ybus_im, pv, pq, ref, nbus,
+    F, v_m, v_a, pinj, qinj, ybus_re, ybus_im, pv, pq, ref, bustype, nbus,
 )
     npv = length(pv)
     npq = length(pq)
@@ -13,7 +13,7 @@ function _power_balance!(
     ev = kernel!(F, v_m, v_a,
                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
                  ybus_im.nzval,
-                 pinj, qinj, pv, pq, nbus,
+                 pinj, qinj, pv, pq, bustype, nbus,
                  ndrange=npv+npq)
     wait(ev)
 end
@@ -23,13 +23,14 @@ function power_balance(polar::PolarForm, cons, vm, va, pbus, qbus)
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
+    bustype = polar.indexing.index_bustype
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     fill!(cons, 0.0)
     _power_balance!(
         cons, vm, va, pbus, qbus,
         ybus_re, ybus_im,
-        pv, pq, ref, nbus
+        pv, pq, ref, bustype, nbus
     )
 end
 

@@ -62,7 +62,7 @@ function get_react_injection(fr::Int, v_m, v_a, ybus_re::Spmat{VI,VT}, ybus_im::
     return Q
 end
 
-KA.@kernel function residual_kernel!(F, v_m, v_a,
+KA.@kernel function residual_kernel_old!(F, v_m, v_a,
                                   ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
                                   ybus_im_nzval,
                                   pinj, qinj, pv, pq, nbus)
@@ -89,6 +89,39 @@ KA.@kernel function residual_kernel!(F, v_m, v_a,
         cos_val = cos(aij)
         sin_val = sin(aij)
         F[i] += coef_cos * cos_val + coef_sin * sin_val
+        if i > npv
+            F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
+        end
+    end
+end
+
+KA.@kernel function residual_kernel!(F, v_m, v_a,
+                                  ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
+                                  ybus_im_nzval,
+                                  pinj, qinj, pv, pq, bustype, nbus)
+
+    npv = size(pv, 1)
+    npq = size(pq, 1)
+
+    i = @index(Global, Linear)
+    # REAL PV: 1:npv
+    # REAL PQ: (npv+1:npv+npq)
+    # IMAG PQ: (npv+npq+1:npv+2npq)
+    fr = (i <= npv) ? pv[i] : pq[i - npv]
+    F[fr] -= pinj[fr]
+    if i > npv
+        F[i + npq] -= qinj[fr]
+    end
+    @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
+        to = ybus_re_rowval[c]
+        aij = v_a[fr] - v_a[to]
+        # f_re = a * cos + b * sin
+        # f_im = a * sin - b * cos
+        coef_cos = v_m[fr]*v_m[to]*ybus_re_nzval[c]
+        coef_sin = v_m[fr]*v_m[to]*ybus_im_nzval[c]
+        cos_val = cos(aij)
+        sin_val = sin(aij)
+        F[fr] += coef_cos * cos_val + coef_sin * sin_val
         if i > npv
             F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
         end

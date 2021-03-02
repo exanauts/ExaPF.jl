@@ -1,3 +1,95 @@
+function sparsity_pattern(polar::PolarForm)
+    
+    bustype = polar.indexing.index_bustype
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    Y = ybus_im #Danger, does ybus_im have same sparsity pattern?
+    npv = size(pv, 1)
+    npq = size(pq, 1)
+
+    nnz = 0
+    for fr in 1:size(bustype, 1)
+        fr_ty = bustype[fr]
+        for c in Y.colptr[fr]:Y.colptr[fr + 1] - 1
+            to = Y.rowval[c]
+            to_ty = bustype[to]
+            if fr_ty == 2 && to_ty == 2
+                nnz += 1
+            elseif fr_ty == 2 && to_ty == 1
+                nnz += 2
+            elseif fr_ty == 1 && to_ty == 2
+                nnz += 2
+            elseif fr_ty == 1 && to_ty == 1
+                nnz += 4
+            end
+        end
+    end
+    I = zeros(nnz) #row
+    J = zeros(nnz) #column
+    V = ones(nnz) #vals
+    
+    pos = 1
+    for i in 1:(npv + npq)
+
+        fr = (i <= npv) ? pv[i] : pq[i - npv]
+        fr_ty = bustype[fr]
+
+        if fr_ty == 1
+            fr_vmag_idx = findfirst(pq .== fr)
+        end
+        
+        for c in Y.colptr[fr]:Y.colptr[fr + 1] - 1
+            to = Y.rowval[c]
+            to_ty = bustype[to]
+            
+            if fr_ty == 2 && to_ty == 2
+                # dP/dA
+                I[pos] = fr
+                J[pos] = to
+                pos += 1
+            elseif fr_ty == 2 && to_ty == 1
+                to_vmag_idx = findfirst(pq .== to)
+                
+                # dP/dV
+                I[pos] = fr
+                J[pos] = to
+                # dP/dA
+                I[pos + 1] = fr
+                J[pos + 1] = npq + npv + to_vmag_idx
+                pos += 2
+            elseif fr_ty == 1 && to_ty == 2
+                # dP/dA
+                I[pos] = fr
+                J[pos] = to
+                # dQ/dA
+                I[pos + 1] = npv + npq + fr_vmag_idx
+                J[pos + 1] = to
+                pos += 2
+            elseif fr_ty == 1 && to_ty == 1
+                to_vmag_idx = findfirst(pq .== to)
+                
+                # dP/dV
+                I[pos] = fr
+                J[pos] = to
+                # dP/dA
+                I[pos + 1] = fr
+                J[pos + 1] = npq + npv + to_vmag_idx
+                # dP/dA
+                I[pos + 2] = npq + npv + fr_vmag_idx
+                J[pos + 2] = to
+                # dP/dA
+                I[pos + 3] = npq + npv + fr_vmag_idx
+                J[pos + 3] = npq + npv + to_vmag_idx
+                pos += 4
+            end
+        end
+    end
+
+    return sparse(I, J, V)
+
+end
 
 """
     AutoDiff.Jacobian(polar, func::Function, variable::AbstractVariable)
@@ -39,6 +131,9 @@ function AutoDiff.Jacobian(
 
     # Sparsity pattern
     J = jacobian_sparsity(polar, func, variable)
+    #ndim = size(J, 1)
+    #J = ones(ndim, ndim)
+    J = sparsity_pattern(polar)
 
     # Coloring
     coloring = AutoDiff.SparseDiffTools.matrix_colors(J)

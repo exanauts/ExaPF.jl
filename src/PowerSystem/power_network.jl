@@ -152,6 +152,7 @@ end
 get(pf::PowerNetwork, ::PVIndexes) = pf.pv
 get(pf::PowerNetwork, ::PQIndexes) = pf.pq
 get(pf::PowerNetwork, ::SlackIndexes) = pf.ref
+get(pf::PowerNetwork, ::BusTypeIndex) = pf.bustype
 
 
 # Pretty printing
