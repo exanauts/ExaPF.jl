@@ -123,9 +123,11 @@ function matpower_jacobian(polar::PolarForm, ::State, ::typeof(flow_constraints)
     pv = pf.pv
     pq = pf.pq
     lines = pf.lines
+    pvq = vcat(pv, pq)
+    sort!(pvq)
 
     dSl_dVm, dSl_dVa = _matpower_lineflow_power_jacobian(V, lines)
-    j11 = dSl_dVa[:, [pv; pq]]
+    j11 = dSl_dVa[:, pvq]
     j12 = dSl_dVm[:, pq]
     return [j11 j12]
 end

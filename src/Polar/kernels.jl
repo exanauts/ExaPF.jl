@@ -98,19 +98,25 @@ end
 KA.@kernel function residual_kernel!(F, v_m, v_a,
                                   ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
                                   ybus_im_nzval,
-                                  pinj, qinj, pv, pq, bustype, nbus)
+                                  pinj, qinj, pv, pq, bustype, pqv_idx, pq_idx, nbus)
 
     npv = size(pv, 1)
     npq = size(pq, 1)
 
-    i = @index(Global, Linear)
+    fr = @index(Global, Linear)
     # REAL PV: 1:npv
     # REAL PQ: (npv+1:npv+npq)
     # IMAG PQ: (npv+npq+1:npv+2npq)
-    fr = (i <= npv) ? pv[i] : pq[i - npv]
-    F[fr] -= pinj[fr]
-    if i > npv
-        F[i + npq] -= qinj[fr]
+    fr_tp = bustype[fr]
+    
+    if fr_tp == 2
+        idx = pqv_idx[fr]
+        F[idx] -= pinj[fr]
+    elseif fr_tp == 1
+        idx = pqv_idx[fr]
+        F[idx] -= pinj[fr]
+        idx = pq_idx[fr]
+        F[idx + npv + npq] -= qinj[fr]
     end
     @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
         to = ybus_re_rowval[c]
@@ -121,9 +127,15 @@ KA.@kernel function residual_kernel!(F, v_m, v_a,
         coef_sin = v_m[fr]*v_m[to]*ybus_im_nzval[c]
         cos_val = cos(aij)
         sin_val = sin(aij)
-        F[fr] += coef_cos * cos_val + coef_sin * sin_val
-        if i > npv
-            F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
+
+        if fr_tp == 2
+            idx = pqv_idx[fr]
+            F[idx] += coef_cos * cos_val + coef_sin * sin_val
+        elseif fr_tp == 1
+            idx = pqv_idx[fr]
+            F[idx] += coef_cos * cos_val + coef_sin * sin_val
+            idx = pq_idx[fr]
+            F[idx + npv + npq] += coef_cos * sin_val - coef_sin * cos_val
         end
     end
 end
@@ -142,7 +154,7 @@ function residual_polar!(F, v_m, v_a, pinj, qinj,
                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
                  ybus_im.nzval,
                  pinj, qinj, pv, pq, nbus,
-                 ndrange=npv+npq)
+                 ndrange=nbus)
     wait(ev)
 end
 

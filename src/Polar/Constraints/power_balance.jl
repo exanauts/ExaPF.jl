@@ -5,6 +5,23 @@ function _power_balance!(
 )
     npv = length(pv)
     npq = length(pq)
+    pq_idx = zeros(Int64, length(bustype))
+    pqv_idx = zeros(Int64, length(bustype))
+    idx = 1
+    for i=1:length(bustype)
+        if bustype[i] == 1
+            pq_idx[i] = idx
+            idx = idx + 1
+        end
+    end
+    idx = 1
+    for i=1:length(bustype)
+        if bustype[i] == 1 || bustype[i] == 2
+            pqv_idx[i] = idx
+            idx = idx + 1
+        end
+    end
+
     if isa(F, Array)
         kernel! = residual_kernel!(KA.CPU())
     else
@@ -13,8 +30,8 @@ function _power_balance!(
     ev = kernel!(F, v_m, v_a,
                  ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
                  ybus_im.nzval,
-                 pinj, qinj, pv, pq, bustype, nbus,
-                 ndrange=npv+npq)
+                 pinj, qinj, pv, pq, bustype, pqv_idx, pq_idx, nbus,
+                 ndrange=nbus)
     wait(ev)
 end
 
@@ -57,11 +74,13 @@ function matpower_jacobian(polar::PolarForm, ::State, ::typeof(power_balance), V
     pv = pf.pv
     pq = pf.pq
     Ybus = pf.Ybus
+    pqv = vcat(pv, pq)
+    sort!(pqv)
 
     dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
-    j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-    j12 = real(dSbus_dVm[[pv; pq], pq])
-    j21 = imag(dSbus_dVa[pq, [pv; pq]])
+    j11 = real(dSbus_dVa[pqv, pqv])
+    j12 = real(dSbus_dVm[pqv, pq])
+    j21 = imag(dSbus_dVa[pq, pqv])
     j22 = imag(dSbus_dVm[pq, pq])
 
     return [j11 j12; j21 j22]

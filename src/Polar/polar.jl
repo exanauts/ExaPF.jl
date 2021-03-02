@@ -262,6 +262,25 @@ function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetwork
     return jac.J
 end
 
+function matpower_jacobian(polar::PolarForm, V)
+    nbus = get(polar, PS.NumberOfBuses())
+    pf = polar.network
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
+    Ybus = pf.Ybus
+    pqv = vcat(pv, pq)
+    sort!(pqv)
+
+    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
+    j11 = real(dSbus_dVa[pqv, pqv])
+    j12 = real(dSbus_dVm[pqv, pq])
+    j21 = imag(dSbus_dVa[pq, pqv])
+    j22 = imag(dSbus_dVm[pq, pq])
+
+    return [j11 j12; j21 j22]
+end
+
 function powerflow(
     polar::PolarForm{T, IT, VT, MT},
     jacobian::AutoDiff.Jacobian,
