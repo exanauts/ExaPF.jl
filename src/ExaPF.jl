@@ -33,14 +33,8 @@ include("models.jl")
 # Import submodules
 include("autodiff.jl")
 using .AutoDiff
-include("indexes.jl")
-using .IndexSet
 include("LinearSolvers/LinearSolvers.jl")
 using .LinearSolvers
-include("parsers/parse_mat.jl")
-using .ParseMAT
-include("parsers/parse_psse.jl")
-using .ParsePSSE
 include("PowerSystem/PowerSystem.jl")
 using .PowerSystem
 

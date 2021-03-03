@@ -2,7 +2,6 @@ module PowerSystem
 
 using Printf
 using SparseArrays
-using ..ExaPF: ParsePSSE, ParseMAT, IndexSet, Spmat
 
 import Base: show, get
 
@@ -299,6 +298,12 @@ function import_dataset(datafile::String)
     end
 end
 
+include("indexes.jl")
+using .IndexSet
+include("parsers/parse_mat.jl")
+using .ParseMAT
+include("parsers/parse_psse.jl")
+using .ParsePSSE
 
 include("topology.jl")
 include("power_network.jl")

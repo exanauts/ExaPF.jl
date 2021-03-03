@@ -3,11 +3,13 @@ using KernelAbstractions
 using Test
 using ExaPF
 
-import ExaPF: ParseMAT, PowerSystem, IndexSet
+import ExaPF: PowerSystem
+
+const PS = PowerSystem
 
 @testset "Power flow 9 bus case" begin
     datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case9.m")
-    pf = PowerSystem.PowerNetwork(datafile)
+    pf = PS.PowerNetwork(datafile)
 
     # test impedance matrix entries
     @test isapprox(real(pf.Ybus[1, 1]), 0.0)
@@ -44,7 +46,7 @@ end
 
 @testset "Power flow 14 bus case" begin
     datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case14.m")
-    pf = PowerSystem.PowerNetwork(datafile)
+    pf = PS.PowerNetwork(datafile)
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
     u = ExaPF.initial(polar, Control())
@@ -67,7 +69,7 @@ end
 
 @testset "Power flow 30 bus case" begin
     datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case30.m")
-    pf = PowerSystem.PowerNetwork(datafile)
+    pf = PS.PowerNetwork(datafile)
 
     # retrieve initial state of network
     polar = PolarForm(pf, CPU())
@@ -91,7 +93,7 @@ end
 
 @testset "Power flow 300 bus case" begin
     datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case300.m")
-    pf = PowerSystem.PowerNetwork(datafile)
+    pf = PS.PowerNetwork(datafile)
 
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
