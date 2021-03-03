@@ -75,7 +75,7 @@ function jacobian(polar::PolarForm, cons::typeof(active_power_constraints), buff
     # Use MATPOWER to derive expression of Hessian
     # Use the fact that q_g = q_inj + q_load
     V = buffer.vmag .* exp.(im .* buffer.vang)
-    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, polar.network.Ybus)
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, polar.network.Ybus)
 
     # wrt Pg_ref
     P11x = real(dSbus_dVa[ref, [pv; pq]])
@@ -86,27 +86,6 @@ function jacobian(polar::PolarForm, cons::typeof(active_power_constraints), buff
     jx = [P11x P12x]
     ju = [P11u P12u]
     return FullSpaceJacobian(jx, ju)
-end
-
-function hessian(polar::PolarForm, ::typeof(active_power_constraints), buffer, λ)
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    # Check consistency
-    @assert length(λ) == 1
-
-    V = buffer.vmag .* exp.(im .* buffer.vang)
-    Ybus = polar.network.Ybus
-
-    # First constraint is on active power generation at slack node
-    λₚ = λ[1]
-    ∂₂P = active_power_hessian(V, Ybus, pv, pq, ref)
-
-    return FullSpaceHessian(
-        λₚ .* ∂₂P.xx,
-        λₚ .* ∂₂P.xu,
-        λₚ .* ∂₂P.uu,
-    )
 end
 
 # MATPOWER Jacobian
@@ -120,7 +99,7 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(a
     ngen = length(gen2bus)
     Ybus = pf.Ybus
 
-    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
     # w.r.t. state
     if isa(X, State)
         j11 = real(dSbus_dVa[ref, [pv; pq]])
@@ -140,3 +119,29 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(a
     end
 end
 
+function active_power_hessian(
+    polar::PolarForm,
+    buffer::PolarNetworkState,
+)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    hxx, hxu, huu = PS.active_power_hessian(V, polar.network.Ybus, pv, pq, ref)
+    return FullSpaceHessian(hxx, hxu, huu)
+end
+
+function hessian(polar::PolarForm, ::typeof(active_power_constraints), buffer, λ)
+    ref = polar.indexing.index_ref
+    # Check consistency
+    @assert length(λ) == 1
+    # First constraint is on active power generation at slack node
+    ∂₂P = active_power_hessian(polar, buffer)
+
+    λₚ = λ[1]
+    return FullSpaceHessian(
+        λₚ .* ∂₂P.xx,
+        λₚ .* ∂₂P.xu,
+        λₚ .* ∂₂P.uu,
+    )
+end

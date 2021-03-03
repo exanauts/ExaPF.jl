@@ -96,7 +96,7 @@ function jacobian(polar::PolarForm, cons::typeof(reactive_power_constraints), bu
     # Use MATPOWER to derive expression of Hessian
     # Use the fact that q_g = q_inj + q_load
     V = buffer.vmag .* exp.(im .* buffer.vang)
-    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, polar.network.Ybus)
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, polar.network.Ybus)
 
     # wrt Qg
     Q21x = imag(dSbus_dVa[gen2bus, [pv; pq]])
@@ -112,7 +112,43 @@ function jacobian(polar::PolarForm, cons::typeof(reactive_power_constraints), bu
     return FullSpaceJacobian(jx, ju)
 end
 
+function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(reactive_power_constraints), V)
+    nbus = get(polar, PS.NumberOfBuses())
+    pf = polar.network
+    ref = pf.ref
+    pv = pf.pv
+    pq = pf.pq
+    gen2bus = polar.indexing.index_generators
+    Ybus = pf.Ybus
+
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
+
+    if isa(X, State)
+        j11 = imag(dSbus_dVa[gen2bus, [pv; pq]])
+        j12 = imag(dSbus_dVm[gen2bus, pq])
+        return [j11 j12]
+    elseif isa(X, Control)
+        j11 = imag(dSbus_dVm[gen2bus, [ref; pv]])
+        j12 = spzeros(length(gen2bus), length(pv))
+        return [j11 j12]
+    end
+end
+
+function reactive_power_hessian(
+    polar::PolarForm,
+    buffer::PolarNetworkState,
+    λ::AbstractVector,
+)
+    ref = polar.indexing.index_ref
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    hxx, hxu, huu = PS.reactive_power_hessian(V, polar.network.Ybus, λ, pv, pq, ref)
+    return FullSpaceHessian(hxx, hxu, huu)
+end
+
 function hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer, λ)
+    nbus = get(polar, PS.NumberOfBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
@@ -120,45 +156,12 @@ function hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer,
     # Check consistency
     @assert length(λ) == length(gen2bus)
 
-    nu = get(polar, NumberOfControl())
-    nx = get(polar, NumberOfState())
-
-    V = buffer.vmag .* exp.(im .* buffer.vang)
-    Ybus = polar.network.Ybus
-
-    λq = zeros(length(V))
+    λq = zeros(nbus)
     # Select only buses with generators
     λq[gen2bus] .= λ
-    ∂₂Q = reactive_power_hessian(V, Ybus, λq, pv, pq, ref)
+    ∂₂Q = reactive_power_hessian(polar, buffer, λq)
     return FullSpaceHessian(
         ∂₂Q.xx, ∂₂Q.xu, ∂₂Q.uu
     )
-end
-
-function matpower_jacobian(polar::PolarForm, ::State, ::typeof(reactive_power_constraints), V)
-    nbus = get(polar, PS.NumberOfBuses())
-    pf = polar.network
-    ref = pf.ref
-    pv = pf.pv
-    pq = pf.pq
-    gen2bus = polar.indexing.index_generators
-    Ybus = pf.Ybus
-
-    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
-    j11 = imag(dSbus_dVa[gen2bus, [pv; pq]])
-    j12 = imag(dSbus_dVm[gen2bus, pq])
-    return [j11 j12]
-end
-function matpower_jacobian(polar::PolarForm, ::Control, ::typeof(reactive_power_constraints), V)
-    nbus = get(polar, PS.NumberOfBuses())
-    pf = polar.network
-    ref = pf.ref
-    pv = pf.pv
-    pq = pf.pq
-    gen2bus = polar.indexing.index_generators
-    Ybus = pf.Ybus
-    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
-    j11 = imag(dSbus_dVm[gen2bus, [ref; pv]])
-    return [j11 spzeros(length(gen2bus), length(pv))]
 end
 

@@ -146,3 +146,7 @@ end
 
 get(net::NetworkTopology, ::PS.BusAdmittanceMatrix) = (net.ybus_re, net.ybus_im)
 
+struct HessianStructure{IT} <: AbstractStructure where {IT}
+    map::IT
+end
+

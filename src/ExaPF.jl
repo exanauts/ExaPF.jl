@@ -1,11 +1,3 @@
-# Power flow module. The implementation is a modification of
-# MATPOWER's code. We attach the original MATPOWER's license in makeYbus.m:
-#
-# MATPOWER
-# Copyright (c) 1996-2016, Power Systems Engineering Research Center (PSERC)
-# by Ray Zimmerman, PSERC Cornell
-#
-# Covered by the 3-clause BSD License.
 module ExaPF
 
 # Standard library
@@ -54,9 +46,7 @@ using .PowerSystem
 
 const PS = PowerSystem
 
-# Modeling
-include("caches.jl")
-# Polar formulation:
+# Polar formulation
 include("Polar/polar.jl")
 
 # Evaluators

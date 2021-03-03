@@ -7,6 +7,12 @@ struct FullSpaceJacobian{Jac}
     u::Jac
 end
 
+struct FullSpaceHessian{SpMT}
+    xx::SpMT
+    xu::SpMT
+    uu::SpMT
+end
+
 
 include("power_balance.jl")
 include("voltage_magnitude.jl")
@@ -15,6 +21,7 @@ include("reactive_power.jl")
 include("line_flow.jl")
 
 # Generic functions
+
 ## Adjoint
 function adjoint!(
     polar::PolarForm,
@@ -85,39 +92,5 @@ end
 function matpower_jacobian(polar::PolarForm, func::Function, X::AbstractVariable, buffer::PolarNetworkState)
     V = buffer.vmag .* exp.(im .* buffer.vang)
     return matpower_jacobian(polar, X, func, V)
-end
-
-# MATPOWER's Jacobians
-Base.@deprecate(residual_jacobian, matpower_jacobian)
-
-# Jacobian Jₓ (from Matpower)
-"""
-    residual_jacobian(V, Ybus, pv, pq)
-
-Compute the Jacobian w.r.t. the state `x` of the power
-balance function [`power_balance`](@ref).
-
-# Note
-Code adapted from MATPOWER.
-"""
-function residual_jacobian(::State, V, Ybus, pv, pq, ref)
-    # error("deprecated")
-    dSbus_dVm, dSbus_dVa = _matpower_residual_jacobian(V, Ybus)
-    j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-    j12 = real(dSbus_dVm[[pv; pq], pq])
-    j21 = imag(dSbus_dVa[pq, [pv; pq]])
-    j22 = imag(dSbus_dVm[pq, pq])
-
-    J = [j11 j12; j21 j22]
-end
-
-
-# Jacobian Jᵤ (from Matpower)
-function residual_jacobian(::Control, V, Ybus, pv, pq, ref)
-    # error("deprecated")
-    dSbus_dVm, _ = _matpower_residual_jacobian(V, Ybus)
-    j11 = real(dSbus_dVm[[pv; pq], [ref; pv; pv]])
-    j21 = imag(dSbus_dVm[pq, [ref; pv; pv]])
-    J = [j11; j21]
 end
 

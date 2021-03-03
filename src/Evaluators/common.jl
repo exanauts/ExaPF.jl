@@ -91,6 +91,7 @@ struct HessianFactory{SpMT}
     ∇²f::FullSpaceHessian{SpMT}
     ∇²g::FullSpaceHessian{SpMT}
 end
+
 struct JacobianFactory{MT}
     hashu::UInt64
     J::MT
@@ -129,13 +130,6 @@ end
 function _inf_pr(nlp::AbstractNLPEvaluator, cons)
     (n_inf, err_inf, n_sup, err_sup) = _check(cons, nlp.g_min, nlp.g_max)
     return max(err_inf, err_sup)
-end
-
-function active_set(c, c♭, c♯; tol=1e-8)
-    @assert length(c) == length(c♭) == length(c♯)
-    active_lb = findall(c .< c♭ .+ tol)
-    active_ub = findall(c .> c♯ .- tol)
-    return active_lb, active_ub
 end
 
 # Scaler utils

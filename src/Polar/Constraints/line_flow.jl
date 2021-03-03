@@ -74,22 +74,8 @@ function adjoint!(
     wait(ev)
 end
 
-function matpower_jacobian(polar::PolarForm, ::State, ::typeof(flow_constraints), V)
+function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(flow_constraints), V)
     nbus = get(polar, PS.NumberOfBuses())
-    pf = polar.network
-    ref = pf.ref
-    pv = pf.pv
-    pq = pf.pq
-    lines = pf.lines
-
-    dSl_dVm, dSl_dVa = _matpower_lineflow_power_jacobian(V, lines)
-    j11 = dSl_dVa[:, [pv; pq]]
-    j12 = dSl_dVm[:, pq]
-    return [j11 j12]
-end
-
-function matpower_jacobian(polar::PolarForm, ::Control, ::typeof(flow_constraints), V)
-    nbus   = get(polar, PS.NumberOfBuses())
     nlines = get(polar, PS.NumberOfLines())
     pf = polar.network
     ref = pf.ref ; nref = length(ref)
@@ -97,9 +83,16 @@ function matpower_jacobian(polar::PolarForm, ::Control, ::typeof(flow_constraint
     pq  = pf.pq  ; npq  = length(pq)
     lines = pf.lines
 
-    dSl_dVm, _ = _matpower_lineflow_power_jacobian(V, lines)
-    j11 = dSl_dVm[:, [ref; pv]]
-    j12 = spzeros(2 * nlines, npv)
-    return [j11 j12]
+    dSl_dVm, dSl_dVa = PS.matpower_lineflow_power_jacobian(V, lines)
+
+    if isa(X, State)
+        j11 = dSl_dVa[:, [pv; pq]]
+        j12 = dSl_dVm[:, pq]
+        return [j11 j12]
+    elseif isa(X, Control)
+        j11 = dSl_dVm[:, [ref; pv]]
+        j12 = spzeros(2 * nlines, npv)
+        return [j11 j12]
+    end
 end
 

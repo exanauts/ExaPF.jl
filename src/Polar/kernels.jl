@@ -1,66 +1,6 @@
 import KernelAbstractions: @index
 # Implement kernels for polar formulation
 
-"""
-    power_balance(V, Ybus, Sbus, pv, pq)
-
-Assembly residual function for N-R power flow.
-In complex form, the balance equations writes
-
-``
-g(V) = V * (Y_{bus} * V)^* - S_{bus}
-``
-
-# Note
-Code adapted from MATPOWER.
-"""
-function power_balance(V, Ybus, Sbus, pv, pq)
-    # form mismatch vector
-    mis = V .* conj(Ybus * V) - Sbus
-    # form residual vector
-    F = [real(mis[pv])
-         real(mis[pq])
-         imag(mis[pq]) ]
-    return F
-end
-
-"""
-    get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
-Computes the power injection at node `fr`.
-In polar form, the power injection at node `i` satisfies
-```math
-p_{i} = \\sum_{j} v_{i} v_{j} (g_{ij} \\cos(\\theta_i - \\theta_j) + b_{ij} \\sin(\\theta_i - \\theta_j))
-```
-"""
-function get_power_injection(fr, v_m, v_a, ybus_re, ybus_im)
-    P = 0.0
-    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
-        to = ybus_re.rowval[c]
-        aij = v_a[fr] - v_a[to]
-        P += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*cos(aij) + ybus_im.nzval[c]*sin(aij))
-    end
-    return P
-end
-
-"""
-    get_react_injection(fr, v_m, v_a, ybus_re, ybus_im)
-
-Computes the reactive power injection at node `fr`.
-In polar form, the power injection at node `i` satisfies
-```math
-q_{i} = \\sum_{j} v_{i} v_{j} (g_{ij} \\sin(\\theta_i - \\theta_j) - b_{ij} \\cos(\\theta_i - \\theta_j))
-```
-"""
-function get_react_injection(fr::Int, v_m, v_a, ybus_re::Spmat{VI,VT}, ybus_im::Spmat{VI,VT}) where {VT <: AbstractVector, VI<:AbstractVector}
-    Q = zero(eltype(v_m))
-    for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
-        to = ybus_re.rowval[c]
-        aij = v_a[fr] - v_a[to]
-        Q += v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij) - ybus_im.nzval[c]*cos(aij))
-    end
-    return Q
-end
 
 KA.@kernel function residual_kernel!(F, vm, va,
                                   colptr, rowval,

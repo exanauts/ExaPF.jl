@@ -209,70 +209,6 @@ function uncompress_kernel!(J, compressedJ, coloring)
 end
 
 """
-    residual_jacobian!(J::Jacobian,
-                        residual_polar!,
-                        vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref,
-                        nbus, type::AbstractJacobian)
-
-Update the sparse Jacobian entries using AutoDiff. No allocations are taking place in this function.
-
-* `J::Jacobian`: Factory created Jacobian object to update
-* `residual_polar`: Primal function
-* `vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both
-  active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
-* `type::AbstractJacobian`: Either `StateJacobian` or `ControlJacobian`
-"""
-function residual_jacobian!(J::Jacobian,
-                             residual_polar!,
-                             vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus,
-                             type::AbstractJacobian)
-    nvbus = length(vm)
-    ninj = length(pinj)
-    if isa(type, StateJacobian)
-        J.x[1:nvbus] .= vm
-        J.x[nvbus+1:2*nvbus] .= va
-        J.t1sx .= J.x
-        J.t1sF .= 0.0
-    elseif isa(type, ControlJacobian)
-        J.x[1:nvbus] .= vm
-        J.x[nvbus+1:nvbus+ninj] .= pinj
-        J.t1sx .= J.x
-        J.t1sF .= 0.0
-    else
-        error("Unsupported Jacobian structure")
-    end
-
-    seed!(J.t1sseeds, J.varx, J.t1svarx, nbus)
-
-    if isa(type, StateJacobian)
-        residual_polar!(
-            J.t1sF,
-            view(J.t1sx, 1:nvbus),
-            view(J.t1sx, nvbus+1:2*nvbus),
-            pinj, qinj,
-            ybus_re, ybus_im,
-            pv, pq, ref, nbus
-        )
-    elseif isa(type, ControlJacobian)
-        residual_polar!(
-            J.t1sF,
-            view(J.t1sx, 1:nvbus),
-            va,
-            view(J.t1sx, nvbus+1:nvbus+ninj), qinj,
-            ybus_re, ybus_im,
-            pv, pq, ref, nbus
-        )
-    else
-        error("Unsupported Jacobian structure")
-    end
-
-    getpartials_kernel!(J.compressedJ, J.t1sF, nbus)
-    uncompress_kernel!(J.J, J.compressedJ, J.coloring)
-
-    return nothing
-end
-
-"""
     residual_hessian_adj_tgt!(H::Hessian,
                         residual_adj_polar!,
                         lambda, tgt,
@@ -292,6 +228,7 @@ function tgt_adj_residual_hessian!(H::Hessian,
                              adj_residual_polar!,
                              lambda, tgt,
                              v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
+    @warn("Function `tgt_adj_residual_hessian!` is deprecated.")
     x = H.x
     ntgt = length(tgt)
     nvbus = length(v_m)

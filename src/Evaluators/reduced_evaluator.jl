@@ -147,7 +147,8 @@ end
 
 # Initial position
 function initial(nlp::ReducedSpaceEvaluator)
-    return get(nlp.model, Control(), nlp.buffer)
+    u = similar(nlp.u_min) ; fill!(u, 0.0)
+    return get!(nlp.model, Control(), u, nlp.buffer)
 end
 
 # Bounds

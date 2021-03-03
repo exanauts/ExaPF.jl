@@ -1,9 +1,6 @@
 # Polar formulation
 #
-
-struct HessianStructure{IT} <: AbstractStructure where {IT}
-    map::IT
-end
+include("caches.jl")
 
 struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
     network::PS.PowerNetwork
@@ -31,10 +28,9 @@ end
 
 include("kernels.jl")
 include("derivatives.jl")
-include("hessians.jl")
-include("getters.jl")
 include("Constraints/constraints.jl")
-include("cost.jl")
+include("powerflow.jl")
+include("objective.jl")
 
 function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     if isa(device, KA.CPU)
@@ -140,12 +136,15 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     )
 end
 
+array_type(polar::PolarForm) = array_type(polar.device)
+
 # Getters
 function get(polar::PolarForm, ::NumberOfState)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
     npq = PS.get(polar.network, PS.NumberOfPQBuses())
     return 2*npq + npv
 end
+
 function get(polar::PolarForm, ::NumberOfControl)
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -155,8 +154,6 @@ end
 function get(polar::PolarForm, attr::PS.AbstractNetworkAttribute)
     return get(polar.network, attr)
 end
-
-array_type(polar::PolarForm) = array_type(polar.device)
 
 # Setters
 function setvalues!(polar::PolarForm, ::PS.ActiveLoad, values)
@@ -172,16 +169,41 @@ end
 function bounds(polar::PolarForm{T, IT, VT, MT}, ::State) where {T, IT, VT, MT}
     return polar.x_min, polar.x_max
 end
+
 function bounds(polar::PolarForm{T, IT, VT, MT}, ::Control) where {T, IT, VT, MT}
     return polar.u_min, polar.u_max
 end
 
-function initial(form::PolarForm{T, IT, VT, MT}, v::AbstractVariable) where {T, IT, VT, MT}
-    pbus = real.(form.network.sbus) |> VT
-    qbus = imag.(form.network.sbus) |> VT
-    vmag = abs.(form.network.vbus) |> VT
-    vang = angle.(form.network.vbus) |> VT
-    return get(form, v, vmag, vang, pbus, qbus)
+# Initial position
+function initial(polar::PolarForm{T, IT, VT, MT}, X::Union{State,Control}) where {T, IT, VT, MT}
+    # Load data from PowerNetwork
+    pbus = real.(polar.network.sbus) |> VT
+    qbus = imag.(polar.network.sbus) |> VT
+    vmag = abs.(polar.network.vbus) |> VT
+    vang = angle.(polar.network.vbus) |> VT
+
+    npv = get(polar, PS.NumberOfPVBuses())
+    npq = get(polar, PS.NumberOfPQBuses())
+    nref = get(polar, PS.NumberOfSlackBuses())
+
+    if isa(X, State)
+        # build vector x
+        dimension = get(polar, NumberOfState())
+        x = xzeros(VT, dimension)
+        x[1:npv] = vang[polar.network.pv]
+        x[npv+1:npv+npq] = vang[polar.network.pq]
+        x[npv+npq+1:end] = vmag[polar.network.pq]
+        return x
+    elseif isa(X, Control)
+        dimension = get(polar, NumberOfControl())
+        u = xzeros(VT, dimension)
+        u[1:nref] = vmag[polar.network.ref]
+        # u is equal to active power of generator (Pᵍ)
+        # As P = Pᵍ - Pˡ , we get
+        u[nref + 1:nref + npv] = vmag[polar.network.pv]
+        u[nref + npv + 1:nref + 2*npv] = pbus[polar.network.pv] + polar.active_load[polar.network.pv]
+        return u
+    end
 end
 
 function get(form::PolarForm{T, IT, VT, MT}, ::PhysicalState) where {T, IT, VT, MT}
@@ -192,8 +214,44 @@ function get(form::PolarForm{T, IT, VT, MT}, ::PhysicalState) where {T, IT, VT, 
     return PolarNetworkState{VT}(nbus, ngen, n_state, gen2bus)
 end
 
+function get!(
+    polar::PolarForm{T, IT, VT, MT},
+    ::State,
+    x::AbstractVector,
+    buffer::PolarNetworkState
+) where {T, IT, VT, MT}
+    npv = get(polar, PS.NumberOfPVBuses())
+    npq = get(polar, PS.NumberOfPQBuses())
+    nref = get(polar, PS.NumberOfSlackBuses())
+    # Copy values of vang and vmag into x
+    # NB: this leads to 3 memory allocation on the GPU
+    #     we use indexing on the CPU, as for some reason
+    #     we get better performance than with the indexing on the GPU
+    #     stored in the buffer polar.indexing.
+    x[1:npv] .= @view buffer.vang[polar.network.pv]
+    x[npv+1:npv+npq] .= @view buffer.vang[polar.network.pq]
+    x[npv+npq+1:npv+2*npq] .= @view buffer.vmag[polar.network.pq]
+end
+
+function get!(
+    polar::PolarForm{T, IT, VT, MT},
+    ::Control,
+    u::AbstractVector,
+    buffer::PolarNetworkState,
+) where {T, IT, VT, MT}
+    npv = get(polar, PS.NumberOfPVBuses())
+    npq = get(polar, PS.NumberOfPQBuses())
+    nref = get(polar, PS.NumberOfSlackBuses())
+    # build vector u
+    nᵤ = get(polar, NumberOfControl())
+    u[1:nref] .= @view buffer.vmag[polar.network.ref]
+    u[nref + 1:nref + npv] .= @view buffer.vmag[polar.network.pv]
+    u[nref + npv + 1:nref + 2*npv] .= @view buffer.pg[polar.indexing.index_pv_to_gen]
+    return u
+end
+
 function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState) where {T, IT, VT, MT}
-    # FIXME
+    # FIXME: add proper getters in PowerSystem
     pbus = real.(form.network.sbus)
     qbus = imag.(form.network.sbus)
     vmag = abs.(form.network.vbus)
@@ -210,174 +268,6 @@ function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState)
     copyto!(buffer.qinj, qbus)
 end
 
-
-# TODO: find better naming
-function init_autodiff_factory(polar::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState) where {T, IT, VT, MT}
-
-    # Build the AutoDiff Jacobian structure
-    statejacobian = AutoDiff.Jacobian(
-        polar, power_balance, State(),
-    )
-    controljacobian = AutoDiff.Jacobian(
-        polar, power_balance, Control(),
-    )
-
-    # Build the AutoDiff structure for the objective
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    nₓ = get(polar, NumberOfState())
-    nᵤ = get(polar, NumberOfControl())
-    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
-    ∇fₓ = xzeros(VT, nₓ)
-    ∇fᵤ = xzeros(VT, nᵤ)
-    adjoint_pg = similar(buffer.pg)
-    adjoint_vm = similar(Vm)
-    adjoint_va = similar(Va)
-    # Build cache for Jacobian vector-product
-    jvₓ = xzeros(VT, nₓ)
-    jvᵤ = xzeros(VT, nᵤ)
-    adjoint_flow = xzeros(VT, 2 * nbus)
-    objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ, adjoint_flow)
-
-    return statejacobian, controljacobian, objectiveAD
-end
-
-function jacobian(polar::PolarForm, jac::AutoDiff.Jacobian, buffer::PolarNetworkState, jac_type::AutoDiff.AbstractJacobian)
-    @warn("Function jacobian is now deprecated")
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    ngen = PS.get(polar.network, PS.NumberOfGenerators())
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-    # Indexing
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    # Network state
-    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
-    jac(polar, buffer)
-    return jac.J
-end
-
-function powerflow(
-    polar::PolarForm{T, IT, VT, MT},
-    jacobian::AutoDiff.Jacobian,
-    buffer::PolarNetworkState{IT,VT},
-    algo::NewtonRaphson;
-    solver=DirectSolver(),
-) where {T, IT, VT, MT}
-    # Retrieve parameter and initial voltage guess
-    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
-
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    ngen = PS.get(polar.network, PS.NumberOfGenerators())
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    n_states = get(polar, NumberOfState())
-    nvbus = length(polar.network.vbus)
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-
-    # iteration variables
-    iter = 0
-    converged = false
-
-    # indices
-    j1 = 1
-    j2 = npv
-    j3 = j2 + 1
-    j4 = j2 + npq
-    j5 = j4 + 1
-    j6 = j4 + npq
-
-    # form residual function directly on target device
-    F = buffer.balance
-    dx = buffer.dx
-    fill!(F, zero(T))
-    fill!(dx, zero(T))
-
-    # Evaluate residual function
-    power_balance(polar, F, buffer)
-
-    # check for convergence
-    normF = norm(F, Inf)
-    if algo.verbose >= VERBOSE_LEVEL_LOW
-        @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
-    end
-    if normF < algo.tol
-        converged = true
-    end
-
-    linsol_iters = Int[]
-    Vapv = view(Va, pv)
-    Vapq = view(Va, pq)
-    Vmpq = view(Vm, pq)
-    dx12 = view(dx, j5:j6) # Vmqp
-    dx34 = view(dx, j3:j4) # Vapq
-    dx56 = view(dx, j1:j2) # Vapv
-
-    @timeit TIMER "Newton" while ((!converged) && (iter < algo.maxiter))
-
-        iter += 1
-
-        @timeit TIMER "Jacobian" begin
-            J = AutoDiff.jacobian!(polar, jacobian, buffer)
-        end
-
-        # Find descent direction
-        if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
-            @timeit TIMER "Preconditioner" LinearSolvers.update!(solver, J)
-        end
-        @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
-        push!(linsol_iters, n_iters)
-
-        # update voltage
-        @timeit TIMER "Update voltage" begin
-            # Sometimes it is better to move backward
-            if (npv != 0)
-                # Va[pv] .= Va[pv] .+ dx[j5:j6]
-                Vapv .= Vapv .- dx56
-            end
-            if (npq != 0)
-                # Vm[pq] .= Vm[pq] .+ dx[j1:j2]
-                Vmpq .= Vmpq .- dx12
-                # Va[pq] .= Va[pq] .+ dx[j3:j4]
-                Vapq .= Vapq .- dx34
-            end
-        end
-
-        fill!(F, zero(T))
-        @timeit TIMER "Residual function" begin
-            power_balance(polar, F, buffer)
-        end
-
-        @timeit TIMER "Norm" normF = xnorm(F)
-        if algo.verbose >= VERBOSE_LEVEL_LOW
-            @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
-        end
-
-        if normF < algo.tol
-            converged = true
-        end
-    end
-
-    if algo.verbose >= VERBOSE_LEVEL_HIGH
-        if converged
-            @printf("N-R converged in %d iterations.\n", iter)
-        else
-            @printf("N-R did not converge.\n")
-        end
-    end
-
-    # Timer outputs display
-    if algo.verbose >= VERBOSE_LEVEL_MEDIUM
-        show(TIMER)
-        println("")
-    end
-    return ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
-end
-
-# Utils
 function Base.show(io::IO, polar::PolarForm)
     # Network characteristics
     nbus = PS.get(polar.network, PS.NumberOfBuses())

@@ -14,7 +14,7 @@ const PS = PowerSystem
 
 # Warning: currently works only on CPU, as depends on
 # explicit evaluation of Hessian, using MATPOWER expressions
-@testset "Compute reduced gradient on CPU" begin
+@testset "Compute reduced Hessian on CPU" begin
     @testset "Case $case" for case in ["case9.m", "case30.m"]
         ##################################################
         # Initialization
@@ -89,15 +89,15 @@ const PS = PowerSystem
         end
 
         # Evaluate Hessian-vector product (full ∇²gₓₓ is a 3rd dimension tensor)
-        ∇²gλ = ExaPF.residual_hessian(V, Ybus, λ, pv, pq, ref)
+        ∇²gλ = ExaPF.residual_hessian(polar, cache, λ)
         H_fd = FiniteDiff.finite_difference_jacobian(jac_diff, x)
         @test isapprox(∇²gλ.xx, H_fd, rtol=1e-6)
         ybus_re, ybus_im = ExaPF.Spmat{Vector{Int}, Vector{Float64}}(Ybus)
         pbus = real(pf.sbus)
         qbus = imag(pf.sbus)
         F = zeros(Float64, npv + 2*npq)
-        nx = size(∇²gλ.xx,1)
-        nu = size(∇²gλ.uu,1)
+        nx = size(∇²gλ.xx, 1)
+        nu = size(∇²gλ.uu, 1)
 
         # Hessian-vector product using forward over adjoint AD
         HessianAD = AutoDiff.Hessian(polar, ExaPF.power_balance)
@@ -145,7 +145,7 @@ const PS = PowerSystem
             vm_[ref] = u[1:nref]
             vm_[pv] = u[nref+1:end]
             V = vm_ .* exp.(im * va_)
-            Ju = ExaPF.residual_jacobian(Control(), V, Ybus, pv, pq, ref)
+            Ju = ExaPF.matpower_jacobian(polar, Control(), ExaPF.power_balance, V)
             return Ju' * λ
         end
 
@@ -163,7 +163,7 @@ const PS = PowerSystem
             va_[pq] = x[npv+1:npv+npq]
             vm_[pq] = x[npv+npq+1:end]
             V = vm_ .* exp.(im * va_)
-            Ju = ExaPF.residual_jacobian(Control(), V, Ybus, pv, pq, ref)[:, 1:nref+npv]
+            Ju = ExaPF.matpower_jacobian(polar, Control(), ExaPF.power_balance, V)[:, 1:nref+npv]
             return Ju' * λ
         end
 

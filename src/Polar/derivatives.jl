@@ -125,7 +125,6 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
     return jac.J
 end
 
-#structure, F, vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref)
 function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
     @assert is_constraint(func)
 
@@ -207,72 +206,32 @@ function AutoDiff.adj_hessian_prod!(
 end
 
 ## Utils
-# Expression of Jacobians from MATPOWER
-function _matpower_residual_jacobian(V, Ybus)
-    n = size(V, 1)
-    Ibus = Ybus*V
-    diagV       = sparse(1:n, 1:n, V, n, n)
-    diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
-    diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
+# TODO: find better naming
+function init_autodiff_factory(polar::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState) where {T, IT, VT, MT}
+    # Build the AutoDiff Jacobian structure
+    statejacobian = AutoDiff.Jacobian(
+        polar, power_balance, State(),
+    )
+    controljacobian = AutoDiff.Jacobian(
+        polar, power_balance, Control(),
+    )
 
-    dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-    dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
-    return (dSbus_dVm, dSbus_dVa)
-end
+    # Build the AutoDiff structure for the objective
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    nₓ = get(polar, NumberOfState())
+    nᵤ = get(polar, NumberOfControl())
+    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
+    ∇fₓ = xzeros(VT, nₓ)
+    ∇fᵤ = xzeros(VT, nᵤ)
+    adjoint_pg = similar(buffer.pg)
+    adjoint_vm = similar(Vm)
+    adjoint_va = similar(Va)
+    # Build cache for Jacobian vector-product
+    jvₓ = xzeros(VT, nₓ)
+    jvᵤ = xzeros(VT, nᵤ)
+    adjoint_flow = xzeros(VT, 2 * nbus)
+    objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ, adjoint_flow)
 
-function _matpower_lineflow_jacobian(V, branches)
-    nb = size(V, 1)
-    f = branches.from_buses
-    t = branches.to_buses
-    nl = length(f)
-
-    diagV     = sparse(1:nb, 1:nb, V, nb, nb)
-    diagVnorm = sparse(1:nb, 1:nb, V./abs.(V), nb, nb)
-
-    # Connection matrices
-    Cf = sparse(1:nl, f, ones(nl), nl, nb)
-    Ct = sparse(1:nl, t, ones(nl), nl, nb)
-
-    i = [1:nl; 1:nl]
-    Yf = sparse(i, [f; t], [branches.Yff; branches.Yft], nl, nb)
-    Yt = sparse(i, [f; t], [branches.Ytf; branches.Ytt], nl, nb)
-
-    If = Yf * V
-    It = Yt * V
-
-    diagCfV = sparse(1:nl, 1:nl, Cf * V, nl, nl)
-    diagCtV = sparse(1:nl, 1:nl, Ct * V, nl, nl)
-
-    Sf = diagCfV * conj(If)
-    St = diagCtV * conj(It)
-
-    diagIf = sparse(1:nl, 1:nl, If, nl, nl)
-    diagIt = sparse(1:nl, 1:nl, It, nl, nl)
-
-    dSf_dVm = conj(diagIf) * Cf * diagVnorm + diagCfV * conj(Yf * diagVnorm)
-    dSf_dVa = 1im * (conj(diagIf) * Cf * diagV - diagCfV * conj(Yf * diagV))
-
-    dSt_dVm = conj(diagIt) * Ct * diagVnorm + diagCtV * conj(Yt * diagVnorm)
-    dSt_dVa = 1im * (conj(diagIt) * Ct * diagV - diagCtV * conj(Yt * diagV))
-
-    return (Sf, St, dSf_dVm, dSf_dVa, dSt_dVm, dSt_dVa)
-end
-
-function _matpower_lineflow_power_jacobian(V, branches)
-    nl = length(branches.from_buses)
-    (Sf, St, dSf_dVm, dSf_dVa, dSt_dVm, dSt_dVa) = _matpower_lineflow_jacobian(V, branches)
-
-    dSf = sparse(1:nl, 1:nl, Sf, nl, nl)
-    dSt = sparse(1:nl, 1:nl, St, nl, nl)
-
-    dHf_dVm = 2 * (real(dSf) * real(dSf_dVm) + imag(dSf) * imag(dSf_dVm))
-    dHf_dVa = 2 * (real(dSf) * real(dSf_dVa) + imag(dSf) * imag(dSf_dVa))
-
-    dHt_dVm = 2 * (real(dSt) * real(dSt_dVm) + imag(dSt) * imag(dSt_dVm))
-    dHt_dVa = 2 * (real(dSt) * real(dSt_dVa) + imag(dSt) * imag(dSt_dVa))
-
-    dH_dVm = [dHf_dVm; dHt_dVm]
-    dH_dVa = [dHf_dVa; dHt_dVa]
-    return dH_dVm, dH_dVa
+    return statejacobian, controljacobian, objectiveAD
 end
 

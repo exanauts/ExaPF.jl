@@ -153,14 +153,6 @@ Indexes of the generators in a `AbstractPowerSystem`.
 """
 struct GeneratorIndexes <: AbstractIndexing end
 
-
-# TODO: replace const *_BUS_TYPE with this enum
-@enum BusType begin
-    PQ=1
-    PV=2
-    Slack=3
-end
-
 """
     AbstractNetworkValues
 
@@ -310,5 +302,6 @@ end
 
 include("topology.jl")
 include("power_network.jl")
+include("matpower.jl")
 
 end
