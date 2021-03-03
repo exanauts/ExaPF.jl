@@ -4,7 +4,8 @@ using KernelAbstractions
 using Test
 using TimerOutputs
 
-import ExaPF: ParsePSSE, PowerSystem, IndexSet
+import ExaPF: PowerSystem
+import ExaPF.PowerSystem: ParsePSSE
 
 const PS = PowerSystem
 
@@ -18,7 +19,7 @@ const PS = PowerSystem
 
     # Parsed data indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = PS.IndexSet.idx_bus()
 
     # retrive required data
     bus = data["bus"]

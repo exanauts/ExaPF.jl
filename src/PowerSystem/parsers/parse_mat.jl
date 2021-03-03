@@ -9,7 +9,7 @@
 
 module ParseMAT
 
-using ..ExaPF: IndexSet
+using ..PowerSystem: IndexSet
 
 include("matlab.jl")
 include("im_common.jl")

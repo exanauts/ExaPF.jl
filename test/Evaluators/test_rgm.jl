@@ -6,8 +6,6 @@ using ForwardDiff
 using LinearAlgebra
 using KernelAbstractions
 
-import ExaPF: ParseMAT, PowerSystem, IndexSet
-
 @testset "RGM Optimal Power flow 9 bus case" begin
     datafile = joinpath(INSTANCES_DIR, "case9.m")
 

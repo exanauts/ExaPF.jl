@@ -9,9 +9,7 @@ using Test
 using TimerOutputs
 using FiniteDiff
 
-import ExaPF: ParsePSSE, PowerSystem, IndexSet
 import ExaPF: AutoDiff
-
 Random.seed!(2713)
 
 const INSTANCES_DIR = joinpath(dirname(@__FILE__), "..", "data")
