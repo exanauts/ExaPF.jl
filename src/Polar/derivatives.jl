@@ -151,22 +151,25 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     t1svarx = view(t1sx, map)
     VP = typeof(t1sseeds)
     VD = typeof(t1sx)
+    adj_t1sx = similar(t1sx)
+    adj_t1sF = similar(t1sF)
     return AutoDiff.Hessian{typeof(func), VI, VT, MT, Nothing, VP, VD, typeof(varx), typeof(t1svarx)}(
-        func, t1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+        func, t1sseeds, t1sF, adj_t1sF, x, t1sx, adj_t1sx, map, varx, t1svarx
     )
 end
 
 # λ' * H * v
 function AutoDiff.adj_hessian_prod!(
-    polar, H::AutoDiff.Hessian, buffer, λ, v,
+    polar, H::AutoDiff.Hessian, hv, buffer, λ, v,
 )
+    @assert length(hv) == length(v)
     nbus = get(polar, PS.NumberOfBuses())
     x = H.x
     ntgt = length(v)
     t1sx = H.t1sx
-    adj_t1sx = similar(t1sx)
+    adj_t1sx = H.∂t1sx
     t1sF = H.t1sF
-    adj_t1sF = similar(t1sF)
+    adj_t1sF = H.∂t1sF
     # Move data
     x[1:nbus] .= buffer.vmag
     x[nbus+1:2*nbus] .= buffer.vang
@@ -181,7 +184,7 @@ function AutoDiff.adj_hessian_prod!(
     nmap = length(H.map)
 
     # Init seed
-    for i in 1:nmap
+    @inbounds for i in 1:nmap
         H.t1sseeds[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i]))
     end
     AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx, nbus)
@@ -189,20 +192,16 @@ function AutoDiff.adj_hessian_prod!(
     adjoint!(
         polar, H.func,
         t1sF, adj_t1sF,
-        view(t1sx, 1:nbus), view(adj_t1sx, 1:nbus), # vmag
-        view(t1sx, nbus+1:2*nbus), view(adj_t1sx, nbus+1:2*nbus), # vang
+        view(t1sx, 1:nbus), view(adj_t1sx, 1:nbus),                   # vmag
+        view(t1sx, nbus+1:2*nbus), view(adj_t1sx, nbus+1:2*nbus),     # vang
         view(t1sx, 2*nbus+1:3*nbus), view(adj_t1sx, 2*nbus+1:3*nbus), # pinj
         view(t1sx, 3*nbus+1:4*nbus), view(adj_t1sx, 3*nbus+1:4*nbus), # qinj
     )
 
-    # TODO, this is redundant
-    ps = ForwardDiff.partials.(adj_t1sx[H.map])
-    res = similar(v)
-    res .= 0.0
-    for i in 1:length(ps)
-        res[i] = ps[i].values[1]
+    @inbounds for i in 1:length(hv)
+        hv[i] = ForwardDiff.partials(adj_t1sx[H.map[i]]).values[1]
     end
-    return res
+    return nothing
 end
 
 ## Utils

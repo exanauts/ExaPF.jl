@@ -59,7 +59,7 @@ function adjoint!(
     for i in 1:nref
         ibus = index_ref[i]
         igen = ref_to_gen[i]
-        _put_active_power_injection!(ibus, vm, va, ∂vm, ∂va, ∂pg[igen], ybus_re, ybus_im)
+        _put_active_power_injection!(ibus, vm, va, ∂vm, ∂va, ∂pg[i], ybus_re, ybus_im)
     end
     return
 end
@@ -119,29 +119,19 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(a
     end
 end
 
-function active_power_hessian(
-    polar::PolarForm,
-    buffer::PolarNetworkState,
-)
-    ref = polar.indexing.index_ref
+function matpower_hessian(polar::PolarForm, ::typeof(active_power_constraints), buffer, λ)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
+    ref = polar.indexing.index_ref
+    # Check consistency: currently only support a single slack node
+    @assert length(λ) == 1
     V = buffer.vmag .* exp.(im .* buffer.vang)
     hxx, hxu, huu = PS.active_power_hessian(V, polar.network.Ybus, pv, pq, ref)
-    return FullSpaceHessian(hxx, hxu, huu)
-end
-
-function hessian(polar::PolarForm, ::typeof(active_power_constraints), buffer, λ)
-    ref = polar.indexing.index_ref
-    # Check consistency
-    @assert length(λ) == 1
-    # First constraint is on active power generation at slack node
-    ∂₂P = active_power_hessian(polar, buffer)
 
     λₚ = λ[1]
     return FullSpaceHessian(
-        λₚ .* ∂₂P.xx,
-        λₚ .* ∂₂P.xu,
-        λₚ .* ∂₂P.uu,
+        λₚ .* hxx,
+        λₚ .* hxu,
+        λₚ .* huu,
     )
 end

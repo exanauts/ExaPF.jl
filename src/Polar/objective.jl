@@ -40,7 +40,8 @@ function put(
 ) where {T, IT, VT, MT}
 
     index_pv = polar.indexing.index_pv
-    pv_to_gen = polar.indexing.index_pv_to_gen
+    pv2gen = polar.indexing.index_pv_to_gen
+    ref2gen = polar.indexing.index_ref_to_gen
 
     adj_pg = obj_autodiff.∂pg
     adj_x = obj_autodiff.∇fₓ
@@ -53,9 +54,9 @@ function put(
     fill!(adj_vang, 0.0)
 
     # Adjoint w.r.t Slack nodes
-    adjoint!(polar, active_power_constraints, adj_pg, buffer.pg, obj_autodiff, buffer)
+    adjoint!(polar, active_power_constraints, adj_pg[ref2gen] , buffer.pg, obj_autodiff, buffer)
     # Adjoint w.t.t. PV nodes
-    adj_pinj[index_pv] .= adj_pg[pv_to_gen]
+    adj_pinj[index_pv] .= adj_pg[pv2gen]
 
     # Adjoint w.r.t. x and u
     fill!(adj_x, 0.0)
@@ -87,15 +88,15 @@ function hessian_cost(polar::PolarForm, buffer::PolarNetworkState)
     ∂²pg = 2.0 .* c4[[ref2gen; pv2gen]]
 
     # Evaluate Hess-vec of objective function f(x, u)
-    ∂₂P = active_power_hessian(polar, buffer)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
+    ∂₂P = matpower_hessian(polar, active_power_constraints, buffer, ∂pg)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
 
     ∂Pₓ = matpower_jacobian(polar, active_power_constraints, State(), buffer)::SparseMatrixCSC{Float64, Int}
     ∂Pᵤ = matpower_jacobian(polar, active_power_constraints, Control(), buffer)::SparseMatrixCSC{Float64, Int}
 
     D = Diagonal(∂²pg)
-    ∇²fₓₓ = ∂pg .* ∂₂P.xx + ∂Pₓ' * D * ∂Pₓ
-    ∇²fᵤᵤ = ∂pg .* ∂₂P.uu + ∂Pᵤ' * D * ∂Pᵤ
-    ∇²fₓᵤ = ∂pg .* ∂₂P.xu + ∂Pᵤ' * D * ∂Pₓ
+    ∇²fₓₓ = ∂₂P.xx + ∂Pₓ' * D * ∂Pₓ
+    ∇²fᵤᵤ = ∂₂P.uu + ∂Pᵤ' * D * ∂Pᵤ
+    ∇²fₓᵤ = ∂₂P.xu + ∂Pᵤ' * D * ∂Pₓ
 
     return FullSpaceHessian(∇²fₓₓ, ∇²fₓᵤ, ∇²fᵤᵤ)
 end

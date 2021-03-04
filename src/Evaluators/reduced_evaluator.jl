@@ -371,7 +371,7 @@ function _update_hessian!(nlp::ReducedSpaceEvaluator, u)
     if isnothing(nlp.hessian_stack) || hash(u) != nlp.hessian_stack.hashu
         buffer = nlp.buffer
         ∇²f = hessian_cost(nlp.model, buffer)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
-        ∇²gλ = residual_hessian(nlp.model, nlp.buffer, -nlp.λ)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
+        ∇²gλ = matpower_hessian(nlp.model, power_balance, nlp.buffer, -nlp.λ)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
         ∇gₓ = nlp.autodiff.Jgₓ.J::SparseMatrixCSC{Float64, Int}
         fac = lu(∇gₓ)
         nlp.hessian_stack = HessianFactory(hash(u), fac, ∇²f, ∇²gλ)
@@ -388,7 +388,7 @@ function _update_hessian!(nlp::ReducedSpaceEvaluator, u, y, σ, w)
         ∇²L.xx .+= J.x' * D * J.x
         ∇²L.xu .+= J.u' * D * J.x
         ∇²L.uu .+= J.u' * D * J.u
-        ∇²gλ = residual_hessian(nlp.model, nlp.buffer, -nlp.λ)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
+        ∇²gλ = matpower_hessian(nlp.model, power_balance, nlp.buffer, -nlp.λ)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
         ∇gₓ = nlp.autodiff.Jgₓ.J::SparseMatrixCSC{Float64, Int}
         fac = lu(∇gₓ)
         nlp.hessian_stack = HessianFactory(hash(u), fac, ∇²L, ∇²gλ)
@@ -405,7 +405,7 @@ function reduced_hessian!(
     ∇gᵤ = nlp.autodiff.Jgᵤ.J::SpMT
 
     # Evaluate Hess-vec of residual function g(x, u) = 0
-    ∇²gλ = residual_hessian(nlp.model, nlp.buffer, λ)::FullSpaceHessian{SpMT}
+    ∇²gλ = matpower_hessian(nlp.model, power_balance, nlp.buffer, λ)::FullSpaceHessian{SpMT}
 
     # Adjoint-adjoint
     ∇gaₓ = ∇²fₓₓ + ∇²gλ.xx
@@ -460,7 +460,7 @@ function full_hessian_lagrangian(nlp::ReducedSpaceEvaluator, u, y, σ)
         m = size_constraint(nlp.model, cons)
         mask = shift+1:shift+m
         yc = @view y[mask]
-        ∇²h = hessian(nlp.model, cons, nlp.buffer, yc)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
+        ∇²h = matpower_hessian(nlp.model, cons, nlp.buffer, yc)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
         ∇²Lₓₓ .+= ∇²h.xx
         ∇²Lₓᵤ .+= ∇²h.xu
         ∇²Lᵤᵤ .+= ∇²h.uu
@@ -518,7 +518,7 @@ function hessian_lagrangian_penalty!(
     end
 
     # Evaluate Hess-vec of residual function g(x, u) = 0
-    ∇²gλ = residual_hessian(nlp.model, nlp.buffer, λ)
+    ∇²gλ = matpower_hessian(nlp.model, power_balance, nlp.buffer, λ)
     # Adjoint-adjoint
     ∇gaₓ = ∇²L.xx + ∇²gλ.xx
 

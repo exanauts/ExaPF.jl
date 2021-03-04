@@ -107,8 +107,8 @@
             end
             vv = [cache.vmag; cache.vang]
             vv_fd = FiniteDiff.finite_difference_gradient(test_fd, vv)
-            @test isapprox(vv_fd[1:nbus], ∂obj.∂vm, rtol=1e-5)
-            @test isapprox(vv_fd[1+nbus:2*nbus], ∂obj.∂va, rtol=1e-5)
+            @test isapprox(vv_fd[1:nbus], ∂obj.∂vm, rtol=1e-6)
+            @test isapprox(vv_fd[1+nbus:2*nbus], ∂obj.∂va, rtol=1e-6)
         end
     end
 end

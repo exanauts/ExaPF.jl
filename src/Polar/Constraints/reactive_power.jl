@@ -134,20 +134,7 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(r
     end
 end
 
-function reactive_power_hessian(
-    polar::PolarForm,
-    buffer::PolarNetworkState,
-    λ::AbstractVector,
-)
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    V = buffer.vmag .* exp.(im .* buffer.vang)
-    hxx, hxu, huu = PS.reactive_power_hessian(V, polar.network.Ybus, λ, pv, pq, ref)
-    return FullSpaceHessian(hxx, hxu, huu)
-end
-
-function hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer, λ)
+function matpower_hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer, λ)
     nbus = get(polar, PS.NumberOfBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -159,9 +146,11 @@ function hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer,
     λq = zeros(nbus)
     # Select only buses with generators
     λq[gen2bus] .= λ
-    ∂₂Q = reactive_power_hessian(polar, buffer, λq)
+
+    V = buffer.vmag .* exp.(im .* buffer.vang)
+    hxx, hxu, huu = PS.reactive_power_hessian(V, polar.network.Ybus, λq, pv, pq, ref)
     return FullSpaceHessian(
-        ∂₂Q.xx, ∂₂Q.xu, ∂₂Q.uu
+        hxx, hxu, huu,
     )
 end
 

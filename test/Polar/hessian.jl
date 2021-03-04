@@ -89,7 +89,7 @@ const PS = PowerSystem
         end
 
         # Evaluate Hessian-vector product (full ∇²gₓₓ is a 3rd dimension tensor)
-        ∇²gλ = ExaPF.residual_hessian(polar, cache, λ)
+        ∇²gλ = ExaPF.matpower_hessian(polar, ExaPF.power_balance, cache, λ)
         H_fd = FiniteDiff.finite_difference_jacobian(jac_diff, x)
         @test isapprox(∇²gλ.xx, H_fd, rtol=1e-6)
         ybus_re, ybus_im = ExaPF.Spmat{Vector{Int}, Vector{Float64}}(Ybus)
@@ -103,13 +103,14 @@ const PS = PowerSystem
         HessianAD = AutoDiff.Hessian(polar, ExaPF.power_balance)
 
         tgt = rand(nx + nu)
+        projp = zeros(nx + nu)
         # set tangents only for x direction
         tgt[nx+1:end] .= 0.0
         projxx = ExaPF.AutoDiff.tgt_adj_residual_hessian!(
             HessianAD, ExaPF.adj_residual_polar!, λ, tgt, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
         @test isapprox(projxx[1:nx], ∇²gλ.xx * tgt[1:nx])
-        projp = AutoDiff.adj_hessian_prod!(polar, HessianAD, cache, λ, tgt)
+        AutoDiff.adj_hessian_prod!(polar, HessianAD, projp, cache, λ, tgt)
         @test isapprox(projp[1:nx], ∇²gλ.xx * tgt[1:nx])
 
 
@@ -120,7 +121,7 @@ const PS = PowerSystem
             HessianAD, ExaPF.adj_residual_polar!, λ, tgt, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
         @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
-        projp = AutoDiff.adj_hessian_prod!(polar, HessianAD, cache, λ, tgt)
+        AutoDiff.adj_hessian_prod!(polar, HessianAD, projp, cache, λ, tgt)
         @test isapprox(projp[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
 
         # check cross terms ux
@@ -135,7 +136,7 @@ const PS = PowerSystem
             HessianAD, ExaPF.adj_residual_polar!, λ, tgt, vm, va,
             ybus_re, ybus_im, pbus, qbus, pf.pv, pf.pq, pf.ref, nbus)
         @test isapprox(projxu, H * tgt)
-        projp = AutoDiff.adj_hessian_prod!(polar, HessianAD, cache, λ, tgt)
+        AutoDiff.adj_hessian_prod!(polar, HessianAD, projp, cache, λ, tgt)
         @test isapprox(projp, H * tgt)
 
         ## w.r.t. uu
@@ -231,7 +232,7 @@ const PS = PowerSystem
         # Test sequential evaluation of Hessian
 
         μ = rand(ngen)
-        ∂₂Q = ExaPF.hessian(polar, ExaPF.reactive_power_constraints, cache, μ)
+        ∂₂Q = ExaPF.matpower_hessian(polar, ExaPF.reactive_power_constraints, cache, μ)
         function jac_x(z)
             x_ = z[1:nx]
             u_ = z[1+nx:end]
@@ -256,19 +257,20 @@ const PS = PowerSystem
 
         # XX
         tgt = rand(nx + nu)
+        projp = zeros(nx + nu)
         tgt[nx+1:end] .= 0.0
-        projp = AutoDiff.adj_hessian_prod!(polar, hess_reactive, cache, μ, tgt)
+        AutoDiff.adj_hessian_prod!(polar, hess_reactive, projp, cache, μ, tgt)
         @test isapprox(projp[1:nx], ∂₂Q.xx * tgt[1:nx])
 
         # UU
         tgt = rand(nx + nu)
         tgt[1:nx] .= 0.0
-        projp = AutoDiff.adj_hessian_prod!(polar, hess_reactive, cache, μ, tgt)
+        AutoDiff.adj_hessian_prod!(polar, hess_reactive, projp, cache, μ, tgt)
         @test isapprox(projp[1+nx:end], ∂₂Q.uu * tgt[1+nx:end])
 
         # XU
         tgt = rand(nx + nu)
-        projp = AutoDiff.adj_hessian_prod!(polar, hess_reactive, cache, μ, tgt)
+        AutoDiff.adj_hessian_prod!(polar, hess_reactive, projp, cache, μ, tgt)
         H = [
             ∂₂Q.xx ∂₂Q.xu' ;
             ∂₂Q.xu ∂₂Q.uu
@@ -296,14 +298,15 @@ const PS = PowerSystem
 
         H_fd = FiniteDiff.finite_difference_jacobian(flow_jac_x, [x; u])
         tgt = rand(nx + nu)
-        projp = AutoDiff.adj_hessian_prod!(polar, hess_lineflow, cache, μ, tgt)
+        projp = zeros(nx + nu)
+        AutoDiff.adj_hessian_prod!(polar, hess_lineflow, projp, cache, μ, tgt)
         @test isapprox(projp, H_fd * tgt, rtol=1e-5)
 
         # Hessian w.r.t. Active-power generation
         hess_pg = AutoDiff.Hessian(polar, ExaPF.active_power_constraints)
         μ = rand(1)
-        projp = AutoDiff.adj_hessian_prod!(polar, hess_pg, cache, μ, tgt)
-        ∂₂P = ExaPF.hessian(polar, ExaPF.active_power_constraints, cache, μ)
+        AutoDiff.adj_hessian_prod!(polar, hess_pg, projp, cache, μ, tgt)
+        ∂₂P = ExaPF.matpower_hessian(polar, ExaPF.active_power_constraints, cache, μ)
         H = [
             ∂₂P.xx ∂₂P.xu' ;
             ∂₂P.xu ∂₂P.uu
