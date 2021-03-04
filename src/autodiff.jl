@@ -87,10 +87,11 @@ struct Hessian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractHessian
     func::Func
     t1sseeds::VP
     t1sF::VD
+    ∂t1sF::VD
     x::VT
     t1sx::VD
+    ∂t1sx::VD
     map::VI
-    # Cache views on x and its dual vector to avoid reallocating on the GPU
     varx::SubT
     t1svarx::SubD
 end

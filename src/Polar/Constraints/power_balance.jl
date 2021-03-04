@@ -101,8 +101,9 @@ function matpower_jacobian(polar::PolarForm, X::Union{State, Control}, ::typeof(
 end
 
 # Hessian
-function residual_hessian(
+function matpower_hessian(
     polar::PolarForm,
+    ::typeof(power_balance),
     buffer::PolarNetworkState,
     λ::AbstractVector,
 )

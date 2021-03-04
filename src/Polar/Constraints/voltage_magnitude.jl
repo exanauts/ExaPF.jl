@@ -64,16 +64,6 @@ function jtprod(polar::PolarForm, ::typeof(voltage_magnitude_constraints), ∂ja
     ∂jac.∇fₓ[fr_:end] .= v
 end
 
-function hessian(polar::PolarForm, ::typeof(voltage_magnitude_constraints), buffer, λ)
-    nu = get(polar, NumberOfControl())
-    nx = get(polar, NumberOfState())
-    return FullSpaceHessian(
-        spzeros(nx, nx),
-        spzeros(nu, nx),
-        spzeros(nu, nu),
-    )
-end
-
 function matpower_jacobian(
     polar::PolarForm,
     X::Union{State,Control},
@@ -97,3 +87,12 @@ function matpower_jacobian(
     end
 end
 
+function matpower_hessian(polar::PolarForm, ::typeof(voltage_magnitude_constraints), buffer, λ)
+    nu = get(polar, NumberOfControl())
+    nx = get(polar, NumberOfState())
+    return FullSpaceHessian(
+        spzeros(nx, nx),
+        spzeros(nu, nx),
+        spzeros(nu, nu),
+    )
+end
