@@ -93,6 +93,7 @@
             ExaPF.voltage_magnitude_constraints,
             ExaPF.power_balance,
             ExaPF.reactive_power_constraints,
+            ExaPF.active_power_constraints,
             ExaPF.flow_constraints,
         ]
             m = ExaPF.size_constraint(polar, cons)
@@ -102,6 +103,9 @@
             function test_fd(vvm)
                 cache.vmag .= vvm[1:nbus]
                 cache.vang .= vvm[1+nbus:2*nbus]
+                if isa(cons, typeof(ExaPF.active_power_constraints))
+                    ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
+                end
                 cons(polar, c, cache)
                 return dot(c, λ)
             end

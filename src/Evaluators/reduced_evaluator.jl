@@ -174,12 +174,10 @@ function update!(nlp::ReducedSpaceEvaluator, u)
     return conv
 end
 
+# TODO: determine if we should include λ' * g(x, u), even if ≈ 0
 function objective(nlp::ReducedSpaceEvaluator, u)
     # Take as input the current cache, updated previously in `update!`.
-    pg = get(nlp, PS.ActivePower())
-    cost = cost_production(nlp.model, pg)
-    # TODO: determine if we should include λ' * g(x, u), even if ≈ 0
-    return cost
+    return objective(nlp.model, nlp.buffer)
 end
 
 function update_jacobian!(nlp::ReducedSpaceEvaluator, ::Control)
@@ -219,7 +217,7 @@ function full_gradient!(nlp::ReducedSpaceEvaluator, gx, gu, u)
     buffer = nlp.buffer
     ∂obj = nlp.autodiff.∇f
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
-    ∂cost(nlp.model, ∂obj, buffer)
+    adjoint_objective!(nlp.model, ∂obj, buffer)
     copyto!(gx, ∂obj.∇fₓ)
     copyto!(gu, ∂obj.∇fᵤ)
 end
@@ -227,7 +225,7 @@ end
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     buffer = nlp.buffer
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
-    ∂cost(nlp.model, nlp.autodiff.∇f, buffer)
+    adjoint_objective!(nlp.model, nlp.autodiff.∇f, buffer)
     ∇fₓ, ∇fᵤ = nlp.autodiff.∇f.∇fₓ, nlp.autodiff.∇f.∇fᵤ
 
     reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ, u)

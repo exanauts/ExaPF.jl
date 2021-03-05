@@ -25,9 +25,9 @@ This is currently not done because the abstraction of the indexing is not yet re
 
 """
 abstract type AbstractJacobian end
-struct StateJacobian <: AbstractJacobian end
-struct ControlJacobian <: AbstractJacobian end
 abstract type AbstractHessian end
+
+abstract type AbstractAdjointStack end
 
 function jacobian! end
 
@@ -70,8 +70,12 @@ struct Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
     t1svarx::SubD
 end
 
+struct ConstantJacobian{SMT} <: AbstractJacobian
+    J::SMT
+end
+
 """
-    Hessian
+    AutoDiff.Hessian
 
 Creates an object for computing Hessian adjoint tangent projections.
 

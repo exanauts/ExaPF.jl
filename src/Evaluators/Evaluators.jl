@@ -256,6 +256,7 @@ Reset evaluator `nlp` to default configuration.
 function reset! end
 
 include("common.jl")
+include("derivatives.jl")
 
 # Basic evaluators
 include("reduced_evaluator.jl")

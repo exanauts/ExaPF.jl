@@ -48,7 +48,7 @@ const KA = KernelAbstractions
             ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
-            ExaPF.∂cost(polar, ∂obj, cache)
+            ExaPF.adjoint_objective!(polar, ∂obj, cache)
             ∇fₓ = ∂obj.∇fₓ
             ∇fᵤ = ∂obj.∇fᵤ
 
@@ -67,7 +67,7 @@ const KA = KernelAbstractions
                 ExaPF.transfer!(polar, cache, u_)
                 convergence = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-14))
                 ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
-                return ExaPF.cost_production(polar, cache.pg)
+                return ExaPF.objective(polar, cache)
             end
 
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, uk)

@@ -125,6 +125,11 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
     return jac.J
 end
 
+# Handle properly constant Jacobian case
+function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.ConstantJacobian, buffer)
+    return jac.J
+end
+
 function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
     @assert is_constraint(func)
 
@@ -202,6 +207,57 @@ function AutoDiff.adj_hessian_prod!(
         hv[i] = ForwardDiff.partials(adj_t1sx[H.map[i]]).values[1]
     end
     return nothing
+end
+
+
+# Adjoint's structure
+"""
+    AdjointStackObjective{VT}
+
+An object for storing the adjoint stack in the adjoint objective computation.
+
+"""
+struct AdjointStackObjective{VT}
+    ∇fₓ::VT
+    ∇fᵤ::VT
+    ∂pg::VT
+    ∂vm::VT
+    ∂va::VT
+    jvₓ::VT
+    jvᵤ::VT
+    ∂flow::VT
+end
+
+struct AdjointPolar{VT} <: AutoDiff.AbstractAdjointStack
+    ∂cons::VT
+    ∂vm::VT
+    ∂va::VT
+    ∂pinj::VT
+    ∂qinj::VT
+end
+
+# Derivative factory
+struct DerivativesStorage{Stack,Jac,Hess} <: AbstractAutoDiffFactory
+    stack::Stack
+    Jx::Jac
+    Ju::Jac
+    H::Hess
+end
+
+struct DerivativesStorage2{Stack,Jacx,Jacu,Hess} <: AbstractAutoDiffFactory
+    stack::Stack
+    Jx::Jacx
+    Ju::Jacu
+    H::Hess
+end
+
+## Interface
+function jacobian!(polar::PolarForm, X::Union{State,Control}, ∂D::DerivativesStorage, buffer::PolarNetworkState)
+    if isa(X, State)
+        return Jx.J
+    elseif isa(X, Control)
+        return Ju.J
+    end
 end
 
 ## Utils

@@ -1,23 +1,6 @@
 # Adjoints needed in polar formulation
 #
 
-"""
-    AdjointStackObjective{VT}
-
-An object for storing the adjoint stack in the adjoint objective computation.
-
-"""
-struct AdjointStackObjective{VT}
-    ∇fₓ::VT
-    ∇fᵤ::VT
-    ∂pg::VT
-    ∂vm::VT
-    ∂va::VT
-    jvₓ::VT
-    jvᵤ::VT
-    ∂flow::VT
-end
-
 function cost_production(polar::PolarForm, pg)
     ngen = PS.get(polar, PS.NumberOfGenerators())
     coefs = polar.costs_coefficients
@@ -27,8 +10,12 @@ function cost_production(polar::PolarForm, pg)
     # Return quadratic cost
     # NB: this operation induces three allocations on the GPU,
     #     but is faster than writing the sum manually
-    cost = sum(c2 .+ c3 .* pg .+ c4 .* pg.^2)
+    return sum(c2 .+ c3 .* pg .+ c4 .* pg.^2)
     return cost
+end
+
+function objective(polar::PolarForm, buffer::PolarNetworkState)
+    return cost_production(polar, buffer.pg)
 end
 
 function put(
@@ -66,7 +53,7 @@ function put(
     return
 end
 
-function ∂cost(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarNetworkState)
+function adjoint_objective!(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarNetworkState)
     pg = buffer.pg
     coefs = polar.costs_coefficients
     c3 = @view coefs[:, 3]
@@ -99,5 +86,64 @@ function hessian_cost(polar::PolarForm, buffer::PolarNetworkState)
     ∇²fₓᵤ = ∂₂P.xu + ∂Pᵤ' * D * ∂Pₓ
 
     return FullSpaceHessian(∇²fₓₓ, ∇²fₓᵤ, ∇²fᵤᵤ)
+end
+
+function hessian_prod_objective!(
+    polar::PolarForm,
+    ∇²f::AutoDiff.Hessian,
+    ∇f::AdjointStackObjective,
+    hv::AbstractVector,
+    buffer::PolarNetworkState,
+    tgt::AbstractVector,
+)
+    nx = get(polar, NumberOfState())
+    nu = get(polar, NumberOfControl())
+    # Indexing of generators
+    pv2gen = polar.indexing.index_pv_to_gen ; npv = length(pv2gen)
+    ref2gen = polar.indexing.index_ref_to_gen ; nref = length(ref2gen)
+    # Coefficients
+    coefs = polar.costs_coefficients
+    c3 = @view coefs[:, 3]
+    c4 = @view coefs[:, 4]
+
+    # Remember that
+    # ```math
+    # ∂f = (∂f / ∂pg) * ∂pg
+    # ```
+    # Using the chain-rule, we get
+    # ```math
+    # ∂²f = (∂f / ∂pg) * ∂²pg + ∂pg' * (∂²f / ∂²pg) * ∂pg
+    # ```
+
+    ## Step 1: evaluate (∂f / ∂pg) * ∂²pg
+    ∇f.∂pg .= c3 .+ 2.0 .* c4 .* buffer.pg
+    ∂pg = @view ∇f.∂pg[ref2gen]
+    @time AutoDiff.adj_hessian_prod!(polar, ∇²f, hv, buffer, ∂pg, tgt)
+
+    ## Step 2: evaluate ∂pg' * (∂²f / ∂²pg) * ∂pg
+    # Compute adjoint w.r.t. ∂pg_ref
+    ∇f.∂pg .= 0.0
+    ∇f.∂pg[ref2gen] .= 1.0
+    put(polar, PS.Generators(), PS.ActivePower(), ∇f, buffer)
+    # ∂²f / ∂²pg
+    ∂²pg = 2.0 .* c4
+    @views begin
+        tx = tgt[1:nx]
+        tu = tgt[1+nx:nx+nu]
+        tpg = tgt[nx+nu-npv+1:end]
+
+        ∇pgₓ = ∇f.∇fₓ
+        ∇pgᵤ = ∇f.∇fᵤ
+
+        scale_x = dot(∇pgₓ, ∂²pg[ref2gen[1]], tx)
+        scale_u = dot(∇pgᵤ, ∂²pg[ref2gen[1]], tu)
+        # Contribution of slack node
+        hv[1:nx]       .+= (scale_x + scale_u) .* ∇pgₓ
+        hv[1+nx:nx+nu] .+= (scale_x + scale_u) .* ∇pgᵤ
+        # Contribution of PV nodes (only through power generation)
+        hv[nx+nu-npv+1:end] .+= ∂²pg[pv2gen] .* tpg
+    end
+
+    return nothing
 end
 

@@ -122,7 +122,7 @@ const PS = PowerSystem
             @test norm(cons, Inf) < tolerance
 
             ## Cost Production
-            c2 = ExaPF.cost_production(polar, cache.pg)
+            c2 = ExaPF.objective(polar, cache)
             @test isa(c2, Real)
 
             ## Inequality constraint

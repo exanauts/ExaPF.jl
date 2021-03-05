@@ -8,6 +8,7 @@ function Base.show(io::IO, nlp::AbstractNLPEvaluator)
     println(io, "    * #cons: ", m)
 end
 
+## Generic callbacks
 function constraint(nlp::AbstractNLPEvaluator, x)
     cons = similar(x, n_constraints(nlp)) ; fill!(cons, 0)
     constraint!(nlp, cons, x)

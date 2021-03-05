@@ -158,9 +158,10 @@ end
 function objective(nlp::ProxALEvaluator, w)
     u = @view w[1:nlp.nu]
     s = @view w[nlp.nu+1:end]
+    buffer = get(nlp.inner, PhysicalState())
     pg = get(nlp.inner, PS.ActivePower())
     # Operational costs
-    cost = nlp.scale_objective * cost_production(nlp.inner.model, pg)
+    cost = nlp.scale_objective * objective(nlp.inner.model, buffer)
     # Augmented Lagrangian penalty
     cost += 0.5 * nlp.τ * xnorm(pg .- nlp.pg_ref)^2
     if nlp.time != Origin
