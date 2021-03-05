@@ -43,7 +43,7 @@ datafile = joinpath(dirname(@__FILE__), ARGS[3])
 pf = PowerSystem.PowerNetwork(datafile)
 polar = PolarForm(pf, device)
 cache = ExaPF.get(polar, ExaPF.PhysicalState())
-jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
+jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
 npartitions = ceil(Int64,(size(jx.J,1)/64))
 precond = ExaPF.LinearSolvers.BlockJacobiPreconditioner(jx.J, npartitions, device)
 # Retrieve initial state of network
@@ -55,9 +55,9 @@ powerflow_solver = NewtonRaphson(tol=ntol)
 nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0;
                                     linear_solver=algo, powerflow_solver=powerflow_solver)
 convergence = ExaPF.update!(nlp, u0)
-ExaPF.reset!(nlp)                             
+ExaPF.reset!(nlp)
 convergence = ExaPF.update!(nlp, u0)
-ExaPF.reset!(nlp)                             
+ExaPF.reset!(nlp)
 TimerOutputs.reset_timer!(ExaPF.TIMER)
 convergence = ExaPF.update!(nlp, u0)
 
@@ -68,7 +68,7 @@ convergence = ExaPF.update!(nlp, u0)
 prettytime = TimerOutputs.prettytime
 timers = ExaPF.TIMER.inner_timers
 inner_timer = timers["Newton"]
-println("$(ARGS[1]), $(ARGS[2]), $(ARGS[3]),", 
+println("$(ARGS[1]), $(ARGS[2]), $(ARGS[3]),",
         printtimer(timers, "Newton"),",",
         printtimer(inner_timer, "Jacobian"),",",
         printtimer(inner_timer, "Linear Solver"))

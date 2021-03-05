@@ -83,6 +83,12 @@ function ldiv!(::DirectSolver,
     return 0
 end
 function ldiv!(::DirectSolver,
+    y::Vector, J::Factorization, x::Vector,
+)
+    LinearAlgebra.ldiv!(y, J, x)
+    return 0
+end
+function ldiv!(::DirectSolver,
     y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector,
 )
     CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')

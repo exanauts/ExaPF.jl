@@ -34,7 +34,6 @@
         @test isa(get(nlp, ExaPF.Constraints()), Array{Function})
         @test isa(get(nlp, State()), AbstractVector)
         @test isa(buffer, ExaPF.AbstractBuffer)
-        @test isa(get(nlp, ExaPF.AutoDiffBackend()), ExaPF.AutoDiffFactory)
         @test ExaPF.constraints_type(nlp) in [:bound, :equality, :inequality]
 
         # setters

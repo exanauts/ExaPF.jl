@@ -126,9 +126,34 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
 end
 
 # Handle properly constant Jacobian case
+function AutoDiff.ConstantJacobian(polar::PolarForm, func::Function, variable::Union{State,Control})
+    @assert is_constraint(func)
+
+    if isa(polar.device, CPU)
+        SMT = SparseMatrixCSC{Float64,Int}
+    elseif isa(polar.device, CUDADevice)
+        SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
+    end
+
+    nbus = get(polar, PS.NumberOfBuses())
+    vmag = ones(nbus)
+    vang = ones(nbus)
+    V = vmag .* exp.(im .* vang)
+    # Evaluate Jacobian with MATPOWER
+    J = matpower_jacobian(polar, variable, func, V)
+    # Move Jacobian to the GPU
+    if isa(polar.device, CUDADevice) && iszero(J)
+        J = 0.0
+    else
+        J = convert(SMT, J)
+    end
+    return AutoDiff.ConstantJacobian(J)
+end
+
 function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.ConstantJacobian, buffer)
     return jac.J
 end
+
 
 function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
     @assert is_constraint(func)
@@ -158,7 +183,7 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     VD = typeof(t1sx)
     adj_t1sx = similar(t1sx)
     adj_t1sF = similar(t1sF)
-    return AutoDiff.Hessian{typeof(func), VI, VT, MT, Nothing, VP, VD, typeof(varx), typeof(t1svarx)}(
+    return AutoDiff.Hessian{typeof(func), VI, VT, VP, VD, typeof(varx), typeof(t1svarx)}(
         func, t1sseeds, t1sF, adj_t1sF, x, t1sx, adj_t1sx, map, varx, t1svarx
     )
 end
@@ -217,7 +242,7 @@ end
 An object for storing the adjoint stack in the adjoint objective computation.
 
 """
-struct AdjointStackObjective{VT}
+struct AdjointStackObjective{VT<:AbstractVector}
     ∇fₓ::VT
     ∇fᵤ::VT
     ∂pg::VT
@@ -225,68 +250,79 @@ struct AdjointStackObjective{VT}
     ∂va::VT
     jvₓ::VT
     jvᵤ::VT
-    ∂flow::VT
 end
 
-struct AdjointPolar{VT} <: AutoDiff.AbstractAdjointStack
-    ∂cons::VT
+function AdjointStackObjective(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+    nbus = get(polar, PS.NumberOfBuses())
+    return AdjointStackObjective{VT}(
+        xzeros(VT, get(polar, NumberOfState())),
+        xzeros(VT, get(polar, NumberOfControl())),
+        xzeros(VT, get(polar, PS.NumberOfGenerators())),
+        xzeros(VT, nbus),
+        xzeros(VT, nbus),
+        xzeros(VT, get(polar, NumberOfState())),
+        xzeros(VT, get(polar, NumberOfControl())),
+    )
+end
+
+struct AdjointPolar{VT<:AbstractVector} <: AutoDiff.AbstractAdjointStack
     ∂vm::VT
     ∂va::VT
     ∂pinj::VT
     ∂qinj::VT
+    ∂x::VT
+    ∂u::VT
 end
 
-# Derivative factory
-struct DerivativesStorage{Stack,Jac,Hess} <: AbstractAutoDiffFactory
-    stack::Stack
-    Jx::Jac
-    Ju::Jac
-    H::Hess
+function AdjointPolar{VT}(nx::Int, nu::Int, nbus::Int) where {VT}
+    return AdjointPolar{VT}(
+        xzeros(VT, nbus),
+        xzeros(VT, nbus),
+        xzeros(VT, nbus),
+        xzeros(VT, nbus),
+        xzeros(VT, nx),
+        xzeros(VT, nu),
+    )
 end
 
-struct DerivativesStorage2{Stack,Jacx,Jacu,Hess} <: AbstractAutoDiffFactory
-    stack::Stack
+# Stack constructor for each constraint
+function AdjointPolar(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+    nbus = get(polar, PS.NumberOfBuses())
+    nx = get(polar, NumberOfState())
+    nu = get(polar, NumberOfControl())
+    return AdjointPolar{VT}(nx, nu, nbus)
+end
+
+struct JacobianStorage{Jacx, Jacu}
     Jx::Jacx
     Ju::Jacu
-    H::Hess
 end
 
-## Interface
-function jacobian!(polar::PolarForm, X::Union{State,Control}, ∂D::DerivativesStorage, buffer::PolarNetworkState)
-    if isa(X, State)
-        return Jx.J
-    elseif isa(X, Control)
-        return Ju.J
-    end
+struct HessianStorage{VT,Hess1,Hess2}
+    state::Hess1
+    obj::Hess2
+    constraints::Vector{AutoDiff.Hessian}
+    # Adjoints
+    z::VT
+    ψ::VT
+    tmp_tgt::VT
+    tmp_hv::VT
 end
 
-## Utils
-# TODO: find better naming
-function init_autodiff_factory(polar::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState) where {T, IT, VT, MT}
-    # Build the AutoDiff Jacobian structure
-    statejacobian = AutoDiff.Jacobian(
-        polar, power_balance, State(),
-    )
-    controljacobian = AutoDiff.Jacobian(
-        polar, power_balance, Control(),
-    )
+function HessianStorage(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+    nx = get(polar, NumberOfState())
+    nu = get(polar, NumberOfControl())
 
-    # Build the AutoDiff structure for the objective
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    nₓ = get(polar, NumberOfState())
-    nᵤ = get(polar, NumberOfControl())
-    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
-    ∇fₓ = xzeros(VT, nₓ)
-    ∇fᵤ = xzeros(VT, nᵤ)
-    adjoint_pg = similar(buffer.pg)
-    adjoint_vm = similar(Vm)
-    adjoint_va = similar(Va)
-    # Build cache for Jacobian vector-product
-    jvₓ = xzeros(VT, nₓ)
-    jvᵤ = xzeros(VT, nᵤ)
-    adjoint_flow = xzeros(VT, 2 * nbus)
-    objectiveAD = AdjointStackObjective(∇fₓ, ∇fᵤ, adjoint_pg, adjoint_vm, adjoint_va, jvₓ, jvᵤ, adjoint_flow)
+    Hstate = AutoDiff.Hessian(polar, power_balance)
+    Hobj = AutoDiff.Hessian(polar, active_power_constraints)
+    Hcons = AutoDiff.Hessian[]
 
-    return statejacobian, controljacobian, objectiveAD
+    z = xzeros(VT, nx)
+    ψ = xzeros(VT, nx)
+
+    tgt = xzeros(VT, nx+nu)
+    hv = xzeros(VT, nx+nu)
+
+    return HessianStorage{VT, typeof(Hstate), typeof(Hobj)}(Hstate, Hobj, Hcons, z, ψ, tgt, hv)
 end
 

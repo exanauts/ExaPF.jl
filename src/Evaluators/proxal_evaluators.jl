@@ -176,16 +176,13 @@ function objective(nlp::ProxALEvaluator, w)
 end
 
 ## Gradient
-update_jacobian!(nlp::ProxALEvaluator, ::Control) = update_jacobian!(nlp.inner, Control())
-
 function full_gradient!(nlp::ProxALEvaluator, jvx, jvu, w)
     # Import model
     model = nlp.inner.model
     # Import buffer (has been updated previously in update!)
     buffer = get(nlp.inner, PhysicalState())
     # Import AutoDiff objects
-    autodiff = get(nlp.inner, AutoDiffBackend())
-    ∂obj = autodiff.∇f
+    ∂obj = nlp.inner.obj_stack
     # Scaling
     scale_obj = nlp.scale_objective
     # Current active power
@@ -237,15 +234,12 @@ end
 ## Gradient
 function gradient!(nlp::ProxALEvaluator, g, w)
     # Import AutoDiff objects
-    autodiff = get(nlp.inner, AutoDiffBackend())
-    ∂obj = autodiff.∇f
+    ∂obj = nlp.inner.obj_stack
 
     jvu = ∂obj.∇fᵤ ; jvx = ∂obj.∇fₓ
     fill!(jvx, 0)  ; fill!(jvu, 0)
     full_gradient!(nlp, jvx, jvu, w)
 
-    # Start to update Control Jacobian in reduced model
-    update_jacobian!(nlp, Control())
     ## Evaluation of reduced gradient
     reduced_gradient!(nlp, g, jvx, jvu, w)
     return nothing
@@ -289,8 +283,7 @@ function full_jtprod!(nlp::ProxALEvaluator, jvx, jvu, w, v)
 end
 
 function ojtprod!(nlp::ProxALEvaluator, jv, u, σ, v)
-    autodiff = get(nlp, AutoDiffBackend())
-    ∂obj = autodiff.∇f
+    ∂obj = nlp.inner.obj_stack
     jvx = ∂obj.jvₓ ; fill!(jvx, 0)
     jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
     # compute gradient of objective
@@ -300,7 +293,6 @@ function ojtprod!(nlp::ProxALEvaluator, jv, u, σ, v)
     # compute transpose Jacobian vector product of constraints
     full_jtprod!(nlp, jvx, jvu, u, v)
     # Evaluate gradient in reduced space
-    update_jacobian!(nlp, Control())
     reduced_gradient!(nlp, jv, jvx, jvu, u)
 end
 

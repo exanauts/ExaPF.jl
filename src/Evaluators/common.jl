@@ -51,7 +51,7 @@ end
 # Build full Hessian matrix using `n` Hessian-vector product
 function hessian!(nlp::AbstractNLPEvaluator, H, x)
     n = n_variables(nlp)
-    v = zeros(n)
+    v = similar(x)
     for i in 1:n
         fill!(v, 0)
         v[i] = 1.0

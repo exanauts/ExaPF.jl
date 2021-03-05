@@ -167,22 +167,6 @@ function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
     return
 end
 
-function hessian!(ag::AugLagEvaluator, hess, u)
-    ag.counter.hessian += 1
-    base_nlp = ag.inner
-    scaler = ag.scaler
-    # Import AutoDiff objects
-    autodiff = get(base_nlp, AutoDiffBackend())
-    cx = ag.cons
-    mask = abs.(cx) .> 0
-
-    σ = scaler.scale_obj
-    y = scaler.scale_cons .* ag.λc .* mask
-    z = ag.ρ .* scaler.scale_cons .* scaler.scale_cons .* mask
-
-    hessian_lagrangian_penalty!(base_nlp, hess, u, y, σ, z)
-end
-
 function estimate_multipliers(ag::AugLagEvaluator, u)
     J = Diagonal(ag.scaler.scale_cons) * jacobian(ag.inner, u)
     ∇f = gradient(ag.inner, u)

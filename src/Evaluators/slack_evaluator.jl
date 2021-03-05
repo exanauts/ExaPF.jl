@@ -172,21 +172,6 @@ function hessprod!(nlp::SlackEvaluator, hessvec, w, v)
     return
 end
 
-function hessian_lagrangian_prod!(nlp::SlackEvaluator, hessvec, x, y, σ, v)
-    # w.r.t. u
-    @views hessian_lagrangian_prod!(
-        nlp.inner,
-        hessvec[1:nlp.nv],
-        x[1:nlp.nv],
-        y,
-        σ,
-        v[1:nlp.nv]
-    )
-    # w.r.t. s
-    hus = @view hessvec[nlp.nv+1:end]
-    hus .= 0.0
-end
-
 # J = [Jᵤ -I] , hence
 # J' * J = [ Jᵤ' * Jᵤ    - Jᵤ']
 #          [ - Jᵤ           I ]

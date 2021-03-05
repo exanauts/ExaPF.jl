@@ -13,9 +13,13 @@ function build_nlp(datafile, device)
     x0 = ExaPF.initial(polar, State())
     u0 = ExaPF.initial(polar, Control())
 
-    constraints = Function[ExaPF.voltage_magnitude_constraints, ExaPF.reactive_power_constraints]
+    constraints = Function[
+        ExaPF.voltage_magnitude_constraints,
+        ExaPF.active_power_constraints,
+        ExaPF.reactive_power_constraints,
+    ]
     print("Constructor\t")
-    powerflow_solver = NewtonRaphson(tol=1e-10)
+    powerflow_solver = NewtonRaphson(tol=1e-12)
     nlp = @time ExaPF.ReducedSpaceEvaluator(polar, x0, u0; constraints=constraints,
                                             powerflow_solver=powerflow_solver)
     return nlp, u0
@@ -46,9 +50,16 @@ function run_reduced_evaluator(nlp, u; device=CPU())
     v = copy(cons) ; fill!(v, 1)
     @time ExaPF.jtprod!(nlp, jv, u, v)
     hv = similar(u) ; fill!(hv, 0)
-    v = similar(u) ;  fill!(v, 1)
+    v = similar(u) ; fill!(v, 0)
+    v[1] = 1
     print("Hessprod \t")
     @time ExaPF.hessprod!(nlp, hv, u, v)
+    print("Hessprod \t")
+    @time ExaPF.hessprod!(nlp, hv, u, v)
+    print("Hessprod2 \t")
+    @time ExaPF.hessprod2!(nlp, hv, u, v)
+    print("Hessprod2 \t")
+    @time ExaPF.hessprod2!(nlp, hv, u, v)
     print("HLag-prod \t")
     y = similar(cons) ; fill!(y, 1.0)
     w = similar(cons) ; fill!(w, 1.0)

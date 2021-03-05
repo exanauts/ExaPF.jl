@@ -42,7 +42,6 @@
         @test get(nlp, State()) == x0
         buffer = get(nlp, ExaPF.PhysicalState())
         @test isa(buffer, ExaPF.AbstractBuffer)
-        @test isa(get(nlp, ExaPF.AutoDiffBackend()), ExaPF.AutoDiffFactory)
         @test ExaPF.initial(nlp) == u0
 
         vm, va, pg, qg = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
@@ -65,20 +64,19 @@
         @test isapprox(grad_fd, g, rtol=1e-6)
 
         # Hessian (only supported on CPU)
-        if isa(device, CPU)
-            ExaPF.update!(nlp, u)
-            hv = similar(u) ; fill!(hv, 0)
-            w = similar(u) ; fill!(w, 0)
-            w[1] = 1
-            ExaPF.hessprod!(nlp, hv, u, w)
-            H = similar(u, n, n) ; fill!(H, 0)
-            ExaPF.hessian!(nlp, H, u)
-            # Is Hessian vector product relevant?
-            @test H * w == hv
-            # Is Hessian correct?
-            hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
-            @test isapprox(H, hess_fd, rtol=1e-6)
-        end
+        ExaPF.update!(nlp, u)
+        hv = similar(u) ; fill!(hv, 0)
+        w = similar(u) ; fill!(w, 0)
+        w[1] = 1.0
+        ExaPF.hessprod!(nlp, hv, u, w)
+        H = similar(u, n, n) ; fill!(H, 0)
+        ExaPF.hessian!(nlp, H, u)
+        # Is Hessian vector product relevant?
+        @test H * w == hv
+        # Is Hessian correct?
+        hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
+        # Take attribute data as hess_fd is of type Symmetric
+        @test H ≈ hess_fd.data rtol=1e-6
 
         # Constraint
         ## Evaluation of the constraints
@@ -86,16 +84,16 @@
         fill!(cons, 0)
         ExaPF.constraint!(nlp, cons, u)
 
+        ## Evaluation of the transpose-Jacobian product
+        v = similar(cons) ; fill!(v, 0)
+        fill!(g, 0)
+        ExaPF.jtprod!(nlp, g, u, v)
+        @test iszero(g)
+        fill!(v, 1) ; fill!(g, 0)
+        ExaPF.jtprod!(nlp, g, u, v)
+
         ## Evaluation of the Jacobian (only on CPU)
         if isa(device, CPU)
-            ## Evaluation of the transpose-Jacobian product
-            v = similar(cons) ; fill!(v, 0)
-            fill!(g, 0)
-            ExaPF.jtprod!(nlp, g, u, v)
-            @test iszero(g)
-            fill!(v, 1) ; fill!(g, 0)
-            ExaPF.jtprod!(nlp, g, u, v)
-
             jac = M{Float64, 2}(undef, m, n)
             ExaPF.jacobian!(nlp, jac, u)
             # Test transpose Jacobian vector product

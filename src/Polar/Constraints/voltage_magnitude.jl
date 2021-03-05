@@ -1,5 +1,7 @@
 is_constraint(::typeof(voltage_magnitude_constraints)) = true
 
+is_linear(polar::PolarForm, ::typeof(voltage_magnitude_constraints)) = true
+
 # We add constraint only on vmag_pq
 function voltage_magnitude_constraints(polar::PolarForm, cons, vm, va, pinj, qinj)
     index_pq = polar.indexing.index_pq

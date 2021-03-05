@@ -10,10 +10,12 @@ import KernelAbstractions: @index
 
 The residual CPU/GPU kernel of the powerflow residual.
 """
-KA.@kernel function residual_kernel!(F, vm, va,
-                                  colptr, rowval,
-                                  ybus_re_nzval, ybus_im_nzval,
-                                  pinj, qinj, pv, pq, nbus)
+KA.@kernel function residual_kernel!(
+    F, vm, va,
+    colptr, rowval,
+    ybus_re_nzval, ybus_im_nzval,
+    pinj, qinj, pv, pq, nbus
+)
 
     npv = size(pv, 1)
     npq = size(pq, 1)
@@ -119,11 +121,11 @@ KA.@kernel function adj_residual_edge_kernel!(
         if i > npv
             F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
         end
-        # Reverse loop
-        adj_coef_cos = 0.0
-        adj_coef_sin = 0.0
-        adj_cos_val  = 0.0
-        adj_sin_val  = 0.0
+
+        adj_coef_cos =  cos_val  * adj_F[i]
+        adj_coef_sin =  sin_val  * adj_F[i]
+        adj_cos_val  =  coef_cos * adj_F[i]
+        adj_sin_val  =  coef_sin * adj_F[i]
 
         if i > npv
             adj_coef_cos +=  sin_val  * adj_F[npq + i]
@@ -131,11 +133,6 @@ KA.@kernel function adj_residual_edge_kernel!(
             adj_cos_val  += -coef_sin * adj_F[npq + i]
             adj_sin_val  +=  coef_cos * adj_F[npq + i]
         end
-
-        adj_coef_cos +=  cos_val  * adj_F[i]
-        adj_coef_sin +=  sin_val  * adj_F[i]
-        adj_cos_val  +=  coef_cos * adj_F[i]
-        adj_sin_val  +=  coef_sin * adj_F[i]
 
         adj_aij =   cos_val*adj_sin_val
         adj_aij += -sin_val*adj_cos_val
@@ -165,10 +162,11 @@ end
 This kernel accumulates the adjoint of the voltage magnitude `adj_vm`
 and `adj_va` from the edges of the graph stored as CSC matrices.
 """
-KA.@kernel function cpu_adj_node_kernel!(F, adj_F, vm, adj_vm, va, adj_va,
-                                  colptr, rowval,
-                                  edge_vm_from, edge_vm_to,
-                                  edge_va_from, edge_va_to
+KA.@kernel function cpu_adj_node_kernel!(
+    F, adj_F, vm, adj_vm, va, adj_va,
+    colptr, rowval,
+    edge_vm_from, edge_vm_to,
+    edge_va_from, edge_va_to
 )
 
     i = @index(Global, Linear)
@@ -186,20 +184,21 @@ end
                                   edge_vm_from, edge_va_from,
                                   edge_vm_a, edge_vm_i, edge_vm_j,
                                   edge_va_a, edge_va_i, edge_va_j,
-    ) 
+    )
 
 This kernel accumulates the adjoint of the voltage magnitude `adj_vm`
-and `adj_va` from the edges of the graph. For the `to` edges a COO matrix 
+and `adj_va` from the edges of the graph. For the `to` edges a COO matrix
 was used to compute the transposed of the graph to add them to the `from` edges.
 
 CUDA does not support efficient CSR -> CSC conversion, hence COO was used.
 """
-KA.@kernel function gpu_adj_node_kernel!(adj_vm, adj_va,
-                                  colptr, rowval,
-                                  edge_vm_from, edge_va_from,
-                                  edge_vm_a, edge_vm_i, edge_vm_j,
-                                  edge_va_a, edge_va_i, edge_va_j,
-                                  ) 
+KA.@kernel function gpu_adj_node_kernel!(
+    adj_vm, adj_va,
+    colptr, rowval,
+    edge_vm_from, edge_va_from,
+    edge_vm_a, edge_vm_i, edge_vm_j,
+    edge_va_a, edge_va_i, edge_va_j,
+)
     i = @index(Global, Linear)
     @inbounds for c in colptr[i]:colptr[i+1]-1
         adj_vm[i] += edge_vm_from[c]
@@ -246,8 +245,8 @@ function adj_residual_polar!(
     kernel_node! = gpu_adj_node_kernel!(KA.CUDADevice())
     spedge_vm_to = CUSPARSE.CuSparseMatrixCSR{T}(colptr, rowval, edge_vm_to,(nvbus,nvbus))
     spedge_va_to = CUSPARSE.CuSparseMatrixCSR{T}(colptr, rowval, edge_va_to,(nvbus,nvbus))
-    tspedge_vm_to = CUSPARSE.CuSparseMatrixCOO(spedge_vm_to) 
-    tspedge_va_to = CUSPARSE.CuSparseMatrixCOO(spedge_va_to) 
+    tspedge_vm_to = CUSPARSE.CuSparseMatrixCOO(spedge_vm_to)
+    tspedge_va_to = CUSPARSE.CuSparseMatrixCOO(spedge_va_to)
 
     ev = kernel_edge!(F, adj_F, vm, adj_vm, va, adj_va,
                  ybus_re.colptr, ybus_re.rowval,
@@ -263,13 +262,14 @@ function adj_residual_polar!(
 
     ev = kernel_node!(adj_vm, adj_va,
             ybus_re.colptr, ybus_re.rowval,
-            edge_vm_from, edge_va_from, 
+            edge_vm_from, edge_va_from,
             tspedge_vm_to.nzVal, tspedge_vm_to.rowInd, tspedge_vm_to.colInd,
             tspedge_va_to.nzVal, tspedge_va_to.rowInd, tspedge_va_to.colInd,
             ndrange=nvbus)
     wait(ev)
 end
 
+# TODO: clean
 """
     function adj_residual_polar!(
         F::CUDA.CuVector{T}, adj_F::CUDA.CuVector{T}, vm, adj_vm, va, adj_va,
@@ -300,8 +300,6 @@ function adj_residual_polar!(
 
     kernel_edge! = adj_residual_edge_kernel!(KA.CPU())
     kernel_node! = cpu_adj_node_kernel!(KA.CPU())
-    spedge_vm_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_vm_to)
-    spedge_va_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_va_to)
     ev = kernel_edge!(F, adj_F, vm, adj_vm, va, adj_va,
                  ybus_re.colptr, ybus_re.rowval,
                  ybus_re.nzval, ybus_im.nzval,
@@ -311,6 +309,8 @@ function adj_residual_polar!(
                  ndrange=npv+npq)
     wait(ev)
 
+    spedge_vm_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_vm_to)
+    spedge_va_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_va_to)
     spedge_vm_to.nzval .= edge_vm_to
     spedge_va_to.nzval .= edge_va_to
     transpose!(spedge_vm_to, copy(spedge_vm_to))

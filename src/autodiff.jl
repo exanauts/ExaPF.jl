@@ -29,6 +29,8 @@ abstract type AbstractHessian end
 
 abstract type AbstractAdjointStack end
 
+struct EmptyStack <: AbstractAdjointStack end
+
 function jacobian! end
 
 function adj_hessian_prod! end
@@ -87,7 +89,7 @@ Creates an object for computing Hessian adjoint tangent projections.
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct Hessian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractHessian
+struct Hessian{Func, VI, VT, VP, VD, SubT, SubD} <: AbstractHessian
     func::Func
     t1sseeds::VP
     t1sF::VD

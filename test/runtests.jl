@@ -10,6 +10,7 @@ using TimerOutputs
 using FiniteDiff
 
 import ExaPF: ParsePSSE, PowerSystem, IndexSet
+import ExaPF: AutoDiff
 
 Random.seed!(2713)
 

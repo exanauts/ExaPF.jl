@@ -25,7 +25,7 @@ import ExaPF: ParseMAT, PowerSystem, IndexSet
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
-    jx, ju = ExaPF.init_autodiff_factory(polar, cache)
+    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     # solve power flow
     convergence = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
     ExaPF.get!(polar, State(), x, cache)
@@ -51,7 +51,7 @@ end
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
-    jx, ju = ExaPF.init_autodiff_factory(polar, cache)
+    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
     ExaPF.get!(polar, State(), x, cache)
@@ -76,7 +76,7 @@ end
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
-    jx, ju = ExaPF.init_autodiff_factory(polar, cache)
+    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
     ExaPF.get!(polar, State(), x, cache)
@@ -99,7 +99,7 @@ end
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
-    jx, ju = ExaPF.init_autodiff_factory(polar, cache)
+    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
     ExaPF.get!(polar, State(), x, cache)

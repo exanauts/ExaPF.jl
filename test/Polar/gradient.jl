@@ -26,7 +26,9 @@ const KA = KernelAbstractions
         xk = ExaPF.initial(polar, State())
         u = ExaPF.initial(polar, Control())
 
-        jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
+        jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+        ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
+        ∂obj = ExaPF.AdjointStackObjective(polar)
 
         # solve power flow
         conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))

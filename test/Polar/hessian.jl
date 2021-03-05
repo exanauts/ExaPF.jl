@@ -48,8 +48,12 @@ const PS = PowerSystem
             u = ExaPF.initial(polar, Control())
             nx = length(xk) ; nu = length(u)
 
-            jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
-            cpu_jx, cpu_ju, cpu_∂obj = ExaPF.init_autodiff_factory(cpu_polar, cpu_cache)
+            jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+            ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
+            ∂obj = ExaPF.AdjointStackObjective(polar)
+            cpu_jx = AutoDiff.Jacobian(cpu_polar, ExaPF.power_balance, State())
+            cpu_ju = AutoDiff.Jacobian(cpu_polar, ExaPF.power_balance, Control())
+            cpu_∂obj = ExaPF.AdjointStackObjective(cpu_polar)
 
             ##################################################
             # Step 1: computation of first-order adjoint
@@ -80,7 +84,7 @@ const PS = PowerSystem
             Jₓ = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
             @test isapprox(∇gₓ, Jₓ )
             # Hessian vector product
-            ExaPF.∂cost(polar, ∂obj, cache)
+            ExaPF.adjoint_objective!(polar, ∂obj, cache)
             ∇fₓ = ∂obj.∇fₓ
             ∇fᵤ = ∂obj.∇fᵤ
             λ  = -(Array(∇gₓ')) \ Array(∇fₓ)
@@ -143,10 +147,10 @@ const PS = PowerSystem
                 HessianAD, ExaPF.adj_residual_polar!, dev_λ, dev_tgt, vm, va,
                 ybus_re, ybus_im, pbus, qbus, dev_pv, dev_pq, dev_ref, nbus)
             projuu = Array(dev_projuu)
-            @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
+            @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=1e-6)
             AutoDiff.adj_hessian_prod!(polar, HessianAD, dev_projp, cache, dev_λ, dev_tgt)
             projp = Array(dev_projp)
-            @test isapprox(projp[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
+            @test isapprox(projp[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=1e-6)
 
             # check cross terms ux
             tgt = rand(nx + nu)

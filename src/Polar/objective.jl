@@ -77,8 +77,8 @@ function hessian_cost(polar::PolarForm, buffer::PolarNetworkState)
     # Evaluate Hess-vec of objective function f(x, u)
     ∂₂P = matpower_hessian(polar, active_power_constraints, buffer, ∂pg)::FullSpaceHessian{SparseMatrixCSC{Float64, Int}}
 
-    ∂Pₓ = matpower_jacobian(polar, active_power_constraints, State(), buffer)::SparseMatrixCSC{Float64, Int}
-    ∂Pᵤ = matpower_jacobian(polar, active_power_constraints, Control(), buffer)::SparseMatrixCSC{Float64, Int}
+    ∂Pₓ = matpower_jacobian_old(polar, State(), active_power_constraints, buffer)::SparseMatrixCSC{Float64, Int}
+    ∂Pᵤ = matpower_jacobian_old(polar, Control(), active_power_constraints, buffer)::SparseMatrixCSC{Float64, Int}
 
     D = Diagonal(∂²pg)
     ∇²fₓₓ = ∂₂P.xx + ∂Pₓ' * D * ∂Pₓ
@@ -118,7 +118,7 @@ function hessian_prod_objective!(
     ## Step 1: evaluate (∂f / ∂pg) * ∂²pg
     ∇f.∂pg .= c3 .+ 2.0 .* c4 .* buffer.pg
     ∂pg = @view ∇f.∂pg[ref2gen]
-    @time AutoDiff.adj_hessian_prod!(polar, ∇²f, hv, buffer, ∂pg, tgt)
+    AutoDiff.adj_hessian_prod!(polar, ∇²f, hv, buffer, ∂pg, tgt)
 
     ## Step 2: evaluate ∂pg' * (∂²f / ∂²pg) * ∂pg
     # Compute adjoint w.r.t. ∂pg_ref

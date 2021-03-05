@@ -94,7 +94,7 @@ const PS = PowerSystem
         @testset "Polar model API" begin
             xₖ = copy(x0)
             # Init AD factory
-            jx, ju, ∂obj = ExaPF.init_autodiff_factory(polar, cache)
+            jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
 
             # Test powerflow with cache signature
             conv = powerflow(polar, jx, cache, NewtonRaphson(tol=tolerance))
