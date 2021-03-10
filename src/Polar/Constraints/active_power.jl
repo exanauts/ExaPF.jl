@@ -138,37 +138,6 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(a
     return [j11 j12]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_jacobian_old(polar::PolarForm, X::Union{State,Control}, ::typeof(active_power_constraints), buffer)
-    nbus = get(polar, PS.NumberOfBuses())
-    pf = polar.network
-    ref = pf.ref ; nref = length(ref)
-    pv = pf.pv ; npv = length(pv)
-    pq = pf.pq ; npq = length(pq)
-    gen2bus = polar.indexing.index_generators
-    ngen = length(gen2bus)
-    Ybus = pf.Ybus
-    V = buffer.vmag .* exp.(im .* buffer.vang)
-
-    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
-    # w.r.t. state
-    if isa(X, State)
-        j11 = real(dSbus_dVa[ref, [pv; pq]])
-        j12 = real(dSbus_dVm[ref, pq])
-        return [
-            j11 j12 ;
-            spzeros(length(pv), length(pv) + 2 * length(pq))
-        ]::SparseMatrixCSC{Float64, Int}
-    # w.r.t. control
-    elseif isa(X, Control)
-        j11 = real(dSbus_dVm[ref, [ref; pv]])
-        j12 = sparse(I, npv, npv)
-        return [
-            j11 spzeros(length(ref), npv) ;
-            spzeros(npv, ngen) j12
-        ]::SparseMatrixCSC{Float64, Int}
-    end
-end
-
 function matpower_hessian(polar::PolarForm, ::typeof(active_power_constraints), buffer, λ)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
@@ -185,3 +154,4 @@ function matpower_hessian(polar::PolarForm, ::typeof(active_power_constraints), 
         λₚ .* huu,
     )
 end
+

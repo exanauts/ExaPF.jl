@@ -275,7 +275,7 @@ function full_gradient!(nlp::ReducedSpaceEvaluator, gx, gu, u)
     buffer = nlp.buffer
     ∂obj = nlp.obj_stack
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
-    adjoint_objective!(nlp.model, ∂obj, buffer)
+    gradient_objective!(nlp.model, ∂obj, buffer)
     copyto!(gx, ∂obj.∇fₓ)
     copyto!(gu, ∂obj.∇fᵤ)
 end
@@ -283,7 +283,7 @@ end
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     buffer = nlp.buffer
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
-    adjoint_objective!(nlp.model, nlp.obj_stack, buffer)
+    gradient_objective!(nlp.model, nlp.obj_stack, buffer)
     ∇fₓ, ∇fᵤ = nlp.obj_stack.∇fₓ, nlp.obj_stack.∇fᵤ
 
     reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ, u)
@@ -457,8 +457,12 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     tgt[1:nx] .= z
     tgt[1+nx:nx+nu] .= w
 
+    ∂f = similar(buffer.pg)
+    ∂²f = similar(buffer.pg)
+    adjoint_cost!(nlp.model, ∂f, buffer.pg)
+    hessian_cost!(nlp.model, ∂²f)
     ## OBJECTIVE HESSIAN
-    hessian_prod_objective!(nlp.model, H.obj, nlp.obj_stack, hv, buffer, tgt)
+    hessian_prod_objective!(nlp.model, H.obj, nlp.obj_stack, hv, ∂²f, ∂f, buffer, tgt)
     ∇²fx = hv[1:nx]
     ∇²fu = hv[nx+1:nx+nu]
 
@@ -502,7 +506,11 @@ function hessian_lagrangian_penalty_prod!(
     tgt[1+nx:nx+nu] .= w
 
     ## OBJECTIVE HESSIAN
-    hessian_prod_objective!(nlp.model, H.obj, nlp.obj_stack, hv, buffer, tgt)
+    ∂f = similar(buffer.pg)
+    ∂²f = similar(buffer.pg)
+    adjoint_cost!(nlp.model, ∂f, buffer.pg)
+    hessian_cost!(nlp.model, ∂²f)
+    hessian_prod_objective!(nlp.model, H.obj, nlp.obj_stack, hv, ∂²f, ∂f, buffer, tgt)
     ∇²Lx = σ .* hv[1:nx]
     ∇²Lu = σ .* hv[nx+1:nx+nu]
 

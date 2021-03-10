@@ -182,25 +182,12 @@ Store the result inplace, in the vector `hessvec` (with size `n`).
 function hessprod! end
 
 @doc raw"""
-    full_hessian_lagrangian(nlp::AbstractNLPEvaluator, u, y, σ)
-
-Evaluate the Hessian of the Lagrangian in the full-space
-```math
-∇²L(x, u, y) = σ ∇²f(x, u) + \sum_i y_i ∇²c_i(x, u)
-```
-Return `H::FullSpaceHessian`, with entries `H.xx` corresponding
-to `∇²Lₓₓ`, `H.xu` to `∇²Lₓᵤ` and `H.uu` to `∇²Lᵤᵤ`.
-
-"""
-function full_hessian_lagrangian end
-
-@doc raw"""
-    hessian_lagrangian_prod!(nlp::AbstractNLPEvaluator, hessvec, u, y, σ, v)
+    hessian_lagrangian_penalty_prod!(nlp::AbstractNLPEvaluator, hessvec, u, y, σ, v, d)
 
 Evaluate the Hessian-vector product of the Lagrangian
-function ``L(u, y) = f(u) + \sum_i y_i c_i(u)`` with a vector `v`:
+function ``L(u, y) = f(u) + \sum_i y_i c_i(u) + \frac{1}{2} d_i c_i(u)^2`` with a vector `v`:
 ```math
-∇²L(u, y) ⋅ v  = σ ∇²f(u) ⋅ v + \sum_i y_i ∇²c_i(u) ⋅ v
+∇²L(u, y) ⋅ v  = σ ∇²f(u) ⋅ v + \sum_i (y_i + d_i) ∇²c_i(u) ⋅ v + \sum_i d_i ∇c_i(u)^T ∇c_i(u)
 ```
 
 Store the result inplace, in the vector `hessvec`.
@@ -212,8 +199,9 @@ Store the result inplace, in the vector `hessvec`.
 * `y` is a `AbstractVector` with dimension `n`, storing the current constraints' multipliers
 * `σ` is a scalar
 * `v` is a vector with dimension `n`.
+* `d` is a vector with dimension `m`.
 """
-function hessian_lagrangian_prod! end
+function hessian_lagrangian_penalty_prod! end
 
 # Utilities
 """

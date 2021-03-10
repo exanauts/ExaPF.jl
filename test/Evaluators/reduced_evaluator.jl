@@ -63,7 +63,6 @@
         grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
         @test isapprox(grad_fd, g, rtol=1e-6)
 
-        # Hessian (only supported on CPU)
         ExaPF.update!(nlp, u)
         hv = similar(u) ; fill!(hv, 0)
         w = similar(u) ; fill!(w, 0)

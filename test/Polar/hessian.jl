@@ -84,7 +84,7 @@ const PS = PowerSystem
             Jₓ = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
             @test isapprox(∇gₓ, Jₓ )
             # Hessian vector product
-            ExaPF.adjoint_objective!(polar, ∂obj, cache)
+            ExaPF.gradient_objective!(polar, ∂obj, cache)
             ∇fₓ = ∂obj.∇fₓ
             ∇fᵤ = ∂obj.∇fᵤ
             λ  = -(Array(∇gₓ')) \ Array(∇fₓ)
@@ -203,65 +203,13 @@ const PS = PowerSystem
             @test isapprox(∇²gλ.xu[1:nref+npv, :], Hₓᵤ_fd, rtol=1e-6)
 
             ##################################################
-            # Step 3: computation of Hessian of objective f
-            ##################################################
-
-            # Finite difference routine
-            function cost_x(z)
-                x_ = z[1:nx]
-                u_ = z[1+nx:end]
-                # Transfer control
-                ExaPF.transfer!(polar, cache, u_)
-                # Transfer state (manually)
-                cache.vang[pv] .= x_[1:npv]
-                cache.vang[pq] .= x_[npv+1:npv+npq]
-                cache.vmag[pq] .= x_[npv+npq+1:end]
-                ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
-                return ExaPF.cost_production(polar, cache.pg)
-            end
-
-            # Update variables
-            x = [va[pv] ; va[pq] ; vm[pq]]
-            u = [vm[ref]; vm[pv]; pg[pv2gen]]
-
-            H_ffd = FiniteDiff.finite_difference_hessian(cost_x, [x; u])
-
-            # Hessians of objective
-            # TODO: Active power on GPU
-            ∇²f = ExaPF.hessian_cost(cpu_polar, cpu_cache)
-            ∇²fₓₓ = ∇²f.xx
-            ∇²fᵤᵤ = ∇²f.uu
-            ∇²fₓᵤ = ∇²f.xu
-            @test isapprox(∇²fₓₓ, H_ffd[1:nx, 1:nx], rtol=1e-6)
-            index_u = nx+1:nx+nref+2*npv
-            @test isapprox(∇²fₓᵤ, H_ffd[index_u, 1:nx], rtol=1e-6)
-            @test isapprox(∇²fᵤᵤ, H_ffd[index_u, index_u], rtol=1e-6)
-
-            ∇gaₓ = ∇²fₓₓ + ∇²gλ.xx
-
-            # Computation of the reduced Hessian
-            function reduced_hess(w)
-                # Second-order adjoint
-                z = -(∇gₓ ) \ (∇gᵤ * w)
-                ψ = -(∇gₓ') \ (∇²fₓᵤ' * w + ∇²gλ.xu' * w +  ∇gaₓ * z)
-                Hw = ∇²fᵤᵤ * w +  ∇²gλ.uu * w + ∇gᵤ' * ψ  + ∇²fₓᵤ * z + ∇²gλ.xu * z
-                return Hw
-            end
-
-            w = zeros(nu)
-            H = zeros(nu, nu)
-            for i in 1:nu
-                fill!(w, 0)
-                w[i] = 1.0
-                H[:, i] .= reduced_hess(w)
-            end
-
-            ##################################################
-            # Step 4: include constraints in Hessian
+            # Step 3: include constraints in Hessian
             ##################################################
             # h1 (state)      : xl <= x <= xu
             # h2 (by-product) : yl <= y <= yu
             # Test sequential evaluation of Hessian
+            x = [va[pv] ; va[pq] ; vm[pq]]
+            u = [vm[ref]; vm[pv]; pg[pv2gen]]
 
             μ = rand(ngen)
             ∂₂Q = ExaPF.matpower_hessian(cpu_polar, ExaPF.reactive_power_constraints, cpu_cache, μ)

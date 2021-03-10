@@ -50,7 +50,7 @@ const KA = KernelAbstractions
             ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
-            ExaPF.adjoint_objective!(polar, ∂obj, cache)
+            ExaPF.gradient_objective!(polar, ∂obj, cache)
             ∇fₓ = ∂obj.∇fₓ
             ∇fᵤ = ∂obj.∇fᵤ
 
