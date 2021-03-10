@@ -397,23 +397,27 @@ end
 ###
 # Second-order code
 ####
-function _reduced_hessian_prod!(
-    nlp::ReducedSpaceEvaluator, hessvec, ∂fₓ, ∂fᵤ, hv, ψ, tgt,
+# z = -(∇gₓ  \ (∇gᵤ * w))
+function _second_order_adjoint_z!(
+    nlp::ReducedSpaceEvaluator, z, w,
 )
-    nx = get(nlp.model, NumberOfState())
-    nu = get(nlp.model, NumberOfControl())
-    H = nlp.hessians
     ∇gᵤ = nlp.state_jacobian.Ju.J
-    λ = - nlp.λ
+    mul!(z, ∇gᵤ, w, -1.0, 0.0)
 
-    ## POWER BALANCE HESSIAN
-    AutoDiff.adj_hessian_prod!(nlp.model, H.state, hv, nlp.buffer, λ, tgt)
-    ∂fₓ .+= hv[1:nx]
-    ∂fᵤ .+= hv[nx+1:nx+nu]
+    if isa(z, CUDA.CuArray)
+        ∇gₓ = nlp.state_jacobian.Jx.J
+        LinearSolvers.ldiv!(nlp.linear_solver, z, ∇gₓ, z)
+    else
+        ∇gₓ = nlp.factorization
+        ldiv!(∇gₓ, z)
+    end
+end
 
-    # Second order adjoint
-    # ψ = -(∇gₓ' \ (∇²fx .+ ∇²gx))
-    if isa(hessvec, CUDA.CuArray)
+# ψ = -(∇gₓ' \ (∇²fₓₓ .+ ∇²gₓₓ))
+function _second_order_adjoint_ψ!(
+    nlp::ReducedSpaceEvaluator, ψ, ∂fₓ,
+)
+    if isa(ψ, CUDA.CuArray)
         ∇gₓ = nlp.state_jacobian.Jx.J
         ∇gT = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
         LinearSolvers.ldiv!(nlp.linear_solver, ψ, ∇gT, ∂fₓ)
@@ -421,8 +425,29 @@ function _reduced_hessian_prod!(
         ∇gₓ = nlp.factorization
         ldiv!(ψ, ∇gₓ', ∂fₓ)
     end
+end
 
-    hessvec .= ∂fᵤ
+function _reduced_hessian_prod!(
+    nlp::ReducedSpaceEvaluator, hessvec, ∂fₓ, ∂fᵤ, tgt,
+)
+    nx = get(nlp.model, NumberOfState())
+    nu = get(nlp.model, NumberOfControl())
+    H = nlp.hessians
+    ∇gᵤ = nlp.state_jacobian.Ju.J
+    λ = - nlp.λ
+    ψ = H.ψ
+
+    hv = H.tmp_hv
+
+    ## POWER BALANCE HESSIAN
+    AutoDiff.adj_hessian_prod!(nlp.model, H.state, hv, nlp.buffer, λ, tgt)
+    ∂fₓ .+= hv[1:nx]
+    ∂fᵤ .+= hv[nx+1:nx+nu]
+
+    # Second order adjoint
+    _second_order_adjoint_ψ!(nlp, ψ, ∂fₓ)
+
+    hessvec .+= ∂fᵤ
     mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
     return
 end
@@ -435,24 +460,14 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     buffer = nlp.buffer
     H = nlp.hessians
 
-    ∇gᵤ = nlp.state_jacobian.Ju.J
-
-    z = H.z
-    ψ = H.ψ
-    # z = -(∇gₓ  \ (∇gᵤ * w))
-    mul!(z, ∇gᵤ, w, -1.0, 0.0)
-
-    if isa(u, CUDA.CuArray)
-        ∇gₓ = nlp.state_jacobian.Jx.J
-        LinearSolvers.ldiv!(nlp.linear_solver, z, ∇gₓ, z)
-    else
-        ∇gₓ = nlp.factorization
-        ldiv!(∇gₓ, z)
-    end
+    fill!(hessvec, 0.0)
 
     # Two vector products
     tgt = H.tmp_tgt
     hv = H.tmp_hv
+    z = H.z
+
+    _second_order_adjoint_z!(nlp, z, w)
 
     # Init tangent
     tgt[1:nx] .= z
@@ -460,14 +475,17 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
 
     ∂f = similar(buffer.pg)
     ∂²f = similar(buffer.pg)
+
+    # Adjoint and Hessian of cost function
     adjoint_cost!(nlp.model, ∂f, buffer.pg)
     hessian_cost!(nlp.model, ∂²f)
+
     ## OBJECTIVE HESSIAN
     hessian_prod_objective!(nlp.model, H.obj, nlp.obj_stack, hv, ∂²f, ∂f, buffer, tgt)
     ∇²fx = hv[1:nx]
     ∇²fu = hv[nx+1:nx+nu]
 
-    _reduced_hessian_prod!(nlp, hessvec, ∇²fx, ∇²fu, hv, ψ, tgt)
+    _reduced_hessian_prod!(nlp, hessvec, ∇²fx, ∇²fu, tgt)
 
     return
 end
@@ -482,21 +500,10 @@ function hessian_lagrangian_penalty_prod!(
     buffer = nlp.buffer
     H = nlp.hessians
 
-    ∇gᵤ = nlp.state_jacobian.Ju.J
+    fill!(hessvec, 0.0)
 
-    λ = - nlp.λ
     z = H.z
-    ψ = H.ψ
-    # z = -(∇gₓ  \ (∇gᵤ * w))
-    mul!(z, ∇gᵤ, w, -1.0, 0.0)
-
-    if isa(u, CUDA.CuArray)
-        ∇gₓ = nlp.state_jacobian.Jx.J
-        LinearSolvers.ldiv!(nlp.linear_solver, z, ∇gₓ, z)
-    else
-        ∇gₓ = nlp.factorization
-        ldiv!(∇gₓ, z)
-    end
+    _second_order_adjoint_z!(nlp, z, w)
 
     # Two vector products
     tgt = H.tmp_tgt
@@ -506,11 +513,13 @@ function hessian_lagrangian_penalty_prod!(
     tgt[1:nx] .= z
     tgt[1+nx:nx+nu] .= w
 
-    ## OBJECTIVE HESSIAN
     ∂f = similar(buffer.pg)
     ∂²f = similar(buffer.pg)
+    # Adjoint and Hessian of cost function
     adjoint_cost!(nlp.model, ∂f, buffer.pg)
     hessian_cost!(nlp.model, ∂²f)
+
+    ## OBJECTIVE HESSIAN
     hessian_prod_objective!(nlp.model, H.obj, nlp.obj_stack, hv, ∂²f, ∂f, buffer, tgt)
     ∇²Lx = σ .* hv[1:nx]
     ∇²Lu = σ .* hv[nx+1:nx+nu]
@@ -535,7 +544,7 @@ function hessian_lagrangian_penalty_prod!(
     end
 
     # Second order adjoint
-    _reduced_hessian_prod!(nlp, hessvec, ∇²Lx, ∇²Lu, hv, ψ, tgt)
+    _reduced_hessian_prod!(nlp, hessvec, ∇²Lx, ∇²Lu, tgt)
 
     return
 end
