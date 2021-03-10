@@ -17,7 +17,7 @@ import ExaPF: PS
     end
 
     # Build reference evaluator
-    nlp = ExaPF.ReducedSpaceEvaluator(datafile)
+    nlp = ExaPF.ReducedSpaceEvaluator(datafile; powerflow_solver=NewtonRaphson(tol=1e-12))
     S = ExaPF.array_type(nlp)
 
     u0 = ExaPF.initial(nlp)
@@ -35,7 +35,7 @@ import ExaPF: PS
     # Compute objective
     c = ExaPF.objective(prox, w)
 
-    @testset "Gradient" begin
+    @testset "Gradient & Hessian" begin
         g = similar(w) ; fill!(g, 0)
         ExaPF.gradient!(prox, g, w)
 
@@ -60,6 +60,16 @@ import ExaPF: PS
         ExaPF.gradient!(prox, g, w)
         grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, w)
         @test isapprox(grad_fd, g, rtol=1e-6)
+
+        hv = similar(w) ; fill!(hv, 0)
+        tgt = similar(w) ; fill!(tgt, 0)
+        tgt[1] = 1.0
+        ExaPF.hessprod!(prox, hv, w, tgt)
+        H = ExaPF.hessian(prox, w)
+
+        hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, w)
+        # Take attribute data as hess_fd is of type Symmetric
+        @test H ≈ hess_fd.data rtol=1e-6
     end
 
     @testset "Constraints" begin

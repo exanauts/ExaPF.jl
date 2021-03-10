@@ -175,8 +175,25 @@ function objective(nlp::ProxALEvaluator, w)
     return cost
 end
 
+function _adjoint_objective!(nlp::ProxALEvaluator, ∂f, pg)
+    # Import model
+    model = nlp.inner.model
+    ## Seed left-hand side vector
+    adjoint_cost!(model, ∂f, pg)
+    if nlp.time != Origin
+        ∂f .-= nlp.λf
+        ∂f .-= nlp.ρf .* nlp.ramp_link_prev
+    end
+    if nlp.time != Final
+        ∂f .+= nlp.λt
+        ∂f .+= nlp.ρt .* nlp.ramp_link_next
+    end
+    ∂f .+= nlp.τ .* (pg .- nlp.pg_ref)
+    return
+end
+
 ## Gradient
-function full_gradient!(nlp::ProxALEvaluator, jvx, jvu, w)
+function full_gradient!(nlp::ProxALEvaluator, jx, ju, w)
     # Import model
     model = nlp.inner.model
     # Import buffer (has been updated previously in update!)
@@ -190,29 +207,15 @@ function full_gradient!(nlp::ProxALEvaluator, jvx, jvu, w)
 
     u = @view w[1:nlp.nu]
 
-    ## Objective's coefficients
-    coefs = model.costs_coefficients
-    c3 = @view coefs[:, 3]
-    c4 = @view coefs[:, 4]
-    ## Seed left-hand side vector
-    ∂obj.∂pg .= scale_obj .* (c3 .+ 2.0 .* c4 .* pg)
-    if nlp.time != Origin
-        ∂obj.∂pg .-= nlp.λf
-        ∂obj.∂pg .-= nlp.ρf .* nlp.ramp_link_prev
-    end
-    if nlp.time != Final
-        ∂obj.∂pg .+= nlp.λt
-        ∂obj.∂pg .+= nlp.ρt .* nlp.ramp_link_next
-    end
-    ∂obj.∂pg .+= nlp.τ .* (pg .- nlp.pg_ref)
+    ## Compute adjoint of objective
+    _adjoint_objective!(nlp, ∂obj.∂pg, pg)
 
     ## Evaluate conjointly
     # ∇fₓ = v' * J,  with J = ∂pg / ∂x
     # ∇fᵤ = v' * J,  with J = ∂pg / ∂u
     put(model, PS.Generators(), PS.ActivePower(), ∂obj, buffer)
-
-    copyto!(jvx, ∂obj.∇fₓ)
-    copyto!(jvu, ∂obj.∇fᵤ)
+    copyto!(jx, ∂obj.∇fₓ)
+    copyto!(ju, ∂obj.∇fᵤ)
 end
 
 function gradient_slack!(nlp::ProxALEvaluator, grad, w)
@@ -294,6 +297,59 @@ function ojtprod!(nlp::ProxALEvaluator, jv, u, σ, v)
     full_jtprod!(nlp, jvx, jvu, u, v)
     # Evaluate gradient in reduced space
     reduced_gradient!(nlp, jv, jvx, jvu, u)
+end
+
+function hessprod!(nlp::ProxALEvaluator, hessvec, w, v)
+    model = nlp.inner.model
+    nx = get(model, NumberOfState())
+    nu = get(model, NumberOfControl())
+    buffer = get(nlp.inner, PhysicalState())
+    H = nlp.inner.hessians
+
+    u = @view w[1:nlp.nu]
+    vᵤ = @view v[1:nlp.nu]
+    vₛ = @view v[1+nlp.nu:end]
+
+    fill!(hessvec, 0.0)
+
+    hvu = @view hessvec[1:nlp.nu]
+    hvs = @view hessvec[1+nlp.nu:end]
+
+    z = H.z
+    tgt_xu = H.tmp_tgt  # tangent wrt and u
+    hv_xu = H.tmp_hv    # hv wrt x and u
+
+    _second_order_adjoint_z!(nlp.inner, z, vᵤ)
+
+    # Init tangent
+    tgt_xu[1:nx] .= z
+    tgt_xu[1+nx:nx+nu] .= vᵤ
+
+    # Init adjoint
+    ∂f = similar(buffer.pg)
+    ∂²f = similar(buffer.pg)
+    # Adjoint w.r.t. ProxAL's objective
+    _adjoint_objective!(nlp, ∂f, buffer.pg)
+
+    # Hessian of ProxAL's objective
+    hessian_cost!(model, ∂²f)
+    # Contribution of penalties
+    ∂²f .+= nlp.τ
+    if nlp.time != Origin
+        ∂²f .+= nlp.ρf
+    end
+    if nlp.time != Final
+        ∂²f .+= nlp.ρt
+    end
+
+    ## OBJECTIVE HESSIAN
+    has_slack = (nlp.time != Origin)
+    hessian_prod_objective_proxal!(model, H.obj, nlp.inner.obj_stack, hv_xu, hvs, ∂²f, ∂f, buffer, tgt_xu, vₛ, nlp.ρf, has_slack)
+    ∇²fx = hv_xu[1:nx]       # / x
+    ∇²fu = hv_xu[nx+1:nx+nu] # / u
+
+    _reduced_hessian_prod!(nlp.inner, hvu, ∇²fx, ∇²fu, tgt_xu)
+    return
 end
 
 ## Utils function
