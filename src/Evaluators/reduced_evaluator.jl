@@ -103,6 +103,7 @@ n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
 constraints_type(::ReducedSpaceEvaluator) = :inequality
+has_hessian(::ReducedSpaceEvaluator) = true
 
 # Getters
 get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints

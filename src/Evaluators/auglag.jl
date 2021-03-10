@@ -95,6 +95,8 @@ function AugLagEvaluator(
     return AugLagEvaluator(nlp, u0; options...)
 end
 
+has_hessian(nlp::AugLagEvaluator) = has_hessian(nlp.inner)
+
 # Default fallback
 function _update_internal!(ag::AugLagEvaluator, ::CONSTRAINTS_TYPE)
     # Update (shifted) infeasibility error

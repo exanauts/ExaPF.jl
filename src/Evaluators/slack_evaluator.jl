@@ -64,6 +64,7 @@ n_variables(nlp::SlackEvaluator) = nlp.nv + nlp.ns
 n_constraints(nlp::SlackEvaluator) = n_constraints(nlp.inner)
 
 constraints_type(::SlackEvaluator) = :equality
+has_hessian(nlp::SlackEvaluator) = has_hessian(nlp.inner)
 
 # Getters
 get(nlp::SlackEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)

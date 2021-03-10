@@ -37,6 +37,9 @@
         @test isa(get(nlp, ExaPF.AutoDiffBackend()), ExaPF.AutoDiffFactory)
         @test ExaPF.constraints_type(nlp) in [:bound, :equality, :inequality]
 
+        @test isa(ExaPF.has_hessian(nlp), Bool)
+        @test isa(ExaPF.has_hessian_lagrangian(nlp), Bool)
+
         # setters
         nbus = get(nlp, PS.NumberOfBuses())
         loads = similar(u, nbus) ; fill!(loads, 1)

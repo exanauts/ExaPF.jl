@@ -29,6 +29,9 @@ n_constraints(nlp::FeasibilityEvaluator) = 0
 
 constraints_type(::FeasibilityEvaluator) = :bound
 
+has_hessian(nlp::FeasibilityEvaluator) = has_hessian(nlp.inner)
+has_hessian_lagrangian(nlp::FeasibilityEvaluator) = has_hessian(nlp)
+
 # Getters
 get(nlp::FeasibilityEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
 get(nlp::FeasibilityEvaluator, attr::AbstractVariable) = get(nlp.inner, attr)

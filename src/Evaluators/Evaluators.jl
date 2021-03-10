@@ -247,6 +247,11 @@ constraints, or `:mixed` if problem has both types of constraints.
 """
 function constraints_type end
 
+"Check if Hessian of objective is implemented."
+has_hessian(nlp::AbstractNLPEvaluator) = false
+"Check if Hessian of Lagrangian is implemented."
+has_hessian_lagrangian(nlp::AbstractNLPEvaluator) = false
+
 """
     reset!(nlp::AbstractNLPEvaluator)
 

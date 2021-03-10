@@ -17,7 +17,8 @@ mutable struct MOIEvaluator{Evaluator<:AbstractNLPEvaluator} <: MOI.AbstractNLPE
     hash_x::UInt
     has_hess::Bool
 end
-MOIEvaluator(nlp) = MOIEvaluator(nlp, UInt64(0), true)
+# MOI needs Hessian of Lagrangian function
+MOIEvaluator(nlp) = MOIEvaluator(nlp, UInt64(0), has_hessian_lagrangian(nlp))
 
 function _update!(ev::MOIEvaluator, x)
     hx = hash(x)
