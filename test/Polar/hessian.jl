@@ -21,6 +21,8 @@ const PS = PowerSystem
         else
             ITERATORS = zip([CPU()], [Vector])
         end
+        RTOL = 1e-6
+        ATOL = 1e-6
         @testset "Device $device" for (device, T) in ITERATORS
             ##################################################
             # Initialization
@@ -108,7 +110,7 @@ const PS = PowerSystem
             # Evaluate Hessian-vector product (full ∇²gₓₓ is a 3rd dimension tensor)
             ∇²gλ = ExaPF.matpower_hessian(cpu_polar, ExaPF.power_balance, cpu_cache, λ)
             H_fd = FiniteDiff.finite_difference_jacobian(jac_diff, x)
-            @test isapprox(∇²gλ.xx, H_fd, rtol=1e-6)
+            @test isapprox(∇²gλ.xx, H_fd, rtol=RTOL)
             ybus_re, ybus_im = ExaPF.Spmat{T{Int}, T{Float64}}(Ybus)
             pbus = T(real(pf.sbus))
             qbus = T(imag(pf.sbus))
@@ -147,10 +149,11 @@ const PS = PowerSystem
                 HessianAD, ExaPF.adj_residual_polar!, dev_λ, dev_tgt, vm, va,
                 ybus_re, ybus_im, pbus, qbus, dev_pv, dev_pq, dev_ref, nbus)
             projuu = Array(dev_projuu)
-            @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=1e-6)
             AutoDiff.adj_hessian_prod!(polar, HessianAD, dev_projp, cache, dev_λ, dev_tgt)
             projp = Array(dev_projp)
-            @test isapprox(projp[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=1e-6)
+            # (we use absolute tolerance as Huu is equal to 0 for case9)
+            @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=ATOL)
+            @test isapprox(projp[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=ATOL)
 
             # check cross terms ux
             tgt = rand(nx + nu)
@@ -183,10 +186,6 @@ const PS = PowerSystem
 
             Hᵤᵤ_fd = FiniteDiff.finite_difference_jacobian(jac_u_diff, u)
 
-            if !iszero(∇²gλ.uu[1:nref+npv, 1:nref+npv])
-                @test isapprox(∇²gλ.uu[1:nref+npv, 1:nref+npv], Hᵤᵤ_fd[1:nref+npv, :], rtol=1e-6)
-            end
-
             ## w.r.t. xu
             function jac_xu_diff(x)
                 vm_ = copy(vm)
@@ -200,7 +199,7 @@ const PS = PowerSystem
             end
 
             Hₓᵤ_fd = FiniteDiff.finite_difference_jacobian(jac_xu_diff, x)
-            @test isapprox(∇²gλ.xu[1:nref+npv, :], Hₓᵤ_fd, rtol=1e-6)
+            @test isapprox(∇²gλ.xu[1:nref+npv, :], Hₓᵤ_fd, rtol=RTOL)
 
             ##################################################
             # Step 3: include constraints in Hessian
@@ -228,9 +227,9 @@ const PS = PowerSystem
             end
 
             H_fd = FiniteDiff.finite_difference_jacobian(jac_x, [x; u])
-            @test isapprox(∂₂Q.uu, H_fd[nx+1:end, nx+1:end], rtol=1e-6)
-            @test isapprox(∂₂Q.xx, H_fd[1:nx, 1:nx], rtol=1e-6)
-            @test isapprox(∂₂Q.xu, H_fd[nx+1:end, 1:nx], rtol=1e-6)
+            @test isapprox(∂₂Q.uu, H_fd[nx+1:end, nx+1:end], rtol=RTOL)
+            @test isapprox(∂₂Q.xx, H_fd[1:nx, 1:nx], rtol=RTOL)
+            @test isapprox(∂₂Q.xu, H_fd[nx+1:end, 1:nx], rtol=RTOL)
 
             # Test with AutoDiff.Hessian
             hess_reactive = AutoDiff.Hessian(polar, ExaPF.reactive_power_constraints)
@@ -294,7 +293,7 @@ const PS = PowerSystem
             dev_μ = T(μ)
             AutoDiff.adj_hessian_prod!(polar, hess_lineflow, dev_projp, cache, dev_μ, dev_tgt)
             projp = Array(dev_projp)
-            @test isapprox(projp, H_fd * tgt, rtol=1e-5)
+            @test isapprox(projp, H_fd * tgt, rtol=RTOL)
 
             # Hessian w.r.t. Active-power generation
             hess_pg = AutoDiff.Hessian(cpu_polar, ExaPF.active_power_constraints)
