@@ -6,6 +6,9 @@ n_constraints(ag::AbstractPenaltyEvaluator) = 0
 
 constraints_type(ag::AbstractPenaltyEvaluator) = :bound
 
+# Penalty evaluators don't have constraints so Lagrangian is objective
+has_hessian_lagrangian(nlp::AbstractPenaltyEvaluator) = has_hessian(nlp)
+
 # Getters
 get(ag::AbstractPenaltyEvaluator, attr::AbstractNLPAttribute) = get(ag.inner, attr)
 get(ag::AbstractPenaltyEvaluator, attr::AbstractVariable) = get(ag.inner, attr)
