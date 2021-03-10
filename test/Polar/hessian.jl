@@ -143,10 +143,10 @@ const PS = PowerSystem
                 HessianAD, ExaPF.adj_residual_polar!, dev_λ, dev_tgt, vm, va,
                 ybus_re, ybus_im, pbus, qbus, dev_pv, dev_pq, dev_ref, nbus)
             projuu = Array(dev_projuu)
-            @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
+            @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=1e-6)
             AutoDiff.adj_hessian_prod!(polar, HessianAD, dev_projp, cache, dev_λ, dev_tgt)
             projp = Array(dev_projp)
-            @test isapprox(projp[nx+1:end], ∇²gλ.uu * tgt[nx+1:end])
+            @test isapprox(projp[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=1e-6)
 
             # check cross terms ux
             tgt = rand(nx + nu)
@@ -180,7 +180,7 @@ const PS = PowerSystem
             Hᵤᵤ_fd = FiniteDiff.finite_difference_jacobian(jac_u_diff, u)
 
             if !iszero(∇²gλ.uu[1:nref+npv, 1:nref+npv])
-                @test isapprox(∇²gλ.uu[1:nref+npv, 1:nref+npv], Hᵤᵤ_fd[1:nref+npv, :], rtol=1e-6)
+                @test isapprox(∇²gλ.uu[1:nref+npv, 1:nref+npv], Hᵤᵤ_fd[1:nref+npv, :], atol=1e-4)
             end
 
             ## w.r.t. xu
