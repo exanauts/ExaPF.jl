@@ -132,11 +132,6 @@ const PS = PowerSystem
             dev_λ = T(λ)
             tgt[nx+1:end] .= 0.0
             dev_tgt = T(tgt)
-            dev_projxx = ExaPF.AutoDiff.tgt_adj_residual_hessian!(
-                HessianAD, ExaPF.adj_residual_polar!, dev_λ, dev_tgt, vm, va,
-                ybus_re, ybus_im, pbus, qbus, dev_pv, dev_pq, dev_ref, nbus)
-            projxx = Array(dev_projxx)
-            @test isapprox(projxx[1:nx], ∇²gλ.xx * tgt[1:nx])
             AutoDiff.adj_hessian_prod!(polar, HessianAD, dev_projp, cache, dev_λ, dev_tgt)
             projp = Array(dev_projp)
             @test isapprox(projp[1:nx], ∇²gλ.xx * tgt[1:nx])
@@ -145,14 +140,9 @@ const PS = PowerSystem
             # set tangents only for u direction
             tgt[1:nx] .= 0.0
             dev_tgt = T(tgt)
-            dev_projuu = AutoDiff.tgt_adj_residual_hessian!(
-                HessianAD, ExaPF.adj_residual_polar!, dev_λ, dev_tgt, vm, va,
-                ybus_re, ybus_im, pbus, qbus, dev_pv, dev_pq, dev_ref, nbus)
-            projuu = Array(dev_projuu)
             AutoDiff.adj_hessian_prod!(polar, HessianAD, dev_projp, cache, dev_λ, dev_tgt)
             projp = Array(dev_projp)
             # (we use absolute tolerance as Huu is equal to 0 for case9)
-            @test isapprox(projuu[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=ATOL)
             @test isapprox(projp[nx+1:end], ∇²gλ.uu * tgt[nx+1:end], atol=ATOL)
 
             # check cross terms ux
@@ -164,11 +154,6 @@ const PS = PowerSystem
                 ∇²gλ.xu ∇²gλ.uu
             ]
             dev_tgt = T(tgt)
-            dev_projxu = ExaPF.AutoDiff.tgt_adj_residual_hessian!(
-                HessianAD, ExaPF.adj_residual_polar!, dev_λ, dev_tgt, vm, va,
-                ybus_re, ybus_im, pbus, qbus, dev_pv, dev_pq, dev_ref, nbus)
-            projxu = Array(dev_projxu)
-            @test isapprox(projxu, H * tgt)
             AutoDiff.adj_hessian_prod!(polar, HessianAD, dev_projp, cache, dev_λ, dev_tgt)
             projp = Array(dev_projp)
             @test isapprox(projp, H * tgt)

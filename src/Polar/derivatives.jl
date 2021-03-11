@@ -98,7 +98,7 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
         jac.t1sF .= 0.0
     end
 
-    AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx, nbus)
+    AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx)
 
     if isa(type, State)
         jac.func(
@@ -120,7 +120,7 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
         )
     end
 
-    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, nbus)
+    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF)
     AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring)
     return jac.J
 end
@@ -176,15 +176,17 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     t1sx = A{t1s{1}}(x)
     t1sF = A{t1s{1}}(zeros(Float64, n_cons))
+    host_t1sseeds = Vector{ForwardDiff.Partials{1,Float64}}(undef, nmap)
     t1sseeds = A{ForwardDiff.Partials{1,Float64}}(undef, nmap)
     varx = view(x, map)
     t1svarx = view(t1sx, map)
+    VHP = typeof(host_t1sseeds)
     VP = typeof(t1sseeds)
     VD = typeof(t1sx)
     adj_t1sx = similar(t1sx)
     adj_t1sF = similar(t1sF)
-    return AutoDiff.Hessian{typeof(func), VI, VT, VP, VD, typeof(varx), typeof(t1svarx)}(
-        func, t1sseeds, t1sF, adj_t1sF, x, t1sx, adj_t1sx, map, varx, t1svarx
+    return AutoDiff.Hessian{typeof(func), VI, VT, VHP, VP, VD, typeof(varx), typeof(t1svarx)}(
+        func, host_t1sseeds, t1sseeds, t1sF, adj_t1sF, x, t1sx, adj_t1sx, map, varx, t1svarx
     )
 end
 
@@ -214,10 +216,12 @@ function AutoDiff.adj_hessian_prod!(
     nmap = length(H.map)
 
     # Init seed
-    @inbounds for i in 1:nmap
-        H.t1sseeds[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i]))
+    hostv = Array(v)
+    @inbounds Threads.@threads for i in 1:nmap
+        H.host_t1sseeds[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
     end
-    AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx, nbus)
+    copyto!(H.t1sseeds, H.host_t1sseeds)
+    AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx)
 
     adjoint!(
         polar, H.func,
@@ -228,9 +232,7 @@ function AutoDiff.adj_hessian_prod!(
         view(t1sx, 3*nbus+1:4*nbus), view(adj_t1sx, 3*nbus+1:4*nbus), # qinj
     )
 
-    @inbounds for i in 1:length(hv)
-        hv[i] = ForwardDiff.partials(adj_t1sx[H.map[i]]).values[1]
-    end
+    AutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map)
     return nothing
 end
 
