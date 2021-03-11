@@ -89,8 +89,9 @@ Creates an object for computing Hessian adjoint tangent projections.
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct Hessian{Func, VI, VT, VP, VD, SubT, SubD} <: AbstractHessian
+struct Hessian{Func, VI, VT, VHP, VP, VD, SubT, SubD} <: AbstractHessian
     func::Func
+    host_t1sseeds::VHP # Needed because seeds have to be created on the host
     t1sseeds::VP
     t1sF::VD
     ∂t1sF::VD
@@ -139,7 +140,7 @@ Calling the seeding kernel.
 Seeding is parallelized over the `ncolor` number of duals.
 
 """
-function seed!(t1sseeds, varx, t1svarx, nbus) where {N, V}
+function seed!(t1sseeds, varx, t1svarx)
     if isa(t1sseeds, Vector)
         kernel! = seed_kernel!(CPU())
     else
@@ -163,15 +164,31 @@ end
     end
 end
 
+# Get partials for Hessian projection
+@kernel function getpartials_hv_kernel!(hv, adj_t1sx, map)
+    i = @index(Global, Linear)
+    hv[i] = ForwardDiff.partials(adj_t1sx[map[i]]).values[1]
+end
+
 """
-    getpartials_kernel!(compressedJ, t1sF, nbus)
+    getpartials_kernel!(compressedJ, t1sF)
 
 Calling the partial extraction kernel.
 Extract the partials from the AutoDiff dual type on the target
 device and put it in the compressed Jacobian `compressedJ`.
 
 """
-function getpartials_kernel!(compressedJ, t1sF, nbus)
+function getpartials_kernel!(hv::AbstractVector, adj_t1sx, map)
+    if isa(hv, Array)
+        kernel! = getpartials_hv_kernel!(CPU())
+    else
+        kernel! = getpartials_hv_kernel!(CUDADevice())
+    end
+    ev = kernel!(hv, adj_t1sx, map, ndrange=length(hv))
+    wait(ev)
+end
+
+function getpartials_kernel!(compressedJ::AbstractMatrix, t1sF)
     if isa(compressedJ, Array)
         kernel! = getpartials_kernel_cpu!(CPU())
     else
@@ -213,68 +230,6 @@ function uncompress_kernel!(J, compressedJ, coloring)
         ev = kernel!(J.rowPtr, J.colVal, J.nzVal, compressedJ, coloring, ndrange=size(J,1))
     end
     wait(ev)
-end
-
-"""
-    residual_hessian_adj_tgt!(H::Hessian,
-                        residual_adj_polar!,
-                        lambda, tgt,
-                        vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref,
-                        nbus)
-
-Update the sparse Jacobian entries using AutoDiff. No allocations are taking place in this function.
-
-* `H::Hessian`: Factory created Jacobian object to update
-* `residual_adj_polar`: Adjoint function of residual
-* `lambda`: Input adjoint, usually lambda from a Langrangian
-* `tgt`: A tangent direction or vector that the Hessian should be multiplied with
-* `vm, va, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus`: Inputs both
-  active and passive parameters. Active inputs are mapped to `x` via the preallocated views.
-"""
-function tgt_adj_residual_hessian!(H::Hessian,
-                             adj_residual_polar!,
-                             lambda, tgt,
-                             v_m, v_a, ybus_re, ybus_im, pinj, qinj, pv, pq, ref, nbus)
-    @warn("Function `tgt_adj_residual_hessian!` is deprecated.")
-    x = H.x
-    ntgt = length(tgt)
-    nvbus = length(v_m)
-    ninj = length(pinj)
-    t1sx = H.t1sx
-    adj_t1sx = similar(t1sx)
-    t1sF = H.t1sF
-    adj_t1sF = similar(t1sF)
-    x[1:nvbus] .= v_m
-    x[nvbus+1:2*nvbus] .= v_a
-    x[2*nvbus+1:2*nvbus+ninj] .= pinj
-    t1sx .= H.x
-    adj_t1sx .= 0.0
-    t1sF .= 0.0
-    adj_t1sF .= lambda
-    # Seeding
-    nmap = length(H.map)
-    t1sseedvec = zeros(Float64, length(x))
-    for i in 1:nmap
-        H.t1sseeds[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(tgt[i]))
-    end
-    seed!(H.t1sseeds, H.varx, H.t1svarx, nbus)
-    adj_residual_polar!(
-        t1sF, adj_t1sF,
-        view(t1sx, 1:nvbus), view(adj_t1sx, 1:nvbus),
-        view(t1sx, nvbus+1:2*nvbus), view(adj_t1sx, nvbus+1:2*nvbus),
-        ybus_re, ybus_im,
-        view(t1sx, 2*nvbus+1:2*nvbus+ninj), view(adj_t1sx, 2*nvbus+1:2*nvbus+ninj),
-        qinj,
-        pv, pq, nbus
-    )
-    # TODO, this is redundant
-    ps = ForwardDiff.partials.(adj_t1sx[H.map])
-    res = similar(tgt)
-    res .= 0.0
-    for i in 1:length(ps)
-        res[i] = ps[i].values[1]
-    end
-    return res
 end
 
 function Base.show(io::IO, jacobian::Jacobian)
