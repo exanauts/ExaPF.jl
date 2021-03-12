@@ -143,7 +143,8 @@ function AutoDiff.ConstantJacobian(polar::PolarForm, func::Function, variable::U
     J = matpower_jacobian(polar, variable, func, V)
     # Move Jacobian to the GPU
     if isa(polar.device, CUDADevice) && iszero(J)
-        J = 0.0
+        # CUSPARSE does not support zero matrix. Return nothing instead.
+        J = nothing
     else
         J = convert(SMT, J)
     end
@@ -295,9 +296,76 @@ function AdjointPolar(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return AdjointPolar{VT}(nx, nu, nbus)
 end
 
-struct JacobianStorage{Jacx, Jacu}
-    Jx::Jacx
-    Ju::Jacu
+struct FullSpaceJacobian{Jacx,Jacu}
+    x::Jacx
+    u::Jacu
+end
+
+struct FullSpaceHessian{SpMT}
+    xx::SpMT
+    xu::SpMT
+    uu::SpMT
+end
+
+struct ConstraintsJacobianStorage{SpMT}
+    Jx::SpMT
+    Ju::SpMT
+    constraints_ad::Vector{FullSpaceJacobian}
+end
+
+function ConstraintsJacobianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Function}) where {T, VI, VT, MT}
+    if isa(polar.device, CPU)
+        SpMT = SparseMatrixCSC{Float64, Int}
+    elseif isa(polar.device, CUDADevice)
+        SpMT = CUSPARSE.CuSparseMatrixCSR{Float64}
+    end
+
+    SparseCPU = SparseMatrixCSC{Float64, Int}
+
+    Jx = SparseCPU[]
+    Ju = SparseCPU[]
+    # Build global Jacobian on the CPU
+    for cons in constraints
+        push!(Jx, jacobian_sparsity(polar, cons, State()))
+        push!(Ju, jacobian_sparsity(polar, cons, Control()))
+    end
+    gJx = convert(SpMT, vcat(Jx...))
+    gJu = convert(SpMT, vcat(Ju...))
+
+    # Build AD
+    cons_ad = FullSpaceJacobian[]
+    for cons in constraints
+        jac_ad_x = _build_jacobian(polar, cons, State())
+        jac_ad_u = _build_jacobian(polar, cons, Control())
+        push!(cons_ad, FullSpaceJacobian(jac_ad_x, jac_ad_u))
+    end
+
+    return ConstraintsJacobianStorage{SpMT}(
+        gJx,
+        gJu,
+        cons_ad,
+    )
+end
+
+function update_full_jacobian!(
+    polar::PolarForm,
+    cons_jac::ConstraintsJacobianStorage{SpMT},
+    buffer::PolarNetworkState
+) where {SpMT}
+    shift = 0
+    for ad in cons_jac.constraints_ad
+        # Update Jacobian
+        Jx = AutoDiff.jacobian!(polar, ad.x, buffer)::SpMT
+        Ju = AutoDiff.jacobian!(polar, ad.u, buffer)::Union{Nothing, SpMT}
+        # Copy back results
+        _transfer_sparse!(cons_jac.Jx, Jx, shift)
+        if !isnothing(Ju)
+            _transfer_sparse!(cons_jac.Ju, Ju, shift)
+        end
+
+        shift += size(Jx, 1)
+    end
+    return
 end
 
 struct HessianStorage{VT,Hess1,Hess2}
@@ -311,13 +379,16 @@ struct HessianStorage{VT,Hess1,Hess2}
     tmp_hv::VT
 end
 
-function HessianStorage(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+function HessianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Function}) where {T, VI, VT, MT}
     nx = get(polar, NumberOfState())
     nu = get(polar, NumberOfControl())
 
     Hstate = AutoDiff.Hessian(polar, power_balance)
     Hobj = AutoDiff.Hessian(polar, active_power_constraints)
     Hcons = AutoDiff.Hessian[]
+    for cons in constraints
+        push!(Hcons, _build_hessian(polar, cons))
+    end
 
     z = xzeros(VT, nx)
     ψ = xzeros(VT, nx)

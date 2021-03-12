@@ -27,7 +27,7 @@ const MOI = MathOptInterface
     MOI.set(optimizer, MOI.RawParameter("print_level"), 0)
     MOI.set(optimizer, MOI.RawParameter("limited_memory_max_history"), 50)
     MOI.set(optimizer, MOI.RawParameter("hessian_approximation"), "limited-memory")
-    MOI.set(optimizer, MOI.RawParameter("tol"), 1e-2)
+    MOI.set(optimizer, MOI.RawParameter("tol"), 1e-4)
 
     solution = ExaPF.optimize!(optimizer, nlp)
     MOI.empty!(optimizer)
