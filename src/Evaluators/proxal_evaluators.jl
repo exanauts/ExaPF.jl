@@ -273,6 +273,12 @@ function jacobian!(nlp::ProxALEvaluator, jac, w)
     jacobian!(nlp.inner, Jᵤ, u)
 end
 
+function jprod!(nlp::ProxALEvaluator, jv, w, v)
+    u = @view w[1:nlp.nu]
+    vu = @view v[1:nlp.nu]
+    jprod!(nlp.inner, jv, u, vu)
+end
+
 ## Transpose Jacobian-vector product
 ## ProxAL does not add any constraint to the reduced model
 function jtprod!(nlp::ProxALEvaluator, jv, w, v)

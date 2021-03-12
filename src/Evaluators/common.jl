@@ -66,17 +66,6 @@ function hessian(nlp::AbstractNLPEvaluator, x)
     return H
 end
 
-function hessian_lagrangian_penalty_prod!(
-    nlp::AbstractNLPEvaluator, hessvec, u, y, σ, v, w,
-)
-    jv = similar(u) ; fill!(jv, 0)
-    hessian_lagrangian_prod!(nlp, hessvec, u, y, σ, v)
-    jprod!(nlp, jv, u, v)
-    jv .*= w
-    jtprod!(nlp, hessvec, u, jv)
-    return
-end
-
 # AutoDiff Factory
 abstract type AbstractAutoDiffFactory end
 

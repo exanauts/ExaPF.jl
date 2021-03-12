@@ -82,19 +82,13 @@ end
 function hessprod!(nlp::FeasibilityEvaluator, hessvec, u, v)
     σ = 0.0
     # Need to update the first-order adjoint λ first
-    hessian_lagrangian_prod!(nlp.inner, hessvec, u, nlp.cons, σ, v)
-    J = jacobian(nlp.inner, u)
-    hessvec .+= J' * J * v
-    return
-end
-
-function hessian!(nlp::FeasibilityEvaluator, hess, u)
-    σ = 0.0 # remove objective
-    w = zeros() # remove penalties
-    y = nlp.cons
-    hessian_lagrangian_penalty!(nlp.inner, hess, u, y, σ, w)
-    J = jacobian(nlp.inner, u)
-    hess .+= J' * J
+    hessian_lagrangian_penalty_prod!(nlp.inner, hessvec, u, nlp.cons, σ, v, 0.0)
+    # J' * J * v
+    jv = similar(nlp.cons)
+    jtv = similar(u)
+    jprod!(nlp.inner, jv, u, v)
+    jtprod!(nlp.inner, jtv, u, jv)
+    hessvec .+= jtv
     return
 end
 
