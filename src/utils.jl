@@ -40,6 +40,7 @@ struct ConvergenceStatus
     n_linear_solves::Int
 end
 
+# Sparse utilities
 mutable struct Spmat{VTI<:AbstractVector, VTF<:AbstractVector}
     colptr::VTI
     rowval::VTI
@@ -56,6 +57,27 @@ mutable struct Spmat{VTI<:AbstractVector, VTF<:AbstractVector}
         return new(VTI(mat.colptr), VTI(mat.rowval), VTF(mat.nzval))
     end
 end
+
+function _copy_csc!(J_dest, J_src, shift)
+    @inbounds for i in 1:size(J_src, 2)
+        for j in J_src.colptr[i]:J_src.colptr[i+1]-1
+            row = J_src.rowval[j]
+            @inbounds J_dest[row+shift, i] = J_src.nzval[j]
+        end
+    end
+end
+
+function _transfer_sparse!(J_dest::SparseMatrixCSC, J_src::SparseMatrixCSC, shift)
+    _copy_csc!(J_dest, J_src, shift)
+end
+
+function _transfer_sparse!(J_dest::CUSPARSE.CuSparseMatrixCSR, J_src::CUSPARSE.CuSparseMatrixCSR, shift)
+    nnz_start = J_dest.rowPtr[shift+1]
+    nnz_ = nnz(J_src)
+    Jnnz = @view J_dest.nzVal[nnz_start:nnz_start+nnz_-1]
+    Jnnz .= J_src.nzVal
+end
+
 
 # projection operator
 function project!(w::VT, u::VT, u♭::VT, u♯::VT) where VT<:AbstractArray

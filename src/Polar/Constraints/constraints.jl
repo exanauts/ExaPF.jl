@@ -5,17 +5,6 @@ is_constraint(::Function) = false
 # Is the function linear in the polar formulation?
 is_linear(polar::PolarForm, ::Function) = false
 
-struct FullSpaceJacobian{Jac}
-    x::Jac
-    u::Jac
-end
-
-struct FullSpaceHessian{SpMT}
-    xx::SpMT
-    xu::SpMT
-    uu::SpMT
-end
-
 
 include("power_balance.jl")
 include("voltage_magnitude.jl")
@@ -108,13 +97,13 @@ end
 
 _build_hessian(polar::PolarForm, cons::Function) = AutoDiff.Hessian(polar, cons)
 
-function JacobianStorage(
+function FullSpaceJacobian(
     polar::PolarForm{T, VI, VT, MT},
     cons::Function,
 ) where {T, VI, VT, MT}
     @assert is_constraint(cons)
     Jx = _build_jacobian(polar, cons, State())
     Ju = _build_jacobian(polar, cons, Control())
-    return JacobianStorage(Jx, Ju)
+    return FullSpaceJacobian(Jx, Ju)
 end
 

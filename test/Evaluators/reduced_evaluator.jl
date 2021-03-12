@@ -22,6 +22,7 @@
             ExaPF.voltage_magnitude_constraints,
             ExaPF.active_power_constraints,
             ExaPF.reactive_power_constraints,
+            ExaPF.flow_constraints,
         ]
         nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0; constraints=constraints)
         # Test printing
