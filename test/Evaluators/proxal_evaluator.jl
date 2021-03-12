@@ -91,6 +91,10 @@ import ExaPF: PS
         ExaPF.jacobian!(prox, jac, w)
         # Check correctness of transpose Jacobian vector product
         @test jv == jac' * v
+
+        # Jacobian vector product
+        ExaPF.jprod!(prox, v, w, jv)
+        @test v == jac * jv
     end
 
     ExaPF.reset!(prox)

@@ -331,10 +331,16 @@ function jprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     m  = n_constraints(nlp)
     @assert nᵤ == length(v)
 
-    # jprod! is an expensive operation in the reduced space,
-    # as we need to evaluate the full reduced Jacobian.
-    jac = jacobian(nlp, u)
-    mul!(jv, jac, v)
+    ∇cons = nlp.constraint_jacobians
+    update_full_jacobian!(nlp.model, ∇cons, nlp.buffer)
+    Jx = ∇cons.Jx
+    Ju = ∇cons.Ju
+
+    ∇gᵤ = nlp.state_jacobian.u.J
+    ∇gfac = nlp.factorization
+    z = -(∇gfac \ (∇gᵤ * v))
+
+    jv .= Ju * v .+ Jx * z
     return
 end
 
@@ -383,11 +389,11 @@ end
 function _second_order_adjoint_z!(
     nlp::ReducedSpaceEvaluator, z, w,
 )
-    ∇gᵤ = nlp.state_jacobian.Ju.J
+    ∇gᵤ = nlp.state_jacobian.u.J
     mul!(z, ∇gᵤ, w, -1.0, 0.0)
 
     if isa(z, CUDA.CuArray)
-        ∇gₓ = nlp.state_jacobian.Jx.J
+        ∇gₓ = nlp.state_jacobian.x.J
         LinearSolvers.ldiv!(nlp.linear_solver, z, ∇gₓ, z)
     else
         ∇gₓ = nlp.factorization
@@ -400,7 +406,7 @@ function _second_order_adjoint_ψ!(
     nlp::ReducedSpaceEvaluator, ψ, ∂fₓ,
 )
     if isa(ψ, CUDA.CuArray)
-        ∇gₓ = nlp.state_jacobian.Jx.J
+        ∇gₓ = nlp.state_jacobian.x.J
         ∇gT = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
         LinearSolvers.ldiv!(nlp.linear_solver, ψ, ∇gT, ∂fₓ)
     else
