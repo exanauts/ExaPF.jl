@@ -5,7 +5,7 @@ using Test
 using Printf
 using TimerOutputs
 
-import ExaPF: PowerSystem, LinearSolvers
+import ExaPF: PowerSystem, LinearSolvers, AutoDiff
 
 # Newton-Raphson tolerance
 ntol = 1e-6
@@ -45,6 +45,9 @@ polar = PolarForm(pf, device)
 cache = ExaPF.get(polar, ExaPF.PhysicalState())
 jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
 npartitions = ceil(Int64,(size(jx.J,1)/64))
+if npartitions < 2
+    npartitions = 2
+end
 precond = ExaPF.LinearSolvers.BlockJacobiPreconditioner(jx.J, npartitions, device)
 # Retrieve initial state of network
 x0 = ExaPF.initial(polar, State())
@@ -68,7 +71,14 @@ convergence = ExaPF.update!(nlp, u0)
 prettytime = TimerOutputs.prettytime
 timers = ExaPF.TIMER.inner_timers
 inner_timer = timers["Newton"]
-println("$(ARGS[1]), $(ARGS[2]), $(ARGS[3]),",
-        printtimer(timers, "Newton"),",",
-        printtimer(inner_timer, "Jacobian"),",",
-        printtimer(inner_timer, "Linear Solver"))
+if ARGS[1] == "DirectSolver"
+    println("$(ARGS[1]), $(ARGS[2]), $(ARGS[3]),",
+            printtimer(timers, "Newton"),
+            ", $(convergence.has_converged)")
+else
+    println("$(ARGS[1]), $(ARGS[2]), $(ARGS[3]),",
+            printtimer(timers, "Newton"),",",
+            printtimer(inner_timer, "Jacobian"),",",
+            printtimer(inner_timer, "Linear Solver"),
+            ", $(convergence.has_converged)")
+end
