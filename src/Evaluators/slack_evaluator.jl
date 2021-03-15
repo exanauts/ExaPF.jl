@@ -177,7 +177,7 @@ end
 # J' * J = [ Jᵤ' * Jᵤ    - Jᵤ']
 #          [ - Jᵤ           I ]
 function hessian_lagrangian_penalty_prod!(
-    nlp::SlackEvaluator, hessvec, x, y, σ, v, w,
+    nlp::SlackEvaluator, hessvec, x, y, σ, v, ρ,
 )
     @views begin
         u   = x[1:nlp.nv]
@@ -186,23 +186,24 @@ function hessian_lagrangian_penalty_prod!(
         hvu = hessvec[1:nlp.nv]
         hvs = hessvec[nlp.nv+1:end]
     end
+    fill!(hessvec, 0)
     u_buf = similar(u) ; fill!(u_buf, 0)
     y_buf = similar(y) ; fill!(y_buf, 0)
     # w.r.t. uu
     # ∇²L + ρ Jᵤ' * Jᵤ
-    hessian_lagrangian_penalty_prod!(nlp.inner, hvu, u, y, σ, vᵤ, w)
+    hessian_lagrangian_penalty_prod!(nlp.inner, hvu, u, y, σ, vᵤ, ρ)
 
-    if !iszero(w)
+    if !iszero(ρ)
         # w.r.t. us
-        y_buf .= w .* vₛ
+        y_buf .= ρ .* vₛ
         # - Jᵤ' * vₛ
         jtprod!(nlp.inner, u_buf, u, y_buf)
-        hvu .+= - u_buf
+        hvu .-=  u_buf
         # w.r.t. su
         jprod!(nlp.inner, y_buf, u, vᵤ)
-        hvs .= - w .* y_buf
+        hvs .-= ρ .* y_buf
         # w.r.t. ss
-        hvs .+= w .* vₛ
+        hvs .+= ρ .* vₛ
     end
     return
 end
