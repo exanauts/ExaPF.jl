@@ -169,6 +169,19 @@ function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
     return
 end
 
+function hessian!(ag::AugLagEvaluator, H, u)
+    ag.counter.hessian += 1
+    scaler = ag.scaler
+    cx = ag.cons
+    mask = abs.(cx) .> 0
+
+    σ = scaler.scale_obj
+    y = (scaler.scale_cons .* ag.λc .* mask)
+    ρ = ag.ρ .* (scaler.scale_cons .* scaler.scale_cons .* mask)
+    hessian_lagrangian_penalty!(ag.inner, H, u, y, σ, ρ)
+    return
+end
+
 function estimate_multipliers(ag::AugLagEvaluator, u)
     J = Diagonal(ag.scaler.scale_cons) * jacobian(ag.inner, u)
     ∇f = gradient(ag.inner, u)
