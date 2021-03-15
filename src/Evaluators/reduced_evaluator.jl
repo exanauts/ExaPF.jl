@@ -51,6 +51,9 @@ mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <
     linear_solver::LinearSolvers.AbstractLinearSolver
     powerflow_solver::AbstractNonLinearSolver
     factorization::Union{Nothing, Factorization}
+    has_jacobian::Bool
+    update_jacobian::Bool
+    has_hessian::Bool
 end
 
 function ReducedSpaceEvaluator(
@@ -104,7 +107,7 @@ function ReducedSpaceEvaluator(
         constraints, g_min, g_max,
         buffer,
         state_ad, obj_ad, cons_ad, cons_jac, hess_ad,
-        linear_solver, powerflow_solver, nothing
+        linear_solver, powerflow_solver, nothing, want_jacobian, false, want_hessian,
     )
 end
 function ReducedSpaceEvaluator(
@@ -183,6 +186,19 @@ end
 bounds(nlp::ReducedSpaceEvaluator, ::Variables) = (nlp.u_min, nlp.u_max)
 bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = (nlp.g_min, nlp.g_max)
 
+function _update_factorization!(nlp::ReducedSpaceEvaluator)
+    ∇gₓ = nlp.state_jacobian.x.J
+    if !isa(∇gₓ, SparseMatrixCSC) || isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
+        return
+    end
+    if !isnothing(nlp.factorization)
+        lu!(nlp.factorization, ∇gₓ)
+    else
+        nlp.factorization = lu(∇gₓ)
+    end
+end
+
+## Callbacks
 function update!(nlp::ReducedSpaceEvaluator, u)
     jac_x = nlp.state_jacobian.x
     # Transfer control u into the network cache
@@ -203,8 +219,12 @@ function update!(nlp::ReducedSpaceEvaluator, u)
 
     # Refresh values of active and reactive powers at generators
     update!(nlp.model, PS.Generators(), PS.ActivePower(), nlp.buffer)
+    # Update factorization if direct solver
+    _update_factorization!(nlp)
     # Evaluate Jacobian of power flow equation on current u
     AutoDiff.jacobian!(nlp.model, nlp.state_jacobian.u, nlp.buffer)
+    # Specify that constraint's Jacobian is not up to date
+    nlp.update_jacobian = nlp.has_jacobian
     return conv
 end
 
@@ -228,6 +248,33 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
 end
 
 
+function _forward_solve!(nlp::ReducedSpaceEvaluator, y, x)
+    if isa(y, CUDA.CuArray)
+        ∇gₓ = nlp.state_jacobian.x.J
+        LinearSolvers.ldiv!(nlp.linear_solver, y, ∇gₓ, x)
+    else
+        ∇gₓ = nlp.factorization
+        ldiv!(y, ∇gₓ, x)
+    end
+end
+
+function _backward_solve!(nlp::ReducedSpaceEvaluator, y::VT, x::VT) where {VT <: AbstractArray}
+    if isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
+        # Iterative solver case
+        ∇gT = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
+        # Switch preconditioner to transpose mode
+        LinearSolvers.update!(nlp.linear_solver, ∇gT)
+        # Compute adjoint and store value inside λₖ
+        LinearSolvers.ldiv!(nlp.linear_solver, y, ∇gT, x)
+    elseif isa(y, CUDA.CuArray)
+        ∇gT = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
+        LinearSolvers.ldiv!(nlp.linear_solver, y, ∇gT, x)
+    else
+        ∇gf = nlp.factorization
+        LinearSolvers.ldiv!(nlp.linear_solver, y, ∇gf', x)
+    end
+end
+
 ###
 # First-order code
 ####
@@ -241,27 +288,12 @@ function reduced_gradient!(
     ∇gᵤ = nlp.state_jacobian.u.J
     ∇gₓ = nlp.state_jacobian.x.J
 
-    if isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
-        # Iterative solver case
-        ∇gT = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
-        # Switch preconditioner to transpose mode
-        LinearSolvers.update!(nlp.linear_solver, ∇gT)
-        # Compute adjoint and store value inside λₖ
-        LinearSolvers.ldiv!(nlp.linear_solver, λ, ∇gT, ∂fₓ)
-    elseif isa(u, CUDA.CuArray)
-        ∇gT = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
-        LinearSolvers.ldiv!(nlp.linear_solver, λ, ∇gT, ∂fₓ)
-    else
-        # Direct solver case
-        ∇gf = factorize(∇gₓ)
-        LinearSolvers.ldiv!(nlp.linear_solver, λ, ∇gf', ∂fₓ)
-        # Store factorization
-        nlp.factorization = ∇gf
-    end
+    # λ = ∇gₓ' \ ∂fₓ
+    _backward_solve!(nlp, λ, ∂fₓ)
 
     grad .= ∂fᵤ
     mul!(grad, transpose(∇gᵤ), λ, -1.0, 1.0)
-    return λ
+    return
 end
 function reduced_gradient!(nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, u)
     reduced_gradient!(nlp::ReducedSpaceEvaluator, grad, ∂fₓ, ∂fᵤ, nlp.λ, u)
@@ -307,9 +339,18 @@ function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     end
 end
 
+function _update_full_jacobian_constraints!(nlp)
+    if nlp.update_jacobian
+        update_full_jacobian!(nlp.model, nlp.constraint_jacobians, nlp.buffer)
+        nlp.update_jacobian = false
+    end
+end
+
+# Works only on the CPU!
 function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
+    _update_full_jacobian_constraints!(nlp)
+
     ∇cons = nlp.constraint_jacobians
-    update_full_jacobian!(nlp.model, ∇cons, nlp.buffer)
     Jx = ∇cons.Jx
     Ju = ∇cons.Ju
     m, nₓ = size(Jx)
@@ -331,16 +372,24 @@ function jprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     m  = n_constraints(nlp)
     @assert nᵤ == length(v)
 
+    _update_full_jacobian_constraints!(nlp)
+
     ∇cons = nlp.constraint_jacobians
-    update_full_jacobian!(nlp.model, ∇cons, nlp.buffer)
+
     Jx = ∇cons.Jx
     Ju = ∇cons.Ju
 
     ∇gᵤ = nlp.state_jacobian.u.J
-    ∇gfac = nlp.factorization
-    z = -(∇gfac \ (∇gᵤ * v))
+    rhs = nlp.buffer.dx
+    # init RHS
+    mul!(rhs, ∇gᵤ, v)
+    z = similar(rhs)
+    # Compute z
+    _forward_solve!(nlp, z, rhs)
 
-    jv .= Ju * v .+ Jx * z
+    # jv .= Ju * v .- Jx * z
+    mul!(jv, Ju, v)
+    mul!(jv, Jx, z, -1.0, 1.0)
     return
 end
 
@@ -390,29 +439,16 @@ function _second_order_adjoint_z!(
     nlp::ReducedSpaceEvaluator, z, w,
 )
     ∇gᵤ = nlp.state_jacobian.u.J
-    mul!(z, ∇gᵤ, w, -1.0, 0.0)
-
-    if isa(z, CUDA.CuArray)
-        ∇gₓ = nlp.state_jacobian.x.J
-        LinearSolvers.ldiv!(nlp.linear_solver, z, ∇gₓ, z)
-    else
-        ∇gₓ = nlp.factorization
-        ldiv!(∇gₓ, z)
-    end
+    rhs = nlp.buffer.dx
+    mul!(rhs, ∇gᵤ, w, -1.0, 0.0)
+    _forward_solve!(nlp, z, rhs)
 end
 
 # ψ = -(∇gₓ' \ (∇²fₓₓ .+ ∇²gₓₓ))
 function _second_order_adjoint_ψ!(
     nlp::ReducedSpaceEvaluator, ψ, ∂fₓ,
 )
-    if isa(ψ, CUDA.CuArray)
-        ∇gₓ = nlp.state_jacobian.x.J
-        ∇gT = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
-        LinearSolvers.ldiv!(nlp.linear_solver, ψ, ∇gT, ∂fₓ)
-    else
-        ∇gₓ = nlp.factorization
-        ldiv!(ψ, ∇gₓ', ∂fₓ)
-    end
+    _backward_solve!(nlp, ψ, ∂fₓ)
 end
 
 function _reduced_hessian_prod!(
@@ -422,15 +458,14 @@ function _reduced_hessian_prod!(
     nu = get(nlp.model, NumberOfControl())
     H = nlp.hessians
     ∇gᵤ = nlp.state_jacobian.u.J
-    λ = - nlp.λ
     ψ = H.ψ
 
     hv = H.tmp_hv
 
     ## POWER BALANCE HESSIAN
-    AutoDiff.adj_hessian_prod!(nlp.model, H.state, hv, nlp.buffer, λ, tgt)
-    ∂fₓ .+= hv[1:nx]
-    ∂fᵤ .+= hv[nx+1:nx+nu]
+    AutoDiff.adj_hessian_prod!(nlp.model, H.state, hv, nlp.buffer, nlp.λ, tgt)
+    ∂fₓ .-= @view hv[1:nx]
+    ∂fᵤ .-= @view hv[nx+1:nx+nu]
 
     # Second order adjoint
     _second_order_adjoint_ψ!(nlp, ψ, ∂fₓ)
@@ -509,28 +544,35 @@ function hessian_lagrangian_penalty_prod!(
 
     ## OBJECTIVE HESSIAN
     hessian_prod_objective!(nlp.model, H.obj, nlp.obj_stack, hv, ∂²f, ∂f, buffer, tgt)
-    ∇²Lx = σ .* hv[1:nx]
-    ∇²Lu = σ .* hv[nx+1:nx+nu]
+    ∇²Lx = σ .* @view hv[1:nx]
+    ∇²Lu = σ .* @view hv[nx+1:nx+nu]
 
     # CONSTRAINT HESSIAN
     shift = 0
+    hvx = @view hv[1:nx]
+    hvu = @view hv[nx+1:nx+nu]
     for (cons, Hc) in zip(nlp.constraints, H.constraints)
         m = size_constraint(nlp.model, cons)::Int
         mask = shift+1:shift+m
         yc = @view y[mask]
         AutoDiff.adj_hessian_prod!(nlp.model, Hc, hv, buffer, yc, tgt)
-        ∇²Lx .+= hv[1:nx]
-        ∇²Lu .+= hv[nx+1:nx+nu]
+        ∇²Lx .+= hvx
+        ∇²Lu .+= hvu
         shift += m
     end
     # Add Hessian of quadratic penalty
+    diagjac = similar(y)
     if !iszero(D)
-        update_full_jacobian!(nlp.model, nlp.constraint_jacobians, buffer)
+        _update_full_jacobian_constraints!(nlp)
         Jx = nlp.constraint_jacobians.Jx
         Ju = nlp.constraint_jacobians.Ju
-        DD = Diagonal(D)
-        ∇²Lx .+= Jx' * (DD * (Jx * z)) .+ Jx' * (DD * (Ju * w))
-        ∇²Lu .+= Ju' * (DD * (Jx * z)) .+ Ju' * (DD * (Ju * w))
+        # ∇²Lx .+= Jx' * (D * (Jx * z)) .+ Jx' * (D * (Ju * w))
+        # ∇²Lu .+= Ju' * (D * (Jx * z)) .+ Ju' * (D * (Ju * w))
+        mul!(diagjac, Jx, z)
+        mul!(diagjac, Ju, w, 1.0, 1.0)
+        diagjac .*= D
+        mul!(∇²Lx, Jx', diagjac, 1.0, 1.0)
+        mul!(∇²Lu, Ju', diagjac, 1.0, 1.0)
     end
 
     # Second order adjoint

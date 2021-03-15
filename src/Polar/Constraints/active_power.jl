@@ -52,13 +52,15 @@ function _put_active_power_injection!(fr, v_m, v_a, adj_v_m, adj_v_a, adj_P, ybu
     @inbounds for c in ybus_re.colptr[fr]:ybus_re.colptr[fr+1]-1
         to = ybus_re.rowval[c]
         aij = v_a[fr] - v_a[to]
-        cθ = ybus_re.nzval[c]*cos(aij)
-        sθ = ybus_im.nzval[c]*sin(aij)
+        cosθ = cos(aij)
+        sinθ = sin(aij)
+        cθ = ybus_re.nzval[c]*cosθ
+        sθ = ybus_im.nzval[c]*sinθ
         adj_v_m[fr] += v_m[to] * (cθ + sθ) * adj_P
         adj_v_m[to] += v_m[fr] * (cθ + sθ) * adj_P
 
-        adj_aij = -(v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sin(aij)))
-        adj_aij += v_m[fr]*v_m[to]*(ybus_im.nzval[c]*cos(aij))
+        adj_aij = -(v_m[fr]*v_m[to]*(ybus_re.nzval[c]*sinθ))
+        adj_aij += v_m[fr]*v_m[to]*(ybus_im.nzval[c]*cosθ)
         adj_aij *= adj_P
         adj_v_a[to] += -adj_aij
         adj_v_a[fr] += adj_aij

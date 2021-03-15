@@ -15,7 +15,6 @@ include("line_flow.jl")
 # Generic functions
 
 ## Adjoint
-# TODO: port to new stack
 function adjoint!(
     polar::PolarForm,
     func::Function,
@@ -23,8 +22,8 @@ function adjoint!(
     stack, buffer,
 )
     @assert is_constraint(func)
-    ∂pinj = similar(buffer.vmag) ; fill!(∂pinj, 0.0)
     ∂qinj = nothing # TODO
+    fill!(stack.∂pinj, 0.0)
     fill!(stack.∂vm, 0)
     fill!(stack.∂va, 0)
     adjoint!(
@@ -32,7 +31,7 @@ function adjoint!(
         cons, ∂cons,
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
-        buffer.pinj, ∂pinj,
+        buffer.pinj, stack.∂pinj,
         buffer.qinj, ∂qinj,
     )
 end

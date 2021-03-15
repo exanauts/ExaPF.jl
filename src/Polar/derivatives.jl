@@ -191,6 +191,21 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     )
 end
 
+function _init_seed_hessian!(dest, tmp, v::AbstractArray, nmap)
+    @inbounds for i in 1:nmap
+        dest[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i]))
+    end
+    return
+end
+function _init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
+    hostv = Array(v)
+    @inbounds Threads.@threads for i in 1:nmap
+        tmp[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
+    end
+    copyto!(dest, tmp)
+    return
+end
+
 # λ' * H * v
 function AutoDiff.adj_hessian_prod!(
     polar, H::AutoDiff.Hessian, hv, buffer, λ, v,
@@ -217,11 +232,7 @@ function AutoDiff.adj_hessian_prod!(
     nmap = length(H.map)
 
     # Init seed
-    hostv = Array(v)
-    @inbounds Threads.@threads for i in 1:nmap
-        H.host_t1sseeds[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
-    end
-    copyto!(H.t1sseeds, H.host_t1sseeds)
+    _init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
     AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx)
 
     adjoint!(
@@ -251,6 +262,7 @@ struct AdjointStackObjective{VT<:AbstractVector}
     ∂pg::VT
     ∂vm::VT
     ∂va::VT
+    ∂pinj::VT
     jvₓ::VT
     jvᵤ::VT
 end
@@ -261,6 +273,7 @@ function AdjointStackObjective(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT
         xzeros(VT, get(polar, NumberOfState())),
         xzeros(VT, get(polar, NumberOfControl())),
         xzeros(VT, get(polar, PS.NumberOfGenerators())),
+        xzeros(VT, nbus),
         xzeros(VT, nbus),
         xzeros(VT, nbus),
         xzeros(VT, get(polar, NumberOfState())),

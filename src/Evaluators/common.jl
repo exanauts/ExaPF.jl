@@ -52,11 +52,15 @@ end
 function hessian!(nlp::AbstractNLPEvaluator, H, x)
     n = n_variables(nlp)
     v = similar(x)
+    hv = similar(x)
+    th = 0.0
     for i in 1:n
         fill!(v, 0)
         v[i] = 1.0
-        hessprod!(nlp, view(H, :, i), x, v)
+        th += @elapsed hessprod!(nlp, hv, x, v)
+        H[:, i] .= hv
     end
+    println(th / n)
 end
 
 function hessian(nlp::AbstractNLPEvaluator, x)
