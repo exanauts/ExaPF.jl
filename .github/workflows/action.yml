@@ -7,9 +7,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        julia-version: ['1.5']
+        julia-version: ['1.5','1.6.0-rc2']
         julia-arch: [x64]
-        os: [ubuntu-latest]
+        os: [ubuntu-20.04]
 
     steps:
       - uses: actions/checkout@v2
@@ -25,9 +25,9 @@ jobs:
     runs-on: self-hosted
     strategy:
       matrix:
-        julia-version: ['1.5']
+        julia-version: ['1.5','1.6.0-rc2']
         julia-arch: [x64]
-        os: [ubuntu-latest]
+        os: [ubuntu-20.04]
 
     steps:
       - uses: actions/checkout@v2
