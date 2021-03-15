@@ -207,6 +207,39 @@ function hessian_lagrangian_penalty_prod!(
     end
     return
 end
+
+function hessian_lagrangian_penalty!(
+    nlp::SlackEvaluator, hess, x, y, σ, w,
+)
+    n = n_variables(nlp)
+    @views begin
+        u   = x[1:nlp.nv]
+        Hᵤᵤ = hess[1:nlp.nv, 1:nlp.nv]
+        Hᵤᵥ = hess[1:nlp.nv, 1+nlp.nv:n]
+        Hᵥᵤ = hess[1+nlp.nv:n, 1:nlp.nv]
+        Hᵥᵥ = hess[1+nlp.nv:n, 1+nlp.nv:n]
+    end
+    # w.r.t. uu
+    # ∇²L + ρ Jᵤ' * Jᵤ
+    hessian_lagrangian_penalty!(nlp.inner, Hᵤᵤ, u, y, σ, w)
+
+    if !iszero(w)
+        D = Diagonal(w)
+        Jᵤ = Hᵥᵤ
+        jacobian!(nlp.inner, Jᵤ, u)
+        mul!(Hᵤᵥ, Jᵤ', -D)
+        mul!(Hᵥᵤ, - D, Jᵤ)
+        fill!(Hᵥᵥ, 0)
+        @inbounds for i in 1:nlp.ns
+            Hᵥᵥ[i, i] = w[i]
+        end
+    else
+        fill!(Hᵤᵥ, 0)
+        fill!(Hᵥᵤ, 0)
+        fill!(Hᵥᵥ, 0)
+    end
+end
+
 # TODO: return sparse sparsity pattern for bottom-left block
 function hessian_structure(nlp::SlackEvaluator)
     n = n_variables(nlp)

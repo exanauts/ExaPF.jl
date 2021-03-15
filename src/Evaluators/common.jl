@@ -53,14 +53,22 @@ function hessian!(nlp::AbstractNLPEvaluator, H, x)
     n = n_variables(nlp)
     v = similar(x)
     hv = similar(x)
-    th = 0.0
     for i in 1:n
         fill!(v, 0)
         v[i] = 1.0
-        th += @elapsed hessprod!(nlp, hv, x, v)
+        hessprod!(nlp, hv, x, v)
         H[:, i] .= hv
     end
-    println(th / n)
+end
+
+function hessian_lagrangian_penalty!(nlp::AbstractNLPEvaluator, H, x, y, σ, D,)
+    n = n_variables(nlp)
+    v = similar(x)
+    for i in 1:n
+        fill!(v, 0)
+        v[i] = 1.0
+        hessian_lagrangian_penalty_prod!(nlp, view(H, :, i), x, y, σ, v, D)
+    end
 end
 
 function hessian(nlp::AbstractNLPEvaluator, x)

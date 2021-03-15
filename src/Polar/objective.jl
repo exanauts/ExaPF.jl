@@ -50,11 +50,10 @@ function put(
     adj_u = obj_autodiff.∇fᵤ
     adj_vmag = obj_autodiff.∂vm
     adj_vang = obj_autodiff.∂va
-    # TODO
-    adj_pinj = similar(adj_vmag)  ; fill!(adj_pinj, 0.0)
+    adj_pinj = obj_autodiff.∂pinj
 
     # Adjoint w.r.t Slack nodes
-    adjoint!(polar, active_power_constraints, adj_pg[ref2gen] , buffer.pg, obj_autodiff, buffer)
+    adjoint!(polar, active_power_constraints, view(adj_pg, ref2gen), buffer.pg, obj_autodiff, buffer)
     # Adjoint w.r.t. PV nodes
     adj_pinj[index_pv] .= @view adj_pg[pv2gen]
 

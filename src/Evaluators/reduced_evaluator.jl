@@ -354,16 +354,17 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     Jx = ∇cons.Jx
     Ju = ∇cons.Ju
     m, nₓ = size(Jx)
+    m, nᵤ = size(Ju)
     ∇gᵤ = nlp.state_jacobian.u.J
     ∇gₓ = nlp.state_jacobian.x.J
     # Compute factorization with UMFPACK
     ∇gfac = nlp.factorization
     # Compute adjoints all in once, using the same factorization
-    μ = zeros(nₓ, m)
-    ldiv!(μ, ∇gfac', Jx')
+    μ = zeros(nₓ, nᵤ)
+    ldiv!(μ, ∇gfac, ∇gᵤ)
     # Compute reduced Jacobian
     copy!(jac, Ju)
-    mul!(jac, μ', ∇gᵤ, -1.0, 1.0)
+    mul!(jac, Jx, μ, -1.0, 1.0)
     return
 end
 
