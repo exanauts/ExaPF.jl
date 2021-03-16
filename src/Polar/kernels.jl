@@ -162,19 +162,19 @@ end
 This kernel accumulates the adjoint of the voltage magnitude `adj_vm`
 and `adj_va` from the edges of the graph stored as CSC matrices.
 """
-KA.@kernel function cpu_adj_node_kernel!(
+function cpu_adj_node_kernel!(
     F, adj_F, vm, adj_vm, va, adj_va,
     colptr, rowval,
     edge_vm_from, edge_vm_to,
     edge_va_from, edge_va_to
 )
-
-    i = @index(Global, Linear)
-    @inbounds for c in colptr[i]:colptr[i+1]-1
-        adj_vm[i] += edge_vm_from[c]
-        adj_vm[i] += edge_vm_to[c]
-        adj_va[i] += edge_va_from[c]
-        adj_va[i] += edge_va_to[c]
+    for i in 1:length(adj_vm)
+        @inbounds for c in colptr[i]:colptr[i+1]-1
+            adj_vm[i] += edge_vm_from[c]
+            adj_vm[i] += edge_vm_to[c]
+            adj_va[i] += edge_va_from[c]
+            adj_va[i] += edge_va_to[c]
+        end
     end
 end
 
@@ -224,7 +224,7 @@ This is the CUDA wrapper of the adjoint kernel that computes the adjoint of the 
 """
 function adj_residual_polar!(
     F::CUDA.CuVector{T}, adj_F::CUDA.CuVector{T}, vm, adj_vm, va, adj_va,
-    ybus_re, ybus_im,
+    ybus_re, ybus_im, transpose_perm,
     pinj, adj_pinj, qinj, pv, pq, nbus
 ) where {T}
     npv = length(pv)
@@ -281,7 +281,7 @@ This is the CPU wrapper of the adjoint kernel that computes the adjoint of the v
 """
 function adj_residual_polar!(
     F::Vector{T}, adj_F::Vector{T}, vm, adj_vm, va, adj_va,
-    ybus_re, ybus_im,
+    ybus_re, ybus_im, transpose_perm,
     pinj, adj_pinj, qinj, pv, pq, nbus
 ) where {T}
     npv = length(pv)
@@ -299,7 +299,6 @@ function adj_residual_polar!(
     adj_pinj .= 0.0
 
     kernel_edge! = adj_residual_edge_kernel!(KA.CPU())
-    kernel_node! = cpu_adj_node_kernel!(KA.CPU())
     ev = kernel_edge!(F, adj_F, vm, adj_vm, va, adj_va,
                  ybus_re.colptr, ybus_re.rowval,
                  ybus_re.nzval, ybus_im.nzval,
@@ -309,21 +308,14 @@ function adj_residual_polar!(
                  ndrange=npv+npq)
     wait(ev)
 
-    spedge_vm_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_vm_to)
-    spedge_va_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_va_to)
-    spedge_vm_to.nzval .= edge_vm_to
-    spedge_va_to.nzval .= edge_va_to
-    transpose!(spedge_vm_to, copy(spedge_vm_to))
-    transpose!(spedge_va_to, copy(spedge_va_to))
-    vm_to_nzval = spedge_vm_to.nzval
-    va_to_nzval = spedge_va_to.nzval
+    vm_to_nzval = @view edge_vm_to[transpose_perm]
+    va_to_nzval = @view edge_va_to[transpose_perm]
 
-    ev = kernel_node!(F, adj_F, vm, adj_vm, va, adj_va,
-            ybus_re.colptr, ybus_re.rowval,
-            edge_vm_from, vm_to_nzval,
-            edge_va_from, va_to_nzval,
-            ndrange=nvbus)
-    wait(ev)
+    cpu_adj_node_kernel!(F, adj_F, vm, adj_vm, va, adj_va,
+        ybus_re.colptr, ybus_re.rowval,
+        edge_vm_from, vm_to_nzval,
+        edge_va_from, va_to_nzval
+    )
 end
 
 KA.@kernel function transfer_kernel!(
@@ -469,93 +461,6 @@ function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::Po
         ndrange=range_
     )
     wait(ev)
-end
-
-KA.@kernel function adj_active_power_edge_kernel!(
-    pg, adj_pg,
-    vmag, adj_vmag, vang, adj_vang,
-    pinj, adj_pinj, qinj, adj_qinj,
-    pv, ref, pv_to_gen, ref_to_gen,
-    edge_vmag_bus, edge_vmag_to,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-    ybus_im_nzval, pload
-)
-    i = @index(Global, Linear)
-    npv = length(pv)
-    nref = length(ref)
-    # Evaluate active power at PV nodes
-    if i <= npv
-        bus = pv[i]
-        i_gen = pv_to_gen[i]
-        pg[i_gen] = pinj[bus] + pload[bus]
-    # Evaluate active power at slack nodes
-    elseif i <= npv + nref
-        i_ = i - npv
-        bus = ref[i_]
-        i_gen = ref_to_gen[i_]
-        inj = 0
-        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
-            to = ybus_re_rowval[c]
-            aij = vang[bus] - vang[to]
-            # f_re = a * cos + b * sin
-            # f_im = a * sin - b * cos
-            coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-            coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
-            cos_val = cos(aij)
-            sin_val = sin(aij)
-            inj += coef_cos * cos_val + coef_sin * sin_val
-        end
-        pg[i_gen] = inj + pload[bus]
-    end
-    if i <= npv
-        bus = pv[i]
-        i_gen = pv_to_gen[i]
-        adj_pinj[bus] = adj_pg[i_gen]
-        adj_pload[bus] = adj_pg[i_gen]
-    # Evaluate active power at slack nodes
-    elseif i <= npv + nref
-        i_ = i - npv
-        bus = ref[i_]
-        i_gen = ref_to_gen[i_]
-        inj = 0
-        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
-            to = ybus_re_rowval[c]
-            aij = vang[bus] - vang[to]
-            # f_re = a * cos + b * sin
-            # f_im = a * sin - b * cos
-            coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-            coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
-            cos_val = cos(aij)
-            sin_val = sin(aij)
-            inj += coef_cos * cos_val + coef_sin * sin_val
-        end
-
-        adj_inj = adj_pg[i_gen]
-        adj_pload[bus] = adj_pg[i_gen]
-        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
-            to = ybus_re_rowval[c]
-            aij = vang[bus] - vang[to]
-            # f_re = a * cos + b * sin
-            # f_im = a * sin - b * cos
-            coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-            coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
-            cos_val = cos(aij)
-            sin_val = sin(aij)
-
-            adj_coef_cos = cos_val  * adj_inj
-            adj_cos_val  = coef_cos * adj_inj
-            adj_coef_sin = sin_val  * adj_inj
-            adj_sin_val  = coef_sin * adj_inj
-
-            adj_aij =   cos_val*adj_sin_val
-            adj_aij += -sin_val*adj_cos_val
-
-            edge_vmag_bus[c] += vmag[to] *ybus_re_nzval[c]*adj_coef_cos
-            edge_vmag_to[c]  += vmag[bus]*ybus_re_nzval[c]*adj_coef_cos
-            edge_vmag_bus[c] += vmag[to] *ybus_im_nzval[c]*adj_coef_sin
-            edge_vmag_to[c]  += vmag[bus]*ybus_im_nzval[c]*adj_coef_sin
-        end
-    end
 end
 
 KA.@kernel function reactive_power_kernel!(
@@ -745,7 +650,7 @@ end
 
 function adj_reactive_power!(
     F::Vector{T}, adj_F, vm, adj_vm, va, adj_va,
-    ybus_re, ybus_im,
+    ybus_re, ybus_im, transpose_perm,
     pinj, adj_pinj, qinj, adj_qinj, reactive_load,
     pv, pq, ref, pv_to_gen, ref_to_gen, nbus
 ) where {T}
@@ -771,9 +676,6 @@ function adj_reactive_power!(
     rowval = ybus_re.rowval
 
     kernel_edge! = adj_reactive_power_edge_kernel!(KA.CPU())
-    kernel_node! = cpu_adj_node_kernel!(KA.CPU())
-    spedge_vmag_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_vmag_to)
-    spedge_vang_to = SparseMatrixCSC{T, Int64}(nvbus, nvbus, colptr, rowval, edge_vang_to)
 
     range_ = length(pv) + length(ref)
 
@@ -792,21 +694,17 @@ function adj_reactive_power!(
     )
     wait(ev)
 
-    spedge_vmag_to.nzval .= edge_vmag_to
-    spedge_vang_to.nzval .= edge_vang_to
-    transpose!(spedge_vmag_to, copy(spedge_vmag_to))
-    transpose!(spedge_vang_to, copy(spedge_vang_to))
+    edge_vmag_to_t = @view edge_vmag_to[transpose_perm]
+    edge_vang_to_t = @view edge_vang_to[transpose_perm]
 
-    ev = kernel_node!(
+    cpu_adj_node_kernel!(
         F, adj_F,
         vm, adj_vm,
         va, adj_va,
         ybus_re.colptr, ybus_re.rowval,
-        edge_vmag_bus, spedge_vmag_to.nzval,
-        edge_vang_bus, spedge_vang_to.nzval,
-        ndrange=nvbus
+        edge_vmag_bus, edge_vmag_to_t,
+        edge_vang_bus, edge_vang_to_t,
     )
-    wait(ev)
 end
 
 KA.@kernel function branch_flow_kernel!(

@@ -69,7 +69,7 @@ function adjoint!(
         cons, ∂cons,
         vm, ∂vm,
         va, ∂va,
-        ybus_re, ybus_im,
+        ybus_re, ybus_im, polar.topology.sortperm,
         pinj, ∂pinj,
         qinj, pv, pq, nbus,
     )

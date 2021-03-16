@@ -118,10 +118,12 @@ struct NetworkTopology{VTI, VTD}
     # Correspondence
     f_buses::VTI # nl
     t_buses::VTI # nl
+    sortperm::VTI # nnz
 end
 
 function NetworkTopology{VTI, VTD}(pf::PS.PowerNetwork) where {VTI, VTD}
-    ybus_re, ybus_im = Spmat{VTI, VTD}(pf.Ybus)
+    Y = pf.Ybus
+    ybus_re, ybus_im = Spmat{VTI, VTD}(Y)
     lines = pf.lines
     yff_re = real.(lines.Yff) |> VTD
     yft_re = real.(lines.Yft) |> VTD
@@ -135,12 +137,14 @@ function NetworkTopology{VTI, VTD}(pf::PS.PowerNetwork) where {VTI, VTD}
 
     f = lines.from_buses |> VTI
     t = lines.to_buses   |> VTI
+    i, j, _ = findnz(Y)
+    sp = sortperm(i) |> VTI
 
     return NetworkTopology(
         ybus_re, ybus_im,
         yff_re, yft_re, ytf_re, ytt_re,
         yff_im, yft_im, ytf_im, ytt_im,
-        f, t,
+        f, t, sp,
     )
 end
 
