@@ -180,6 +180,7 @@ function _adjoint_objective!(nlp::ProxALEvaluator, ∂f, pg)
     model = nlp.inner.model
     ## Seed left-hand side vector
     adjoint_cost!(model, ∂f, pg)
+    ∂f .*= nlp.scale_objective
     if nlp.time != Origin
         ∂f .-= nlp.λf
         ∂f .-= nlp.ρf .* nlp.ramp_link_prev

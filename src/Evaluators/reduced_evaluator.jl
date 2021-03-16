@@ -259,6 +259,7 @@ function _forward_solve!(nlp::ReducedSpaceEvaluator, y, x)
 end
 
 function _backward_solve!(nlp::ReducedSpaceEvaluator, y::VT, x::VT) where {VT <: AbstractArray}
+    ∇gₓ = nlp.state_jacobian.x.J
     if isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
         # Iterative solver case
         ∇gT = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
