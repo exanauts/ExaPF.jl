@@ -12,62 +12,74 @@ include("active_power.jl")
 include("reactive_power.jl")
 include("line_flow.jl")
 
+# By default, function does not have any intermediate state
+_get_intermediate_stack(polar::PolarForm, func::Function, VT) = nothing
+
+function _get_intermediate_stack(
+    polar::PolarForm, func::F, VT
+) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance)}}
+    nlines = PS.get(polar.network, PS.NumberOfLines())
+    # Take care that flow_constraints needs a buffer with a different size
+    nnz = isa(func, typeof(flow_constraints)) ? nlines : length(polar.topology.ybus_im.nzval)
+    # Return a NamedTuple storing all the intermediate states
+    return (
+        ∂edge_vm_fr = xzeros(VT, nnz),
+        ∂edge_va_fr = xzeros(VT, nnz),
+        ∂edge_vm_to = xzeros(VT, nnz),
+        ∂edge_va_to = xzeros(VT, nnz),
+    )
+end
+
 # Generic functions
+function AutoDiff.PullbackMemory(
+    polar::PolarForm, func::Function, VT; with_stack=true,
+)
+    @assert is_constraint(func)
+    stack = (with_stack) ? AdjointPolar(polar) : nothing
+    intermediate = _get_intermediate_stack(polar, func, VT)
+    return AutoDiff.PullbackMemory(func, stack, intermediate)
+end
 
 ## Adjoint
 function adjoint!(
     polar::PolarForm,
-    func::Function,
+    pbm::AutoDiff.PullbackMemory,
     ∂cons, cons,
-    stack, buffer,
+    buffer,
 )
-    @assert is_constraint(func)
-    ∂qinj = nothing # TODO
-    fill!(stack.∂pinj, 0.0)
-    fill!(stack.∂vm, 0)
-    fill!(stack.∂va, 0)
+    stack = pbm.stack
+    reset!(stack)
     adjoint!(
-        polar, func,
+        polar, pbm,
         cons, ∂cons,
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
         buffer.pinj, stack.∂pinj,
-        buffer.qinj, ∂qinj,
     )
 end
 
 ## Jacobian-transpose vector product
 function jtprod!(
     polar::PolarForm,
-    func::Function,
-    stack::AdjointPolar,
+    pbm::AutoDiff.PullbackMemory,
     buffer::PolarNetworkState,
     v::AbstractVector,
 )
-    @assert is_constraint(func)
-
-    m = size_constraint(polar, func)
     # Adjoint w.r.t. vm, va, pinj, qinj
-    fill!(stack.∂vm, 0)
-    fill!(stack.∂va, 0)
-    fill!(stack.∂pinj, 0.0)
-    fill!(stack.∂qinj, 0.0)
-    cons = buffer.balance ; fill!(cons, 0.0)
+    stack = pbm.stack
+    reset!(stack)
+    cons = buffer.balance ; fill!(cons, 0.0) # TODO
     adjoint!(
-        polar, func,
+        polar, pbm,
         cons, v,
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
         buffer.pinj, stack.∂pinj,
-        buffer.qinj, stack.∂qinj,
     )
-
-    ∂x = stack.∂x ; fill!(∂x, 0.0)
-    ∂u = stack.∂u ; fill!(∂u, 0.0)
     adjoint_transfer!(
         polar,
-        ∂u, ∂x,
-        stack.∂vm, stack.∂va, stack.∂pinj, stack.∂qinj,
+        stack.∂u, stack.∂x,
+        stack.∂vm, stack.∂va, stack.∂pinj,
     )
 end
 

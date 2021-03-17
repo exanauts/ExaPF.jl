@@ -53,6 +53,8 @@ const PS = PowerSystem
             jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
             ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
             ∂obj = ExaPF.AdjointStackObjective(polar)
+            pbm = AutoDiff.PullbackMemory(ExaPF.active_power_constraints, ∂obj, nothing)
+
             cpu_jx = AutoDiff.Jacobian(cpu_polar, ExaPF.power_balance, State())
             cpu_ju = AutoDiff.Jacobian(cpu_polar, ExaPF.power_balance, Control())
             cpu_∂obj = ExaPF.AdjointStackObjective(cpu_polar)
@@ -86,7 +88,7 @@ const PS = PowerSystem
             Jₓ = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
             @test isapprox(∇gₓ, Jₓ )
             # Hessian vector product
-            ExaPF.gradient_objective!(polar, ∂obj, cache)
+            ExaPF.gradient_objective!(polar, pbm, cache)
             ∇fₓ = ∂obj.∇fₓ
             ∇fᵤ = ∂obj.∇fᵤ
             λ  = -(Array(∇gₓ')) \ Array(∇fₓ)

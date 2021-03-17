@@ -70,13 +70,12 @@ end
 # Adjoint
 function adjoint!(
     polar::PolarForm,
-    ::typeof(active_power_constraints),
+    pbm::AutoDiff.PullbackMemory{F, S, I},
     pg, ∂pg,
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
-    qinj, ∂qinj,
-)
+) where {F<:typeof(active_power_constraints), S, I}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     index_ref = polar.indexing.index_ref

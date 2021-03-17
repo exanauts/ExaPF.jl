@@ -209,14 +209,14 @@ function full_gradient!(nlp::ProxALEvaluator, jx, ju, w)
     u = @view w[1:nlp.nu]
 
     ## Compute adjoint of objective
-    _adjoint_objective!(nlp, ∂obj.∂pg, pg)
+    _adjoint_objective!(nlp, ∂obj.stack.∂pg, pg)
 
     ## Evaluate conjointly
     # ∇fₓ = v' * J,  with J = ∂pg / ∂x
     # ∇fᵤ = v' * J,  with J = ∂pg / ∂u
     put(model, PS.Generators(), PS.ActivePower(), ∂obj, buffer)
-    copyto!(jx, ∂obj.∇fₓ)
-    copyto!(ju, ∂obj.∇fᵤ)
+    copyto!(jx, ∂obj.stack.∇fₓ)
+    copyto!(ju, ∂obj.stack.∇fᵤ)
 end
 
 function gradient_slack!(nlp::ProxALEvaluator, grad, w)
@@ -240,7 +240,7 @@ function gradient!(nlp::ProxALEvaluator, g, w)
     # Import AutoDiff objects
     ∂obj = nlp.inner.obj_stack
 
-    jvu = ∂obj.∇fᵤ ; jvx = ∂obj.∇fₓ
+    jvu = ∂obj.stack.∇fᵤ ; jvx = ∂obj.stack.∇fₓ
     fill!(jvx, 0)  ; fill!(jvu, 0)
     full_gradient!(nlp, jvx, jvu, w)
 
@@ -294,8 +294,8 @@ end
 
 function ojtprod!(nlp::ProxALEvaluator, jv, u, σ, v)
     ∂obj = nlp.inner.obj_stack
-    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
-    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
+    jvx = ∂obj.stack.jvₓ ; fill!(jvx, 0)
+    jvu = ∂obj.stack.jvᵤ ; fill!(jvu, 0)
     # compute gradient of objective
     full_gradient!(nlp, jvx, jvu, u)
     jvx .*= σ

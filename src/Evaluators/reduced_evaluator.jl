@@ -42,8 +42,8 @@ mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <
     buffer::PolarNetworkState{VI, VT}
     # AutoDiff
     state_jacobian::FullSpaceJacobian{Jacx, Jacu}
-    obj_stack::AdjointStackObjective{VT} # / objective
-    constraint_stacks::Vector{AdjointPolar{VT}} # / constraints
+    obj_stack::AutoDiff.PullbackMemory{typeof(active_power_constraints), AdjointStackObjective{VT}, Nothing}
+    cons_stacks::Vector{AutoDiff.PullbackMemory} # / constraints
     constraint_jacobians::JacCons
     hessians::Hess
 
@@ -82,12 +82,12 @@ function ReducedSpaceEvaluator(
         append!(g_max, cu)
     end
 
-    obj_ad = AdjointStackObjective(model)
+    obj_ad = pullback_objective(model)
     state_ad = FullSpaceJacobian(model, power_balance)
     VT = typeof(g_min)
-    cons_ad = AdjointPolar{VT}[]
+    cons_ad = AutoDiff.PullbackMemory[]
     for cons in constraints
-        push!(cons_ad, AdjointPolar(model))
+        push!(cons_ad, AutoDiff.PullbackMemory(model, cons, VT))
     end
 
     # Jacobians
@@ -306,15 +306,15 @@ function full_gradient!(nlp::ReducedSpaceEvaluator, gx, gu, u)
     ∂obj = nlp.obj_stack
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
     gradient_objective!(nlp.model, ∂obj, buffer)
-    copyto!(gx, ∂obj.∇fₓ)
-    copyto!(gu, ∂obj.∇fᵤ)
+    copyto!(gx, ∂obj.stack.∇fₓ)
+    copyto!(gu, ∂obj.stack.∇fᵤ)
 end
 
 function gradient!(nlp::ReducedSpaceEvaluator, g, u)
     buffer = nlp.buffer
     # Evaluate adjoint of cost function and update inplace AdjointStackObjective
     gradient_objective!(nlp.model, nlp.obj_stack, buffer)
-    ∇fₓ, ∇fᵤ = nlp.obj_stack.∇fₓ, nlp.obj_stack.∇fᵤ
+    ∇fₓ, ∇fᵤ = nlp.obj_stack.stack.∇fₓ, nlp.obj_stack.stack.∇fᵤ
 
     reduced_gradient!(nlp, g, ∇fₓ, ∇fᵤ, u)
     return
@@ -396,32 +396,31 @@ function jprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
 end
 
 function full_jtprod!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
-    ∂obj = nlp.obj_stack
     fr_ = 0::Int
-    for (cons, stack) in zip(nlp.constraints, nlp.constraint_stacks)
+    for (cons, stack) in zip(nlp.constraints, nlp.cons_stacks)
         n = size_constraint(nlp.model, cons)::Int
         mask = fr_+1:fr_+n
         vv = @view v[mask]
         # Compute jtprod of current constraint
-        jtprod!(nlp.model, cons, stack, nlp.buffer, vv)
-        jvx .+= stack.∂x
-        jvu .+= stack.∂u
+        jtprod!(nlp.model, stack, nlp.buffer, vv)
+        jvx .+= stack.stack.∂x
+        jvu .+= stack.stack.∂u
         fr_ += n
     end
 end
 
 function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     ∂obj = nlp.obj_stack
-    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
-    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
+    jvx = ∂obj.stack.jvₓ ; fill!(jvx, 0)
+    jvu = ∂obj.stack.jvᵤ ; fill!(jvu, 0)
     full_jtprod!(nlp, jvx, jvu, u, v)
     reduced_gradient!(nlp, jv, jvx, jvu, jvx, u)
 end
 
 function ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)
     ∂obj = nlp.obj_stack
-    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
-    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
+    jvx = ∂obj.stack.jvₓ ; fill!(jvx, 0)
+    jvu = ∂obj.stack.jvᵤ ; fill!(jvu, 0)
     # compute gradient of objective
     full_gradient!(nlp, jvx, jvu, u)
     jvx .*= σ

@@ -29,6 +29,7 @@ const KA = KernelAbstractions
         jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
         ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
         ∂obj = ExaPF.AdjointStackObjective(polar)
+        pbm = AutoDiff.PullbackMemory(ExaPF.active_power_constraints, ∂obj, nothing)
 
         # solve power flow
         conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
@@ -50,7 +51,7 @@ const KA = KernelAbstractions
             ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
             # We need uk here for the closure
             uk = copy(u)
-            ExaPF.gradient_objective!(polar, ∂obj, cache)
+            ExaPF.gradient_objective!(polar, pbm, cache)
             ∇fₓ = ∂obj.∇fₓ
             ∇fᵤ = ∂obj.∇fᵤ
 

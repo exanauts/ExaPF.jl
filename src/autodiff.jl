@@ -27,9 +27,7 @@ This is currently not done because the abstraction of the indexing is not yet re
 abstract type AbstractJacobian end
 abstract type AbstractHessian end
 
-abstract type AbstractAdjointStack end
-
-struct EmptyStack <: AbstractAdjointStack end
+abstract type AbstractAdjointStack{VT} end
 
 function jacobian! end
 
@@ -89,22 +87,32 @@ Creates an object for computing Hessian adjoint tangent projections.
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 """
-struct Hessian{Func, VI, VT, VHP, VP, VD, SubT, SubD} <: AbstractHessian
+struct Hessian{Func, VI, VT, VHP, VP, VD, SubT, SubD, Buff} <: AbstractHessian
     func::Func
     host_t1sseeds::VHP # Needed because seeds have to be created on the host
     t1sseeds::VP
+    x::VT
     t1sF::VD
     ∂t1sF::VD
-    x::VT
     t1sx::VD
     ∂t1sx::VD
     map::VI
     varx::SubT
     t1svarx::SubD
+    buffer::Buff
 end
 
+# Cache for adjoint
+# Largely inspired from ChainRulesCore.jl:
+# https://juliadiff.org/ChainRulesCore.jl/stable/design/changing_the_primal.html#The-Journey-to-rrule
+struct PullbackMemory{F, S, I}
+    func::F
+    stack::S
+    intermediate::I
+end
 
 # Seeding
+# TODO
 @kernel function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor)
     i = @index(Global, Linear)
     t1sseedvecs[:,i] .= 0

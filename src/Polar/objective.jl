@@ -1,6 +1,14 @@
 # Adjoints needed in polar formulation
 #
 
+function pullback_objective(polar::PolarForm)
+    return AutoDiff.PullbackMemory(
+        active_power_constraints,
+        AdjointStackObjective(polar),
+        nothing,
+    )
+end
+
 function cost_production(polar::PolarForm, pg)
     ngen = PS.get(polar, PS.NumberOfGenerators())
     coefs = polar.costs_coefficients
@@ -37,13 +45,14 @@ function put(
     polar::PolarForm{T, IT, VT, MT},
     ::PS.Generators,
     ::PS.ActivePower,
-    obj_autodiff::AdjointStackObjective,
+    pbm::AutoDiff.PullbackMemory,
     buffer::PolarNetworkState
 ) where {T, IT, VT, MT}
 
     index_pv = polar.indexing.index_pv
     pv2gen = polar.indexing.index_pv_to_gen
     ref2gen = polar.indexing.index_ref_to_gen
+    obj_autodiff = pbm.stack
 
     adj_pg = obj_autodiff.∂pg
     adj_x = obj_autodiff.∇fₓ
@@ -52,28 +61,37 @@ function put(
     adj_vang = obj_autodiff.∂va
     adj_pinj = obj_autodiff.∂pinj
 
+    fill!(adj_vmag, 0.0)
+    fill!(adj_vang, 0.0)
+    fill!(adj_pinj, 0.0)
     # Adjoint w.r.t Slack nodes
-    adjoint!(polar, active_power_constraints, view(adj_pg, ref2gen), buffer.pg, obj_autodiff, buffer)
+    adjoint!(polar, pbm,
+        buffer.pg, view(adj_pg, ref2gen),
+        buffer.vmag, adj_vmag,
+        buffer.vang, adj_vang,
+        buffer.pinj, adj_pinj
+    )
     # Adjoint w.r.t. PV nodes
     adj_pinj[index_pv] .= @view adj_pg[pv2gen]
 
     # Adjoint w.r.t. x and u
     fill!(adj_x, 0.0)
     fill!(adj_u, 0.0)
-    adjoint_transfer!(polar, adj_u, adj_x, adj_vmag, adj_vang, adj_pinj, nothing)
+    adjoint_transfer!(polar, adj_u, adj_x, adj_vmag, adj_vang, adj_pinj)
 
     return
 end
 
-function gradient_objective!(polar::PolarForm, ∂obj::AdjointStackObjective, buffer::PolarNetworkState)
-    adjoint_cost!(polar, ∂obj.∂pg, buffer.pg)
+function gradient_objective!(polar::PolarForm, ∂obj::AutoDiff.PullbackMemory, buffer::PolarNetworkState)
+    ∂pg = ∂obj.stack.∂pg
+    adjoint_cost!(polar, ∂pg, buffer.pg)
     put(polar, PS.Generators(), PS.ActivePower(), ∂obj, buffer)
     return
 end
 
 function hessian_prod_objective!(
     polar::PolarForm,
-    ∇²f::AutoDiff.Hessian, ∇f::AdjointStackObjective,
+    ∇²f::AutoDiff.Hessian, adj_obj::AutoDiff.PullbackMemory,
     hv::AbstractVector,
     ∂²f::AbstractVector, ∂f::AbstractVector,
     buffer::PolarNetworkState,
@@ -84,6 +102,8 @@ function hessian_prod_objective!(
     # Indexing of generators
     pv2gen = polar.indexing.index_pv_to_gen ; npv = length(pv2gen)
     ref2gen = polar.indexing.index_ref_to_gen ; nref = length(ref2gen)
+
+    ∇f = adj_obj.stack
 
     # Remember that
     # ```math
@@ -102,7 +122,7 @@ function hessian_prod_objective!(
     # Compute adjoint w.r.t. ∂pg_ref
     ∇f.∂pg .= 0.0
     ∇f.∂pg[ref2gen] .= 1.0
-    put(polar, PS.Generators(), PS.ActivePower(), ∇f, buffer)
+    put(polar, PS.Generators(), PS.ActivePower(), adj_obj, buffer)
     @views begin
         tx = tgt[1:nx]
         tu = tgt[1+nx:nx+nu]
@@ -145,7 +165,7 @@ end
 =#
 function hessian_prod_objective_proxal!(
     polar::PolarForm,
-    ∇²f::AutoDiff.Hessian, ∇f::AdjointStackObjective,
+    ∇²f::AutoDiff.Hessian, adj_obj::AutoDiff.PullbackMemory,
     hv_xu::AbstractVector,
     hv_s::AbstractVector,
     ∂²f::AbstractVector, ∂f::AbstractVector,
@@ -159,6 +179,8 @@ function hessian_prod_objective_proxal!(
     nu = get(polar, NumberOfControl())
     ngen = get(polar, PS.NumberOfGenerators())
 
+    # Stack
+    ∇f = adj_obj.stack
     # Indexing of generators
     pv2gen = polar.indexing.index_pv_to_gen ; npv = length(pv2gen)
     ref2gen = polar.indexing.index_ref_to_gen ; nref = length(ref2gen)
@@ -179,7 +201,7 @@ function hessian_prod_objective_proxal!(
     # Compute adjoint w.r.t. ∂pg_ref
     ∇f.∂pg .= 0.0
     ∇f.∂pg[ref2gen] .= 1.0
-    put(polar, PS.Generators(), PS.ActivePower(), ∇f, buffer)
+    put(polar, PS.Generators(), PS.ActivePower(), adj_obj, buffer)
 
     ∇pgₓ = ∇f.∇fₓ
     ∇pgᵤ = ∇f.∇fᵤ
