@@ -15,7 +15,7 @@ function _reactive_power_constraints(
     range_ = length(pv) + length(ref)
     ev = kernel!(
         qg,
-        v_m, v_a, pinj, qinj,
+        v_m, v_a, pinj,
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, qload,
@@ -59,13 +59,12 @@ end
 # Adjoint
 function adjoint!(
     polar::PolarForm,
-    ::typeof(reactive_power_constraints),
+    pbm::AutoDiff.PullbackMemory{F, S, I},
     cons, ∂cons,
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
-    qinj, ∂qinj,
-)
+) where {F<:typeof(reactive_power_constraints), S, I}
     nbus = get(polar, PS.NumberOfBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -74,13 +73,21 @@ function adjoint!(
     ref_to_gen = polar.indexing.index_ref_to_gen
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
+    fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
+    fill!(pbm.intermediate.∂edge_vm_to , 0.0)
+    fill!(pbm.intermediate.∂edge_va_fr , 0.0)
+    fill!(pbm.intermediate.∂edge_va_to , 0.0)
+
     adj_reactive_power!(
         cons, ∂cons,
         vm, ∂vm,
         va, ∂va,
         ybus_re, ybus_im, polar.topology.sortperm,
         pinj, ∂pinj,
-        qinj, ∂qinj,
+        pbm.intermediate.∂edge_vm_fr,
+        pbm.intermediate.∂edge_vm_to,
+        pbm.intermediate.∂edge_va_fr,
+        pbm.intermediate.∂edge_va_to,
         polar.reactive_load,
         pv, pq, ref, pv_to_gen, ref_to_gen, nbus,
     )

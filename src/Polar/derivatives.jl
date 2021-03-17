@@ -172,7 +172,7 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     map = VI(polar.hessianstructure.map)
     nmap = length(map)
 
-    x = VT(zeros(Float64, 4*nbus))
+    x = VT(zeros(Float64, 3*nbus))
 
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     t1sx = A{t1s{1}}(x)
@@ -186,8 +186,9 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     VD = typeof(t1sx)
     adj_t1sx = similar(t1sx)
     adj_t1sF = similar(t1sF)
-    return AutoDiff.Hessian{typeof(func), VI, VT, VHP, VP, VD, typeof(varx), typeof(t1svarx)}(
-        func, host_t1sseeds, t1sseeds, t1sF, adj_t1sF, x, t1sx, adj_t1sx, map, varx, t1svarx
+    buffer = AutoDiff.PullbackMemory(polar, func, VD; with_stack=false)
+    return AutoDiff.Hessian{typeof(func), VI, VT, VHP, VP, VD, typeof(varx), typeof(t1svarx), typeof(buffer)}(
+        func, host_t1sseeds, t1sseeds, x, t1sF, adj_t1sF, t1sx, adj_t1sx, map, varx, t1svarx, buffer,
     )
 end
 
@@ -222,7 +223,6 @@ function AutoDiff.adj_hessian_prod!(
     x[1:nbus] .= buffer.vmag
     x[nbus+1:2*nbus] .= buffer.vang
     x[2*nbus+1:3*nbus] .= buffer.pinj
-    x[3*nbus+1:4*nbus] .= buffer.qinj
     # Init dual variables
     t1sx .= H.x
     adj_t1sx .= 0.0
@@ -236,12 +236,11 @@ function AutoDiff.adj_hessian_prod!(
     AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx)
 
     adjoint!(
-        polar, H.func,
+        polar, H.buffer,
         t1sF, adj_t1sF,
         view(t1sx, 1:nbus), view(adj_t1sx, 1:nbus),                   # vmag
         view(t1sx, nbus+1:2*nbus), view(adj_t1sx, nbus+1:2*nbus),     # vang
         view(t1sx, 2*nbus+1:3*nbus), view(adj_t1sx, 2*nbus+1:3*nbus), # pinj
-        view(t1sx, 3*nbus+1:4*nbus), view(adj_t1sx, 3*nbus+1:4*nbus), # qinj
     )
 
     AutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map)
@@ -281,7 +280,8 @@ function AdjointStackObjective(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT
     )
 end
 
-struct AdjointPolar{VT<:AbstractVector} <: AutoDiff.AbstractAdjointStack
+# Adjoint's stack for Polar
+struct AdjointPolar{VT} <: AutoDiff.AbstractAdjointStack{VT}
     ∂vm::VT
     ∂va::VT
     ∂pinj::VT
@@ -301,6 +301,14 @@ function AdjointPolar{VT}(nx::Int, nu::Int, nbus::Int) where {VT}
     )
 end
 
+function reset!(adj::AdjointPolar)
+    adj.∂vm .= 0.0
+    adj.∂va .= 0.0
+    adj.∂pinj .= 0.0
+    adj.∂x .= 0.0
+    adj.∂u .= 0.0
+end
+
 # Stack constructor for each constraint
 function AdjointPolar(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     nbus = get(polar, PS.NumberOfBuses())
@@ -308,6 +316,7 @@ function AdjointPolar(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     nu = get(polar, NumberOfControl())
     return AdjointPolar{VT}(nx, nu, nbus)
 end
+
 
 struct FullSpaceJacobian{Jacx,Jacu}
     x::Jacx

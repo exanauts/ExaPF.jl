@@ -28,13 +28,12 @@ end
 
 function adjoint!(
     polar::PolarForm,
-    ::typeof(voltage_magnitude_constraints),
+    pbm::AutoDiff.PullbackMemory{F, S, I},
     cons, ∂cons,
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
-    qinj, ∂qinj,
-)
+) where {F<:typeof(voltage_magnitude_constraints), S, I}
     index_pq = polar.indexing.index_pq
     ∂vm[index_pq] .= ∂cons
 end

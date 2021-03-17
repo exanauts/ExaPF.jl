@@ -6,7 +6,7 @@ import KernelAbstractions: @index
     function residual_kernel!(F, vm, va,
                                   colptr, rowval,
                                   ybus_re_nzval, ybus_im_nzval,
-                                  pinj, qinj, pv, pq, nbus)
+                                  pinj, qload, pv, pq, nbus)
 
 The residual CPU/GPU kernel of the powerflow residual.
 """
@@ -14,7 +14,7 @@ KA.@kernel function residual_kernel!(
     F, vm, va,
     colptr, rowval,
     ybus_re_nzval, ybus_im_nzval,
-    pinj, qinj, pv, pq, nbus
+    pinj, qload, pv, pq, nbus
 )
 
     npv = size(pv, 1)
@@ -27,7 +27,7 @@ KA.@kernel function residual_kernel!(
     fr = (i <= npv) ? pv[i] : pq[i - npv]
     F[i] -= pinj[fr]
     if i > npv
-        F[i + npq] -= qinj[fr]
+        F[i + npq] -= qload[fr]
     end
     @inbounds for c in colptr[fr]:colptr[fr+1]-1
         to = rowval[c]
@@ -46,13 +46,13 @@ KA.@kernel function residual_kernel!(
 end
 
 """
-    function residual_polar!(F, vm, va, pinj, qinj,
+    function residual_polar!(F, vm, va, pinj, qload,
                          ybus_re, ybus_im,
                          pv, pq, ref, nbus)
 
 The wrapper for the powerflow residual calling the CPU and GPU kernels.
 """
-function residual_polar!(F, vm, va, pinj, qinj,
+function residual_polar!(F, vm, va, pinj, qload,
                          ybus_re, ybus_im,
                          pv, pq, ref, nbus)
     npv = length(pv)
@@ -65,7 +65,7 @@ function residual_polar!(F, vm, va, pinj, qinj,
     ev = kernel!(F, vm, va,
                  ybus_re.colptr, ybus_re.rowval,
                  ybus_re.nzval, ybus_im.nzval,
-                 pinj, qinj, pv, pq, nbus,
+                 pinj, qload, pv, pq, nbus,
                  ndrange=npv+npq)
     wait(ev)
 end
@@ -225,7 +225,9 @@ This is the CUDA wrapper of the adjoint kernel that computes the adjoint of the 
 function adj_residual_polar!(
     F::CUDA.CuVector{T}, adj_F::CUDA.CuVector{T}, vm, adj_vm, va, adj_va,
     ybus_re, ybus_im, transpose_perm,
-    pinj, adj_pinj, qinj, pv, pq, nbus
+    pinj, adj_pinj, qinj,
+    edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
+    pv, pq, nbus
 ) where {T}
     npv = length(pv)
     npq = length(pq)
@@ -233,13 +235,6 @@ function adj_residual_polar!(
     nnz = length(ybus_re.nzval)
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
-    edge_vm_from = CUDA.zeros(T, nnz)
-    edge_vm_to   = CUDA.zeros(T, nnz)
-    edge_va_from = CUDA.zeros(T, nnz)
-    edge_va_to   = CUDA.zeros(T, nnz)
-    adj_vm   .= 0.0
-    adj_va   .= 0.0
-    adj_pinj .= 0.0
 
     kernel_edge! = adj_residual_edge_kernel!(KA.CUDADevice())
     kernel_node! = gpu_adj_node_kernel!(KA.CUDADevice())
@@ -282,7 +277,9 @@ This is the CPU wrapper of the adjoint kernel that computes the adjoint of the v
 function adj_residual_polar!(
     F::Vector{T}, adj_F::Vector{T}, vm, adj_vm, va, adj_va,
     ybus_re, ybus_im, transpose_perm,
-    pinj, adj_pinj, qinj, pv, pq, nbus
+    pinj, adj_pinj, qinj,
+    edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
+    pv, pq, nbus
 ) where {T}
     npv = length(pv)
     npq = length(pq)
@@ -290,13 +287,6 @@ function adj_residual_polar!(
     nnz = length(ybus_re.nzval)
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
-    edge_vm_from = zeros(T, nnz)
-    edge_vm_to   = zeros(T, nnz)
-    edge_va_from = zeros(T, nnz)
-    edge_va_to   = zeros(T, nnz)
-    adj_vm   .= 0.0
-    adj_va   .= 0.0
-    adj_pinj .= 0.0
 
     kernel_edge! = adj_residual_edge_kernel!(KA.CPU())
     ev = kernel_edge!(F, adj_F, vm, adj_vm, va, adj_va,
@@ -386,27 +376,60 @@ KA.@kernel function adj_transfer_kernel!(
     end
 end
 
+function _adj_transfer!(
+    adj_u, adj_x, adj_vmag, adj_vang, adj_pinj, pv, pq, ref,
+)
+    npv = length(pv)
+    npq = length(pq)
+    nref = length(ref)
+
+    # PQ buses
+    @inbounds for i in 1:npq
+        bus = pq[i]
+        adj_x[npv+i] =  adj_vang[bus]
+        adj_x[npv+npq+i] = adj_vmag[bus]
+    end
+    # PV buses
+    @inbounds for i_ in 1:npv
+        bus = pv[i_]
+        adj_u[nref + i_] = adj_vmag[bus]
+        adj_u[nref + npv + i_] += adj_pinj[bus]
+        adj_x[i_] = adj_vang[bus]
+    end
+    # SLACK buses
+    @inbounds for i_ in 1:nref
+        bus = ref[i_]
+        adj_u[i_] = adj_vmag[bus]
+    end
+end
+
 # Transfer values in (x, u) to buffer
 function adjoint_transfer!(
     polar::PolarForm,
     ∂u, ∂x,
-    ∂vm, ∂va, ∂pinj, ∂qinj,
+    ∂vm, ∂va, ∂pinj,
 )
     nbus = get(polar, PS.NumberOfBuses())
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
-    ev = adj_transfer_kernel!(polar.device)(
+    # TODO
+    ev = _adj_transfer!(
         ∂u, ∂x,
-        ∂vm, ∂va, ∂pinj, ∂qinj,
-        pv, pq, ref;
-        ndrange=nbus,
+        ∂vm, ∂va, ∂pinj,
+        pv, pq, ref
     )
-    wait(ev)
+    # ev = adj_transfer_kernel!(polar.device)(
+    #     ∂u, ∂x,
+    #     ∂vm, ∂va, ∂pinj, ∂qinj,
+    #     pv, pq, ref;
+    #     ndrange=nbus,
+    # )
+    # wait(ev)
 end
 
 KA.@kernel function active_power_kernel!(
-    pg, vmag, vang, pinj, qinj,
+    pg, vmag, vang, pinj,
     pv, ref, pv_to_gen, ref_to_gen,
     ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
     ybus_im_nzval, pload
@@ -454,7 +477,7 @@ function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::Po
 
     ev = kernel!(
         buffer.pg,
-        buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
+        buffer.vmag, buffer.vang, buffer.pinj,
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, polar.active_load,
@@ -464,7 +487,7 @@ function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::Po
 end
 
 KA.@kernel function reactive_power_kernel!(
-    qg, vmag, vang, pinj, qinj,
+    qg, vmag, vang, pinj,
     pv, ref, pv_to_gen, ref_to_gen,
     ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
     ybus_im_nzval, qload
@@ -509,7 +532,7 @@ function update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buffer::
     range_ = length(pv) + length(ref)
     ev = kernel!(
         buffer.qg,
-        buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
+        buffer.vmag, buffer.vang, buffer.pinj,
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, polar.reactive_load,
@@ -521,7 +544,7 @@ end
 KA.@kernel function adj_reactive_power_edge_kernel!(
     qg, adj_qg,
     vmag, adj_vmag, vang, adj_vang,
-    pinj, adj_pinj, qinj, adj_qinj,
+    pinj, adj_pinj,
     pv, ref, pv_to_gen, ref_to_gen,
     edge_vmag_bus, edge_vmag_to,
     edge_vang_bus, edge_vang_to,
@@ -589,7 +612,9 @@ end
 function adj_reactive_power!(
     F::CUDA.CuVector{T}, adj_F, vm, adj_vm, va, adj_va,
     ybus_re, ybus_im,
-    pinj, adj_pinj, qinj, adj_qinj, reactive_load,
+    pinj, adj_pinj,
+    edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
+    reactive_load,
     pv, pq, ref, pv_to_gen, ref_to_gen, nbus
 ) where {T}
     npv = length(pv)
@@ -598,18 +623,6 @@ function adj_reactive_power!(
     nnz = length(ybus_re.nzval)
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
-    edge_vm_from = CUDA.zeros(T, nnz)
-    edge_vm_to   = CUDA.zeros(T, nnz)
-    edge_va_from = CUDA.zeros(T, nnz)
-    edge_va_to   = CUDA.zeros(T, nnz)
-    adj_vm   .= 0.0
-    adj_va   .= 0.0
-    if adj_pinj !== nothing
-        adj_pinj .= 0.0
-    end
-    if adj_qinj !== nothing
-        adj_qinj .= 0.0
-    end
 
     kernel_edge! = adj_reactive_power_edge_kernel!(KA.CUDADevice())
     kernel_node! = gpu_adj_node_kernel!(KA.CUDADevice())
@@ -625,7 +638,6 @@ function adj_reactive_power!(
         vm, adj_vm,
         va, adj_va,
         pinj, adj_pinj,
-        qinj, adj_qinj,
         pv, ref, pv_to_gen, ref_to_gen,
         edge_vm_from, edge_vm_to,
         edge_va_from, edge_va_to,
@@ -651,26 +663,15 @@ end
 function adj_reactive_power!(
     F::Vector{T}, adj_F, vm, adj_vm, va, adj_va,
     ybus_re, ybus_im, transpose_perm,
-    pinj, adj_pinj, qinj, adj_qinj, reactive_load,
+    pinj, adj_pinj,
+    edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
+    reactive_load,
     pv, pq, ref, pv_to_gen, ref_to_gen, nbus
 ) where {T}
     npv = length(pv)
     npq = length(pq)
     nvbus = length(vm)
     nnz = length(ybus_re.nzval)
-
-    edge_vmag_bus = zeros(T, nnz)
-    edge_vmag_to  = zeros(T, nnz)
-    edge_vang_bus = zeros(T, nnz)
-    edge_vang_to  = zeros(T, nnz)
-    adj_vm   .= 0.0
-    adj_va   .= 0.0
-    if adj_pinj !== nothing
-        adj_pinj .= 0.0
-    end
-    if adj_qinj !== nothing
-        adj_qinj .= 0.0
-    end
 
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
@@ -684,26 +685,25 @@ function adj_reactive_power!(
         vm, adj_vm,
         va, adj_va,
         pinj, adj_pinj,
-        qinj, adj_qinj,
         pv, ref, pv_to_gen, ref_to_gen,
-        edge_vmag_bus, edge_vmag_to,
-        edge_vang_bus, edge_vang_to,
+        edge_vm_from, edge_vm_to,
+        edge_va_from, edge_va_to,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, reactive_load,
         ndrange=range_
     )
     wait(ev)
 
-    edge_vmag_to_t = @view edge_vmag_to[transpose_perm]
-    edge_vang_to_t = @view edge_vang_to[transpose_perm]
+    edge_vm_to_t = @view edge_vm_to[transpose_perm]
+    edge_va_to_t = @view edge_va_to[transpose_perm]
 
     cpu_adj_node_kernel!(
         F, adj_F,
         vm, adj_vm,
         va, adj_va,
         ybus_re.colptr, ybus_re.rowval,
-        edge_vmag_bus, edge_vmag_to_t,
-        edge_vang_bus, edge_vang_to_t,
+        edge_vm_from, edge_vm_to_t,
+        edge_va_from, edge_va_to_t,
     )
 end
 
@@ -834,30 +834,15 @@ end
 
 function adj_branch_flow!(
         adj_slines, vm, adj_vm, va, adj_va,
+        adj_vm_from_lines, adj_va_from_lines, adj_vm_to_lines, adj_va_to_lines,
         yff_re, yft_re, ytf_re, ytt_re,
         yff_im, yft_im, ytf_im, ytt_im,
         f, t, nlines, device
     )
-    T = typeof(adj_va)
     nvbus = length(va)
     kernel_edge! = adj_branch_flow_edge_kernel!(device)
     kernel_node! = adj_branch_flow_node_kernel!(device)
-    if device == CUDADevice()
-        T = CUDA.CuVector{eltype(va)}
-    elseif device == CPU()
-        T = Vector{eltype(va)}
-    end
 
-    adj_vm_to_lines   = T(undef, nlines)
-    adj_vm_from_lines = T(undef, nlines)
-    adj_va_to_lines   = T(undef, nlines)
-    adj_va_from_lines = T(undef, nlines)
-    adj_vm_to_lines   .= 0.0
-    adj_vm_from_lines .= 0.0
-    adj_va_to_lines   .= 0.0
-    adj_va_from_lines .= 0.0
-    adj_vm   .= 0.0
-    adj_va   .= 0.0
     ev = kernel_edge!(
             adj_slines, vm, adj_vm, va, adj_va,
             adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,

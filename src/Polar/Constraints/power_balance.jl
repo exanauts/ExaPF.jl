@@ -52,26 +52,35 @@ end
 # Adjoint
 function adjoint!(
     polar::PolarForm,
-    ::typeof(power_balance),
+    pbm::AutoDiff.PullbackMemory{F, S, I},
     cons, ∂cons,
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
-    qinj, ∂qinj,
-)
+) where {F<:typeof(power_balance), S, I}
     nbus = get(polar, PS.NumberOfBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
+    qinj = polar.reactive_load
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
+    fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
+    fill!(pbm.intermediate.∂edge_vm_to , 0.0)
+    fill!(pbm.intermediate.∂edge_va_fr , 0.0)
+    fill!(pbm.intermediate.∂edge_va_to , 0.0)
 
     adj_residual_polar!(
         cons, ∂cons,
         vm, ∂vm,
         va, ∂va,
         ybus_re, ybus_im, polar.topology.sortperm,
-        pinj, ∂pinj,
-        qinj, pv, pq, nbus,
+        pinj, ∂pinj, qinj,
+        pbm.intermediate.∂edge_vm_fr,
+        pbm.intermediate.∂edge_vm_to,
+        pbm.intermediate.∂edge_va_fr,
+        pbm.intermediate.∂edge_va_to,
+        pv, pq, nbus,
     )
 end
 
