@@ -345,7 +345,6 @@ KA.@kernel function transfer_kernel!(
         i_ref = i - npv
         bus = ref[i_ref]
         vmag[bus] = u[i_ref]
-        vang[bus] = 0.0  # reference angle set to 0 by default
     end
 end
 
