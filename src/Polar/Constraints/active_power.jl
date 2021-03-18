@@ -70,7 +70,7 @@ end
 # Adjoint
 function adjoint!(
     polar::PolarForm,
-    pbm::AutoDiff.PullbackMemory{F, S, I},
+    pbm::AutoDiff.TapeMemory{F, S, I},
     pg, ∂pg,
     vm, ∂vm,
     va, ∂va,
@@ -89,30 +89,6 @@ function adjoint!(
         _put_active_power_injection!(ibus, vm, va, ∂vm, ∂va, ∂pg[i], ybus_re, ybus_im)
     end
     return
-end
-
-function jacobian(polar::PolarForm, cons::typeof(active_power_constraints), buffer)
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    ref = polar.indexing.index_ref
-    gen2bus = polar.indexing.index_generators
-    ngen = length(gen2bus)
-    npv = length(pv)
-    nref = length(ref)
-    # Use MATPOWER to derive expression of Hessian
-    # Use the fact that q_g = q_inj + q_load
-    V = buffer.vmag .* exp.(im .* buffer.vang)
-    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, polar.network.Ybus)
-
-    # wrt Pg_ref
-    P11x = real(dSbus_dVa[ref, [pv; pq]])
-    P12x = real(dSbus_dVm[ref, pq])
-    P11u = real(dSbus_dVm[ref, [ref; pv]])
-    P12u = spzeros(nref, npv)
-
-    jx = [P11x P12x]
-    ju = [P11u P12u]
-    return FullSpaceJacobian(jx, ju)
 end
 
 # MATPOWER Jacobian

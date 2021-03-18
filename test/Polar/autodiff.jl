@@ -33,7 +33,7 @@
         ]
             m = ExaPF.size_constraint(polar, cons)
             # Allocation
-            pbm = AutoDiff.PullbackMemory(polar, cons, typeof(u))
+            pbm = AutoDiff.TapeMemory(polar, cons, typeof(u))
             tgt = rand(m)
             c = zeros(m)
 

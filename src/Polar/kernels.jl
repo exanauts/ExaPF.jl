@@ -4,9 +4,9 @@ import KernelAbstractions: @index
 
 """
     function residual_kernel!(F, vm, va,
-                                  colptr, rowval,
-                                  ybus_re_nzval, ybus_im_nzval,
-                                  pinj, qload, pv, pq, nbus)
+                              colptr, rowval,
+                              ybus_re_nzval, ybus_im_nzval,
+                              pinj, qload, pv, pq, nbus)
 
 The residual CPU/GPU kernel of the powerflow residual.
 """
@@ -52,9 +52,10 @@ end
 
 The wrapper for the powerflow residual calling the CPU and GPU kernels.
 """
-function residual_polar!(F, vm, va, pinj, qload,
-                         ybus_re, ybus_im,
-                         pv, pq, ref, nbus)
+function residual_polar!(
+    F, vm, va, pinj, qload,
+    ybus_re, ybus_im, pv, pq, ref, nbus
+)
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
@@ -163,7 +164,7 @@ This kernel accumulates the adjoint of the voltage magnitude `adj_vm`
 and `adj_va` from the edges of the graph stored as CSC matrices.
 """
 function cpu_adj_node_kernel!(
-    F, adj_F, vm, adj_vm, va, adj_va,
+    adj_vm, adj_va,
     colptr, rowval,
     edge_vm_from, edge_vm_to,
     edge_va_from, edge_va_to
@@ -195,40 +196,43 @@ CUDA does not support efficient CSR -> CSC conversion, hence COO was used.
 KA.@kernel function gpu_adj_node_kernel!(
     adj_vm, adj_va,
     colptr, rowval,
-    edge_vm_from, edge_va_from,
-    edge_vm_a, edge_vm_i, edge_vm_j,
-    edge_va_a, edge_va_i, edge_va_j,
+    edge_vm_from, edge_vm_to,
+    edge_va_from, edge_va_to,
 )
     i = @index(Global, Linear)
     @inbounds for c in colptr[i]:colptr[i+1]-1
         adj_vm[i] += edge_vm_from[c]
+        adj_vm[i] += edge_vm_to[c]
         adj_va[i] += edge_va_from[c]
-    end
-    nnz = length(edge_vm_a)
-    for c in 1:nnz
-        if edge_va_j[c] == i
-            adj_vm[i] += edge_vm_a[c]
-            adj_va[i] += edge_va_a[c]
-        end
+        adj_va[i] += edge_va_to[c]
     end
 end
 
 """
     function adj_residual_polar!(
-        F::CUDA.CuVector{T}, adj_F::CUDA.CuVector{T}, vm, adj_vm, va, adj_va,
+        F, adj_F, vm, adj_vm, va, adj_va,
         ybus_re, ybus_im,
-        pinj, adj_pinj, qinj, pv, pq, nbus
+        pinj, adj_pinj, qinj,
+        edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
+        pv, pq, nbus
     ) where {T}
 
-This is the CUDA wrapper of the adjoint kernel that computes the adjoint of the voltage magnitude `adj_vm` and `adj_va` with respect to the residual `F` and the adjoint `adj_F`.
+This is the wrapper of the adjoint kernel that computes the adjoint of
+the voltage magnitude `adj_vm` and `adj_va` with respect to the residual `F`
+and the adjoint `adj_F`.
 """
 function adj_residual_polar!(
-    F::CUDA.CuVector{T}, adj_F::CUDA.CuVector{T}, vm, adj_vm, va, adj_va,
+    F, adj_F, vm, adj_vm, va, adj_va,
     ybus_re, ybus_im, transpose_perm,
     pinj, adj_pinj, qinj,
     edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
     pv, pq, nbus
 ) where {T}
+    if isa(F, CUDA.CuVector)
+        device = KA.CUDADevice()
+    else
+        device = KA.CPU()
+    end
     npv = length(pv)
     npq = length(pq)
     nvbus = length(vm)
@@ -236,13 +240,7 @@ function adj_residual_polar!(
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
 
-    kernel_edge! = adj_residual_edge_kernel!(KA.CUDADevice())
-    kernel_node! = gpu_adj_node_kernel!(KA.CUDADevice())
-    spedge_vm_to = CUSPARSE.CuSparseMatrixCSR{T}(colptr, rowval, edge_vm_to,(nvbus,nvbus))
-    spedge_va_to = CUSPARSE.CuSparseMatrixCSR{T}(colptr, rowval, edge_va_to,(nvbus,nvbus))
-    tspedge_vm_to = CUSPARSE.CuSparseMatrixCOO(spedge_vm_to)
-    tspedge_va_to = CUSPARSE.CuSparseMatrixCOO(spedge_va_to)
-
+    kernel_edge! = adj_residual_edge_kernel!(device)
     ev = kernel_edge!(F, adj_F, vm, adj_vm, va, adj_va,
                  ybus_re.colptr, ybus_re.rowval,
                  ybus_re.nzval, ybus_im.nzval,
@@ -252,60 +250,27 @@ function adj_residual_polar!(
                  ndrange=npv+npq)
     wait(ev)
 
-    tspedge_vm_to.nzVal .= spedge_vm_to.nzVal
-    tspedge_va_to.nzVal .= spedge_va_to.nzVal
-
-    ev = kernel_node!(adj_vm, adj_va,
-            ybus_re.colptr, ybus_re.rowval,
-            edge_vm_from, edge_va_from,
-            tspedge_vm_to.nzVal, tspedge_vm_to.rowInd, tspedge_vm_to.colInd,
-            tspedge_va_to.nzVal, tspedge_va_to.rowInd, tspedge_va_to.colInd,
-            ndrange=nvbus)
-    wait(ev)
-end
-
-# TODO: clean
-"""
-    function adj_residual_polar!(
-        F::CUDA.CuVector{T}, adj_F::CUDA.CuVector{T}, vm, adj_vm, va, adj_va,
-        ybus_re, ybus_im,
-        pinj, adj_pinj, qinj, pv, pq, nbus
-    ) where {T}
-
-This is the CPU wrapper of the adjoint kernel that computes the adjoint of the voltage magnitude `adj_vm` and `adj_va` with respect to the residual `F` and the adjoint `adj_F`.
-"""
-function adj_residual_polar!(
-    F::Vector{T}, adj_F::Vector{T}, vm, adj_vm, va, adj_va,
-    ybus_re, ybus_im, transpose_perm,
-    pinj, adj_pinj, qinj,
-    edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
-    pv, pq, nbus
-) where {T}
-    npv = length(pv)
-    npq = length(pq)
-    nvbus = length(vm)
-    nnz = length(ybus_re.nzval)
-    colptr = ybus_re.colptr
-    rowval = ybus_re.rowval
-
-    kernel_edge! = adj_residual_edge_kernel!(KA.CPU())
-    ev = kernel_edge!(F, adj_F, vm, adj_vm, va, adj_va,
-                 ybus_re.colptr, ybus_re.rowval,
-                 ybus_re.nzval, ybus_im.nzval,
-                 edge_vm_from, edge_vm_to,
-                 edge_va_from, edge_va_to,
-                 pinj, adj_pinj, qinj, pv, pq,
-                 ndrange=npv+npq)
-    wait(ev)
-
+    # Apply the permutation corresponding to the transpose of Ybus.
     vm_to_nzval = @view edge_vm_to[transpose_perm]
     va_to_nzval = @view edge_va_to[transpose_perm]
 
-    cpu_adj_node_kernel!(F, adj_F, vm, adj_vm, va, adj_va,
-        ybus_re.colptr, ybus_re.rowval,
-        edge_vm_from, vm_to_nzval,
-        edge_va_from, va_to_nzval
-    )
+    if isa(device, CPU)
+        cpu_adj_node_kernel!(
+            adj_vm, adj_va,
+            ybus_re.colptr, ybus_re.rowval,
+            edge_vm_from, vm_to_nzval,
+            edge_va_from, va_to_nzval
+        )
+    else
+        ev = gpu_adj_node_kernel!(device)(
+            adj_vm, adj_va,
+            ybus_re.colptr, ybus_re.rowval,
+            edge_vm_from, vm_to_nzval,
+            edge_va_from, va_to_nzval,
+            ndrange=nvbus,
+        )
+        wait(ev)
+    end
 end
 
 KA.@kernel function transfer_kernel!(
@@ -349,7 +314,7 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
 end
 
 KA.@kernel function adj_transfer_kernel!(
-    adj_u, adj_x, adj_vmag, adj_vang, adj_pinj, adj_qinj, pv, pq, ref,
+    adj_u, adj_x, adj_vmag, adj_vang, adj_pinj, pv, pq, ref,
 )
     i = @index(Global, Linear)
     npv = length(pv)
@@ -376,7 +341,7 @@ KA.@kernel function adj_transfer_kernel!(
     end
 end
 
-function _adj_transfer!(
+function _cpu_adj_transfer!(
     adj_u, adj_x, adj_vmag, adj_vang, adj_pinj, pv, pq, ref,
 )
     npv = length(pv)
@@ -413,19 +378,22 @@ function adjoint_transfer!(
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
-    # TODO
-    ev = _adj_transfer!(
-        ∂u, ∂x,
-        ∂vm, ∂va, ∂pinj,
-        pv, pq, ref
-    )
-    # ev = adj_transfer_kernel!(polar.device)(
-    #     ∂u, ∂x,
-    #     ∂vm, ∂va, ∂pinj, ∂qinj,
-    #     pv, pq, ref;
-    #     ndrange=nbus,
-    # )
-    # wait(ev)
+    # The adjoint of transfer is performance critical code.
+    # To avoid KernelAbstractions's overhead on the CPU, we
+    # don't use a kernel and use _cpu_adj_transfer instead.
+    if isa(polar.device, CPU)
+        _cpu_adj_transfer!(
+            ∂u, ∂x, ∂vm, ∂va, ∂pinj, pv, pq, ref
+        )
+    else
+        ev = adj_transfer_kernel!(polar.device)(
+            ∂u, ∂x,
+            ∂vm, ∂va, ∂pinj,
+            pv, pq, ref;
+            ndrange=nbus,
+        )
+        wait(ev)
+    end
 end
 
 KA.@kernel function active_power_kernel!(
@@ -486,6 +454,55 @@ function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::Po
     wait(ev)
 end
 
+KA.@kernel function adj_active_power_kernel!(
+    adj_pg,
+    vmag, adj_vmag, vang, adj_vang, adj_pinj,
+    pv, ref, pv_to_gen, ref_to_gen,
+    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval, ybus_im_nzval,
+)
+    i = @index(Global, Linear)
+    npv = length(pv)
+    nref = length(ref)
+    if i <= npv
+        bus = pv[i]
+        i_gen = pv_to_gen[i]
+        adj_pinj[bus] = adj_pg[i_gen]
+    # Evaluate active power at slack nodes
+    elseif i <= npv + nref
+        i_ = i - npv
+        fr = ref[i_]
+        i_gen = ref_to_gen[i_]
+
+        adj_inj = adj_pg[i_gen]
+        @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
+            to = ybus_re_rowval[c]
+            aij = vang[fr] - vang[to]
+            # f_re = a * cos + b * sin
+            # f_im = a * sin - b * cos
+            coef_cos = vmag[fr]*vmag[to]*ybus_re_nzval[c]
+            coef_sin = vmag[fr]*vmag[to]*ybus_im_nzval[c]
+            cosθ = cos(aij)
+            sinθ = sin(aij)
+
+            adj_coef_cos = cosθ  * adj_inj
+            adj_cos_val  = coef_cos * adj_inj
+            adj_coef_sin = sinθ  * adj_inj
+            adj_sin_val  = coef_sin * adj_inj
+
+            adj_aij =   cosθ * adj_sin_val
+            adj_aij -=  sinθ * adj_cos_val
+
+            adj_vmag[fr] += vmag[to] * ybus_re_nzval[c] * adj_coef_cos
+            adj_vmag[to] += vmag[fr] * ybus_re_nzval[c] * adj_coef_cos
+            adj_vmag[fr] += vmag[to] * ybus_im_nzval[c] * adj_coef_sin
+            adj_vmag[to] += vmag[fr] * ybus_im_nzval[c] * adj_coef_sin
+
+            adj_vang[fr] += adj_aij
+            adj_vang[to] -= adj_aij
+        end
+    end
+end
+
 KA.@kernel function reactive_power_kernel!(
     qg, vmag, vang, pinj,
     pv, ref, pv_to_gen, ref_to_gen,
@@ -505,7 +522,7 @@ KA.@kernel function reactive_power_kernel!(
         bus = ref[i_]
         i_gen = ref_to_gen[i_]
     end
-    inj = 0
+    inj = 0.0
     @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
         to = ybus_re_rowval[c]
         aij = vang[bus] - vang[to]
@@ -608,66 +625,19 @@ KA.@kernel function adj_reactive_power_edge_kernel!(
     end
 end
 
-# Refresh active power (needed to evaluate objective)
 function adj_reactive_power!(
-    F::CUDA.CuVector{T}, adj_F, vm, adj_vm, va, adj_va,
-    ybus_re, ybus_im,
-    pinj, adj_pinj,
-    edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
-    reactive_load,
-    pv, pq, ref, pv_to_gen, ref_to_gen, nbus
-) where {T}
-    npv = length(pv)
-    npq = length(pq)
-    nvbus = length(vm)
-    nnz = length(ybus_re.nzval)
-    colptr = ybus_re.colptr
-    rowval = ybus_re.rowval
-
-    kernel_edge! = adj_reactive_power_edge_kernel!(KA.CUDADevice())
-    kernel_node! = gpu_adj_node_kernel!(KA.CUDADevice())
-    spedge_vm_to = CUSPARSE.CuSparseMatrixCSR{T}(colptr, rowval, edge_vm_to,(nvbus,nvbus))
-    spedge_va_to = CUSPARSE.CuSparseMatrixCSR{T}(colptr, rowval, edge_va_to,(nvbus,nvbus))
-    tspedge_vm_to = CUSPARSE.CuSparseMatrixCOO(spedge_vm_to)
-    tspedge_va_to = CUSPARSE.CuSparseMatrixCOO(spedge_va_to)
-
-    range_ = length(pv) + length(ref)
-
-    ev = kernel_edge!(
-        F, adj_F,
-        vm, adj_vm,
-        va, adj_va,
-        pinj, adj_pinj,
-        pv, ref, pv_to_gen, ref_to_gen,
-        edge_vm_from, edge_vm_to,
-        edge_va_from, edge_va_to,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, reactive_load,
-        ndrange=range_
-    )
-    wait(ev)
-
-    tspedge_vm_to.nzVal .= spedge_vm_to.nzVal
-    tspedge_va_to.nzVal .= spedge_va_to.nzVal
-
-    ev = kernel_node!(adj_vm, adj_va,
-            ybus_re.colptr, ybus_re.rowval,
-            edge_vm_from, edge_va_from,
-            tspedge_vm_to.nzVal, tspedge_vm_to.rowInd, tspedge_vm_to.colInd,
-            tspedge_va_to.nzVal, tspedge_va_to.rowInd, tspedge_va_to.colInd,
-            ndrange=nvbus
-    )
-    wait(ev)
-end
-
-function adj_reactive_power!(
-    F::Vector{T}, adj_F, vm, adj_vm, va, adj_va,
+    F, adj_F, vm, adj_vm, va, adj_va,
     ybus_re, ybus_im, transpose_perm,
     pinj, adj_pinj,
     edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
     reactive_load,
     pv, pq, ref, pv_to_gen, ref_to_gen, nbus
 ) where {T}
+    if isa(F, CUDA.CuVector)
+        device = KA.CUDADevice()
+    else
+        device = KA.CPU()
+    end
     npv = length(pv)
     npq = length(pq)
     nvbus = length(vm)
@@ -676,7 +646,7 @@ function adj_reactive_power!(
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
 
-    kernel_edge! = adj_reactive_power_edge_kernel!(KA.CPU())
+    kernel_edge! = adj_reactive_power_edge_kernel!(device)
 
     range_ = length(pv) + length(ref)
 
@@ -694,17 +664,26 @@ function adj_reactive_power!(
     )
     wait(ev)
 
-    edge_vm_to_t = @view edge_vm_to[transpose_perm]
-    edge_va_to_t = @view edge_va_to[transpose_perm]
+    vm_to_nzval = @view edge_vm_to[transpose_perm]
+    va_to_nzval = @view edge_va_to[transpose_perm]
+    if isa(device, CPU)
+        cpu_adj_node_kernel!(
+            adj_vm, adj_va,
+            ybus_re.colptr, ybus_re.rowval,
+            edge_vm_from, vm_to_nzval,
+            edge_va_from, va_to_nzval
+        )
+    else
+        ev = gpu_adj_node_kernel!(device)(
+            adj_vm, adj_va,
+            ybus_re.colptr, ybus_re.rowval,
+            edge_vm_from, vm_to_nzval,
+            edge_va_from, va_to_nzval,
+            ndrange=nvbus,
+        )
+        wait(ev)
+    end
 
-    cpu_adj_node_kernel!(
-        F, adj_F,
-        vm, adj_vm,
-        va, adj_va,
-        ybus_re.colptr, ybus_re.rowval,
-        edge_vm_from, edge_vm_to_t,
-        edge_va_from, edge_va_to_t,
-    )
 end
 
 KA.@kernel function branch_flow_kernel!(
@@ -820,7 +799,7 @@ KA.@kernel function adj_branch_flow_node_kernel!(vm, adj_vm, va, adj_va,
         f, t, nlines
 )
     i = @index(Global, Linear)
-    for ℓ in 1:nlines
+    @inbounds for ℓ in 1:nlines
         if f[ℓ] == i
             adj_vm[i] += adj_vm_from_lines[ℓ]
             adj_va[i] += adj_va_from_lines[ℓ]

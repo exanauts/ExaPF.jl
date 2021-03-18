@@ -53,7 +53,7 @@ const PS = PowerSystem
             jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
             ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
             ∂obj = ExaPF.AdjointStackObjective(polar)
-            pbm = AutoDiff.PullbackMemory(ExaPF.active_power_constraints, ∂obj, nothing)
+            pbm = AutoDiff.TapeMemory(ExaPF.active_power_constraints, ∂obj, nothing)
 
             cpu_jx = AutoDiff.Jacobian(cpu_polar, ExaPF.power_balance, State())
             cpu_ju = AutoDiff.Jacobian(cpu_polar, ExaPF.power_balance, Control())
@@ -209,8 +209,9 @@ const PS = PowerSystem
                 cache.vang[pq] .= x_[npv+1:npv+npq]
                 cache.vmag[pq] .= x_[npv+npq+1:end]
                 ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
-                J = ExaPF.jacobian(polar, ExaPF.reactive_power_constraints, cache)
-                return [J.x J.u]' * μ
+                Jx = ExaPF.matpower_jacobian(polar, ExaPF.reactive_power_constraints, State(), cache)
+                Ju = ExaPF.matpower_jacobian(polar, ExaPF.reactive_power_constraints, Control(), cache)
+                return [Jx Ju]' * μ
             end
 
             H_fd = FiniteDiff.finite_difference_jacobian(jac_x, [x; u])
