@@ -52,7 +52,7 @@ end
 # Adjoint
 function adjoint!(
     polar::PolarForm,
-    pbm::AutoDiff.PullbackMemory{F, S, I},
+    pbm::AutoDiff.TapeMemory{F, S, I},
     cons, ∂cons,
     vm, ∂vm,
     va, ∂va,

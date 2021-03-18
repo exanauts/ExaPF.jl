@@ -28,7 +28,7 @@ end
 
 function adjoint!(
     polar::PolarForm,
-    pbm::AutoDiff.PullbackMemory{F, S, I},
+    pbm::AutoDiff.TapeMemory{F, S, I},
     cons, ∂cons,
     vm, ∂vm,
     va, ∂va,
@@ -36,33 +36,6 @@ function adjoint!(
 ) where {F<:typeof(voltage_magnitude_constraints), S, I}
     index_pq = polar.indexing.index_pq
     ∂vm[index_pq] .= ∂cons
-end
-
-function jacobian(polar::PolarForm, cons::typeof(voltage_magnitude_constraints), buffer)
-    m = size_constraint(polar, cons)
-    nᵤ = get(polar, NumberOfControl())
-    nₓ = get(polar, NumberOfState())
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    shift = npq + npv
-
-    I = 1:m
-    J = (shift+1):(shift+npq)
-    V = ones(m)
-    jx = sparse(I, J, V, m, nₓ)
-    ju = spzeros(m, nᵤ)
-    return FullSpaceJacobian(jx, ju)
-end
-
-function jtprod(polar::PolarForm, ::typeof(voltage_magnitude_constraints), ∂jac, buffer, v::AbstractVector)
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    fr_ = npq + npv + 1
-    # Adjoint / Control
-    fill!(∂jac.∇fᵤ, 0)
-    # Adjoint / State
-    fill!(∂jac.∇fₓ, 0)
-    ∂jac.∇fₓ[fr_:end] .= v
 end
 
 function matpower_jacobian(

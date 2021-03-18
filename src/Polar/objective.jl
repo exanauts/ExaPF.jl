@@ -2,7 +2,7 @@
 #
 
 function pullback_objective(polar::PolarForm)
-    return AutoDiff.PullbackMemory(
+    return AutoDiff.TapeMemory(
         active_power_constraints,
         AdjointStackObjective(polar),
         nothing,
@@ -45,14 +45,18 @@ function put(
     polar::PolarForm{T, IT, VT, MT},
     ::PS.Generators,
     ::PS.ActivePower,
-    pbm::AutoDiff.PullbackMemory,
+    pbm::AutoDiff.TapeMemory,
     buffer::PolarNetworkState
 ) where {T, IT, VT, MT}
 
     index_pv = polar.indexing.index_pv
+    index_ref = polar.indexing.index_ref
     pv2gen = polar.indexing.index_pv_to_gen
     ref2gen = polar.indexing.index_ref_to_gen
     obj_autodiff = pbm.stack
+
+    ngen = get(polar, PS.NumberOfGenerators())
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     adj_pg = obj_autodiff.∂pg
     adj_x = obj_autodiff.∇fₓ
@@ -64,15 +68,14 @@ function put(
     fill!(adj_vmag, 0.0)
     fill!(adj_vang, 0.0)
     fill!(adj_pinj, 0.0)
-    # Adjoint w.r.t Slack nodes
-    adjoint!(polar, pbm,
-        buffer.pg, view(adj_pg, ref2gen),
-        buffer.vmag, adj_vmag,
-        buffer.vang, adj_vang,
-        buffer.pinj, adj_pinj
+    ev = adj_active_power_kernel!(polar.device)(
+        adj_pg,
+        buffer.vmag, adj_vmag, buffer.vang, adj_vang, adj_pinj,
+        index_pv, index_ref, pv2gen, ref2gen,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
+        ndrange=ngen
     )
-    # Adjoint w.r.t. PV nodes
-    adj_pinj[index_pv] .= @view adj_pg[pv2gen]
+    wait(ev)
 
     # Adjoint w.r.t. x and u
     fill!(adj_x, 0.0)
@@ -82,7 +85,7 @@ function put(
     return
 end
 
-function gradient_objective!(polar::PolarForm, ∂obj::AutoDiff.PullbackMemory, buffer::PolarNetworkState)
+function gradient_objective!(polar::PolarForm, ∂obj::AutoDiff.TapeMemory, buffer::PolarNetworkState)
     ∂pg = ∂obj.stack.∂pg
     adjoint_cost!(polar, ∂pg, buffer.pg)
     put(polar, PS.Generators(), PS.ActivePower(), ∂obj, buffer)
@@ -91,7 +94,7 @@ end
 
 function hessian_prod_objective!(
     polar::PolarForm,
-    ∇²f::AutoDiff.Hessian, adj_obj::AutoDiff.PullbackMemory,
+    ∇²f::AutoDiff.Hessian, adj_obj::AutoDiff.TapeMemory,
     hv::AbstractVector,
     ∂²f::AbstractVector, ∂f::AbstractVector,
     buffer::PolarNetworkState,
@@ -165,7 +168,7 @@ end
 =#
 function hessian_prod_objective_proxal!(
     polar::PolarForm,
-    ∇²f::AutoDiff.Hessian, adj_obj::AutoDiff.PullbackMemory,
+    ∇²f::AutoDiff.Hessian, adj_obj::AutoDiff.TapeMemory,
     hv_xu::AbstractVector,
     hv_s::AbstractVector,
     ∂²f::AbstractVector, ∂f::AbstractVector,

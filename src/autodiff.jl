@@ -105,7 +105,7 @@ end
 # Cache for adjoint
 # Largely inspired from ChainRulesCore.jl:
 # https://juliadiff.org/ChainRulesCore.jl/stable/design/changing_the_primal.html#The-Journey-to-rrule
-struct PullbackMemory{F, S, I}
+struct TapeMemory{F, S, I}
     func::F
     stack::S
     intermediate::I

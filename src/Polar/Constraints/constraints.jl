@@ -31,19 +31,19 @@ function _get_intermediate_stack(
 end
 
 # Generic functions
-function AutoDiff.PullbackMemory(
+function AutoDiff.TapeMemory(
     polar::PolarForm, func::Function, VT; with_stack=true,
 )
     @assert is_constraint(func)
     stack = (with_stack) ? AdjointPolar(polar) : nothing
     intermediate = _get_intermediate_stack(polar, func, VT)
-    return AutoDiff.PullbackMemory(func, stack, intermediate)
+    return AutoDiff.TapeMemory(func, stack, intermediate)
 end
 
 ## Adjoint
 function adjoint!(
     polar::PolarForm,
-    pbm::AutoDiff.PullbackMemory,
+    pbm::AutoDiff.TapeMemory,
     ∂cons, cons,
     buffer,
 )
@@ -61,7 +61,7 @@ end
 ## Jacobian-transpose vector product
 function jtprod!(
     polar::PolarForm,
-    pbm::AutoDiff.PullbackMemory,
+    pbm::AutoDiff.TapeMemory,
     buffer::PolarNetworkState,
     v::AbstractVector,
 )
