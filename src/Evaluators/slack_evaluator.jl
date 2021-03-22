@@ -209,15 +209,16 @@ function hessian_lagrangian_penalty_prod!(
 end
 
 function hessian_lagrangian_penalty!(
-    nlp::SlackEvaluator, hess, x, y, σ, w,
+    nlp::SlackEvaluator, H, x, y, σ, w,
 )
+
     n = n_variables(nlp)
     @views begin
         u   = x[1:nlp.nv]
-        Hᵤᵤ = hess[1:nlp.nv, 1:nlp.nv]
-        Hᵤᵥ = hess[1:nlp.nv, 1+nlp.nv:n]
-        Hᵥᵤ = hess[1+nlp.nv:n, 1:nlp.nv]
-        Hᵥᵥ = hess[1+nlp.nv:n, 1+nlp.nv:n]
+        Hᵤᵤ = H[1:nlp.nv, 1:nlp.nv]
+        Hᵤᵥ = H[1:nlp.nv, 1+nlp.nv:n]
+        Hᵥᵤ = H[1+nlp.nv:n, 1:nlp.nv]
+        Hᵥᵥ = H[1+nlp.nv:n, 1+nlp.nv:n]
     end
     # w.r.t. uu
     # ∇²L + ρ Jᵤ' * Jᵤ

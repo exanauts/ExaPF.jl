@@ -332,8 +332,8 @@ end
 function jacobian_structure!(nlp::ReducedSpaceEvaluator, rows, cols)
     m, n = n_constraints(nlp), n_variables(nlp)
     idx = 1
-    for c in 1:m #number of constraints
-        for i in 1:n # number of variables
+    for i in 1:n # number of variables
+        for c in 1:m #number of constraints
             rows[idx] = c ; cols[idx] = i
             idx += 1
         end
@@ -383,9 +383,9 @@ function jprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
 
     ∇gᵤ = nlp.state_jacobian.u.J
     rhs = nlp.buffer.dx
+    z = nlp.buffer.balance
     # init RHS
     mul!(rhs, ∇gᵤ, v)
-    z = similar(rhs)
     # Compute z
     _forward_solve!(nlp, z, rhs)
 
