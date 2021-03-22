@@ -12,13 +12,21 @@ Bridge from a `ExaPF.AbstractNLPEvaluator` to a `MOI.AbstractNLPEvaluator`.
 * `has_hess::Bool` (default: `false`): if `true`, pass a Hessian structure to MOI.
 
 """
-mutable struct MOIEvaluator{Evaluator<:AbstractNLPEvaluator} <: MOI.AbstractNLPEvaluator
+mutable struct MOIEvaluator{Evaluator<:AbstractNLPEvaluator,Hess} <: MOI.AbstractNLPEvaluator
     nlp::Evaluator
     hash_x::UInt
     has_hess::Bool
+    hess_buffer::Hess
 end
 # MOI needs Hessian of Lagrangian function
-MOIEvaluator(nlp) = MOIEvaluator(nlp, UInt64(0), has_hessian_lagrangian(nlp))
+function MOIEvaluator(nlp)
+    hess = nothing
+    if has_hessian_lagrangian(nlp)
+        n = n_variables(nlp)
+        hess = zeros(n, n)
+    end
+    return MOIEvaluator(nlp, UInt64(0), has_hessian_lagrangian(nlp), hess)
+end
 
 function _update!(ev::MOIEvaluator, x)
     hx = hash(x)
@@ -58,34 +66,28 @@ function MOI.eval_constraint(ev::MOIEvaluator, cons, x)
     constraint!(ev.nlp, cons, x)
 end
 
-function MOI.eval_constraint_jacobian(ev::MOIEvaluator, ∂cons, x)
+function MOI.eval_constraint_jacobian(ev::MOIEvaluator, jac, x)
     _update!(ev, x)
-    n = n_variables(ev.nlp)
-    m = n_constraints(ev.nlp)
-    # Build up a dense Jacobian
-    jac = zeros(m, n)
-    jacobian!(ev.nlp, jac, x)
-    # Copy back to the MOI arrray
-    rows, cols = jacobian_structure(ev.nlp)
-    k = 1
-    for (i, j) in zip(rows, cols)
-        ∂cons[k] = jac[i, j]
-        k += 1
-    end
+    fill!(jac, 0)
+    m, n = n_constraints(ev.nlp), n_variables(ev.nlp)
+    J = reshape(jac, m, n) # reshape dense Jacobian
+    jacobian!(ev.nlp, J, x)
 end
 
-function MOI.eval_hessian_lagrangian(ev::MOIEvaluator, H, x, σ, μ)
+function MOI.eval_hessian_lagrangian(ev::MOIEvaluator, hess, x, σ, μ)
     _update!(ev, x)
     n = n_variables(ev.nlp)
-    hess = zeros(n, n)
-    g = @view hess[1, :]
-    hessian!(ev.nlp, hess, x)
-    # Copy back to the MOI arrray
-    rows, cols = hessian_structure(ev.nlp)
-    k = 1
-    for (i, j) in zip(rows, cols)
-        H[k] = σ * hess[i, j]
-        k += 1
+    # Evaluate full reduced Hessian in the preallocated buffer.
+    H = ev.hess_buffer
+    hessian!(ev.nlp, H, x)
+    # Only dense Hessian supported now
+    index = 1
+    @inbounds for i in 1:n, j in 1:i
+        # Hessian is symmetric, and MOI considers only the lower
+        # triangular part. We average the values from the lower
+        # and upper triangles for stability.
+        hess[index] = 0.5 * σ * (H[i, j] + H[j, i])
+        index += 1
     end
 end
 

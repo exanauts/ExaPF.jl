@@ -48,26 +48,25 @@ function ojtprod!(nlp::AbstractNLPEvaluator, jv, u, σ, v)
 end
 
 # Common interface for Hessian
-# Build full Hessian matrix using `n` Hessian-vector product
-function hessian!(nlp::AbstractNLPEvaluator, H, x)
+function hessian!(nlp::AbstractNLPEvaluator, hess, x)
     n = n_variables(nlp)
     v = similar(x)
-    hv = similar(x)
-    for i in 1:n
+    @inbounds for i in 1:n
+        hv = @view hess[:, i]
         fill!(v, 0)
         v[i] = 1.0
         hessprod!(nlp, hv, x, v)
-        H[:, i] .= hv
     end
 end
 
-function hessian_lagrangian_penalty!(nlp::AbstractNLPEvaluator, H, x, y, σ, D,)
+function hessian_lagrangian_penalty!(nlp::AbstractNLPEvaluator, hess, x, y, σ, D,)
     n = n_variables(nlp)
     v = similar(x)
-    for i in 1:n
+    @inbounds for i in 1:n
+        hv = @view hess[:, i]
         fill!(v, 0)
         v[i] = 1.0
-        hessian_lagrangian_penalty_prod!(nlp, view(H, :, i), x, y, σ, v, D)
+        hessian_lagrangian_penalty_prod!(nlp, hv, x, y, σ, v, D)
     end
 end
 
