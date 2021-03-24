@@ -1,30 +1,66 @@
 
 """
-    ReducedSpaceEvaluator{T, VI, VT, MT} <: AbstractNLPEvaluator
+    ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <: AbstractNLPEvaluator
 
-Evaluator working in the reduced space corresponding to the
-control variable `u`. Once a new point `u` is passed to the evaluator,
+Reduced-space evaluator projecting the optimization problem
+into the powerflow manifold defined by the nonlinear equation ``g(x, u) = 0``.
+The state ``x`` is defined implicitly, as a function of the control
+``u``. Hence, the powerflow equation is implicitly satisfied
+when we are using this evaluator.
+
+Once a new point `u` is passed to the evaluator,
 the user needs to call the method `update!` to find the corresponding
-state `x(u)` satisfying the balance equation `g(x(u), u) = 0`.
+state ``x(u)`` satisfying the balance equation ``g(x(u), u) = 0``.
 
-Taking as input a formulation given as a `PolarForm` structure, the reduced evaluator
+Taking as input a `PolarForm` structure, the reduced evaluator
 builds the bounds corresponding to the control `u`,
-and initiate an `AutoDiffFactory` tailored to the problem. The reduced evaluator
-could be instantiated on the host memory, or on a specific device (currently,
-only CUDA is supported).
+The reduced evaluator could be instantiated on the host memory, or on a specific device
+(currently, only CUDA is supported).
+
+## Examples
+
+```julia-repl
+julia> datafile = "case9.m"  # specify a path to a MATPOWER instance
+julia> nlp = ReducedSpaceEvaluator(datafile)
+A ReducedSpaceEvaluator object
+    * device: KernelAbstractions.CPU()
+    * #vars: 5
+    * #cons: 10
+    * constraints:
+        - voltage_magnitude_constraints
+        - active_power_constraints
+        - reactive_power_constraints
+    * linear solver: ExaPF.LinearSolvers.DirectSolver()
+```
+
+If a GPU is available, we could instantiate `nlp` as
+
+```julia-repl
+julia> nlp_gpu = ReducedSpaceEvaluator(datafile; device=CUDADevice())
+A ReducedSpaceEvaluator object
+    * device: KernelAbstractions.CUDADevice()
+    * #vars: 5
+    * #cons: 10
+    * constraints:
+        - voltage_magnitude_constraints
+        - active_power_constraints
+        - reactive_power_constraints
+    * linear solver: ExaPF.LinearSolvers.DirectSolver()
+
+```
 
 ## Note
-Mathematically, we set apart the state `x` from the control `u`,
-and use a third variable `y` --- the by-product --- to store the remaining
+Mathematically, we set apart the state ``x`` from the control ``u``,
+and use a third variable ``y`` --- the by-product --- to store the remaining
 values of the network.
 In the implementation of `ReducedSpaceEvaluator`,
 we only deal with a control `u` and an attribute `buffer`,
 storing all the physical values needed to describe the network.
 The attribute `buffer` stores the values of the control `u`, the state `x`
 and the by-product `y`. Each time we are calling the method `update!`,
-the values of the control are copied to the buffer.
-The algorithm use only the physical representation of the network, more
-convenient to use.
+the values of the control are copied into the buffer. Then,
+the algorithm uses only the physical representation of the network, more
+convenient.
 
 """
 mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <: AbstractNLPEvaluator

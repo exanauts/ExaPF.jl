@@ -23,9 +23,9 @@ implementations to get a design overview of `ExaPF.jl` targeted for GPUs.
 
 The user API is separated into three layers:
 
-* First layer: Physical layer, specify the power network topology in [powersystem](man/powersystem.md)
-* Second layer: Interface between power network and NLE or NLP in [formulations](lib/formulations.md)
-* Third layer: Evaluators for non-linear problems
+1. First layer: Physical layer, specify the power network topology in [powersystem](man/powersystem.md)
+2. Second layer: Interface between power network and NLE or NLP in [formulations](lib/formulations.md)
+3. Third layer: Evaluators for nonlinear problems
 
 The third layer is for users working in optimization whereas the first layer is for electrical engineers. They meet in the second layer.
 

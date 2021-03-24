@@ -106,15 +106,6 @@ Store the result inplace, in the `m x n` dense matrix `jac`.
 function jacobian! end
 
 """
-    full_jacobian(nlp::AbstractNLPEvaluator, u)
-
-Evaluate the Jacobian of the constraints ``h(x, u)`` in the full-space.
-Returns a `FullSpaceJacobian` object.
-
-"""
-function full_jacobian end
-
-"""
     jprod!(nlp::AbstractNLPEvaluator, jv, u, v)
 
 Evaluate the Jacobian-vector product ``J v`` of the constraints.

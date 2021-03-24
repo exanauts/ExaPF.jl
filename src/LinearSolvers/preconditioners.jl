@@ -11,12 +11,15 @@ abstract type AbstractPreconditioner end
 
 Creates an object for the block-Jacobi preconditioner
 
-* `npart::Int64`: Number of partitions or blocks
+* `nblocks::Int64`: Number of partitions or blocks.
+* `blocksize::Int64`: Size of each block.
 * `nJs::Int64`: Size of the blocks. For the GPUs these all have to be of equal size.
 * `partitions::Vector{Vector{Int64}}``: `npart` partitions stored as lists
 * `cupartitions`: `partitions` transfered to the GPU
-* `Js`: Dense blocks of the block-Jacobi
-* `cuJs`: `Js` transfered to the GPU
+* `lpartitions::Vector{Int64}``: Length of each partitions.
+* `culpartitions::Vector{Int64}``: Length of each partitions, on the GPU.
+* `blocks`: Dense blocks of the block-Jacobi
+* `cublocks`: `Js` transfered to the GPU
 * `map`: The partitions as a mapping to construct views
 * `cumap`: `cumap` transferred to the GPU`
 * `part`: Partitioning as output by Metis
@@ -57,7 +60,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             MT = Matrix{Float64}
             GMT = CuMatrix{Float64}
             MI  = Matrix{Int64}
-            GMI = CuMatrix{Int64} 
+            GMI = CuMatrix{Int64}
             SMT = CUDA.CUSPARSE.CuSparseMatrixCSR{Float64}
             J = SparseMatrixCSC(J)
         else

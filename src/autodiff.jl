@@ -16,27 +16,43 @@ import Base: show
 """
     AbstractJacobian
 
-Automatic differentiation for the compressed Jacobians of the
-constraints `g(x,u)` with respect to the state `x` and the control `u`
-(here called design).
-
-TODO: Use dispatch to unify the code of the state and control Jacobian.
-This is currently not done because the abstraction of the indexing is not yet resolved.
+Automatic differentiation for the compressed Jacobian of
+any nonlinear constraint ``h(x)``.
 
 """
 abstract type AbstractJacobian end
+
+"""
+    AbstractHessian
+
+Automatic differentiation for the adjoint-Hessian-vector product ``λ^⊤ H v`` of
+any nonlinear constraint ``h(x)``.
+
+"""
 abstract type AbstractHessian end
 
 abstract type AbstractAdjointStack{VT} end
 
+"""
+    jacobian!(form::AbstractFormulation, jac::AutoDiff.AbstractJacobian, x)
+
+Update inplace the Jacobian ``J`` stored inside `jac` at a new point `x`.
+"""
 function jacobian! end
 
+"""
+    adj_hessian_prod!(form::AbstractFormulation, H::AutoDiff.AbstractHessian, hv, x, λ, v)
+
+Compute the adjoint-Hessian-vector product ``λ^⊤ H v`` at a given
+point `x`, and store the result inplace in vector `hv`.
+
+"""
 function adj_hessian_prod! end
 
 """
-    AutoDiff.Jacobian
+    AutoDiff.Jacobian <: AbstractJacobian
 
-Creates an object for the Jacobian.
+Creates an object to compute the Jacobian with ForwardDiff.
 
 ### Attributes
 
@@ -70,6 +86,13 @@ struct Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD} <: AbstractJacobian
     t1svarx::SubD
 end
 
+"""
+    AutoDiff.ConstantJacobian <: AbstractJacobian
+
+Creates a constant Jacobian object for a linear function ``h(x)``.
+Using a `ConstantJacobian` object allows to avoid computing
+the full Jacobian with AutoDiff when it is not necessary.
+"""
 struct ConstantJacobian{SMT} <: AbstractJacobian
     J::SMT
 end
@@ -79,13 +102,18 @@ end
 
 Creates an object for computing Hessian adjoint tangent projections.
 
+* `func::Func`: base function to differentiate.
+* `host_t1sseeds::VHP`: Seeding vector for seeding on the host.
 * `t1sseeds::VP`: The seeding vector for AD built based on the coloring.
-* `t1sF::VD`: Output array of active (AD) type.
 * `x::VT`: Input array of passive type. This includes both state and control.
+* `t1sF::VD`: Output array of active (AD) type.
+* `∂t1sF::VD`: Adjoint of the output array.
 * `t1sx::VD`: Input array of active type.
+* `∂t1sx::VD`: Adjoint of the input array.
 * `map::VI`: State and control mapping to array `x`
 * `varx::SubT`: View of `map` on `x`
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
+* `buffer::Buff`: cache for computing the adjoint (could be `Nothing`)
 """
 struct Hessian{Func, VI, VT, VHP, VP, VD, SubT, SubD, Buff} <: AbstractHessian
     func::Func
@@ -103,8 +131,16 @@ struct Hessian{Func, VI, VT, VHP, VP, VD, SubT, SubD, Buff} <: AbstractHessian
 end
 
 # Cache for adjoint
-# Largely inspired from ChainRulesCore.jl:
-# https://juliadiff.org/ChainRulesCore.jl/stable/design/changing_the_primal.html#The-Journey-to-rrule
+"""
+    TapeMemory{F, S, I}
+
+This object is used as a buffer to compute the adjoint of a given function
+``h(x)``. It stores internally all intermediate values necessary
+to compute the adjoint, and cache the stack used in the backward pass.
+
+## Note
+This structure is largely inspired from [ChainRulesCore.jl](https://juliadiff.org/ChainRulesCore.jl/stable/design/changing_the_primal.html#The-Journey-to-rrule).
+"""
 struct TapeMemory{F, S, I}
     func::F
     stack::S

@@ -15,18 +15,18 @@ Takes as input any `AbstractNLPEvaluator` encoding a non-linear problem
 ```math
 \begin{aligned}
        \min_u \quad & f(u)\\
-\mathrm{s.t.} \quad & h♭ ≤ h(u) ≤ h♯,\\
-                    & u♭ ≤  u   ≤ u♯,
+\mathrm{s.t.} \quad & h^♭ ≤ h(u) ≤ h^♯,\\
+                    & u^♭ ≤  u   ≤ u^♯,
 \end{aligned}
 ```
 and return a new evaluator reformulating the original problem
-by moving the $m$ constraints $h♭ ≤ h(u) ≤ h♯$ into the objective
+by moving the $m$ constraints $h^♭ ≤ h(u) ≤ h^♯$ into the objective
 using a set of penalties $ϕ_1, ⋯, ϕ_m$ and multiplier estimates
 $λ_1, ⋯, λ_m$:
 ```math
 \begin{aligned}
     \min_u \quad & f(u) + \sum_{i=1}^m ϕ_i(h_i, λ_i)   \\
-\mathrm{s.t.} \quad &  u♭ ≤  u   ≤  u♯,
+\mathrm{s.t.} \quad &  u^♭ ≤  u   ≤  u^♯,
 \end{aligned}
 ```
 
@@ -38,7 +38,7 @@ penalty $ϕ_i$ is defined as
 ```
 with $φ_i$ a function to compute the current infeasibility
 ```math
-φ_i(h_i, λ_i) = \max\{0 , λ_i + ρ (h_i - h_i♯)   \} + \min\{0 , λ_i + ρ (h_i - h_i♭)   \}
+φ_i(h_i, λ_i) = \max\{0 , λ_i + ρ (h_i - h_i^♯)   \} + \min\{0 , λ_i + ρ (h_i - h_i^♭)   \}
 ```
 
 ### Attributes
