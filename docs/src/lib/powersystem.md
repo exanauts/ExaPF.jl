@@ -43,6 +43,7 @@ NumberOfPVBuses
 NumberOfPQBuses
 NumberOfSlackBuses
 BaseMVA
+BusAdmittanceMatrix
 ```
 
 Query the indexing of the different elements in a given network:
@@ -66,6 +67,8 @@ VoltageMagnitude
 VoltageAngle
 ActivePower
 ReactivePower
+ActiveLoad
+ReactiveLoad
 
 ```
 

@@ -178,9 +178,11 @@ julia> precond = LS.BlockJacobiPreconditioner(jac, npartitions, CUDADevice())
 ```
 You could define an iterative solver preconditioned with `precond` simply as:
 ```julia-repl
-julia> linear_solver = ExaPF.BICGSTAB(precond)
+julia> linear_solver = ExaPF.KrylovBICGSTAB(precond)
 
 ```
+(this will use the BICGSTAB algorithm implemented in
+[Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl/)).
 By default, the tolerance of BICGSTAB is set to `1e-8`:
 ```julia-repl
 julia> linear_solver.tol

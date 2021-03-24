@@ -41,7 +41,6 @@ primal_infeasibility!
 ### Objective
 
 ```@docs
-objective
 gradient!
 hessprod!
 hessian!
@@ -57,14 +56,12 @@ jacobian!
 jprod!
 jtprod!
 ojtprod!
-full_jacobian
 ```
 
 ### Second-order
 
 ```@docs
-full_hessian_lagrangian
-hessian_lagrangian_prod!
+hessian_lagrangian_penalty_prod!
 
 ```
 

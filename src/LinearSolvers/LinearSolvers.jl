@@ -53,14 +53,15 @@ function list_solvers end
 get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 
 """
-    ldiv!(solver, y, J, x)
+    ldiv!(solver, x, A, y)
 
 * `solver::AbstractLinearSolver`: linear solver to solve the system
-* `y::AbstractVector`: Solution
-* `J::AbstractMatrix`: Input matrix
-* `x::AbstractVector`: RHS
+* `x::AbstractVector`: Solution
+* `A::AbstractMatrix`: Input matrix
+* `y::AbstractVector`: RHS
 
-Solve the linear system `J * y = Fx
+Solve the linear system ``A x = y`` using the algorithm
+specified in `solver`.
 
 """
 function ldiv! end
@@ -68,7 +69,7 @@ function ldiv! end
 """
     DirectSolver <: AbstractLinearSolver
 
-Solve linear system ``A  x = y`` with direct linear algebra.
+Solve linear system ``A x = y`` with direct linear algebra.
 
 * On the CPU, `DirectSolver` uses UMFPACK to solve the linear system
 * On CUDA GPU, `DirectSolver` redirects the resolution to the method `CUSOLVER.csrlsvqr`

@@ -78,27 +78,6 @@ function hessian(nlp::AbstractNLPEvaluator, x)
     return H
 end
 
-# AutoDiff Factory
-abstract type AbstractAutoDiffFactory end
-
-struct AutoDiffFactory{VT} <: AbstractAutoDiffFactory
-    Jgₓ::AutoDiff.Jacobian
-    Jgᵤ::AutoDiff.Jacobian
-    ∇f::AdjointStackObjective{VT}
-end
-
-struct HessianFactory{SpMT}
-    hashu::UInt64
-    fac::Factorization
-    ∇²f::FullSpaceHessian{SpMT}
-    ∇²g::FullSpaceHessian{SpMT}
-end
-
-struct JacobianFactory{MT}
-    hashu::UInt64
-    J::MT
-end
-
 # Counters
 abstract type AbstractCounter end
 

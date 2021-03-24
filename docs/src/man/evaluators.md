@@ -89,10 +89,9 @@ This formulation comes with two advantages:
 
 #### Constructor
 To create a `ReducedSpaceEvaluator`, we need a given polar formulation
-`polar::PolarForm`, together with an initial control `u0`
-and an initial state `x0`.
+`polar::PolarForm`, together with an initial control `u0`:
 ```julia-repl
-julia> nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0)
+julia> nlp = ExaPF.ReducedSpaceEvaluator(polar, u0)
 
 ```
 or we could alternatively instantiate the evaluator directly from
@@ -105,8 +104,9 @@ A ReducedSpaceEvaluator object
     * #vars: 5
     * #cons: 10
     * constraints:
-        - state_constraints
-        - power_constraints
+        - voltage_magnitude_constraints
+        - active_power_constraints
+        - reactive_power_constraints
     * linear solver: ExaPF.LinearSolvers.DirectSolver()
 
 ```
@@ -116,10 +116,10 @@ Let's describe the output of the last command.
 * `device: KernelAbstractions.CPU()`: the evaluator is instantiated on the CPU ;
 * `#vars: 5`: it has 5 optimization variables ;
 * `#cons: 10`: and 10 inequality constraints ;
-* `constraints:` by default, `nlp` has two inequality constraints: `state_constraints` (specifying the bounds $x_L \leq x(u) \leq x_U$ on the state $x$) and `power_constraints` (bounding the active and reactive power of the generators) ;
+* `constraints:` by default, `nlp` comes with three inequality constraints: `voltage_magnitude_constraints` (specifying the bounds $x_L \leq x(u) \leq x_U$ on the state $x$), `active_power_constraints` and `reactive_power_constraints` (bounding the active and reactive power of the generators) ;
 * `linear solver: ExaPF.LinearSolvers.DirectSolver()`: to solve the linear systems, the evaluator uses a direct linear algebra solver.
 
-Of course, these settings are only specified by default, and the user is free
+Of course, these settings are only specified by default. The user is free
 to choose the parameters she wants. For instance,
 
 * We could remove all constraints by passing an empty array of constraints
@@ -128,7 +128,7 @@ to choose the parameters she wants. For instance,
   julia> constraints = Function[]
   julia> nlp = ExaPF.ReducedSpaceEvaluator(datafile; constraints=constraints)
   ```
-* We could load the evaluator on the GPU simply by changing the device:
+* We could load the evaluator on the GPU simply by changing the `device` option:
   ```julia-repl
   julia> nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=CUDADevice())
   ```
@@ -162,7 +162,7 @@ The function `update!` will
   updates the cache `nlp.buffer` inplace.
 
 Once the function `update!` called (and only after that), we can evaluate
-all the different callbacks independently of one other.
+all the different callbacks, independently of one other.
 
 * Objective
   ```julia-repl
@@ -184,12 +184,32 @@ all the different callbacks independently of one other.
   ## Evaluate Jacobian
   julia> ExaPF.jacobian!(nlp, jac, uk)
   ```
+* Constraints' Jacobian-vector product:
+  ```julia-repl
+  ## Evaluate Jacobian-vector product
+  julia> v = zeros(n_variables(nlp))
+  julia> jv = zeros(n_constraints(nlp))
+  julia> ExaPF.jprod!(nlp, jv, uk, v)
+  ```
 * Constraints' transpose Jacobian-vector product
   ```julia-repl
   ## Evaluate transpose Jacobian-vector product
   julia> v = zeros(n_constraints(nlp))
   julia> jv = zeros(n_variables(nlp))
   julia> ExaPF.jtprod!(nlp, jv, uk, v)
+  ```
+* Hessian-vector product:
+  ```julia-repl
+  ## Evaluate transpose Jacobian-vector product
+  julia> v = zeros(n_variables(nlp))
+  julia> hv = zeros(n_variables(nlp))
+  julia> ExaPF.hessprod!(nlp, hv, uk, v)
+  ```
+* Hessian:
+  ```julia-repl
+  ## Evaluate transpose Jacobian-vector product
+  julia> H = zeros(n_variables(nlp), n_variables(nlp))
+  julia> ExaPF.hessprod!(nlp, H, uk)
   ```
 
 !!! note

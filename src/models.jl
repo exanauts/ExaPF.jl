@@ -42,8 +42,8 @@ abstract type AbstractVariable end
 """
     State <: AbstractVariable
 
-All variables `x` depending on the variables `Control` `u` through
-a non-linear equation `g(x, u) = 0`.
+All variables ``x`` depending on the variables `Control` ``u`` through
+a non-linear equation ``g(x, u) = 0``.
 
 """
 struct State <: AbstractVariable end
@@ -51,7 +51,7 @@ struct State <: AbstractVariable end
 """
     Control <: AbstractVariable
 
-Implement the independent variables used in the reduced-space
+Independent variables ``u`` used in the reduced-space
 formulation.
 
 """
@@ -144,14 +144,14 @@ function initial end
               algo::AbstractNonLinearSolver;
               kwargs...) where VT <: AbstractVector
 
-Solve the power flow equations `g(x, u) = 0` w.r.t. the state `x`,
-using a Newton-Raphson algorithm.
+Solve the power flow equations ``g(x, u) = 0`` w.r.t. the state ``x``,
+using the algorithm specified in `algo` (Newton-Raphson by default).
 The powerflow equations are specified in the formulation `form`.
-The current state `x` and control `u` are specified in
-`buffer`. The object `buffer` is modified inplace.
+The state ``x`` and control ``u`` are specified inside
+`buffer`. The object `buffer` is modified inplace in the function.
 
 The algorithm stops when a tolerance `tol` or a maximum number of
-irations `maxiter` are reached (these parameters being specified
+iterations `maxiter` is reached (these parameters being specified
 in the argument `algo`).
 
 ## Arguments
@@ -170,15 +170,83 @@ function powerflow end
 
 # Cost function
 """
-    cost_production(form::AbstractFormulation, pg::AbstractVector)::Float64
+    objective(form::AbstractFormulation, buffer::AbstractNetworkBuffer)::Float64
 
-Get operational cost corresponding to the active power generation
-specified in the vector `pg`.
-
+Get operational cost.
 """
-function cost_production end
+function objective end
 
 # Generic constraints
+
+"""
+    voltage_magnitude_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+
+Bounds the voltage magnitudes at PQ nodes:
+```math
+v_{pq}^♭ ≤ v_{pq} ≤ v_{pq}^♯ .
+```
+The result is stored inplace, inside `cons`.
+
+## Note
+The constraints on the voltage magnitudes at PV nodes ``v_{pv}``
+are taken into account when bounding the control ``u``.
+"""
+function voltage_magnitude_constraints end
+
+"""
+    active_power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+
+Evaluate the constraints on the **active power production** at the generators
+that are not already taken into account in the bound constraints.
+```math
+p_g^♭ ≤ p_g ≤ p_g^♯  .
+```
+
+The result is stored inplace, inside the vector `cons`.
+"""
+function active_power_constraints end
+
+"""
+    reactive_power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+
+Evaluate the constraints on the **reactive power production** at the generators:
+```math
+q_g^♭ ≤ q_g ≤ q_g^♯  .
+```
+The result is stored inplace, inside the vector `cons`.
+"""
+function reactive_power_constraints end
+
+"""
+    flow_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+
+Evaluate the thermal limit constraints porting on the lines of the network.
+The result is stored inplace, inside the vector `cons`.
+"""
+function flow_constraints end
+
+@doc raw"""
+    power_balance(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+
+Evaluate the power balance in the network:
+```math
+g(x, u) = 0 ,
+```
+corresponding to the balance equations
+```math
+\begin{aligned}
+    p_i &= v_i \sum_{j}^{n} v_j (g_{ij}\cos{(\theta_i - \theta_j)} + b_{ij}\sin{(\theta_i - \theta_j})) \,, &
+    ∀ i ∈ \{PV, PQ\} \\
+    q_i &= v_i \sum_{j}^{n} v_j (g_{ij}\sin{(\theta_i - \theta_j)} - b_{ij}\cos{(\theta_i - \theta_j})) \,. &
+    ∀ i ∈ \{PQ\} \\
+\end{aligned}
+```
+
+The result is stored inplace, inside the vector `cons`.
+"""
+function power_balance end
+
+# Interface for the constraints
 """
     size_constraint(cons_func::Function)::Bool
 Return whether the function `cons_func` is a supported constraint
@@ -194,47 +262,62 @@ in the formulation `form`.
 """
 function size_constraint end
 
-"""
-    voltage_magnitude_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
-
-Evaluate the constraints porting on the state `x`, as a
-function of `x` and `u`. The result is stored inplace, inside `cons`.
-"""
-function voltage_magnitude_constraints end
 
 """
-    active_power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+    bounds(form::AbstractFormulation, cons_func::Function)
 
-Evaluate the constraints on the **active power production** at the generators
-that are not already taken into account in the box constraints.
-The result is stored inplace, inside the vector `cons`.
-"""
-function active_power_constraints end
+Return the lower ``h^♭`` and upper bounds ``h^♯`` for the constraint
+function ``h``.
 
 """
-    reactive_power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
-
-Evaluate the constraints on the **reactive power production** at the generators.
-The result is stored inplace, inside the vector `cons`.
-"""
-function reactive_power_constraints end
+function bounds end
 
 """
-    flow_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+    adjoint!(form::AbstractFormulation, pbm::AutoDiff.TapeMemory, adj_h, h, buffer)
 
-Evaluate the thermal limit constraints porting on the lines of the network.
-
-The result is stored inplace, inside the vector `cons`.
+Return the adjoint w.r.t. the variables of the network (voltage magnitudes
+and angles, power injection) for the constraint stored inside the `TapeMemory`
+object `pbm`. The results are stored directly inside the stack stored
+inside `pbm`.
 """
-function flow_constraints end
-
-"""
-    power_balance(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
-
-Evaluate the power balance in the network.
-
-The result is stored inplace, inside the vector `cons`.
+function adjoint! end
 
 """
-function power_balance end
+    jtprod!(form::AbstractFormulation, pbm::AutoDiff.TapeMemory, buffer, v)
+
+Return the two transpose-Jacobian vector product ``(Jᵤ^⊤ v, Jₓ^⊤ v)``  w.r.t. the
+control ``u`` and the state ``x``. Store the two resulting vectors directly inside
+`pbm`.
+
+"""
+function jtprod! end
+
+"""
+    matpower_jacobian(form::AbstractFormulation, X::Union{State,Control}, cons_func::Function, V::Vector{Complex})
+    matpower_jacobian(form::AbstractFormulation, X::Union{State,Control}, cons_func::Function, buffer::AbstractNetworkBuffer)
+
+For the constraint `cons_func`, return the expression of the Jacobian ``J``
+w.r.t. the state or the control (depending on the argument `X`),
+as given by MATPOWER.
+"""
+function matpower_jacobian end
+
+@doc raw"""
+    matpower_hessian(form::AbstractFormulation, cons_func::Function, buffer::AbstractNetworkBuffer, λ::AbstractVector)
+
+For constraint `cons_func`, return the three matrices ``(λ^⊤ H_{xx},
+λ^⊤ H_{xu},λ^⊤ H_{uu})`` storing the product of the Hessian tensor ``H`` with the vector ``\lambda``.
+The expression of the Hessian matrices are given by MATPOWER.
+
+"""
+function matpower_hessian end
+
+"""
+    jacobian_sparsity(form::AbstractFormulation, cons_func::Function, X::Union{State,Control})
+
+For the constraint `cons_func`, return the sparsity pattern of the Jacobian ``J``
+w.r.t. the state or the control (depending on the argument `X`).
+
+"""
+function jacobian_sparsity end
 

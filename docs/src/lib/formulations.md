@@ -11,6 +11,44 @@ AbstractFormulation
 
 ```
 
+## Powerflow solver
+
+```@docs
+powerflow
+NewtonRaphson
+
+```
+
+## Constraints
+
+Current supported constraints are:
+```@docs
+voltage_magnitude_constraints
+active_power_constraints
+reactive_power_constraints
+flow_constraints
+power_balance
+
+```
+
+These functions allow to query constraints' attributes:
+```@docs
+is_constraint
+size_constraint
+bounds
+
+```
+
+ExaPF implements special functions to compute the derivatives
+of each constraints:
+```@docs
+adjoint!
+matpower_jacobian
+matpower_hessian
+jacobian_sparsity
+```
+
+
 ## API Reference
 
 ### Variables
@@ -43,55 +81,13 @@ of a model:
 get
 
 ```
-
-### Powerflow solver
-
+The associated setter is implemented with `setvalues!`:
 ```@docs
-powerflow
-NewtonRaphson
-
-power_balance!
-
+setvalues!
 ```
 
 ### Costs
 
 ```@docs
-cost_production
+objective
 ```
-
-### Constraints
-
-Current supported constraints are:
-```@docs
-state_constraints
-power_constraints
-flow_constraints
-
-```
-
-These functions allow to query constraints' attributes:
-```@docs
-is_constraint
-size_constraint
-bounds
-
-```
-
-### Utils
-
-To ease the integration, the following functions have been
-imported from MATPOWER. Note that these functions work
-exclusively on the CPU.
-
-```@docs
-power_balance
-residual_jacobian
-
-```
-
-```@docs
-get_power_injection
-get_react_injection
-```
-
