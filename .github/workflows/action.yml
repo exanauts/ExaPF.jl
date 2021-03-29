@@ -1,13 +1,19 @@
 name: Run tests
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 jobs:
   test-github-cpuonly:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        julia-version: ['1.5','1.6.0-rc2']
+        julia-version: ['1.5','1.6']
         julia-arch: [x64]
         os: [ubuntu-20.04]
 
