@@ -14,18 +14,16 @@ new issue ticket!
 ## Contributing to the code base
 
 ### Workflow
-All the development workflow is based on Git. The development
-process has some particularities, as the development branch is
-not set to `master`, but instead to `develop`. In a nutshell,
+Our development workflow is based on a mildly simplified version of [gitflow](https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow). Thus, we have at least two active branches
 
-- `master` is the last stable release of ExaPF.
-- `develop` is the current development branch, and as is, could be unstable.
+- `master` which is the lastest stable release of ExaPF,
+- and `develop` which is the current development branch, and as is, could be unstable.
 
-At each release, the development branch is merged inside `master`
-before tagging the next release. In addition to the unit-tests,
-we should check before merging `develop` into `master` that:
+At each release, the `develop` branch is merged into `master` through a `release` branch
+before tagging the next release. While in the `release` branch we check that
 
-- we haven't introduced any performance regression (this is tested in the folder `ExaPF/benchmark/`)
+- the unit tests passed,
+- we haven't introduced any performance regression (this is tested in the folder `ExaPF/benchmark/`),
 - the documentation is building properly, and is up-to-date.
 
 ### Structure of the code
