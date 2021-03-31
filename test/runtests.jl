@@ -50,6 +50,10 @@ end
     include("Evaluators/test_rgm.jl")
 end
 
+@testset "Documentation" begin
+    include("quickstart.jl")
+end
+
 @testset "Benchmark script" begin
     empty!(ARGS)
     push!(ARGS, "KrylovBICGSTAB")
