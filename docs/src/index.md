@@ -2,10 +2,10 @@
 
 [ExaPF.jl](https://github.com/exanauts/ExaPF.jl) is a
 package to solve the power flow problem on upcoming exascale architectures. 
-On these architectures the computational performance can only be achieved through graphics processing units (GPUs) as they lack substantial computational performance through CPUs.
+On these architectures the computational performance can only be achieved through graphics processing units (GPUs) as they lack substantial computational performance through classical CPUs.
 `ExaPF.jl` aims to
-provide the sensitity information required for a reduced space optimization
-method for solving the optimal power flow problem (OPF)
+provide the sensitivity information required for a reduced space optimization
+method, and enabling the computation of the optimal power flow problem (OPF)
 fully on GPUs. Reduced space methods enforce the constraints, represented here by
 the power flow's (PF) system of nonlinear equations, separately at each
 iteration of the optimization in the reduced space. 
