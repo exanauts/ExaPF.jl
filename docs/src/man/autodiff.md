@@ -45,7 +45,7 @@ run over all Cartesian basis vectors of $\mathbb{R}^n$, we apply the technique o
 coloring to compress the sparse Jacobian `J`. Running the tangent mode, it
 allows to compute columns of the Jacobian concurrently, by combining
 independent columns in one Jacobian-vector evaluation (see
-\autoref{fig:coloring}). For sparsity detection we rely on the greedy
+in figure above). For sparsity detection we rely on the greedy
 algorithm implemented by [`SparseDiffTools.jl`](https://github.com/JuliaDiff/SparseDiffTools.jl).
 
 Given the sparsity pattern, the forward model is applied through the package
@@ -113,7 +113,7 @@ end
 These two abstractions are a powerful tool that allow us to implement the
 forward mode in vectorized form where the number of directions or tangent
 components of a tangent variable are the number of Jacobian colors. We
-illustrate this in \autoref{fig:simd} with a point-wise vector product `x .* y`
+illustrate this in the figure below with a point-wise vector product `x .* y`
 
 ![SIMD AD for point-wise vector product \label{fig:simd}](../figures/simd.png)
 

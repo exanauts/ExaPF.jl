@@ -2,7 +2,7 @@
 
 | **Documentation**                       | **Build Status**                                              |
 |:---------------------------------------:|:-------------------------------------------------------------:|
-| [![][docs-latest-img]][docs-latest-url] | ![Run tests](https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master) | 
+| [![][docs-latest-img]][docs-latest-url] | ![Run tests](https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master) |
 
 [docs-latest-img]: https://img.shields.io/badge/docs-latest-blue.svg
 [docs-latest-url]: https://exanauts.github.io/ExaPF.jl/
@@ -27,6 +27,14 @@ pkg> add ExaPF
 ```julia
 pkg> test ExaPF
 ```
+
+## Development
+
+We welcome any contribution to ExaPF! Bug fixes or feature requests
+can be reported with the [issue tracker](https://github.com/exanauts/ExaPF.jl/issues),
+and new contributions can be made by opening a pull request on the `develop`
+branch. For more information about development guidelines, please
+refer to [CONTRIBUTING.md](https://github.com/exanauts/ExaPF.jl/blob/master/CONTRIBUTING.md)
 
 ## Funding
 This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy’s Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation’s exascale computing imperative.

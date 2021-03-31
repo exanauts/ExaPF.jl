@@ -1,25 +1,20 @@
 # ExaPF
 
 [ExaPF.jl](https://github.com/exanauts/ExaPF.jl) is a
-package to solve powerflow problem on exascale architecture. `ExaPF.jl` aims to
-implement a reduced method for solving the optimal power flow problem (OPF)
-fully on GPUs. Reduced methods enforce the constraints, represented here by
+package to solve the power flow problem on exascale architecture. `ExaPF.jl` aims to
+provide the sensitity information required for a reduced space optimization
+method for solving the optimal power flow problem (OPF)
+fully on GPUs. Reduced space methods enforce the constraints, represented here by
 the power flow's (PF) system of nonlinear equations, separately at each
-iteration of the optimization in the reduced space. This paper describes the
-API of `ExaPF.jl` for solving the power flow's nonlinear equations (NLE) entirely on the GPU.
-This includes the computation of the derivatives using automatic
+iteration of the optimization in the reduced space. 
+This includes the computation of second-order derivatives using automatic
 differentiation, an iterative linear solver with a preconditioner, and a
 Newton-Raphson implementation. All of these steps allow us to run the main
 computational loop entirely on the GPU with no transfer from host to device.
 
-This implementation will serve as the basis for the future optimal power flow (OPF) implementation as a nonlinear programming problem (NLP)
-in the reduced space.
-
-To make our implementation portable to CPU and GPU architectures we leverage
-two abstractions: arrays and kernels. Both of these abstractions are
-supported through the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl)
-Please take a look at the [autodiff](man/autodiff.md) and [linear solver](man/linearsolver.md)
-implementations to get a design overview of `ExaPF.jl` targeted for GPUs.
+We leverage the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl) to make ExaPF portable across GPU architectures.
+[autodiff](man/autodiff.md) and [linear solver](man/linearsolver.md) illustrate
+the design overview of `ExaPF.jl` targeted for GPUs.
 
 The user API is separated into three layers:
 
@@ -27,7 +22,7 @@ The user API is separated into three layers:
 2. Second layer: Interface between power network and NLE or NLP in [formulations](lib/formulations.md)
 3. Third layer: Evaluators for nonlinear problems
 
-The third layer is for users working in optimization whereas the first layer is for electrical engineers. They meet in the second layer.
+The third layer is for numerical optimization whereas the first layer provides the physical properties at the electrical engineering level.
 
 ## Table of contents
 
