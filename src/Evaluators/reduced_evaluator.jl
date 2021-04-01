@@ -86,7 +86,6 @@ mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <
     # Options
     linear_solver::LinearSolvers.AbstractLinearSolver
     powerflow_solver::AbstractNonLinearSolver
-    factorization::Union{Nothing, Factorization}
     has_jacobian::Bool
     update_jacobian::Bool
     has_hessian::Bool
@@ -95,7 +94,7 @@ end
 function ReducedSpaceEvaluator(
     model, x, u;
     constraints=Function[voltage_magnitude_constraints, active_power_constraints, reactive_power_constraints],
-    linear_solver=DirectSolver(),
+    linear_solver=direct_linear_solver(model),
     powerflow_solver=NewtonRaphson(tol=1e-12),
     want_jacobian=true,
     want_hessian=true,
@@ -143,7 +142,7 @@ function ReducedSpaceEvaluator(
         constraints, g_min, g_max,
         buffer,
         state_ad, obj_ad, cons_ad, cons_jac, hess_ad,
-        linear_solver, powerflow_solver, nothing, want_jacobian, false, want_hessian,
+        linear_solver, powerflow_solver, want_jacobian, false, want_hessian,
     )
 end
 function ReducedSpaceEvaluator(
@@ -222,18 +221,6 @@ end
 bounds(nlp::ReducedSpaceEvaluator, ::Variables) = (nlp.u_min, nlp.u_max)
 bounds(nlp::ReducedSpaceEvaluator, ::Constraints) = (nlp.g_min, nlp.g_max)
 
-function _update_factorization!(nlp::ReducedSpaceEvaluator)
-    ∇gₓ = nlp.state_jacobian.x.J
-    if !isa(∇gₓ, SparseMatrixCSC) || isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
-        return
-    end
-    if !isnothing(nlp.factorization)
-        lu!(nlp.factorization, ∇gₓ)
-    else
-        nlp.factorization = lu(∇gₓ)
-    end
-end
-
 ## Callbacks
 function update!(nlp::ReducedSpaceEvaluator, u)
     jac_x = nlp.state_jacobian.x
@@ -255,8 +242,6 @@ function update!(nlp::ReducedSpaceEvaluator, u)
 
     # Refresh values of active and reactive powers at generators
     update!(nlp.model, PS.Generators(), PS.ActivePower(), nlp.buffer)
-    # Update factorization if direct solver
-    _update_factorization!(nlp)
     # Evaluate Jacobian of power flow equation on current u
     AutoDiff.jacobian!(nlp.model, nlp.state_jacobian.u, nlp.buffer)
     # Specify that constraint's Jacobian is not up to date
@@ -289,8 +274,7 @@ function _forward_solve!(nlp::ReducedSpaceEvaluator, y, x)
         ∇gₓ = nlp.state_jacobian.x.J
         LinearSolvers.ldiv!(nlp.linear_solver, y, ∇gₓ, x)
     else
-        ∇gₓ = nlp.factorization
-        ldiv!(y, ∇gₓ, x)
+        LinearSolvers.ldiv!(nlp.linear_solver, y, x)
     end
 end
 
@@ -307,8 +291,7 @@ function _backward_solve!(nlp::ReducedSpaceEvaluator, y::VT, x::VT) where {VT <:
         ∇gT = LinearSolvers.get_transpose(nlp.linear_solver, ∇gₓ)
         LinearSolvers.ldiv!(nlp.linear_solver, y, ∇gT, x)
     else
-        ∇gf = nlp.factorization
-        LinearSolvers.ldiv!(nlp.linear_solver, y, ∇gf', x)
+        LinearSolvers.rdiv!(nlp.linear_solver, y, x)
     end
 end
 
@@ -394,11 +377,9 @@ function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
     m, nᵤ = size(Ju)
     ∇gᵤ = nlp.state_jacobian.u.J
     ∇gₓ = nlp.state_jacobian.x.J
-    # Compute factorization with UMFPACK
-    ∇gfac = nlp.factorization
-    # Compute adjoints all in once, using the same factorization
+    # Compute state sensitivities all in once
     μ = zeros(nₓ, nᵤ)
-    ldiv!(μ, ∇gfac, ∇gᵤ)
+    LinearSolvers.ldiv!(nlp.linear_solver, μ, ∇gᵤ)
     # Compute reduced Jacobian
     copy!(jac, Ju)
     mul!(jac, Jx, μ, -1.0, 1.0)
@@ -447,10 +428,11 @@ end
 
 function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     ∂obj = nlp.obj_stack
+    μ = nlp.buffer.balance
     jvx = ∂obj.stack.jvₓ ; fill!(jvx, 0)
     jvu = ∂obj.stack.jvᵤ ; fill!(jvu, 0)
     full_jtprod!(nlp, jvx, jvu, u, v)
-    reduced_gradient!(nlp, jv, jvx, jvu, jvx, u)
+    reduced_gradient!(nlp, jv, jvx, jvu, μ, u)
 end
 
 function ojtprod!(nlp::ReducedSpaceEvaluator, jv, u, σ, v)

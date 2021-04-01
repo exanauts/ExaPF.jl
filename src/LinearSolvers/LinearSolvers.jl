@@ -54,6 +54,7 @@ get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 
 """
     ldiv!(solver, x, A, y)
+    ldiv!(solver, x, y)
 
 * `solver::AbstractLinearSolver`: linear solver to solve the system
 * `x::AbstractVector`: Solution
@@ -61,10 +62,27 @@ get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 * `y::AbstractVector`: RHS
 
 Solve the linear system ``A x = y`` using the algorithm
-specified in `solver`.
+specified in `solver`. If `A` is not specified, the function
+will used directly the factorization stored inplace.
 
 """
 function ldiv! end
+
+"""
+    rdiv!(solver, x, A, y)
+    rdiv!(solver, x, y)
+
+* `solver::AbstractLinearSolver`: linear solver to solve the system
+* `x::AbstractVector`: Solution
+* `A::AbstractMatrix`: Input matrix
+* `y::AbstractVector`: RHS
+
+Solve the linear system ``A^⊤ x = y`` using the algorithm
+specified in `solver`. If `A` is not specified, the function
+will used directly the factorization stored inplace.
+
+"""
+function rdiv! end
 
 """
     DirectSolver <: AbstractLinearSolver
@@ -75,27 +93,43 @@ Solve linear system ``A x = y`` with direct linear algebra.
 * On CUDA GPU, `DirectSolver` redirects the resolution to the method `CUSOLVER.csrlsvqr`
 
 """
-struct DirectSolver <: AbstractLinearSolver end
-DirectSolver(precond) = DirectSolver()
-function ldiv!(::DirectSolver,
-    y::Vector, J::AbstractMatrix, x::Vector,
-)
+struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: AbstractLinearSolver
+    factorization::Fac
+end
+
+DirectSolver(J::SparseMatrixCSC) = DirectSolver(lu(J))
+DirectSolver() = DirectSolver(nothing)
+DirectSolver(precond::AbstractPreconditioner) = DirectSolver(nothing)
+
+# Reuse factorization in update
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Vector, J::AbstractMatrix, x::Vector)
+    lu!(s.factorization, J) # Update factorization inplace
+    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+    return 0
+end
+# Solve system Ax = y
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
+    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+    return 0
+end
+# Solve system A'x = y
+function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, x::Array)
+    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
+    return 0
+end
+
+function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector)
     y .= J \ x
     return 0
 end
-function ldiv!(::DirectSolver,
-    y::Vector, J::Factorization, x::Vector,
-)
-    LinearAlgebra.ldiv!(y, J, x)
-    return 0
-end
-function ldiv!(::DirectSolver,
+
+function ldiv!(::DirectSolver{Nothing},
     y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector,
 )
     CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
-function ldiv!(::DirectSolver,
+function ldiv!(::DirectSolver{Nothing},
     y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSC, x::CUDA.CuVector,
 )
     csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
