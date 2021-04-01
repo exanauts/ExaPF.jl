@@ -268,6 +268,28 @@ function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState)
     copyto!(buffer.qinj, qbus)
 end
 
+function direct_linear_solver(polar::PolarForm)
+    is_cpu = isa(polar.device, KA.CPU)
+    if is_cpu
+        jac = jacobian_sparsity(polar, power_balance, State())
+        return LinearSolvers.DirectSolver(jac)
+    else
+        # Factorization is not yet supported on the GPU
+        return LinearSolvers.DirectSolver(nothing)
+    end
+end
+
+function build_preconditioner(polar::PolarForm; nblocks=-1)
+    jac = jacobian_sparsity(polar, power_balance, State())
+    n = size(jac, 1)
+    npartitions = if nblocks > 0
+        nblocks
+    else
+        div(n, 32)
+    end
+    return LinearSolvers.BlockJacobiPreconditioner(jac, npartitions, polar.device)
+end
+
 function Base.show(io::IO, polar::PolarForm)
     # Network characteristics
     nbus = PS.get(polar.network, PS.NumberOfBuses())

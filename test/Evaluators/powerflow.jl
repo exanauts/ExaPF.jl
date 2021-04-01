@@ -4,6 +4,8 @@ using KernelAbstractions
 using Test
 
 import ExaPF: PowerSystem
+import ExaPF: LinearSolvers
+const LS = LinearSolvers
 
 @testset "Powerflow solver" begin
     datafile = joinpath(INSTANCES_DIR, "case14.raw")
@@ -19,13 +21,13 @@ import ExaPF: PowerSystem
 
     @testset "Deport computation on device $device" for device in DEVICES
         polar = PolarForm(pf, device)
-        jac = ExaPF.jacobian_sparsity(polar, ExaPF.power_balance, State())
-        precond = ExaPF.LinearSolvers.BlockJacobiPreconditioner(jac, npartitions, device)
+        precond = ExaPF.build_preconditioner(polar; nblocks=npartitions)
         # Retrieve initial state of network
         x0 = ExaPF.initial(polar, State())
         uk = ExaPF.initial(polar, Control())
 
         @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
+            (LinSolver == LS.DirectSolver) && continue
             algo = LinSolver(precond)
             xk = copy(x0)
             nlp = ExaPF.ReducedSpaceEvaluator(
