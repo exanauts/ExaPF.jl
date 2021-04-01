@@ -73,7 +73,8 @@ function put(
         buffer.vmag, adj_vmag, buffer.vang, adj_vang, adj_pinj,
         index_pv, index_ref, pv2gen, ref2gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
-        ndrange=ngen
+        ndrange=ngen,
+        dependencies=Event(polar.device)
     )
     wait(ev)
 
