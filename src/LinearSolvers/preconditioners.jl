@@ -212,7 +212,7 @@ function _update_gpu(j_rowptr, j_colval, j_nzval, p)
     fillblock_gpu_kernel! = fillblock_gpu!(CUDADevice())
     fillP_gpu_kernel! = fillP_gpu!(CUDADevice())
     # Fill Block Jacobi" begin
-    ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks)
+    ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks, dependencies=Event(CUDADevice()))
     wait(ev)
     # Invert blocks begin
     blocklist = Array{CuArray{Float64,2}}(undef, nblocks)
@@ -226,7 +226,7 @@ function _update_gpu(j_rowptr, j_colval, j_nzval, p)
     end
     p.P.nzVal .= 0.0
     # Move blocks to P" begin
-    ev = fillP_gpu_kernel!(p.cublocks, p.cupartitions, p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, p.culpartitions, ndrange=nblocks)
+    ev = fillP_gpu_kernel!(p.cublocks, p.cupartitions, p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, p.culpartitions, ndrange=nblocks, dependencies=Event(CUDADevice()))
     wait(ev)
     return p.P
 end
@@ -291,7 +291,7 @@ Note that this implements the same algorithm as for the GPU and becomes very slo
 function update(J::SparseMatrixCSC, p)
     kernel! = update_cpu_kernel!(CPU())
     p.P.nzval .= 0.0
-    ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks)
+    ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks, dependencies=Event(CPU()))
     wait(ev)
     return p.P
 end

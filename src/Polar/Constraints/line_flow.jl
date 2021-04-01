@@ -9,6 +9,7 @@ function _flow_constraints(polar::PolarForm, cons, vmag, vang)
         polar.topology.yff_im, polar.topology.yft_im, polar.topology.ytf_im, polar.topology.ytt_im,
         polar.topology.f_buses, polar.topology.t_buses, nlines,
         ndrange=nlines,
+        dependencies=Event(polar.device)
     )
     wait(ev)
     return

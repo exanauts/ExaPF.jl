@@ -8,8 +8,10 @@ function _reactive_power_constraints(
     ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus
 )
     if isa(qg, Array)
+        device = KA.CPU()
         kernel! = reactive_power_kernel!(KA.CPU())
     else
+        device = KA.CUDADevice()
         kernel! = reactive_power_kernel!(KA.CUDADevice())
     end
     range_ = length(pv) + length(ref)
@@ -19,7 +21,8 @@ function _reactive_power_constraints(
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, qload,
-        ndrange=range_
+        ndrange=range_,
+        dependencies=Event(device)
     )
     wait(ev)
 end

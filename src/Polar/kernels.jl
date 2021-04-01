@@ -59,15 +59,20 @@ function residual_polar!(
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
-        kernel! = residual_kernel!(KA.CPU())
+        device = KA.CPU()
+        kernel! = residual_kernel!(device)
     else
-        kernel! = residual_kernel!(KA.CUDADevice())
+        device = KA.CUDADevice()
+        kernel! = residual_kernel!(device)
     end
-    ev = kernel!(F, vm, va,
-                 ybus_re.colptr, ybus_re.rowval,
-                 ybus_re.nzval, ybus_im.nzval,
-                 pinj, qload, pv, pq, nbus,
-                 ndrange=npv+npq)
+    ev = kernel!(
+        F, vm, va,
+        ybus_re.colptr, ybus_re.rowval,
+        ybus_re.nzval, ybus_im.nzval,
+        pinj, qload, pv, pq, nbus,
+        ndrange=npv+npq,
+        dependencies=Event(device)
+    )
     wait(ev)
 end
 
@@ -247,7 +252,9 @@ function adj_residual_polar!(
                  edge_vm_from, edge_vm_to,
                  edge_va_from, edge_va_to,
                  pinj, adj_pinj, qinj, pv, pq,
-                 ndrange=npv+npq)
+                 ndrange=npv+npq,
+                 dependencies = Event(device) 
+                 )
     wait(ev)
 
     # Apply the permutation corresponding to the transpose of Ybus.
@@ -268,6 +275,7 @@ function adj_residual_polar!(
             edge_vm_from, vm_to_nzval,
             edge_va_from, va_to_nzval,
             ndrange=nvbus,
+            dependencies = Event(device) 
         )
         wait(ev)
     end
@@ -309,6 +317,7 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
         pv, pq, ref,
         polar.active_load, polar.reactive_load,
         ndrange=(length(pv)+length(ref)),
+        dependencies = Event(polar.device) 
     )
     wait(ev)
 end
@@ -391,6 +400,7 @@ function adjoint_transfer!(
             ∂vm, ∂va, ∂pinj,
             pv, pq, ref;
             ndrange=nbus,
+            dependencies=Event(polar.device)
         )
         wait(ev)
     end
@@ -449,7 +459,8 @@ function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::Po
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, polar.active_load,
-        ndrange=range_
+        ndrange=range_,
+        dependencies=Event(polar.device)
     )
     wait(ev)
 end
@@ -553,7 +564,8 @@ function update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buffer::
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, polar.reactive_load,
-        ndrange=range_
+        ndrange=range_,
+        dependencies=Event(polar.device)
     )
     wait(ev)
 end
@@ -660,7 +672,8 @@ function adj_reactive_power!(
         edge_va_from, edge_va_to,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, reactive_load,
-        ndrange=range_
+        ndrange=range_,
+        dependencies=Event(device)
     )
     wait(ev)
 
@@ -680,6 +693,7 @@ function adj_reactive_power!(
             edge_vm_from, vm_to_nzval,
             edge_va_from, va_to_nzval,
             ndrange=nvbus,
+            dependencies=Event(device)
         )
         wait(ev)
     end
@@ -827,13 +841,15 @@ function adj_branch_flow!(
             adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
             yff_re, yft_re, ytf_re, ytt_re,
             yff_im, yft_im, ytf_im, ytt_im,
-            f, t, nlines, ndrange = nlines
+            f, t, nlines, ndrange = nlines,
+            dependencies=Event(device)
     )
     wait(ev)
     ev = kernel_node!(
             vm, adj_vm, va, adj_va,
             adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-            f, t, nlines, ndrange = nvbus
+            f, t, nlines, ndrange = nvbus,
+            dependencies=Event(device)
     )
     wait(ev)
 end

@@ -164,7 +164,7 @@ function init_seed(coloring, ncolor, nmap)
     t1sseeds = Vector{ForwardDiff.Partials{ncolor, Float64}}(undef, nmap)
     t1sseedvecs = zeros(Float64, ncolor, nmap)
     # The seeding is always done on the CPU since it's faster
-    ev = _init_seed!(CPU())(t1sseeds, t1sseedvecs, Array(coloring), ncolor, ndrange=nmap)
+    ev = _init_seed!(CPU())(t1sseeds, t1sseedvecs, Array(coloring), ncolor, ndrange=nmap, dependencies=Event(CPU()))
     wait(ev)
     return t1sseeds
 end
@@ -186,11 +186,13 @@ Seeding is parallelized over the `ncolor` number of duals.
 """
 function seed!(t1sseeds, varx, t1svarx)
     if isa(t1sseeds, Vector)
+        device = CPU()
         kernel! = seed_kernel!(CPU())
     else
+        device = CUDADevice()
         kernel! = seed_kernel!(CUDADevice())
     end
-    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=length(t1svarx))
+    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=length(t1svarx), dependencies=Event(device))
     wait(ev)
 end
 
@@ -224,21 +226,25 @@ device and put it in the compressed Jacobian `compressedJ`.
 """
 function getpartials_kernel!(hv::AbstractVector, adj_t1sx, map)
     if isa(hv, Array)
+        device = CPU()
         kernel! = getpartials_hv_kernel!(CPU())
     else
+        device = CUDADevice()
         kernel! = getpartials_hv_kernel!(CUDADevice())
     end
-    ev = kernel!(hv, adj_t1sx, map, ndrange=length(hv))
+    ev = kernel!(hv, adj_t1sx, map, ndrange=length(hv), dependencies=Event(device))
     wait(ev)
 end
 
 function getpartials_kernel!(compressedJ::AbstractMatrix, t1sF)
     if isa(compressedJ, Array)
+        device = CPU()
         kernel! = getpartials_kernel_cpu!(CPU())
     else
+        device = CUDADevice()
         kernel! = getpartials_kernel_gpu!(CUDADevice())
     end
-    ev = kernel!(compressedJ, t1sF, ndrange=length(t1sF))
+    ev = kernel!(compressedJ, t1sF, ndrange=length(t1sF), dependencies=Event(device))
     wait(ev)
 end
 
@@ -268,10 +274,10 @@ to sparse CSC (on the CPU) or CSR (on the GPU).
 function uncompress_kernel!(J, compressedJ, coloring)
     if isa(J, SparseArrays.SparseMatrixCSC)
         kernel! = uncompress_kernel_cpu!(CPU())
-        ev = kernel!(J.colptr, J.rowval, J.nzval, compressedJ, coloring, ndrange=size(J,2))
+        ev = kernel!(J.colptr, J.rowval, J.nzval, compressedJ, coloring, ndrange=size(J,2), dependencies=Event(CPU()))
     else
         kernel! = uncompress_kernel_gpu!(CUDADevice())
-        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, compressedJ, coloring, ndrange=size(J,1))
+        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, compressedJ, coloring, ndrange=size(J,1), dependencies=Event(CUDADevice()))
     end
     wait(ev)
 end

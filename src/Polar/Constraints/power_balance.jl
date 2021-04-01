@@ -6,15 +6,20 @@ function _power_balance!(
     npv = length(pv)
     npq = length(pq)
     if isa(F, Array)
-        kernel! = residual_kernel!(KA.CPU())
+        device = KA.CPU()
+        kernel! = residual_kernel!(device)
     else
-        kernel! = residual_kernel!(KA.CUDADevice())
+        device = KA.CUDADevice()
+        kernel! = residual_kernel!(device)
     end
-    ev = kernel!(F, v_m, v_a,
-                 ybus_re.colptr, ybus_re.rowval,
-                 ybus_re.nzval, ybus_im.nzval,
-                 pinj, qinj, pv, pq, nbus,
-                 ndrange=npv+npq)
+    ev = kernel!(
+        F, v_m, v_a,
+        ybus_re.colptr, ybus_re.rowval,
+        ybus_re.nzval, ybus_im.nzval,
+        pinj, qinj, pv, pq, nbus,
+        ndrange=npv+npq,
+        dependencies=Event(device)
+    )
     wait(ev)
 end
 
