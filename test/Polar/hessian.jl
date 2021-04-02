@@ -53,7 +53,7 @@ const PS = PowerSystem
             jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
             ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
             ∂obj = ExaPF.AdjointStackObjective(polar)
-            pbm = AutoDiff.TapeMemory(ExaPF.active_power_constraints, ∂obj, nothing)
+            pbm = AutoDiff.TapeMemory(ExaPF.active_power_generation, ∂obj, nothing)
 
             cpu_jx = AutoDiff.Jacobian(cpu_polar, ExaPF.power_balance, State())
             cpu_ju = AutoDiff.Jacobian(cpu_polar, ExaPF.power_balance, Control())

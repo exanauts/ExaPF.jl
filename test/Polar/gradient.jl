@@ -29,7 +29,7 @@ const KA = KernelAbstractions
         jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
         ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
         ∂obj = ExaPF.AdjointStackObjective(polar)
-        pbm = AutoDiff.TapeMemory(ExaPF.active_power_constraints, ∂obj, nothing)
+        pbm = AutoDiff.TapeMemory(ExaPF.active_power_generation, ∂obj, nothing)
 
         # solve power flow
         conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
