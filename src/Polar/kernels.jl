@@ -253,7 +253,7 @@ function adj_residual_polar!(
                  edge_va_from, edge_va_to,
                  pinj, adj_pinj, qinj, pv, pq,
                  ndrange=npv+npq,
-                 dependencies = Event(device) 
+                 dependencies = Event(device)
                  )
     wait(ev)
 
@@ -275,7 +275,7 @@ function adj_residual_polar!(
             edge_vm_from, vm_to_nzval,
             edge_va_from, va_to_nzval,
             ndrange=nvbus,
-            dependencies = Event(device) 
+            dependencies = Event(device)
         )
         wait(ev)
     end
@@ -317,7 +317,7 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
         pv, pq, ref,
         polar.active_load, polar.reactive_load,
         ndrange=(length(pv)+length(ref)),
-        dependencies = Event(polar.device) 
+        dependencies = Event(polar.device)
     )
     wait(ev)
 end

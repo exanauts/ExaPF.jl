@@ -1,9 +1,46 @@
 # Adjoints needed in polar formulation
+is_constraint(::typeof(active_power_generation)) = true
+size_constraint(polar::PolarForm, ::typeof(active_power_generation)) = get(polar, PS.NumberOfGenerators())
+
+function adjoint!(
+    polar::PolarForm,
+    pbm::AutoDiff.TapeMemory{F, S, I},
+    pg, ∂pg,
+    vm, ∂vm,
+    va, ∂va,
+    pinj, ∂pinj,
+) where {F<:typeof(active_power_generation), S, I}
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+    index_pv = polar.indexing.index_pv
+    index_ref = polar.indexing.index_ref
+    pv2gen = polar.indexing.index_pv_to_gen
+    ref2gen = polar.indexing.index_ref_to_gen
+
+    ngen = get(polar, PS.NumberOfGenerators())
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
+    fill!(∂vm, 0.0)
+    fill!(∂va, 0.0)
+    fill!(∂pinj, 0.0)
+    ev = adj_active_power_kernel!(polar.device)(
+        ∂pg,
+        vm, ∂vm,
+        va, ∂va,
+        ∂pinj,
+        index_pv, index_ref, pv2gen, ref2gen,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
+        ndrange=ngen,
+        dependencies=Event(polar.device)
+    )
+    wait(ev)
+    return
+end
 #
 
 function pullback_objective(polar::PolarForm)
     return AutoDiff.TapeMemory(
-        active_power_constraints,
+        active_power_generation,
         AdjointStackObjective(polar),
         nothing,
     )
@@ -49,14 +86,7 @@ function put(
     buffer::PolarNetworkState
 ) where {T, IT, VT, MT}
 
-    index_pv = polar.indexing.index_pv
-    index_ref = polar.indexing.index_ref
-    pv2gen = polar.indexing.index_pv_to_gen
-    ref2gen = polar.indexing.index_ref_to_gen
     obj_autodiff = pbm.stack
-
-    ngen = get(polar, PS.NumberOfGenerators())
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     adj_pg = obj_autodiff.∂pg
     adj_x = obj_autodiff.∇fₓ
@@ -65,18 +95,13 @@ function put(
     adj_vang = obj_autodiff.∂va
     adj_pinj = obj_autodiff.∂pinj
 
-    fill!(adj_vmag, 0.0)
-    fill!(adj_vang, 0.0)
-    fill!(adj_pinj, 0.0)
-    ev = adj_active_power_kernel!(polar.device)(
-        adj_pg,
-        buffer.vmag, adj_vmag, buffer.vang, adj_vang, adj_pinj,
-        index_pv, index_ref, pv2gen, ref2gen,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
-        ndrange=ngen,
-        dependencies=Event(polar.device)
+    # Adjoint of active power generation
+    adjoint!(polar, pbm,
+        buffer.pg, adj_pg,
+        buffer.vmag, adj_vmag,
+        buffer.vang, adj_vang,
+        buffer.pinj, adj_pinj
     )
-    wait(ev)
 
     # Adjoint w.r.t. x and u
     fill!(adj_x, 0.0)
@@ -126,6 +151,7 @@ function hessian_prod_objective!(
     # Compute adjoint w.r.t. ∂pg_ref
     ∇f.∂pg .= 0.0
     ∇f.∂pg[ref2gen] .= 1.0
+    # TODO
     put(polar, PS.Generators(), PS.ActivePower(), adj_obj, buffer)
     @views begin
         tx = tgt[1:nx]

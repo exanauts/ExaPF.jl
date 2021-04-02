@@ -78,7 +78,7 @@ mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <
     buffer::PolarNetworkState{VI, VT}
     # AutoDiff
     state_jacobian::FullSpaceJacobian{Jacx, Jacu}
-    obj_stack::AutoDiff.TapeMemory{typeof(active_power_constraints), AdjointStackObjective{VT}, Nothing}
+    obj_stack::AutoDiff.TapeMemory{typeof(active_power_generation), AdjointStackObjective{VT}, Nothing}
     cons_stacks::Vector{AutoDiff.TapeMemory} # / constraints
     constraint_jacobians::JacCons
     hessians::Hess

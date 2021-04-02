@@ -207,6 +207,15 @@ The result is stored inplace, inside the vector `cons`.
 function active_power_constraints end
 
 """
+    active_power_generation(form::AbstractFormulation, pg::AbstractVector, buffer::AbstractNetworkBuffer)
+
+Evaluate the **active power production** of all generators.
+Used to evaluate the operational cost.
+The result is stored inplace, inside the vector `pg`.
+"""
+function active_power_generation end
+
+"""
     reactive_power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
 
 Evaluate the constraints on the **reactive power production** at the generators:
