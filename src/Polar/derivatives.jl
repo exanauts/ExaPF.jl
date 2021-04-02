@@ -87,13 +87,13 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
     nbus = get(polar, PS.NumberOfBuses())
     type = jac.var
     if isa(type, State)
-        jac.x[1:nbus] .= buffer.vmag
-        jac.x[nbus+1:2*nbus] .= buffer.vang
+        copyto!(jac.x, 1, buffer.vmag, 1, nbus)
+        copyto!(jac.x, nbus+1, buffer.vang, 1, nbus)
         jac.t1sx .= jac.x
         jac.t1sF .= 0.0
     elseif isa(type, Control)
-        jac.x[1:nbus] .= buffer.vmag
-        jac.x[nbus+1:2*nbus] .= buffer.pinj
+        copyto!(jac.x, 1, buffer.vmag, 1, nbus)
+        copyto!(jac.x, nbus+1, buffer.pinj, 1, nbus)
         jac.t1sx .= jac.x
         jac.t1sF .= 0.0
     end
@@ -220,9 +220,9 @@ function AutoDiff.adj_hessian_prod!(
     t1sF = H.t1sF
     adj_t1sF = H.∂t1sF
     # Move data
-    x[1:nbus] .= buffer.vmag
-    x[nbus+1:2*nbus] .= buffer.vang
-    x[2*nbus+1:3*nbus] .= buffer.pinj
+    copyto!(x, 1, buffer.vmag, 1, nbus)
+    copyto!(x, nbus+1, buffer.vang, 1, nbus)
+    copyto!(x, 2*nbus+1, buffer.pinj, 1, nbus)
     # Init dual variables
     t1sx .= H.x
     adj_t1sx .= 0.0

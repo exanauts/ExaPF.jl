@@ -172,14 +172,14 @@ function cpu_adj_node_kernel!(
     adj_vm, adj_va,
     colptr, rowval,
     edge_vm_from, edge_vm_to,
-    edge_va_from, edge_va_to
+    edge_va_from, edge_va_to, dest,
 )
     for i in 1:length(adj_vm)
         @inbounds for c in colptr[i]:colptr[i+1]-1
             adj_vm[i] += edge_vm_from[c]
-            adj_vm[i] += edge_vm_to[c]
+            adj_vm[i] += edge_vm_to[dest[c]]
             adj_va[i] += edge_va_from[c]
-            adj_va[i] += edge_va_to[c]
+            adj_va[i] += edge_va_to[dest[c]]
         end
     end
 end
@@ -188,28 +188,29 @@ end
     function gpu_adj_node_kernel!(adj_vm, adj_va,
                                   colptr, rowval,
                                   edge_vm_from, edge_va_from,
-                                  edge_vm_a, edge_vm_i, edge_vm_j,
-                                  edge_va_a, edge_va_i, edge_va_j,
+                                  edge_vm_to, edge_va_to, perm,
     )
 
 This kernel accumulates the adjoint of the voltage magnitude `adj_vm`
 and `adj_va` from the edges of the graph. For the `to` edges a COO matrix
 was used to compute the transposed of the graph to add them to the `from` edges.
+The permutation corresponding to the transpose operation is stored inplace,
+in vector `perm`.
 
-CUDA does not support efficient CSR -> CSC conversion, hence COO was used.
 """
 KA.@kernel function gpu_adj_node_kernel!(
     adj_vm, adj_va,
     colptr, rowval,
     edge_vm_from, edge_vm_to,
-    edge_va_from, edge_va_to,
+    edge_va_from, edge_va_to, dest
 )
     i = @index(Global, Linear)
     @inbounds for c in colptr[i]:colptr[i+1]-1
+        to = dest[c]
         adj_vm[i] += edge_vm_from[c]
-        adj_vm[i] += edge_vm_to[c]
+        adj_vm[i] += edge_vm_to[to]
         adj_va[i] += edge_va_from[c]
-        adj_va[i] += edge_va_to[c]
+        adj_va[i] += edge_va_to[to]
     end
 end
 
@@ -254,26 +255,24 @@ function adj_residual_polar!(
                  pinj, adj_pinj, qinj, pv, pq,
                  ndrange=npv+npq,
                  dependencies = Event(device)
-                 )
+    )
     wait(ev)
 
-    # Apply the permutation corresponding to the transpose of Ybus.
-    vm_to_nzval = @view edge_vm_to[transpose_perm]
-    va_to_nzval = @view edge_va_to[transpose_perm]
-
+    # The permutation corresponding to the transpose of Ybus.
+    # is given in transpose_perm
     if isa(device, CPU)
         cpu_adj_node_kernel!(
             adj_vm, adj_va,
             ybus_re.colptr, ybus_re.rowval,
-            edge_vm_from, vm_to_nzval,
-            edge_va_from, va_to_nzval
+            edge_vm_from, edge_vm_to,
+            edge_va_from, edge_va_to, transpose_perm,
         )
     else
         ev = gpu_adj_node_kernel!(device)(
             adj_vm, adj_va,
             ybus_re.colptr, ybus_re.rowval,
-            edge_vm_from, vm_to_nzval,
-            edge_va_from, va_to_nzval,
+            edge_vm_from, edge_vm_to,
+            edge_va_from, edge_va_to, transpose_perm,
             ndrange=nvbus,
             dependencies = Event(device)
         )
@@ -677,21 +676,19 @@ function adj_reactive_power!(
     )
     wait(ev)
 
-    vm_to_nzval = @view edge_vm_to[transpose_perm]
-    va_to_nzval = @view edge_va_to[transpose_perm]
     if isa(device, CPU)
         cpu_adj_node_kernel!(
             adj_vm, adj_va,
             ybus_re.colptr, ybus_re.rowval,
-            edge_vm_from, vm_to_nzval,
-            edge_va_from, va_to_nzval
+            edge_vm_from, edge_vm_to,
+            edge_va_from, edge_va_to, transpose_perm,
         )
     else
         ev = gpu_adj_node_kernel!(device)(
             adj_vm, adj_va,
             ybus_re.colptr, ybus_re.rowval,
-            edge_vm_from, vm_to_nzval,
-            edge_va_from, va_to_nzval,
+            edge_vm_from, edge_vm_to,
+            edge_va_from, edge_va_to, transpose_perm,
             ndrange=nvbus,
             dependencies=Event(device)
         )

@@ -149,26 +149,31 @@ function hessian_prod_objective!(
 
     ## Step 2: evaluate ∂pg' * (∂²f / ∂²pg) * ∂pg
     # Compute adjoint w.r.t. ∂pg_ref
+    # copyto!(∇f.∂pg, ∂²f)
     ∇f.∂pg .= 0.0
+
     ∇f.∂pg[ref2gen] .= 1.0
-    # TODO
     put(polar, PS.Generators(), PS.ActivePower(), adj_obj, buffer)
-    @views begin
-        tx = tgt[1:nx]
-        tu = tgt[1+nx:nx+nu]
-        tpg = tgt[nx+nu-npv+1:end]
 
-        ∇pgₓ = ∇f.∇fₓ
-        ∇pgᵤ = ∇f.∇fᵤ
+    tx = view(tgt, 1:nx)
+    tu = view(tgt, 1+nx:nx+nu)
+    tpg = view(tgt, nx+nu-npv+1:nx+nu)
 
-        scale_x = dot(∇pgₓ, ∂²f[ref2gen[1]], tx)
-        scale_u = dot(∇pgᵤ, ∂²f[ref2gen[1]], tu)
-        # Contribution of slack node
-        hv[1:nx]       .+= (scale_x + scale_u) .* ∇pgₓ
-        hv[1+nx:nx+nu] .+= (scale_x + scale_u) .* ∇pgᵤ
-        # Contribution of PV nodes (only through power generation)
-        hv[nx+nu-npv+1:end] .+= ∂²f[pv2gen] .* tpg
-    end
+    hvx = view(hv, 1:nx)
+    hvu = view(hv, 1+nx:nx+nu)
+    hvpg = view(hv, nx+nu-npv+1:nx+nu)
+
+    ∇pgₓ = ∇f.∇fₓ
+    ∇pgᵤ = ∇f.∇fᵤ
+
+    scale_x = dot(∇pgₓ, ∂²f[ref2gen[1]], tx)
+    scale_u = dot(∇pgᵤ, ∂²f[ref2gen[1]], tu)
+    α = scale_x + scale_u
+    # Contribution of slack node
+    axpy!(α, ∇pgₓ, hvx)
+    axpy!(α, ∇pgᵤ, hvu)
+    # Contribution of PV nodes (only through power generation)
+    axpy!(1.0, tpg .* ∂²f[pv2gen], hvpg)
 
     return nothing
 end

@@ -512,8 +512,8 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     _second_order_adjoint_z!(nlp, z, w)
 
     # Init tangent
-    tgt[1:nx] .= z
-    tgt[1+nx:nx+nu] .= w
+    copyto!(tgt, 1, z, 1, nx)
+    copyto!(tgt, nx+1, w, 1, nu)
 
     ∂f = similar(buffer.pg)
     ∂²f = similar(buffer.pg)
