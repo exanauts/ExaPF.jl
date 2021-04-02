@@ -9,7 +9,8 @@ function pullback_objective(polar::PolarForm)
     )
 end
 
-function cost_production(polar::PolarForm, pg)
+function cost_production(polar::PolarForm, buffer::PolarNetworkState)
+    pg = buffer.pg
     ngen = PS.get(polar, PS.NumberOfGenerators())
     coefs = polar.costs_coefficients
     c2 = @view coefs[:, 2]
@@ -19,10 +20,6 @@ function cost_production(polar::PolarForm, pg)
     # NB: this operation induces three allocations on the GPU,
     #     but is faster than writing the sum manually
     return sum(c2 .+ c3 .* pg .+ c4 .* pg.^2)
-end
-
-function objective(polar::PolarForm, buffer::PolarNetworkState)
-    return cost_production(polar, buffer.pg)
 end
 
 function adjoint_cost!(polar::PolarForm, ∂f, pg)

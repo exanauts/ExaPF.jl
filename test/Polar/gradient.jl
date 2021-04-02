@@ -70,7 +70,7 @@ const KA = KernelAbstractions
                 ExaPF.transfer!(polar, cache, u_)
                 convergence = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-14))
                 ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
-                return ExaPF.objective(polar, cache)
+                return ExaPF.cost_production(polar, cache)
             end
 
             grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, uk)

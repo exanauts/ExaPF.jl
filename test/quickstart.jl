@@ -14,6 +14,15 @@ const LS = ExaPF.LinearSolvers
     pglib_instance = "case1354.m"
     datafile = joinpath(dirname(@__FILE__), "..", "data", pglib_instance)
 
+    # Short version
+    polar = ExaPF.PolarForm(datafile, CPU())
+    pf_algo = NewtonRaphson(; verbose=0, tol=1e-10)
+    convergence = ExaPF.powerflow(polar, pf_algo)
+    @test convergence.has_converged
+    @test convergence.n_iterations == 5
+    @test convergence.norm_residuals <= pf_algo.tol
+
+    # Long version
     pf = PS.PowerNetwork(datafile)
     nbus = PS.get(pf, PS.NumberOfBuses())
     @test nbus == 1354
@@ -29,10 +38,9 @@ const LS = ExaPF.LinearSolvers
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
 
     linear_solver = LS.DirectSolver()
-    pf_algo = NewtonRaphson(; verbose=0, tol=1e-10)
     convergence = ExaPF.powerflow(
         polar, jx, physical_state, pf_algo;
-        solver=linear_solver
+        linear_solver=linear_solver
     )
 
     @test convergence.has_converged
@@ -53,7 +61,7 @@ const LS = ExaPF.LinearSolvers
 
     convergence = ExaPF.powerflow(
         polar, jx, physical_state, pf_algo;
-        solver=iterative_linear_solver
+        linear_solver=iterative_linear_solver
     )
 
     @test convergence.has_converged
@@ -68,7 +76,7 @@ const LS = ExaPF.LinearSolvers
         linear_solver = LS.DirectSolver()
         convergence = ExaPF.powerflow(
             polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
-            solver=linear_solver
+            linear_solver=linear_solver
         )
 
         @test convergence.has_converged
@@ -86,7 +94,7 @@ const LS = ExaPF.LinearSolvers
         pf_algo = NewtonRaphson(; verbose=1, tol=1e-7)
         convergence = ExaPF.powerflow(
             polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
-            solver=linear_solver
+            linear_solver=linear_solver
         )
 
         @test convergence.has_converged

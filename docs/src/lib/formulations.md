@@ -43,6 +43,7 @@ ExaPF implements special functions to compute the derivatives
 of each constraints:
 ```@docs
 adjoint!
+jacobian_transpose_product!
 matpower_jacobian
 matpower_hessian
 jacobian_sparsity
@@ -89,5 +90,5 @@ setvalues!
 ### Costs
 
 ```@docs
-objective
+cost_production
 ```
