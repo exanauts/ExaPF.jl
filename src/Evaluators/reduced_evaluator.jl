@@ -92,13 +92,13 @@ mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <
 end
 
 function ReducedSpaceEvaluator(
-    model, x, u;
+    model::PolarForm{T, VI, VT, MT};
     constraints=Function[voltage_magnitude_constraints, active_power_constraints, reactive_power_constraints],
     linear_solver=direct_linear_solver(model),
     powerflow_solver=NewtonRaphson(tol=1e-12),
     want_jacobian=true,
     want_hessian=true,
-)
+) where {T, VI, VT, MT}
     # First, build up a network buffer
     buffer = get(model, PhysicalState())
     # Populate buffer with default values of the network, as stored
@@ -106,11 +106,10 @@ function ReducedSpaceEvaluator(
     init_buffer!(model, buffer)
 
     u_min, u_max = bounds(model, Control())
-    λ = similar(x)
+    λ = similar(buffer.dx)
 
-    MT = array_type(model)
-    g_min = MT{eltype(x), 1}()
-    g_max = MT{eltype(x), 1}()
+    g_min = VT()
+    g_max = VT()
     for cons in constraints
         cb, cu = bounds(model, cons)
         append!(g_min, cb)
@@ -119,7 +118,6 @@ function ReducedSpaceEvaluator(
 
     obj_ad = pullback_objective(model)
     state_ad = FullSpaceJacobian(model, power_balance)
-    VT = typeof(g_min)
     cons_ad = AutoDiff.TapeMemory[]
     for cons in constraints
         push!(cons_ad, AutoDiff.TapeMemory(model, cons, VT))
@@ -145,21 +143,8 @@ function ReducedSpaceEvaluator(
         linear_solver, powerflow_solver, want_jacobian, false, want_hessian,
     )
 end
-function ReducedSpaceEvaluator(
-    datafile;
-    device=KA.CPU(),
-    options...
-)
-    # Load problem.
-    pf = PS.PowerNetwork(datafile)
-    polar = PolarForm(pf, device)
-
-    x0 = initial(polar, State())
-    uk = initial(polar, Control())
-
-    return ReducedSpaceEvaluator(
-        polar, x0, uk; options...
-    )
+function ReducedSpaceEvaluator(datafile::String; device=KA.CPU(), options...)
+    return ReducedSpaceEvaluator(PolarForm(datafile, device); options...)
 end
 
 array_type(nlp::ReducedSpaceEvaluator) = array_type(nlp.model)
@@ -232,7 +217,7 @@ function update!(nlp::ReducedSpaceEvaluator, u)
         jac_x,
         nlp.buffer,
         nlp.powerflow_solver;
-        solver=nlp.linear_solver
+        linear_solver=nlp.linear_solver
     )
 
     if !conv.has_converged
@@ -252,7 +237,7 @@ end
 # TODO: determine if we should include λ' * g(x, u), even if ≈ 0
 function objective(nlp::ReducedSpaceEvaluator, u)
     # Take as input the current cache, updated previously in `update!`.
-    return objective(nlp.model, nlp.buffer)
+    return cost_production(nlp.model, nlp.buffer)
 end
 
 function constraint!(nlp::ReducedSpaceEvaluator, g, u)
@@ -419,7 +404,7 @@ function full_jtprod!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
         mask = fr_+1:fr_+n
         vv = @view v[mask]
         # Compute jtprod of current constraint
-        jtprod!(nlp.model, stack, nlp.buffer, vv)
+        jacobian_transpose_product!(nlp.model, stack, nlp.buffer, vv)
         jvx .+= stack.stack.∂x
         jvu .+= stack.stack.∂u
         fr_ += n

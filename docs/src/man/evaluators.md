@@ -88,10 +88,10 @@ This formulation comes with two advantages:
 ### Playing with the ReducedSpaceEvaluator
 
 #### Constructor
-To create a `ReducedSpaceEvaluator`, we need a given polar formulation
-`polar::PolarForm`, together with an initial control `u0`:
+To create a `ReducedSpaceEvaluator`, we just need a polar formulation
+`polar::PolarForm`:
 ```julia-repl
-julia> nlp = ExaPF.ReducedSpaceEvaluator(polar, u0)
+julia> nlp = ExaPF.ReducedSpaceEvaluator(polar)
 
 ```
 or we could alternatively instantiate the evaluator directly from

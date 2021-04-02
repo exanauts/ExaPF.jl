@@ -23,7 +23,6 @@ const PS = PowerSystem
 
     polar = PolarForm(pf, CPU())
     x = ExaPF.initial(polar, State())
-    u = ExaPF.initial(polar, Control())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
@@ -46,17 +45,13 @@ end
 
 @testset "Power flow 14 bus case" begin
     datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case14.m")
-    pf = PS.PowerNetwork(datafile)
-    polar = PolarForm(pf, CPU())
-    x = ExaPF.initial(polar, State())
-    u = ExaPF.initial(polar, Control())
+    polar = PolarForm(datafile, CPU())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
-    ExaPF.get!(polar, State(), x, cache)
 
     @test conv.n_iterations == 2
     @test isapprox(norm(cache.balance, Inf), 1.3158e-10, rtol=1e-4)
@@ -69,19 +64,13 @@ end
 
 @testset "Power flow 30 bus case" begin
     datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case30.m")
-    pf = PS.PowerNetwork(datafile)
-
-    # retrieve initial state of network
-    polar = PolarForm(pf, CPU())
-    x = ExaPF.initial(polar, State())
-    u = ExaPF.initial(polar, Control())
+    polar = PolarForm(datafile, CPU())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
-    ExaPF.get!(polar, State(), x, cache)
 
     @test conv.n_iterations == 3
     @test isapprox(norm(cache.balance, Inf), 9.56998e-10, rtol=1e-4)
@@ -93,18 +82,13 @@ end
 
 @testset "Power flow 300 bus case" begin
     datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case300.m")
-    pf = PS.PowerNetwork(datafile)
-
-    polar = PolarForm(pf, CPU())
-    x = ExaPF.initial(polar, State())
-    u = ExaPF.initial(polar, Control())
+    polar = PolarForm(datafile, CPU())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     # solve power flow
     conv = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
-    ExaPF.get!(polar, State(), x, cache)
 
     @test conv.n_iterations == 5
     @test isapprox(norm(cache.balance, Inf), 0.0, atol=1e-10)

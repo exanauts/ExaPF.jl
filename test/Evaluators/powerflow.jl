@@ -23,15 +23,13 @@ const LS = LinearSolvers
         polar = PolarForm(pf, device)
         precond = ExaPF.build_preconditioner(polar; nblocks=npartitions)
         # Retrieve initial state of network
-        x0 = ExaPF.initial(polar, State())
         uk = ExaPF.initial(polar, Control())
 
         @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
             (LinSolver == LS.DirectSolver) && continue
             algo = LinSolver(precond)
-            xk = copy(x0)
             nlp = ExaPF.ReducedSpaceEvaluator(
-                polar, xk, uk;
+                polar;
                 powerflow_solver=NewtonRaphson(tol=tolerance, verbose=0),
                 linear_solver=algo
             )

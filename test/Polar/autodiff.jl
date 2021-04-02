@@ -63,7 +63,7 @@
             @test isapprox(Jmat_x, xjacobianAD.J, rtol=1e-4)
 
             ## JACOBIAN VECTOR PRODUCT
-            ExaPF.jtprod!(polar, pbm, cache, tgt)
+            ExaPF.jacobian_transpose_product!(polar, pbm, cache, tgt)
             ∂cons = pbm.stack
             @test isapprox(∂cons.∂x, xjacobianAD.J' * tgt, rtol=1e-6)
 

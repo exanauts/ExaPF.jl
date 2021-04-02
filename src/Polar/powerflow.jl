@@ -1,10 +1,21 @@
 
 function powerflow(
+    polar::PolarForm,
+    algo::AbstractNonLinearSolver;
+    linear_solver=DirectSolver(),
+)
+    buffer = get(polar, PhysicalState())
+    init_buffer!(polar, buffer)
+    Jₓ = AutoDiff.Jacobian(polar, power_balance, State())
+    return powerflow(polar, Jₓ, buffer, algo; linear_solver=linear_solver)
+end
+
+function powerflow(
     polar::PolarForm{T, IT, VT, MT},
     jacobian::AutoDiff.Jacobian,
     buffer::PolarNetworkState{IT,VT},
     algo::NewtonRaphson;
-    solver=DirectSolver(),
+    linear_solver=DirectSolver(),
 ) where {T, IT, VT, MT}
     # Retrieve parameter and initial voltage guess
     Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
@@ -68,10 +79,10 @@ function powerflow(
         end
 
         # Find descent direction
-        if isa(solver, LinearSolvers.AbstractIterativeLinearSolver)
-            @timeit TIMER "Preconditioner" LinearSolvers.update!(solver, J)
+        if isa(linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
+            @timeit TIMER "Preconditioner" LinearSolvers.update!(linear_solver, J)
         end
-        @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(solver, dx, J, F)
+        @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(linear_solver, dx, J, F)
         push!(linsol_iters, n_iters)
 
         # update voltage

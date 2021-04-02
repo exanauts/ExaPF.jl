@@ -170,11 +170,11 @@ function powerflow end
 
 # Cost function
 """
-    objective(form::AbstractFormulation, buffer::AbstractNetworkBuffer)::Float64
+    cost_production(form::AbstractFormulation, buffer::AbstractNetworkBuffer)::Float64
 
 Get operational cost.
 """
-function objective end
+function cost_production end
 
 # Generic constraints
 
@@ -262,16 +262,6 @@ in the formulation `form`.
 """
 function size_constraint end
 
-
-"""
-    bounds(form::AbstractFormulation, cons_func::Function)
-
-Return the lower ``h^♭`` and upper bounds ``h^♯`` for the constraint
-function ``h``.
-
-"""
-function bounds end
-
 """
     adjoint!(form::AbstractFormulation, pbm::AutoDiff.TapeMemory, adj_h, h, buffer)
 
@@ -283,14 +273,14 @@ inside `pbm`.
 function adjoint! end
 
 """
-    jtprod!(form::AbstractFormulation, pbm::AutoDiff.TapeMemory, buffer, v)
+    jacobian_transpose_product!(form::AbstractFormulation, pbm::AutoDiff.TapeMemory, buffer, v)
 
 Return the two transpose-Jacobian vector product ``(Jᵤ^⊤ v, Jₓ^⊤ v)``  w.r.t. the
 control ``u`` and the state ``x``. Store the two resulting vectors directly inside
 `pbm`.
 
 """
-function jtprod! end
+function jacobian_transpose_product! end
 
 """
     matpower_jacobian(form::AbstractFormulation, X::Union{State,Control}, cons_func::Function, V::Vector{Complex})

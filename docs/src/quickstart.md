@@ -19,16 +19,42 @@ const PS = ExaPF.PowerSystem
 const LS = ExaPF.LinearSolvers
 ```
 
-### How to load a MATPOWER instance?
-We start by importing into `ExaPF` an instance specified in the MATPOWER format.
+## Short version
 
 Imagine you want to load an instance from the [`pglib-opf`](https://github.com/power-grid-lib/pglib-opf)
 benchmark, stored in the current folder:
 ```julia
 pglib_instance = "data/case1354.m"
 ```
-`ExaPF.jl` allows you to load directly the instance as a `PowerNetwork`
-object:
+The powerflow equations can be solved in three lines of code, as
+```julia
+polar = ExaPF.PolarForm(pglib_instance, CPU())
+pf_algo = NewtonRaphson(; verbose=0, tol=1e-10)
+convergence = ExaPF.powerflow(polar, pf_algo)
+Iteration 0. Residual norm: 26.6667.
+Iteration 1. Residual norm: 15.0321.
+Iteration 2. Residual norm: 0.588264.
+Iteration 3. Residual norm: 0.00488507.
+Iteration 4. Residual norm: 1.39924e-06.
+Iteration 5. Residual norm: 7.37136e-12.
+```
+
+Implicitly, ExaPF has just proceed to the following operations:
+- instantiate automatically a starting point ``x_0`` from MATPOWER's data
+- instantiate the Jacobian of the powerflow equations using AutoDiff.
+- solve the powerflow equations iteratively, using a Newton-Raphson algorithm.
+
+This compact syntax allows to solve quickly any powerflow equations
+in a few lines a code. However, in most case, the user may want more
+coarse grained control on the different objects manipulated.
+
+## Detailed version
+
+In what follows, we detail step by step the detailed procedure to solve
+the powerflow equations.
+
+### How to load a MATPOWER instance as a PowerNetwork object?
+We start by importing a MATPOWER instance to a `PowerNetwork` object:
 ```julia
 pf = PS.PowerNetwork(pglib_instance)
 ```
@@ -137,7 +163,7 @@ pf_algo = NewtonRaphson(; verbose=1, tol=1e-10)
 Then, we could solve the powerflow equations simply with
 ```julia
 convergence = ExaPF.powerflow(polar, jx, physical_state, pf_algo;
-                                     solver=linear_solver)
+                              linear_solver=linear_solver)
 Iteration 0. Residual norm: 26.6667.
 Iteration 1. Residual norm: 15.0321.
 Iteration 2. Residual norm: 0.588264.
@@ -171,7 +197,7 @@ linear_solver = DirectSolver()
 Then, solving the powerflow equations on the GPU is straightforward
 ```julia
 convergence = ExaPF.powerflow(polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
-                                     solver=linear_solver)
+                              linear_solver=linear_solver)
 ```
 yielding the output
 ```
@@ -221,7 +247,7 @@ pf_algo = NewtonRaphson(; verbose=1, tol=1e-7)
 Calling
 ```julia
 convergence = ExaPF.powerflow(polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
-                                     solver=linear_solver)
+                              linear_solver=linear_solver)
 ```
 yields
 ```

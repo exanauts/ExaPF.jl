@@ -75,7 +75,7 @@ function ProxALEvaluator(
     # Build reduced space evaluator
     x = initial(model, State())
     u = initial(model, Control())
-    nlp = ReducedSpaceEvaluator(model, x, u; options...)
+    nlp = ReducedSpaceEvaluator(model; options...)
     return ProxALEvaluator(nlp, time)
 end
 function ProxALEvaluator(
@@ -161,18 +161,18 @@ function objective(nlp::ProxALEvaluator, w)
     buffer = get(nlp.inner, PhysicalState())
     pg = get(nlp.inner, PS.ActivePower())
     # Operational costs
-    cost = nlp.scale_objective * objective(nlp.inner.model, buffer)
+    c = nlp.scale_objective * cost_production(nlp.inner.model, buffer)
     # Augmented Lagrangian penalty
-    cost += 0.5 * nlp.τ * xnorm(pg .- nlp.pg_ref)^2
+    c += 0.5 * nlp.τ * xnorm(pg .- nlp.pg_ref)^2
     if nlp.time != Origin
-        cost += dot(nlp.λf, nlp.ramp_link_prev)
-        cost += 0.5 * nlp.ρf * xnorm(nlp.ramp_link_prev)^2
+        c += dot(nlp.λf, nlp.ramp_link_prev)
+        c += 0.5 * nlp.ρf * xnorm(nlp.ramp_link_prev)^2
     end
     if nlp.time != Final
-        cost += dot(nlp.λt, nlp.ramp_link_next)
-        cost += 0.5 * nlp.ρt * xnorm(nlp.ramp_link_next)^2
+        c += dot(nlp.λt, nlp.ramp_link_next)
+        c += 0.5 * nlp.ρt * xnorm(nlp.ramp_link_next)^2
     end
-    return cost
+    return c
 end
 
 function _adjoint_objective!(nlp::ProxALEvaluator, ∂f, pg)

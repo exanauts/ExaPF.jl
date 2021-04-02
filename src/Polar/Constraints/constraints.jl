@@ -59,7 +59,7 @@ function adjoint!(
 end
 
 ## Jacobian-transpose vector product
-function jtprod!(
+function jacobian_transpose_product!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory,
     buffer::PolarNetworkState,

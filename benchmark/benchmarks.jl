@@ -55,7 +55,7 @@ u0 = ExaPF.initial(polar, Control())
 
 algo = linsolver(precond)
 powerflow_solver = NewtonRaphson(tol=ntol)
-nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0;
+nlp = ExaPF.ReducedSpaceEvaluator(polar;
                                     linear_solver=algo, powerflow_solver=powerflow_solver)
 convergence = ExaPF.update!(nlp, u0)
 ExaPF.reset!(nlp)

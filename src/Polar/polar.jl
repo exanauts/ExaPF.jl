@@ -1,5 +1,7 @@
 # Polar formulation
 #
+#
+#
 include("caches.jl")
 
 struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
@@ -135,6 +137,8 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
         hessianstructure
     )
 end
+# Convenient constructor
+PolarForm(datafile::String, device) = PolarForm(PS.PowerNetwork(datafile), device)
 
 array_type(polar::PolarForm) = array_type(polar.device)
 

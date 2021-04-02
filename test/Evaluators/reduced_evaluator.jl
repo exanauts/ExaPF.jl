@@ -24,7 +24,7 @@
             ExaPF.reactive_power_constraints,
             ExaPF.flow_constraints,
         ]
-        nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, u0; constraints=constraints)
+        nlp = ExaPF.ReducedSpaceEvaluator(polar; constraints=constraints)
         # Test printing
         println(devnull, nlp)
 
