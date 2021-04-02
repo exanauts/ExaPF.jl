@@ -19,8 +19,9 @@
         jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
         ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
 
-        # solve power flow
+        # Solve power flow
         conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
+        # Get solution in complex form.
         V = cache.vmag .* exp.(im .* cache.vang)
 
         # Test Jacobian w.r.t. State

@@ -1,17 +1,16 @@
-using CUDA
-using CUDA.CUSPARSE
-using ExaPF
-using KernelAbstractions
 using LinearAlgebra
 using SparseArrays
-using TimerOutputs
-import ExaPF: PowerSystem, AutoDiff
+using KernelAbstractions
+using BenchmarkTools
+
+using ExaPF
+import ExaPF: LinearSolvers
+
+const LS = LinearSolvers
 
 function build_nlp(datafile, device)
-    pf = PowerSystem.PowerNetwork(datafile)
-    polar = @time PolarForm(pf, device)
-    x0 = ExaPF.initial(polar, State())
-    u0 = ExaPF.initial(polar, Control())
+    print("Load data\t")
+    polar = @time PolarForm(datafile, device)
 
     constraints = Function[
         ExaPF.voltage_magnitude_constraints,
@@ -19,10 +18,10 @@ function build_nlp(datafile, device)
         ExaPF.reactive_power_constraints,
     ]
     print("Constructor\t")
-    powerflow_solver = NewtonRaphson(tol=1e-12)
-    nlp = @time ExaPF.ReducedSpaceEvaluator(polar, x0, u0; constraints=constraints,
+    powerflow_solver = NewtonRaphson(tol=1e-10)
+    nlp = @time ExaPF.ReducedSpaceEvaluator(polar; constraints=constraints,
                                             powerflow_solver=powerflow_solver)
-    return nlp, u0
+    return nlp
 end
 
 function run_reduced_evaluator(nlp, u; device=CPU())
@@ -31,41 +30,33 @@ function run_reduced_evaluator(nlp, u; device=CPU())
     @time ExaPF.update!(nlp, u)
     # Compute objective
     print("Objective\t")
-    c = @time ExaPF.objective(nlp, u)
+    c = @btime ExaPF.objective($nlp, $u)
     # Compute gradient of objective
     g = similar(u)
     fill!(g, 0)
     print("Gradient \t")
-    @time ExaPF.gradient!(nlp, g, u)
+    @btime ExaPF.gradient!($nlp, $g, $u)
 
     # Constraint
     ## Evaluation of the constraints
     cons = similar(nlp.g_min)
     fill!(cons, 0)
     print("Constrt \t")
-    @time ExaPF.constraint!(nlp, cons, u)
+    @btime ExaPF.constraint!($nlp, $cons, $u)
 
     print("Jac-prod \t")
     jv = copy(g) ; fill!(jv, 0)
     v = copy(cons) ; fill!(v, 1)
-    @time ExaPF.jtprod!(nlp, jv, u, v)
+    @btime ExaPF.jtprod!($nlp, $jv, $u, $v)
     hv = similar(u) ; fill!(hv, 0)
     v = similar(u) ; fill!(v, 0)
     v[1] = 1
     print("Hessprod \t")
-    @time ExaPF.hessprod!(nlp, hv, u, v)
-    print("Hessprod \t")
-    @time ExaPF.hessprod!(nlp, hv, u, v)
-    print("Hessprod2 \t")
-    @time ExaPF.hessprod2!(nlp, hv, u, v)
-    print("Hessprod2 \t")
-    @time ExaPF.hessprod2!(nlp, hv, u, v)
-    print("HLag-prod \t")
+    @btime ExaPF.hessprod!($nlp, $hv, $u, $v)
     y = similar(cons) ; fill!(y, 1.0)
     w = similar(cons) ; fill!(w, 1.0)
-    @time ExaPF.hessian_lagrangian_prod!(nlp, hv, u, y, 1.0, v)
     print("HLagPen-prod \t")
-    @time ExaPF.hessian_lagrangian_penalty_prod!(nlp, hv, u, y, 1.0, v, w)
+    @btime ExaPF.hessian_lagrangian_penalty_prod!($nlp, $hv, $u, $y, 1.0, $v, $w)
     return
 end
 
@@ -163,17 +154,18 @@ end
 
 datafile = joinpath(dirname(@__FILE__), "..", "data", "case300.m")
 device = CPU()
-nlp, u = build_nlp(datafile, CPU())
+nlp = build_nlp(datafile, CPU())
+u = ExaPF.initial(nlp)
 
 @info("ReducedSpaceEvaluator")
 run_reduced_evaluator(nlp, u, device=CPU())
 ExaPF.reset!(nlp)
-@info("SlackEvaluator")
-run_slack(nlp, u, device=CPU())
-ExaPF.reset!(nlp)
-@info("AugLagEvaluator")
-run_penalty(nlp, u, device=CPU())
-ExaPF.reset!(nlp)
-@info("SlackAugLagEvaluator")
-run_slackaug(nlp, u, device=CPU())
-ExaPF.reset!(nlp)
+# @info("SlackEvaluator")
+# run_slack(nlp, u, device=CPU())
+# ExaPF.reset!(nlp)
+# @info("AugLagEvaluator")
+# run_penalty(nlp, u, device=CPU())
+# ExaPF.reset!(nlp)
+# @info("SlackAugLagEvaluator")
+# run_slackaug(nlp, u, device=CPU())
+# ExaPF.reset!(nlp)
