@@ -126,20 +126,20 @@ const PS = PowerSystem
             @test isa(c2, Real)
 
             ## Inequality constraint
-            for cons in [
+            for cons_function in [
                 ExaPF.voltage_magnitude_constraints,
                 ExaPF.active_power_constraints,
                 ExaPF.reactive_power_constraints,
                 ExaPF.flow_constraints,
                 ExaPF.power_balance,
             ]
-                m = ExaPF.size_constraint(polar, cons)
+                m = ExaPF.size_constraint(polar, cons_function)
                 @test isa(m, Int)
                 g = M{Float64, 1}(undef, m) # TODO: this signature is not great
                 fill!(g, 0)
-                cons(polar, g, cache)
+                cons_function(polar, g, cache)
 
-                g_min, g_max = ExaPF.bounds(polar, cons)
+                g_min, g_max = ExaPF.bounds(polar, cons_function)
                 @test length(g_min) == m
                 @test length(g_max) == m
                 # Are we on the correct device?

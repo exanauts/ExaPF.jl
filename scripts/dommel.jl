@@ -3,12 +3,9 @@ using ExaPF
 using FiniteDiff
 using ForwardDiff
 using LinearAlgebra
-using LineSearches
 using Printf
 using KernelAbstractions
-using UnicodePlots
 using Statistics
-
 
 reldiff(a, b) = abs(a - b) / max(1, a)
 function active_set(x, x♭, x♯; tol=1e-8)
@@ -73,11 +70,9 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
                        feasible_start=false)
 
     # Load problem.
-    pf = ExaPF.PowerSystem.PowerNetwork(datafile, 1)
-    polar = PolarForm(pf, CPU())
+    polar = PolarForm(datafile, CPU())
 
     x0 = ExaPF.initial(polar, State())
-    p = ExaPF.initial(polar, Parameters())
     if feasible_start
         prob = run_reduced_ipopt(datafile; hessian=false, feasible=true)
         uk = prob.x
@@ -91,13 +86,12 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
     u_prev = copy(uk)
 
     buffer = ExaPF.get(polar, ExaPF.PhysicalState())
-    constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-    nlp = ExaPF.ReducedSpaceEvaluator(polar, x0, uk, p; constraints=constraints,
-                                      ε_tol=1e-10)
+    nlp = ExaPF.ReducedSpaceEvaluator(polar;
+                                      powerflow_solver=NewtonRaphson(; tol=1e-10))
     # Init a penalty evaluator with initial penalty c₀
     c0 = 10.0
 
-    pen = ExaPF.PenaltyEvaluator(nlp, u0; c₀=c0, penalties=[c0, c0], scale=true)
+    pen = ExaPF.AugLagEvaluator(nlp, u0; c₀=c0, scale=true)
     ωtol = 1e-5 #1 / c0
 
     # initialize arrays
@@ -113,7 +107,6 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
     cost_history = Float64[]
     grad_history = Float64[]
 
-    ls_algo = BackTracking()
     if bfgs
         H = InverseLBFGSOperator(Float64, length(uk), 50, scaling=true)
         α0 = 1.0
@@ -139,7 +132,6 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
         for i in 1:iter_max
             n_iter += 1
             # solve power flow and compute gradients
-            nlp.x .= x0
             ExaPF.update!(pen, uk)
 
             # evaluate cost
@@ -220,8 +212,8 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
         ExaPF.update_penalty!(pen; η=η)
     end
     # uncomment to plot cost evolution
-    plt = lineplot(cost_history, title = "Cost history", width=80);
-    println(plt)
+    # plt = lineplot(cost_history, title = "Cost history", width=80);
+    # println(plt)
 
     cons = zeros(ExaPF.n_constraints(nlp))
     ExaPF.constraint!(nlp, cons, uk)
@@ -230,7 +222,7 @@ function dommel_method(datafile; bfgs=false, iter_max=200, itout_max=1,
     return uk, cost_history
 end
 
-datafile = joinpath(dirname(@__FILE__), "..", "test", "data", "case57.m")
+datafile = joinpath(dirname(@__FILE__), "..", "data", "case57.m")
 
 u_opt, ch = dommel_method(datafile; bfgs=false, itout_max=10, feasible_start=false,
                           iter_max=1000)

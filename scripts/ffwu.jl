@@ -4,10 +4,8 @@ using ExaPF
 using FiniteDiff
 using ForwardDiff
 using LinearAlgebra
-using LinearOperators
 using Printf
 using KernelAbstractions
-using UnicodePlots
 
 import ExaPF: PowerSystem
 
@@ -42,7 +40,7 @@ end
 # sample along descent line and find minimum.
 function sample_ls(nlp, uk, delta_x, delta_u, alpha_m; sample_max=30)
 
-    xk = nlp.x
+    xk = get(nlp, State())
     alpha = 0.0
 
     function cost_a(a)
@@ -140,9 +138,9 @@ end
 # obtain the maximum alpha along the descent line that satisfies all the
 # constraints.
 function alpha_max(nlp, delta_x, uk, delta_u)
-    xk = nlp.x
-    x_min, x_max = nlp.x_max, nlp.x_min
+    x_min, x_max = bounds(nlp.model, State())
     u_min, u_max = nlp.u_max, nlp.u_min
+    xk = ExaPF.get(nlp, State())
 
     x_dim = length(delta_x)
     u_dim = length(delta_u)
@@ -203,25 +201,21 @@ function cost_direction(nlp, u, delta_u, alpha_max, alpha_dav; points=10)
     end
 
     #UNCOMMENT THESE LINES
-    plt = lineplot(alphas, costs, title = "Cost along alpha", width=80);
-    alpha_dav_vert = alpha_dav*ones(points)
-    scatterplot!(plt, alpha_dav_vert, costs)
-    println(plt)
+    # plt = lineplot(alphas, costs, title = "Cost along alpha", width=80);
+    # alpha_dav_vert = alpha_dav*ones(points)
+    # scatterplot!(plt, alpha_dav_vert, costs)
+    # println(plt)
 
 end
 
 function run_ffwu(datafile; bfgs=false)
-    pf = PowerSystem.PowerNetwork(datafile, 1)
-    polar = PolarForm(pf, CPU())
+    polar = PolarForm(datafile, CPU())
 
     xk = ExaPF.initial(polar, State())
     uk = ExaPF.initial(polar, Control())
-    p = ExaPF.initial(polar, Parameters())
 
     buffer = ExaPF.get(polar, ExaPF.PhysicalState())
-    constraints = Function[ExaPF.state_constraint, ExaPF.power_constraints]
-    nlp = @time ExaPF.ReducedSpaceEvaluator(polar, xk, uk, p; constraints=constraints)
-    jx, ju = ExaPF.init_ad_factory(polar, buffer)
+    nlp = @time ExaPF.ReducedSpaceEvaluator(polar)
 
     # reduced gradient method
     iterations = 0
@@ -241,9 +235,6 @@ function run_ffwu(datafile; bfgs=false)
     if bfgs
         H = InverseLBFGSOperator(Float64, length(uk), 50, scaling=true)
     end
-
-    ExaPF.gradient!(nlp, grad_prev, uk)
-    grad = copy(grad_prev)
 
     iter = 1
     @printf("%6s %12s %6s %6s\n", "iter", "objective", "αₘₐₓ", "αₗₛ")
@@ -267,8 +258,8 @@ function run_ffwu(datafile; bfgs=false)
         end
 
         # compute gradients of G
-        dGdx = ExaPF.jacobian(polar, jx, nlp.buffer)
-        dGdu = ExaPF.jacobian(polar, ju, nlp.buffer)
+        dGdx = nlp.state_jacobian.x.J
+        dGdu = nlp.state_jacobian.u.J
 
         # Line search
         # 1st - compute approximate delta_x
@@ -305,5 +296,5 @@ function run_ffwu(datafile; bfgs=false)
 
     return
 end
-datafile = joinpath(dirname(@__FILE__), "..", "test", "data", "case9.m")
+datafile = joinpath(dirname(@__FILE__), "..", "data", "case9.m")
 run_ffwu(datafile; bfgs=false)
