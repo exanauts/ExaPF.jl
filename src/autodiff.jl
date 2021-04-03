@@ -115,18 +115,18 @@ Creates an object for computing Hessian adjoint tangent projections.
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 * `buffer::Buff`: cache for computing the adjoint (could be `Nothing`)
 """
-struct Hessian{Func, VI, VT, VHP, VP, VD, SubT, SubD, Buff} <: AbstractHessian
+struct Hessian{Func, T1,T2,T3,T4,T5,T6,T7,T8,T9,T10, Buff} <: AbstractHessian
     func::Func
-    host_t1sseeds::VHP # Needed because seeds have to be created on the host
-    t1sseeds::VP
-    x::VT
-    t1sF::VD
-    ∂t1sF::VD
-    t1sx::VD
-    ∂t1sx::VD
-    map::VI
-    varx::SubT
-    t1svarx::SubD
+    host_t1sseeds::T1 # Needed because seeds have to be created on the host
+    t1sseeds::T2
+    x::T3
+    t1sF::T4
+    ∂t1sF::T5
+    t1sx::T6
+    ∂t1sx::T7
+    map::T8
+    varx::T9
+    t1svarx::T10
     buffer::Buff
 end
 
@@ -265,6 +265,52 @@ function Base.show(io::IO, jacobian::Jacobian)
     println(io, "A AutoDiff Jacobian for $(jacobian.func) (w.r.t. $(jacobian.var))")
     ncolor = size(jacobian.compressedJ, 1)
     print(io, "Number of Jacobian colors: ", ncolor)
+end
+
+# BATCH AUTODIFF
+#
+@kernel function batch_seed_kernel!(
+    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, x,
+    seeds::AbstractArray{ForwardDiff.Partials{N, V}}
+) where {T,V,N}
+    i, j = @index(Global, NTuple)
+    duals[i, j] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i, j])
+end
+
+function batch_seed!(t1sseeds, varx, t1svarx)
+    if isa(t1sseeds, Matrix)
+        device = CPU()
+        kernel! = batch_seed_kernel!(CPU())
+    else
+        device = CUDADevice()
+        kernel! = batch_seed_kernel!(CUDADevice())
+    end
+    nvars = size(t1sseeds, 1)
+    nbatch = size(t1sseeds, 2)
+    ndrange = (nvars, nbatch)
+    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
+    wait(ev)
+end
+
+# Get partials for Hessian projection
+@kernel function batch_getpartials_hv_kernel!(hv, adj_t1sx, map)
+    i, j = @index(Global, NTuple)
+    hv[i, j] = ForwardDiff.partials(adj_t1sx[map[i], j]).values[1]
+end
+
+function batch_partials!(hv::AbstractMatrix, adj_t1sx, map)
+    if isa(hv, Matrix)
+        device = CPU()
+        kernel! = batch_getpartials_hv_kernel!(CPU())
+    else
+        device = CUDADevice()
+        kernel! = batch_getpartials_hv_kernel!(CUDADevice())
+    end
+    nvars = size(hv, 1)
+    nbatch = size(hv, 2)
+    ndrange = (nvars, nbatch)
+    ev = kernel!(hv, adj_t1sx, map, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
+    wait(ev)
 end
 
 end

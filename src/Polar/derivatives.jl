@@ -187,7 +187,7 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     adj_t1sx = similar(t1sx)
     adj_t1sF = similar(t1sF)
     buffer = AutoDiff.TapeMemory(polar, func, VD; with_stack=false)
-    return AutoDiff.Hessian{typeof(func), VI, VT, VHP, VP, VD, typeof(varx), typeof(t1svarx), typeof(buffer)}(
+    return AutoDiff.Hessian(
         func, host_t1sseeds, t1sseeds, x, t1sF, adj_t1sF, t1sx, adj_t1sx, map, varx, t1svarx, buffer,
     )
 end
