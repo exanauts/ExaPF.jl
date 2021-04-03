@@ -115,18 +115,18 @@ Creates an object for computing Hessian adjoint tangent projections.
 * `t1svarx::SubD`: Active (AD) view of `map` on `x`
 * `buffer::Buff`: cache for computing the adjoint (could be `Nothing`)
 """
-struct Hessian{Func, VI, VT, VHP, VP, VD, SubT, SubD, Buff} <: AbstractHessian
+struct Hessian{Func, T1,T2,T3,T4,T5,T6,T7,T8,T9,T10, Buff} <: AbstractHessian
     func::Func
-    host_t1sseeds::VHP # Needed because seeds have to be created on the host
-    t1sseeds::VP
-    x::VT
-    t1sF::VD
-    ∂t1sF::VD
-    t1sx::VD
-    ∂t1sx::VD
-    map::VI
-    varx::SubT
-    t1svarx::SubD
+    host_t1sseeds::T1 # Needed because seeds have to be created on the host
+    t1sseeds::T2
+    x::T3
+    t1sF::T4
+    ∂t1sF::T5
+    t1sx::T6
+    ∂t1sx::T7
+    map::T8
+    varx::T9
+    t1svarx::T10
     buffer::Buff
 end
 
