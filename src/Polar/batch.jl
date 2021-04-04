@@ -42,7 +42,7 @@ function batch_hessian(polar::PolarForm{T, VI, VT, MT}, func, nbatch) where {T, 
         MMT = Matrix
     elseif isa(polar.device, CUDADevice)
         A = CUDA.CuVector
-        MMT = CuMatrix
+        MMT = CUDA.CuMatrix
     end
 
     pf = polar.network
@@ -97,7 +97,7 @@ function batch_tape(
     return AutoDiff.TapeMemory(func, nothing, intermediate)
 end
 
-function batch_init_seed_hessian!(dest, tmp, v::AbstractArray, nmap)
+function batch_init_seed_hessian!(dest, tmp, v::Matrix, nmap)
     nbatch = size(dest, 1)
     @inbounds for i in 1:nmap
         for j in 1:nbatch
@@ -107,13 +107,16 @@ function batch_init_seed_hessian!(dest, tmp, v::AbstractArray, nmap)
     return
 end
 
-function batch_init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
-    hostv = Array(v)
-    @inbounds Threads.@threads for i in 1:nmap
-        tmp[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
-    end
-    copyto!(dest, tmp)
-    return
+@kernel function _gginit_seed_hessian!(dest, v)
+    i = @index(Group, Linear)
+    j = @index(Local, Linear)
+    @inbounds dest[j, i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[j, i]))
+end
+
+function batch_init_seed_hessian!(dest, tmp, v::CUDA.CuMatrix, nmap)
+    ndrange = (size(dest, 1), nmap)
+    ev = _gginit_seed_hessian!(CUDADevice())(dest, v, ndrange=ndrange)
+    wait(ev)
 end
 
 function batch_adj_hessian_prod!(
@@ -134,7 +137,7 @@ function batch_adj_hessian_prod!(
     copyto!(x, 2*nbus+1, buffer.pinj, 1, nbus)
     # Init dual variables
     #
-    for i in 1:nbatch
+    @inbounds for i in 1:nbatch
         t1sx[i, :] .= H.x
     end
 

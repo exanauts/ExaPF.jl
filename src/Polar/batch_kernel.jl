@@ -16,7 +16,7 @@ KA.@kernel function batch_adj_residual_edge_kernel!(
     # REAL PQ: (npv+1:npv+npq)
     # IMAG PQ: (npv+npq+1:npv+2npq)
     fr = (i <= npv) ? pv[i] : pq[i - npv]
-    for c in colptr[fr]:colptr[fr+1]-1
+    @inbounds for c in colptr[fr]:colptr[fr+1]-1
         # Forward loop
         to = rowval[c]
         aij = va[j, fr] - va[j, to]
@@ -66,7 +66,7 @@ KA.@kernel function batch_adj_node_kernel!(
 )
     i = @index(Group, Linear)
     j = @index(Local, Linear)
-    for c in colptr[i]:colptr[i+1]-1
+    @inbounds for c in colptr[i]:colptr[i+1]-1
         to = dest[c]
         adj_vm[j, i] += edge_vm_from[j, c]
         adj_vm[j, i] += edge_vm_to[j, to]
@@ -95,7 +95,7 @@ function batch_adj_residual_polar!(
     edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
     pv, pq, nbus
 ) where {T}
-    if isa(F, CUDA.CuVector)
+    if isa(F, CUDA.CuArray)
         device = KA.CUDADevice()
     else
         device = KA.CPU()
