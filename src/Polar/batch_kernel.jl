@@ -16,14 +16,14 @@ KA.@kernel function batch_adj_residual_edge_kernel!(
     # REAL PQ: (npv+1:npv+npq)
     # IMAG PQ: (npv+npq+1:npv+2npq)
     fr = (i <= npv) ? pv[i] : pq[i - npv]
-    @inbounds for c in colptr[fr]:colptr[fr+1]-1
+    for c in colptr[fr]:colptr[fr+1]-1
         # Forward loop
         to = rowval[c]
-        aij = va[j, fr] - va[j, to]
+        aij = va[fr, j] - va[to, j]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
-        coef_cos = vm[j, fr]*vm[j, to]*ybus_re_nzval[c]
-        coef_sin = vm[j, fr]*vm[j, to]*ybus_im_nzval[c]
+        coef_cos = vm[fr, j]*vm[to, j]*ybus_re_nzval[c]
+        coef_sin = vm[fr, j]*vm[to, j]*ybus_im_nzval[c]
 
         cos_val = cos(aij)
         sin_val = sin(aij)
@@ -43,13 +43,13 @@ KA.@kernel function batch_adj_residual_edge_kernel!(
         adj_aij =   cos_val*adj_sin_val
         adj_aij += -sin_val*adj_cos_val
 
-        edge_vm_from[j, c] += vm[j, to]*ybus_im_nzval[c]*adj_coef_sin
-        edge_vm_to[j, c]   += vm[j, fr]*ybus_im_nzval[c]*adj_coef_sin
-        edge_vm_from[j, c] += vm[j, to]*ybus_re_nzval[c]*adj_coef_cos
-        edge_vm_to[j, c]   += vm[j, fr]*ybus_re_nzval[c]*adj_coef_cos
+        edge_vm_from[c, j] += vm[to, j]*ybus_im_nzval[c]*adj_coef_sin
+        edge_vm_to[c, j]   += vm[fr, j]*ybus_im_nzval[c]*adj_coef_sin
+        edge_vm_from[c, j] += vm[to, j]*ybus_re_nzval[c]*adj_coef_cos
+        edge_vm_to[c, j]   += vm[fr, j]*ybus_re_nzval[c]*adj_coef_cos
 
-        edge_va_from[j, c] += adj_aij
-        edge_va_to[j, c]   -= adj_aij
+        edge_va_from[c, j] += adj_aij
+        edge_va_to[c, j]   -= adj_aij
     end
     # qinj is not active
     # if i > npv
@@ -68,10 +68,10 @@ KA.@kernel function batch_adj_node_kernel!(
     j = @index(Local, Linear)
     @inbounds for c in colptr[i]:colptr[i+1]-1
         to = dest[c]
-        adj_vm[j, i] += edge_vm_from[j, c]
-        adj_vm[j, i] += edge_vm_to[j, to]
-        adj_va[j, i] += edge_va_from[j, c]
-        adj_va[j, i] += edge_va_to[j, to]
+        adj_vm[i, j] += edge_vm_from[c, j]
+        adj_vm[i, j] += edge_vm_to[to, j]
+        adj_va[i, j] += edge_va_from[c, j]
+        adj_va[i, j] += edge_va_to[to, j]
     end
 end
 
@@ -107,7 +107,7 @@ function batch_adj_residual_polar!(
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
 
-    nbatch = size(F, 1)
+    nbatch = size(F, 2)
     nvars = npv+npq
     ndrange = (nbatch, nvars)
 

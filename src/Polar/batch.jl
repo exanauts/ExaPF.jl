@@ -55,16 +55,16 @@ function batch_hessian(polar::PolarForm{T, VI, VT, MT}, func, nbatch) where {T, 
     x = VT(zeros(Float64, 3*nbus))
 
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-    t1sx = MMT{t1s{1}}(zeros(Float64, nbatch, 3*nbus))
-    t1sF = MMT{t1s{1}}(zeros(Float64, nbatch, n_cons))
-    host_t1sseeds = MMT{ForwardDiff.Partials{1,Float64}}(undef, nbatch, nmap)
-    t1sseeds = MMT{ForwardDiff.Partials{1,Float64}}(undef, nbatch, nmap)
+    t1sx = MMT{t1s{1}}(zeros(Float64, 3*nbus, nbatch))
+    t1sF = MMT{t1s{1}}(zeros(Float64, n_cons, nbatch))
+    host_t1sseeds = MMT{ForwardDiff.Partials{1,Float64}}(undef, nmap, nbatch)
+    t1sseeds = MMT{ForwardDiff.Partials{1,Float64}}(undef, nmap, nbatch)
     varx = view(x, map)
-    t1svarx = view(t1sx, :, map)
+    t1svarx = view(t1sx, map, :)
     VHP = typeof(host_t1sseeds)
     VP = typeof(t1sseeds)
     VD = typeof(t1sx)
-    adj_t1sx = MMT{t1s{1}}(zeros(Float64, nbatch, 3 * nbus))
+    adj_t1sx = MMT{t1s{1}}(zeros(Float64, 3 * nbus, nbatch))
     adj_t1sF = A{t1s{1}}(zeros(Float64, n_cons))
     buffer = batch_tape(polar, func, nbatch, typeof(adj_t1sx))
     return AutoDiff.Hessian(
@@ -75,10 +75,10 @@ end
 function batch_stack(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI, VT, MT}
     nbus = get(polar, PS.NumberOfBuses())
     return AdjointPolar{MT}(
-        MT(undef, nbatch, nbus),
-        MT(undef, nbatch, nbus),
-        MT(undef, nbatch, nbus),
-        MT(undef, nbatch, nbus),
+        MT(undef, nbus, nbatch),
+        MT(undef, nbus, nbatch),
+        MT(undef, nbus, nbatch),
+        MT(undef, nbus, nbatch),
         MT(undef, 0, 0),
         MT(undef, 0, 0),
     )
@@ -89,33 +89,33 @@ function batch_tape(
 )
     nnz = length(polar.topology.ybus_im.nzval)
     intermediate = (
-        ∂edge_vm_fr = MD(undef, nbatch, nnz),
-        ∂edge_va_fr = MD(undef, nbatch, nnz),
-        ∂edge_vm_to = MD(undef, nbatch, nnz),
-        ∂edge_va_to = MD(undef, nbatch, nnz),
+        ∂edge_vm_fr = MD(undef, nnz, nbatch),
+        ∂edge_va_fr = MD(undef, nnz, nbatch),
+        ∂edge_vm_to = MD(undef, nnz, nbatch),
+        ∂edge_va_to = MD(undef, nnz, nbatch),
     )
     return AutoDiff.TapeMemory(func, nothing, intermediate)
 end
 
 function batch_init_seed_hessian!(dest, tmp, v::Matrix, nmap)
-    nbatch = size(dest, 1)
+    nbatch = size(dest, 2)
     @inbounds for i in 1:nmap
         for j in 1:nbatch
-            dest[j, i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[j, i]))
+            dest[i, j] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i, j]))
         end
     end
     return
 end
 
-@kernel function _gginit_seed_hessian!(dest, v)
+@kernel function _gpu_init_seed_hessian!(dest, v)
     i = @index(Group, Linear)
     j = @index(Local, Linear)
-    @inbounds dest[j, i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[j, i]))
+    @inbounds dest[i, j] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i, j]))
 end
 
 function batch_init_seed_hessian!(dest, tmp, v::CUDA.CuMatrix, nmap)
-    ndrange = (size(dest, 1), nmap)
-    ev = _gginit_seed_hessian!(CUDADevice())(dest, v, ndrange=ndrange)
+    ndrange = (size(dest, 2), nmap)
+    ev = _gpu_init_seed_hessian!(CUDADevice())(dest, v, ndrange=ndrange)
     wait(ev)
 end
 
@@ -130,7 +130,7 @@ function batch_adj_hessian_prod!(
     adj_t1sx = H.∂t1sx
     t1sF = H.t1sF
     adj_t1sF = H.∂t1sF
-    nbatch = size(adj_t1sx, 1)
+    nbatch = size(adj_t1sx, 2)
     # Move data
     copyto!(x, 1, buffer.vmag, 1, nbus)
     copyto!(x, nbus+1, buffer.vang, 1, nbus)
@@ -138,7 +138,7 @@ function batch_adj_hessian_prod!(
     # Init dual variables
     #
     @inbounds for i in 1:nbatch
-        t1sx[i, :] .= H.x
+        t1sx[:, i] .= H.x
     end
 
     adj_t1sx .= 0.0
@@ -154,9 +154,9 @@ function batch_adj_hessian_prod!(
     batch_adjoint!(
         polar, H.buffer,
         t1sF, adj_t1sF,
-        view(t1sx, :, 1:nbus), view(adj_t1sx, :, 1:nbus),                   # vmag
-        view(t1sx, :, nbus+1:2*nbus), view(adj_t1sx, :, nbus+1:2*nbus),     # vang
-        view(t1sx, :, 2*nbus+1:3*nbus), view(adj_t1sx, :, 2*nbus+1:3*nbus), # pinj
+        view(t1sx, 1:nbus, :), view(adj_t1sx, 1:nbus, :),                   # vmag
+        view(t1sx, nbus+1:2*nbus, :), view(adj_t1sx, nbus+1:2*nbus, :),     # vang
+        view(t1sx, 2*nbus+1:3*nbus, :), view(adj_t1sx, 2*nbus+1:3*nbus, :), # pinj
     )
 
     BatchAutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map)

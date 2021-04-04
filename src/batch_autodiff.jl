@@ -17,7 +17,7 @@ using ..ExaPF: AutoDiff
 ) where {T,V,N}
     i = @index(Group, Linear)
     j = @index(Local, Linear)
-    duals[j, i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[j, i])
+    duals[i, j] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i, j])
 end
 
 """
@@ -35,8 +35,8 @@ function seed!(t1sseeds, varx, t1svarx)
         device = CUDADevice()
         kernel! = seed_kernel!(CUDADevice())
     end
-    nbatch = size(t1sseeds, 1)
-    nvars = size(t1sseeds, 2)
+    nvars = size(t1sseeds, 1)
+    nbatch = size(t1sseeds, 2)
     ndrange = (nbatch, nvars)
     ev = kernel!(t1svarx, varx, t1sseeds, ndrange=ndrange, dependencies=Event(device))
     wait(ev)
@@ -46,7 +46,7 @@ end
 @kernel function getpartials_hv_kernel!(hv, adj_t1sx, map)
     i = @index(Group, Linear)
     j = @index(Local, Linear)
-    hv[j, i] = ForwardDiff.partials(adj_t1sx[j, map[i]]).values[1]
+    hv[i, j] = ForwardDiff.partials(adj_t1sx[map[i], j]).values[1]
 end
 
 """
@@ -65,8 +65,8 @@ function getpartials_kernel!(hv::AbstractMatrix, adj_t1sx, map)
         device = CUDADevice()
         kernel! = getpartials_hv_kernel!(CUDADevice())
     end
-    nbatch = size(hv, 1)
-    nvars = size(hv, 2)
+    nvars = size(hv, 1)
+    nbatch = size(hv, 2)
     ndrange = (nbatch, nvars)
     ev = kernel!(hv, adj_t1sx, map, ndrange=ndrange, dependencies=Event(device))
     wait(ev)
