@@ -6,8 +6,7 @@ KA.@kernel function batch_adj_residual_edge_kernel!(
     edge_va_from, edge_va_to,
     pinj, adj_pinj, qinj, pv, pq
 )
-    i = @index(Group, Linear)
-    j = @index(Local, Linear)
+    i, j = @index(Global, NTuple)
 
     npv = size(pv, 1)
     npq = size(pq, 1)
@@ -64,8 +63,8 @@ KA.@kernel function batch_adj_node_kernel!(
     edge_vm_from, edge_vm_to,
     edge_va_from, edge_va_to, dest
 )
-    i = @index(Group, Linear)
-    j = @index(Local, Linear)
+    i, j = @index(Global, NTuple)
+
     @inbounds for c in colptr[i]:colptr[i+1]-1
         to = dest[c]
         adj_vm[i, j] += edge_vm_from[c, j]
@@ -109,7 +108,7 @@ function batch_adj_residual_polar!(
 
     nbatch = size(F, 2)
     nvars = npv+npq
-    ndrange = (nbatch, nvars)
+    ndrange = (nvars, nbatch)
 
     kernel_edge! = batch_adj_residual_edge_kernel!(device)
     ev = kernel_edge!(adj_F, vm, adj_vm, va, adj_va,
@@ -125,14 +124,16 @@ function batch_adj_residual_polar!(
 
     # The permutation corresponding to the transpose of Ybus.
     # is given in transpose_perm
-    ndrange = (nbatch, nbus)
+    ndrange = (nbus, nbatch)
+
     ev = batch_adj_node_kernel!(device)(
         adj_vm, adj_va,
         ybus_re.colptr, ybus_re.rowval,
         edge_vm_from, edge_vm_to,
         edge_va_from, edge_va_to, transpose_perm,
         ndrange=ndrange,
-        dependencies = Event(device)
+        dependencies = Event(device),
+        workgroupsize=256
     )
     wait(ev)
 end

@@ -15,8 +15,7 @@ using ..ExaPF: AutoDiff
     duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, x,
     seeds::AbstractArray{ForwardDiff.Partials{N, V}}
 ) where {T,V,N}
-    i = @index(Group, Linear)
-    j = @index(Local, Linear)
+    i, j = @index(Global, NTuple)
     duals[i, j] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i, j])
 end
 
@@ -37,15 +36,14 @@ function seed!(t1sseeds, varx, t1svarx)
     end
     nvars = size(t1sseeds, 1)
     nbatch = size(t1sseeds, 2)
-    ndrange = (nbatch, nvars)
-    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=ndrange, dependencies=Event(device))
+    ndrange = (nvars, nbatch)
+    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
     wait(ev)
 end
 
 # Get partials for Hessian projection
 @kernel function getpartials_hv_kernel!(hv, adj_t1sx, map)
-    i = @index(Group, Linear)
-    j = @index(Local, Linear)
+    i, j = @index(Global, NTuple)
     hv[i, j] = ForwardDiff.partials(adj_t1sx[map[i], j]).values[1]
 end
 
@@ -67,8 +65,8 @@ function getpartials_kernel!(hv::AbstractMatrix, adj_t1sx, map)
     end
     nvars = size(hv, 1)
     nbatch = size(hv, 2)
-    ndrange = (nbatch, nvars)
-    ev = kernel!(hv, adj_t1sx, map, ndrange=ndrange, dependencies=Event(device))
+    ndrange = (nvars, nbatch)
+    ev = kernel!(hv, adj_t1sx, map, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
     wait(ev)
 end
 

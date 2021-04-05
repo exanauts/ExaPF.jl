@@ -108,14 +108,13 @@ function batch_init_seed_hessian!(dest, tmp, v::Matrix, nmap)
 end
 
 @kernel function _gpu_init_seed_hessian!(dest, v)
-    i = @index(Group, Linear)
-    j = @index(Local, Linear)
+    i, j = @index(Global, NTuple)
     @inbounds dest[i, j] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i, j]))
 end
 
 function batch_init_seed_hessian!(dest, tmp, v::CUDA.CuMatrix, nmap)
-    ndrange = (size(dest, 2), nmap)
-    ev = _gpu_init_seed_hessian!(CUDADevice())(dest, v, ndrange=ndrange)
+    ndrange = (nmap, size(dest, 2))
+    ev = _gpu_init_seed_hessian!(CUDADevice())(dest, v, ndrange=ndrange, workgroupsize=256)
     wait(ev)
 end
 
