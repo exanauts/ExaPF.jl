@@ -119,6 +119,22 @@ function batch_init_seed_hessian!(dest, tmp, v::CUDA.CuMatrix, nmap)
     wait(ev)
 end
 
+function update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
+    x = H.x
+    t1sx = H.t1sx
+    nbatch = size(t1sx, 2)
+    nbus = get(polar, PS.NumberOfBuses())
+
+    # Move data
+    copyto!(x, 1, buffer.vmag, 1, nbus)
+    copyto!(x, nbus+1, buffer.vang, 1, nbus)
+    copyto!(x, 2*nbus+1, buffer.pinj, 1, nbus)
+
+    @inbounds for i in 1:nbatch
+        t1sx[:, i] .= H.x
+    end
+end
+
 function batch_adj_hessian_prod!(
     polar, H::AutoDiff.Hessian, hv, buffer, λ, v,
 )
@@ -131,16 +147,7 @@ function batch_adj_hessian_prod!(
     t1sF = H.t1sF
     adj_t1sF = H.∂t1sF
     nbatch = size(adj_t1sx, 2)
-    # Move data
-    copyto!(x, 1, buffer.vmag, 1, nbus)
-    copyto!(x, nbus+1, buffer.vang, 1, nbus)
-    copyto!(x, 2*nbus+1, buffer.pinj, 1, nbus)
     # Init dual variables
-    #
-    @inbounds for i in 1:nbatch
-        t1sx[:, i] .= H.x
-    end
-
     adj_t1sx .= 0.0
     t1sF .= 0.0
     adj_t1sF .= λ

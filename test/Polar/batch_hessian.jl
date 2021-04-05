@@ -15,7 +15,7 @@ import ExaPF: PowerSystem, AutoDiff
 const PS = PowerSystem
 
 @testset "Compute reduced Hessian on CPU" begin
-    @testset "Case $case" for case in ["case9.m"]
+    @testset "Case $case" for case in ["case1354.m"]
         if has_cuda_gpu()
             ITERATORS = zip([CPU(), CUDADevice()], [Vector, CuVector])
         else
@@ -111,15 +111,15 @@ const PS = PowerSystem
             nx = size(∇²gλ.xx, 1)
             nu = size(∇²gλ.uu, 1)
 
-
             λ = λ |> T
             tgt = rand(nx + nu) |> T
             projp = zeros(nx + nu) |> T
             single_H = AutoDiff.Hessian(polar, ExaPF.power_balance)
             @time AutoDiff.adj_hessian_prod!(polar, single_H, projp, cache, λ, tgt)
 
-            nbatch = 32
+            nbatch = 64
             batch_H = ExaPF.batch_hessian(polar, ExaPF.power_balance, nbatch)
+            ExaPF.update!(polar, batch_H, cache)
 
             MT = isa(device, CUDADevice) ? CuMatrix : Matrix
 
@@ -130,12 +130,12 @@ const PS = PowerSystem
                 ∇²gλ.xu  ∇²gλ.uu
             ]
             @time ExaPF.batch_adj_hessian_prod!(polar, batch_H, bprojp, cache, λ, btgt)
-            # if isa(device, CUDADevice)
-            #     @profile ExaPF.batch_adj_hessian_prod!(polar, batch_H, bprojp, cache, λ, btgt)
-            # end
-            # for i in 1:nbatch
-            #     @test isapprox(bprojp[:, i], H * btgt[:, i])
-            # end
+            @time ExaPF.batch_adj_hessian_prod!(polar, batch_H, bprojp, cache, λ, btgt)
+            if !isa(device, CUDADevice)
+                for i in 1:nbatch
+                    @test isapprox(bprojp[:, i], H * btgt[:, i])
+                end
+            end
         end
     end
 end
