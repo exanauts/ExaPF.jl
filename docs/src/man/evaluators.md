@@ -1,13 +1,13 @@
 # Evaluators
 
 In `ExaPF.jl`, the evaluators are the final layer of the structure.
-They take as input a given `AbstractFormulation` and implement the
+They take as input a given [`ExaPF.AbstractFormulation`](@ref) and implement the
 callbacks for the optimization solvers.
 
 ## Overview of the AbstractNLPEvaluator
 
-An `AbstractNLPEvaluator` implements an optimization problem
-associated with an underlying `AbstractFormulation`:
+An [`ExaPF.AbstractNLPEvaluator`](@ref) implements an optimization problem
+associated with an underlying [`ExaPF.AbstractFormulation`](@ref):
 ```math
 \begin{aligned}
 \min_{u \in \mathbb{R}^n} \;             & f(u)     \\
@@ -24,9 +24,9 @@ $h: \mathbb{R}^n \to \mathbb{R}^{m_I}$ non-linear inequality constraints.
 Most non-linear optimization algorithms rely on *callbacks* to pass
 information about the structure of the problem to the optimizer.
 In `ExaPF`, the implementation of the evaluators allows to have a proper splitting
-between the model (formulated in the `AbstractFormulation` layer)
+between the model (formulated in the [`ExaPF.AbstractFormulation`](@ref) layer)
 and the optimization algorithms. By design, the implementation
-of an `AbstractEvaluator` shares a similar spirit with the implementations
+of an [`ExaPF.AbstractNLPEvaluator`](@ref) shares a similar spirit with the implementations
 introduced in other packages, as
 
 - MathOptInterface.jl's [AbstractNLPEvaluator](https://jump.dev/MathOptInterface.jl/stable/apireference/#MathOptInterface.AbstractNLPEvaluator)
@@ -37,8 +37,8 @@ the callbacks (e.g. the polar representation of the problem, with voltage
 magnitudes and angles). This cache allows to reduce the number of memory allocations to
 its minimum.
 Once a new variable $u$ passed to the evaluator
-a function `update!` is being called to update the cache,
-according to the model specified in the underlying `AbstractFormulation`.
+a function `ExaPF.update!` is being called to update the cache,
+according to the model specified in the underlying [`ExaPF.AbstractFormulation`](@ref).
 Denoting by `nlp` an instance of AbstractNLPEvaluator, the cache is
 updated via
 ```julia-repl
@@ -64,13 +64,13 @@ julia> ExaPF.constraint!(nlp, cons, u)
 ## A journey to the reduced space with the ReducedSpaceEvaluator
 
 When we aim at optimizing the problem directly in the powerflow
-manifold, the `ReducedSpaceEvaluator` is our workhorse.
+manifold, the [`ExaPF.ReducedSpaceEvaluator`](@ref) is our workhorse.
 We recall that the powerflow manifold is defined implicitly by the
 powerflow equations:
 ```math
     g(x(u), u) = 0.
 ```
-By design, the `ReducedSpaceEvaluator` works in the reduced
+By design, the [`ExaPF.ReducedSpaceEvaluator`](@ref) works in the reduced
 space $(x(u), u)$. Hence, the reduced optimization problem writes out
 ```math
 \begin{aligned}
@@ -88,7 +88,7 @@ This formulation comes with two advantages:
 ### Playing with the ReducedSpaceEvaluator
 
 #### Constructor
-To create a `ReducedSpaceEvaluator`, we just need a polar formulation
+To create a [`ExaPF.ReducedSpaceEvaluator`](@ref), we just need a polar formulation
 `polar::PolarForm`:
 ```julia-repl
 julia> nlp = ExaPF.ReducedSpaceEvaluator(polar)
@@ -116,8 +116,8 @@ Let's describe the output of the last command.
 * `device: KernelAbstractions.CPU()`: the evaluator is instantiated on the CPU ;
 * `#vars: 5`: it has 5 optimization variables ;
 * `#cons: 10`: and 10 inequality constraints ;
-* `constraints:` by default, `nlp` comes with three inequality constraints: `voltage_magnitude_constraints` (specifying the bounds $x_L \leq x(u) \leq x_U$ on the state $x$), `active_power_constraints` and `reactive_power_constraints` (bounding the active and reactive power of the generators) ;
-* `linear solver: ExaPF.LinearSolvers.DirectSolver()`: to solve the linear systems, the evaluator uses a direct linear algebra solver.
+* `constraints`: by default, `nlp` comes with three inequality constraints: `voltage_magnitude_constraints` (specifying the bounds $x_L \leq x(u) \leq x_U$ on the state $x$), `active_power_constraints` and `reactive_power_constraints` (bounding the active and reactive power of the generators) ;
+* `linear solver`: [`ExaPF.LinearSolvers.DirectSolver`](@ref): to solve the linear systems, the evaluator uses a direct linear algebra solver.
 
 Of course, these settings are only specified by default. The user is free
 to choose the parameters she wants. For instance,
@@ -140,7 +140,7 @@ to choose the parameters she wants. For instance,
 To juggle between the mathematical description (characterized
 by a state $x$ and a control $u$) and the physical description (characterized
 by the voltage and power injection at each bus), the evaluator `nlp`
-stores internally a cache `nlp.buffer`, with type `AbstractNetworkBuffer`.
+stores internally a cache `nlp.buffer`, with type `ExaPF.AbstractNetworkBuffer`.
 ```julia-repl
 julia> buffer = get(nlp, ExaPF.PhysicalState())
 ```
@@ -218,7 +218,7 @@ all the different callbacks, independently of one other.
 ## Passing the problem to an optimization solver with MathOptInterface
 
 `ExaPF.jl` provides a utility to pass the non-linear structure
-specified by a `AbstractNLPEvaluator` to a `MathOptInterface` (MOI)
+specified by a [`ExaPF.AbstractNLPEvaluator`](@ref) to a `MathOptInterface` (MOI)
 optimization problem. That allows to solve the corresponding
 optimal power flow problem using any non-linear optimization solver compatible
 with MOI.

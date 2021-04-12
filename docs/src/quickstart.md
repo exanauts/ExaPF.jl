@@ -3,7 +3,7 @@
 This page introduces the first steps to set up `ExaPF.jl`.
 We show how to load a power network instance and how to solve
 the power flow equations both on the CPU and on the GPU.
-The full script is implemented in [this file](https://github.com/exanauts/ExaPF.jl/tree/master/test/quickstart.jl)
+The full script is implemented in [test/quickstart.jl](https://github.com/exanauts/ExaPF.jl/tree/master/test/quickstart.jl)
 
 We start by importing CUDA and KernelAbstractions:
 ```julia
@@ -54,7 +54,7 @@ In what follows, we detail step by step the detailed procedure to solve
 the powerflow equations.
 
 ### How to load a MATPOWER instance as a PowerNetwork object?
-We start by importing a MATPOWER instance to a `PowerNetwork` object:
+We start by importing a MATPOWER instance to a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object:
 ```julia
 pf = PS.PowerNetwork(pglib_instance)
 ```
@@ -66,12 +66,12 @@ nbus = PS.get(pf, PS.NumberOfBuses())
 pv_indexes = PS.get(pf, PS.PVIndexes())
 ```
 
-However, a `PowerNetwork` object stores only the **physical** attributes
+However, a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object stores only the **physical** attributes
 of the network, independently of the mathematical formulations
 we could use to model the network. To choose a particular formulation,
-we need to pass the object `pf` to an `AbstractFormulation` layer.
+we need to pass the object `pf` to an [`ExaPF.AbstractFormulation`](@ref) layer.
 Currently, the only layer implemented is the polar formulation,
-with the `PolarForm` structure. In the future, other formulations
+with the [`ExaPF.PolarForm`](@ref) structure. In the future, other formulations
 (e.g. `RectangularForm`) may be implemented as well.
 
 
@@ -105,9 +105,9 @@ as a model:
 polar = ExaPF.PolarForm(pf, CPU())
 
 ```
-Note that the constructor `PolarForm` takes as input a `PowerNetwork` object
+Note that the constructor [`ExaPF.PolarForm`](@ref) takes as input a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object
 and a `KernelAbstractions.jl` device (here set to `CPU()` by default). We
-will explain in the next section how to load a `PolarForm` object on
+will explain in the next section how to load a [`ExaPF.PolarForm`](@ref) object on
 the GPU with the help of a `CUDADevice()`.
 
 The Newton-Raphson solves the equation $g(x, u) = 0$ in an iterative fashion.
@@ -180,7 +180,7 @@ avoid any unnecessary memory allocations.
 
 Now, how could we deport the resolution on the GPU?
 The procedure looks exactly the same. It suffices to initiate
-a new `PolarForm` object, but on the GPU:
+a new [`ExaPF.PolarForm`](@ref) object, but on the GPU:
 ```julia
 polar_gpu = ExaPF.PolarForm(pf, CUDADevice())
 
