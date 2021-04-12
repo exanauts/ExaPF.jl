@@ -1,17 +1,11 @@
 is_constraint(::typeof(power_balance)) = true
 
 function _power_balance!(
-    F, v_m, v_a, pinj, qinj, ybus_re, ybus_im, pv, pq, ref, nbus,
+    F, v_m, v_a, pinj, qinj, ybus_re, ybus_im, pv, pq, ref, nbus, device
 )
     npv = length(pv)
     npq = length(pq)
-    if isa(F, Array)
-        device = KA.CPU()
-        kernel! = residual_kernel!(device)
-    else
-        device = KA.CUDADevice()
-        kernel! = residual_kernel!(device)
-    end
+    kernel! = residual_kernel!(device)
     ev = kernel!(
         F, v_m, v_a,
         ybus_re.colptr, ybus_re.rowval,
@@ -34,7 +28,7 @@ function power_balance(polar::PolarForm, cons, vm, va, pbus, qbus)
     _power_balance!(
         cons, vm, va, pbus, qbus,
         ybus_re, ybus_im,
-        pv, pq, ref, nbus
+        pv, pq, ref, nbus, polar.device
     )
 end
 
@@ -86,6 +80,7 @@ function adjoint!(
         pbm.intermediate.∂edge_va_fr,
         pbm.intermediate.∂edge_va_to,
         pv, pq, nbus,
+        polar.device
     )
 end
 

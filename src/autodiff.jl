@@ -184,26 +184,15 @@ Calling the seeding kernel.
 Seeding is parallelized over the `ncolor` number of duals.
 
 """
-function seed!(t1sseeds, varx, t1svarx)
-    if isa(t1sseeds, Vector)
-        device = CPU()
-        kernel! = seed_kernel!(CPU())
-    else
-        device = CUDADevice()
-        kernel! = seed_kernel!(CUDADevice())
-    end
+function seed!(t1sseeds, varx, t1svarx, device)
+    kernel! = seed_kernel!(device)
     ev = kernel!(t1svarx, varx, t1sseeds, ndrange=length(t1svarx), dependencies=Event(device))
     wait(ev)
 end
 
 
 # Get partials
-@kernel function getpartials_kernel_cpu!(compressedJ, t1sF)
-    i = @index(Global, Linear)
-    compressedJ[:, i] .= ForwardDiff.partials.(t1sF[i]).values
-end
-
-@kernel function getpartials_kernel_gpu!(compressedJ, t1sF)
+@kernel function getpartials_kernel!(compressedJ, t1sF)
     i = @index(Global, Linear)
     for j in eachindex(ForwardDiff.partials.(t1sF[i]).values)
         @inbounds compressedJ[j, i] = ForwardDiff.partials.(t1sF[i]).values[j]
@@ -224,26 +213,14 @@ Extract the partials from the AutoDiff dual type on the target
 device and put it in the compressed Jacobian `compressedJ`.
 
 """
-function getpartials_kernel!(hv::AbstractVector, adj_t1sx, map)
-    if isa(hv, Array)
-        device = CPU()
-        kernel! = getpartials_hv_kernel!(CPU())
-    else
-        device = CUDADevice()
-        kernel! = getpartials_hv_kernel!(CUDADevice())
-    end
+function getpartials_kernel!(hv::AbstractVector, adj_t1sx, map, device)
+    kernel! = getpartials_hv_kernel!(device)
     ev = kernel!(hv, adj_t1sx, map, ndrange=length(hv), dependencies=Event(device))
     wait(ev)
 end
 
-function getpartials_kernel!(compressedJ::AbstractMatrix, t1sF)
-    if isa(compressedJ, Array)
-        device = CPU()
-        kernel! = getpartials_kernel_cpu!(CPU())
-    else
-        device = CUDADevice()
-        kernel! = getpartials_kernel_gpu!(CUDADevice())
-    end
+function getpartials_kernel!(compressedJ::AbstractMatrix, t1sF, device)
+    kernel! = getpartials_kernel!(device)
     ev = kernel!(compressedJ, t1sF, ndrange=length(t1sF), dependencies=Event(device))
     wait(ev)
 end
@@ -271,13 +248,15 @@ end
 Uncompress the compressed Jacobian matrix from `compressedJ`
 to sparse CSC (on the CPU) or CSR (on the GPU).
 """
-function uncompress_kernel!(J, compressedJ, coloring)
-    if isa(J, SparseArrays.SparseMatrixCSC)
-        kernel! = uncompress_kernel_cpu!(CPU())
-        ev = kernel!(J.colptr, J.rowval, J.nzval, compressedJ, coloring, ndrange=size(J,2), dependencies=Event(CPU()))
+function uncompress_kernel!(J, compressedJ, coloring, device)
+    if isa(device, CPU)
+        kernel! = uncompress_kernel_cpu!(device)
+        ev = kernel!(J.colptr, J.rowval, J.nzval, compressedJ, coloring, ndrange=size(J,2), dependencies=Event(device))
+    elseif isa(device, GPU)
+        kernel! = uncompress_kernel_gpu!(device)
+        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, compressedJ, coloring, ndrange=size(J,1), dependencies=Event(device))
     else
-        kernel! = uncompress_kernel_gpu!(CUDADevice())
-        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, compressedJ, coloring, ndrange=size(J,1), dependencies=Event(CUDADevice()))
+        error("Unknown device $device")
     end
     wait(ev)
 end

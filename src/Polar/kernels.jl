@@ -46,37 +46,6 @@ KA.@kernel function residual_kernel!(
 end
 
 """
-    function residual_polar!(F, vm, va, pinj, qload,
-                         ybus_re, ybus_im,
-                         pv, pq, ref, nbus)
-
-The wrapper for the powerflow residual calling the CPU and GPU kernels.
-"""
-function residual_polar!(
-    F, vm, va, pinj, qload,
-    ybus_re, ybus_im, pv, pq, ref, nbus
-)
-    npv = length(pv)
-    npq = length(pq)
-    if isa(F, Array)
-        device = KA.CPU()
-        kernel! = residual_kernel!(device)
-    else
-        device = KA.CUDADevice()
-        kernel! = residual_kernel!(device)
-    end
-    ev = kernel!(
-        F, vm, va,
-        ybus_re.colptr, ybus_re.rowval,
-        ybus_re.nzval, ybus_im.nzval,
-        pinj, qload, pv, pq, nbus,
-        ndrange=npv+npq,
-        dependencies=Event(device)
-    )
-    wait(ev)
-end
-
-"""
     function adj_residual_edge_kernel!(
         F, adj_F, vm, adj_vm, va, adj_va,
         colptr, rowval,
@@ -232,13 +201,8 @@ function adj_residual_polar!(
     ybus_re, ybus_im, transpose_perm,
     pinj, adj_pinj, qinj,
     edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
-    pv, pq, nbus
-) where {T}
-    if isa(F, CUDA.CuVector)
-        device = KA.CUDADevice()
-    else
-        device = KA.CPU()
-    end
+    pv, pq, nbus, device
+)
     npv = length(pv)
     npq = length(pq)
     nvbus = length(vm)
@@ -642,13 +606,8 @@ function adj_reactive_power!(
     pinj, adj_pinj,
     edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
     reactive_load,
-    pv, pq, ref, pv_to_gen, ref_to_gen, nbus
-) where {T}
-    if isa(F, CUDA.CuVector)
-        device = KA.CUDADevice()
-    else
-        device = KA.CPU()
-    end
+    pv, pq, ref, pv_to_gen, ref_to_gen, nbus, device
+)
     npv = length(pv)
     npq = length(pq)
     nvbus = length(vm)

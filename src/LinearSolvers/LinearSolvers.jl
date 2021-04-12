@@ -44,8 +44,7 @@ abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
 """
     list_solvers(::KernelAbstractions.Device)
 
-List linear solvers available on current device. Currently,
-only `CPU()` and `CUDADevice()` are supported.
+List linear solvers available on current device.
 
 """
 function list_solvers end
@@ -137,8 +136,8 @@ function ldiv!(::DirectSolver{Nothing},
 end
 get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
 
-function update!(solver::AbstractIterativeLinearSolver, J)
-    update(J, solver.precond)
+function update_preconditioner!(solver::AbstractIterativeLinearSolver, J, device)
+    update(solver.precond, J, device)
 end
 
 """
@@ -270,10 +269,9 @@ List all linear solvers available solving the power flow on the CPU.
 list_solvers(::KA.CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
 
 """
-    list_solvers(::KA.CUDADevice)
+    list_solvers(::KA.GPU)
 
 List all linear solvers available solving the power flow on an NVIDIA GPU.
 """
-list_solvers(::KA.CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
-
+list_solvers(::KA.GPU) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
 end

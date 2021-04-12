@@ -80,7 +80,7 @@ function powerflow(
 
         # Find descent direction
         if isa(linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
-            @timeit TIMER "Preconditioner" LinearSolvers.update!(linear_solver, J)
+            @timeit TIMER "Preconditioner" LinearSolvers.update_preconditioner!(linear_solver, J, polar.device)
         end
         @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(linear_solver, dx, J, F)
         push!(linsol_iters, n_iters)
