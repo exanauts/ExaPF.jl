@@ -12,7 +12,7 @@ Once a new point `u` is passed to the evaluator,
 the user needs to call the method `update!` to find the corresponding
 state ``x(u)`` satisfying the balance equation ``g(x(u), u) = 0``.
 
-Taking as input a `PolarForm` structure, the reduced evaluator
+Taking as input a [`PolarForm`](@ref) structure, the reduced evaluator
 builds the bounds corresponding to the control `u`,
 The reduced evaluator could be instantiated on the host memory, or on a specific device
 (currently, only CUDA is supported).
@@ -51,16 +51,14 @@ A ReducedSpaceEvaluator object
 
 ## Note
 Mathematically, we set apart the state ``x`` from the control ``u``,
-and use a third variable ``y`` --- the by-product --- to store the remaining
+and use a third variable ``y`` --- the by-product --- to denote the remaining
 values of the network.
 In the implementation of `ReducedSpaceEvaluator`,
 we only deal with a control `u` and an attribute `buffer`,
 storing all the physical values needed to describe the network.
 The attribute `buffer` stores the values of the control `u`, the state `x`
 and the by-product `y`. Each time we are calling the method `update!`,
-the values of the control are copied into the buffer. Then,
-the algorithm uses only the physical representation of the network, more
-convenient.
+the values of the control are copied into the buffer.
 
 """
 mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <: AbstractNLPEvaluator

@@ -139,20 +139,28 @@ function initial end
 
 """
     powerflow(form::AbstractFormulation,
+              algo::AbstractNonLinearSolver;
+              kwargs...)
+
+    powerflow(form::AbstractFormulation,
               jacobian::AutoDiff.Jacobian,
               buffer::AbstractNetworkBuffer,
               algo::AbstractNonLinearSolver;
               kwargs...) where VT <: AbstractVector
 
 Solve the power flow equations ``g(x, u) = 0`` w.r.t. the state ``x``,
-using the algorithm specified in `algo` (Newton-Raphson by default).
-The powerflow equations are specified in the formulation `form`.
-The state ``x`` and control ``u`` are specified inside
+using the algorithm specified in `algo` ([`NewtonRaphson`](@ref) by default).
+The initial state ``x`` is specified inside
 `buffer`. The object `buffer` is modified inplace in the function.
 
 The algorithm stops when a tolerance `tol` or a maximum number of
 iterations `maxiter` is reached (these parameters being specified
-in the argument `algo`).
+in the object `algo`).
+
+## Notes
+If only the arguments `form` and `algo` are specified to the function,
+then the Jacobian `jacobian` and the cache `buffer` are inferred
+from the object `form`.
 
 ## Arguments
 
@@ -275,7 +283,7 @@ function size_constraint end
     adjoint!(form::AbstractFormulation, pbm::AutoDiff.TapeMemory, adj_h, h, buffer)
 
 Return the adjoint w.r.t. the variables of the network (voltage magnitudes
-and angles, power injection) for the constraint stored inside the `TapeMemory`
+and angles, power injection) for the constraint stored inside the [`AutoDiff.TapeMemory`](@ref)
 object `pbm`. The results are stored directly inside the stack stored
 inside `pbm`.
 """
@@ -286,7 +294,7 @@ function adjoint! end
 
 Return the two transpose-Jacobian vector product ``(Jᵤ^⊤ v, Jₓ^⊤ v)``  w.r.t. the
 control ``u`` and the state ``x``. Store the two resulting vectors directly inside
-`pbm`.
+the [`AutoDiff.TapeMemory`](@ref) `pbm`.
 
 """
 function jacobian_transpose_product! end
@@ -306,7 +314,7 @@ function matpower_jacobian end
 
 For constraint `cons_func`, return the three matrices ``(λ^⊤ H_{xx},
 λ^⊤ H_{xu},λ^⊤ H_{uu})`` storing the product of the Hessian tensor ``H`` with the vector ``\lambda``.
-The expression of the Hessian matrices are given by MATPOWER.
+The expressions of the Hessian matrices are given by MATPOWER.
 
 """
 function matpower_hessian end

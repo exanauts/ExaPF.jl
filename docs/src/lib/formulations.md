@@ -8,6 +8,7 @@ CurrentModule = ExaPF
 
 ```@docs
 AbstractFormulation
+PolarForm
 
 ```
 

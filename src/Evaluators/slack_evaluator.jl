@@ -7,7 +7,7 @@ equality constrained problem, by introducing a set of slack
 variables.
 
 ### Description
-A `SlackEvaluator` takes as input an original `AbstractNLPEvaluator`,
+A `SlackEvaluator` takes as input an original [`AbstractNLPEvaluator`](@ref),
 subject to inequality constraints
 ```math
 \begin{aligned}

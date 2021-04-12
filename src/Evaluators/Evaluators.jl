@@ -3,7 +3,7 @@
     AbstractNLPEvaluator
 
 AbstractNLPEvaluator implements the bridge between the
-problem formulation (see `AbstractFormulation`) and the optimization
+problem formulation (see [`AbstractFormulation`](@ref)) and the optimization
 solver. Once the problem formulation bridged, the evaluator allows
 to evaluate:
 - the objective;
@@ -23,7 +23,7 @@ abstract type AbstractNLPAttribute end
     Variables <: AbstractNLPAttribute end
 
 Attribute corresponding to the optimization variables attached
-to a given `AbstractNLPEvaluator`.
+to a given [`AbstractNLPEvaluator`](@ref).
 """
 struct Variables <: AbstractNLPAttribute end
 
@@ -31,7 +31,7 @@ struct Variables <: AbstractNLPAttribute end
     Constraints <: AbstractNLPAttribute end
 
 Attribute corresponding to the constraints  attached
-to a given `AbstractNLPEvaluator`.
+to a given [`AbstractNLPEvaluator`](@ref).
 """
 struct Constraints <: AbstractNLPAttribute end
 
@@ -39,7 +39,7 @@ struct Constraints <: AbstractNLPAttribute end
     AutoDiffBackend <: AbstractNLPAttribute end
 
 Attribute corresponding to the autodiff backend used
-inside the `AbstractNLPEvaluator`.
+inside the [`AbstractNLPEvaluator`](@ref).
 """
 struct AutoDiffBackend <: AbstractNLPAttribute end
 
@@ -67,8 +67,10 @@ function objective end
     gradient!(nlp::AbstractNLPEvaluator, g, u)
 
 Evaluate the gradient of the objective, at given variable `u`.
-Store the result inplace in the vector `g`, which should
-have the same dimension as `u`.
+Store the result inplace in the vector `g`.
+
+## Note
+The vector `g` should have the same dimension as `u`.
 
 """
 function gradient! end
@@ -167,7 +169,10 @@ function hessian! end
 
 Evaluate the Hessian-vector product `∇²f(u) * v` of the objective
 evaluated at variable `u`.
-Store the result inplace, in the vector `hessvec` (with size `n`).
+Store the result inplace, in the vector `hessvec`.
+
+## Note
+The vector `hessprod` should have the same length as `u`.
 
 """
 function hessprod! end
