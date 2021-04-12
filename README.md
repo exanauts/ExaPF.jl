@@ -1,8 +1,6 @@
 # ExaPF
 
-| **Documentation**                       | **Build Status**                                              |
-|:---------------------------------------:|:-------------------------------------------------------------:|
-| [![][docs-latest-img]][docs-latest-url] | ![Run tests](https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master) |
+[![][docs-latest-img]][docs-latest-url] ![CI](https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master) 
 
 [docs-latest-img]: https://img.shields.io/badge/docs-latest-blue.svg
 [docs-latest-url]: https://exanauts.github.io/ExaPF.jl/
