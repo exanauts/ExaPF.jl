@@ -288,4 +288,50 @@ function Base.show(io::IO, jacobian::Jacobian)
     print(io, "Number of Jacobian colors: ", ncolor)
 end
 
+# BATCH AUTODIFF
+#
+@kernel function batch_seed_kernel!(
+    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, x,
+    seeds::AbstractArray{ForwardDiff.Partials{N, V}}
+) where {T,V,N}
+    i, j = @index(Global, NTuple)
+    duals[i, j] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i, j])
+end
+
+function batch_seed!(t1sseeds, varx, t1svarx)
+    if isa(t1sseeds, Matrix)
+        device = CPU()
+        kernel! = batch_seed_kernel!(CPU())
+    else
+        device = CUDADevice()
+        kernel! = batch_seed_kernel!(CUDADevice())
+    end
+    nvars = size(t1sseeds, 1)
+    nbatch = size(t1sseeds, 2)
+    ndrange = (nvars, nbatch)
+    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
+    wait(ev)
+end
+
+# Get partials for Hessian projection
+@kernel function batch_getpartials_hv_kernel!(hv, adj_t1sx, map)
+    i, j = @index(Global, NTuple)
+    hv[i, j] = ForwardDiff.partials(adj_t1sx[map[i], j]).values[1]
+end
+
+function batch_partials!(hv::AbstractMatrix, adj_t1sx, map)
+    if isa(hv, Matrix)
+        device = CPU()
+        kernel! = batch_getpartials_hv_kernel!(CPU())
+    else
+        device = CUDADevice()
+        kernel! = batch_getpartials_hv_kernel!(CUDADevice())
+    end
+    nvars = size(hv, 1)
+    nbatch = size(hv, 2)
+    ndrange = (nvars, nbatch)
+    ev = kernel!(hv, adj_t1sx, map, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
+    wait(ev)
+end
+
 end

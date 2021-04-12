@@ -155,7 +155,7 @@ function batch_adj_hessian_prod!(
 
     # Init seed
     batch_init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
-    BatchAutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx)
+    AutoDiff.batch_seed!(H.t1sseeds, H.varx, H.t1svarx)
 
     batch_adjoint!(
         polar, H.buffer,
@@ -165,7 +165,7 @@ function batch_adj_hessian_prod!(
         view(t1sx, 2*nbus+1:3*nbus, :), view(adj_t1sx, 2*nbus+1:3*nbus, :), # pinj
     )
 
-    BatchAutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map)
+    AutoDiff.batch_partials!(hv, adj_t1sx, H.map)
     return nothing
 end
 

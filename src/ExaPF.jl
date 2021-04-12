@@ -44,7 +44,6 @@ const PS = PowerSystem
 include("Polar/polar.jl")
 
 # Batch Autodiff
-include("batch_autodiff.jl")
 include("Polar/batch_kernel.jl")
 include("Polar/batch.jl")
 

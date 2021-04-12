@@ -59,44 +59,10 @@ const PS = PowerSystem
             cpu_ju = AutoDiff.Jacobian(cpu_polar, ExaPF.power_balance, Control())
             cpu_∂obj = ExaPF.AdjointStackObjective(cpu_polar)
 
-            ##################################################
-            # Step 1: computation of first-order adjoint
-            ##################################################
-            # conv = powerflow(polar, jx, cache, NewtonRaphson())
-            # cpu_conv = powerflow(cpu_polar, cpu_jx, cpu_cache, NewtonRaphson())
-            # ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
-            # ExaPF.update!(cpu_polar, PS.Generators(), PS.ActivePower(), cpu_cache)
-            # @test conv.has_converged
-            # @test cpu_conv.has_converged
-            # # No need to recompute ∇gₓ
-            # ∇gₓ = jx.J
-            # ∇gᵤ = AutoDiff.jacobian!(polar, ju, cache)
-            # # test jacobian wrt x
-            # ∇gᵥ = AutoDiff.jacobian!(polar, jx, cache)
-            # @test isequal(∇gₓ, ∇gᵥ)
-
-            # # Fetch values found by Newton-Raphson algorithm
-            # vm = cache.vmag
-            # va = cache.vang
-            # pg = cache.pg
-            # # State & Control
-            # x = [va[pv] ; va[pq] ; vm[pq]]
-            # u = [vm[ref]; vm[pv]]
-            # # Test with Matpower's Jacobian
-            # V = vm .* exp.(im * va)
             Ybus = pf.Ybus
-            # Jₓ = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
-            # @test isapprox(∇gₓ, Jₓ )
-            # # Hessian vector product
-            # ExaPF.gradient_objective!(polar, pbm, cache)
-            # ∇fₓ = ∂obj.∇fₓ
-            # ∇fᵤ = ∂obj.∇fᵤ
-            # λ  = -(Array(∇gₓ')) \ Array(∇fₓ)
-            # grad_adjoint = Array(∇fᵤ) + Array(∇gᵤ)' * λ
-            #
 
             ##################################################
-            # Step 2: computation of Hessian of powerflow g
+            # Computation of Hessian of powerflow g
             ##################################################
             λ = ones(nx)
             # Evaluate Hessian-vector product (full ∇²gₓₓ is a 3rd dimension tensor)
@@ -115,7 +81,7 @@ const PS = PowerSystem
             tgt = rand(nx + nu) |> T
             projp = zeros(nx + nu) |> T
             single_H = AutoDiff.Hessian(polar, ExaPF.power_balance)
-            @time AutoDiff.adj_hessian_prod!(polar, single_H, projp, cache, λ, tgt)
+            AutoDiff.adj_hessian_prod!(polar, single_H, projp, cache, λ, tgt)
 
             nbatch = 64
             batch_H = ExaPF.batch_hessian(polar, ExaPF.power_balance, nbatch)
@@ -129,8 +95,7 @@ const PS = PowerSystem
                 ∇²gλ.xx  ∇²gλ.xu' ;
                 ∇²gλ.xu  ∇²gλ.uu
             ]
-            @time ExaPF.batch_adj_hessian_prod!(polar, batch_H, bprojp, cache, λ, btgt)
-            @time ExaPF.batch_adj_hessian_prod!(polar, batch_H, bprojp, cache, λ, btgt)
+            ExaPF.batch_adj_hessian_prod!(polar, batch_H, bprojp, cache, λ, btgt)
             if !isa(device, CUDADevice)
                 for i in 1:nbatch
                     @test isapprox(bprojp[:, i], H * btgt[:, i])
