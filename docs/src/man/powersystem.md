@@ -41,19 +41,19 @@ where each bus $i$ has variables $p_i, q_i, v_i, \theta_i$ and the topology
 of the network is defined by a non-negative value of the admittance between
 two buses $i$ and $j$, $y_{ij} = g_{ij} + ib_{ij}$.
 
-## The PowerNetwork object
+## The PowerNetwork Object
 
-Currently we can create a PowerNetwork object by parsing a MATPOWER datafile.
+Currently we can create a PowerNetwork object by parsing a MATPOWER data file.
 
 ```julia-repl
 julia> ps = PowerSystem.PowerNetwork("data/case9.m")
 ```
-Apart of MATPOWER datafile, PSSE datafile are also supported:
+Apart of MATPOWER data file, PSSE data file are also supported:
 ```julia-repl
 julia> ps = PowerSystem.PowerNetwork("data/case14.raw")
 ```
 
-If we print the object, we will obtain bus information and initial voltage and power that we read from the datafile.
+If we print the object, we will obtain bus information, initial voltage, and power that we read from the data file.
 
 ```julia-repl
 julia> println(ps)
@@ -74,7 +74,7 @@ Power Network characteristics:
     9     1      1.000  0.00    -1.250  -0.500
 ```
 
-then, using multiple dispatch, we have defined a set of abstract datatypes and getter functions which allow us to retrieve information from the PowerNetwork object
+then, using multiple dispatch, we have defined a set of abstract data types and getter functions which allow us to retrieve information from the PowerNetwork object
 
 ```julia-repl
 julia> PowerSystem.get(ps, PowerSystem.NumberOfPQBuses())

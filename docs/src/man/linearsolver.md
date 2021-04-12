@@ -19,11 +19,12 @@ dx .= jacobian(x)\f(x)
 
 Our package supports the following linear solvers:
 
-* [`CUSOLVER`](https://docs.nvidia.com/cuda/cusolver/index.html) with `csrlsvqr` (GPU),
+* [`cuSOLVER`](https://docs.nvidia.com/cuda/cusolver/index.html) with `csrlsvqr` (GPU),
 * [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) with `dqgmres` and `bicgstab` (CPU/GPU),
 * [`IterativeSolvers.jl`](https://github.com/JuliaMath/IterativeSolvers.jl) with `bicgstab` (CPU),
 * UMFPACK through the default Julia `\` operator (CPU),
-* and a generic BiCGSTAB implementation [^Vorst1992] \(CPU/GPU\).
+* generic BiCGSTAB implementation [^Vorst1992] \(CPU/GPU\),
+* or any linear solver wrapped in `LinearAlgebra`.
 
 
 ## Preconditioning
@@ -34,11 +35,11 @@ systems. That's why this package comes with a block Jacobi preconditioner
 that is tailored towards GPUs and is proven to work well with power flow
 problems.
 
-The Jacobian is partitioned into a dense block diagonal structure, where each block is inverted to build our preconditioner `P`. For the partition we use `Metis.jl`.
+The Jacobian is partitioned into a dense block diagonal structure using `Metis.jl`, where each block is inverted to build our preconditioner `P`.
 
 ![Dense block Jacobi preconditioner \label{fig:preconditioner}](../figures/gpublocks.png)
 
-Compared to incomplete Cholesky and incomplete LU this preconditioner is easily portable to the GPU if the number of blocks is high enough. `ExaPF.jl` uses the batch BLAS calls from `CUBLAS` to invert the single blocks.
+Compared to incomplete Cholesky and incomplete LU this preconditioner is easily portable to the GPU if the number of blocks is high enough. `ExaPF.jl` uses the batch BLAS calls from `cuBLAS` to invert the single blocks.
 
 ```julia
 CUDA.@sync pivot, info = CUDA.CUBLAS.getrf_batched!(blocks, true)
