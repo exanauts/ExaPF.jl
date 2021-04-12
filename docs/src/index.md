@@ -1,9 +1,9 @@
 # ExaPF
 
-[ExaPF.jl](https://github.com/exanauts/ExaPF.jl) is a
+[`ExaPF.jl`](https://github.com/exanauts/ExaPF.jl) is a
 package to solve the power flow problem on upcoming exascale architectures. 
 On these architectures the computational performance can only be achieved through graphics processing units (GPUs) as these systems lack substantial computational performance through classical CPUs.
-`ExaPF.jl` aims to
+[`ExaPF.jl`](https://github.com/exanauts/ExaPF.jl) aims to
 provide the sensitivity information required for a reduced space optimization
 method, and enabling the computation of the optimal power flow problem (OPF)
 fully on GPUs. Reduced space methods enforce the constraints, represented here by
@@ -16,7 +16,7 @@ computational loop entirely on the GPU with no transfer from host to device.
 
 We leverage the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl) to make ExaPF portable across GPU architectures.
 [autodiff](man/autodiff.md) and [linear solver](man/linearsolver.md) illustrate
-the design overview of `ExaPF.jl` targeted for GPUs.
+the design overview of [`ExaPF.jl`](https://github.com/exanauts/ExaPF.jl) targeted for GPUs.
 
 The user API is separated into three layers:
 
