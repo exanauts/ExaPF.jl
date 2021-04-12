@@ -22,7 +22,7 @@ function AutoDiff.Jacobian(
     if isa(polar.device, CPU)
         SMT = SparseMatrixCSC{Float64,Int}
         A = Vector
-    elseif isa(polar.device, CUDADevice)
+    elseif isa(polar.device, GPU)
         SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
         A = CUDA.CuVector
     end
@@ -98,7 +98,7 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
         jac.t1sF .= 0.0
     end
 
-    AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx)
+    AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx, polar.device)
 
     if isa(type, State)
         jac.func(
@@ -120,8 +120,8 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
         )
     end
 
-    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF)
-    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring)
+    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, polar.device)
+    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, polar.device)
     return jac.J
 end
 
@@ -131,7 +131,7 @@ function AutoDiff.ConstantJacobian(polar::PolarForm, func::Function, variable::U
 
     if isa(polar.device, CPU)
         SMT = SparseMatrixCSC{Float64,Int}
-    elseif isa(polar.device, CUDADevice)
+    elseif isa(polar.device, GPU)
         SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
     end
 
@@ -142,7 +142,7 @@ function AutoDiff.ConstantJacobian(polar::PolarForm, func::Function, variable::U
     # Evaluate Jacobian with MATPOWER
     J = matpower_jacobian(polar, variable, func, V)
     # Move Jacobian to the GPU
-    if isa(polar.device, CUDADevice) && iszero(J)
+    if isa(polar.device, GPU) && iszero(J)
         # CUSPARSE does not support zero matrix. Return nothing instead.
         J = nothing
     else
@@ -161,7 +161,7 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
 
     if isa(polar.device, CPU)
         A = Vector
-    elseif isa(polar.device, CUDADevice)
+    elseif isa(polar.device, GPU)
         A = CUDA.CuVector
     end
 
@@ -233,7 +233,7 @@ function AutoDiff.adj_hessian_prod!(
 
     # Init seed
     _init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
-    AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx)
+    AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx, polar.device)
 
     adjoint!(
         polar, H.buffer,
@@ -243,7 +243,7 @@ function AutoDiff.adj_hessian_prod!(
         view(t1sx, 2*nbus+1:3*nbus), view(adj_t1sx, 2*nbus+1:3*nbus), # pinj
     )
 
-    AutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map)
+    AutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map, polar.device)
     return nothing
 end
 
@@ -338,7 +338,7 @@ end
 function ConstraintsJacobianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Function}) where {T, VI, VT, MT}
     if isa(polar.device, CPU)
         SpMT = SparseMatrixCSC{Float64, Int}
-    elseif isa(polar.device, CUDADevice)
+    elseif isa(polar.device, GPU)
         SpMT = CUSPARSE.CuSparseMatrixCSR{Float64}
     end
 

@@ -5,15 +5,9 @@ is_constraint(::typeof(reactive_power_constraints)) = true
 # g = [qg_gen]
 function _reactive_power_constraints(
     qg, v_m, v_a, pinj, qinj, qload,
-    ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus
+    ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, device
 )
-    if isa(qg, Array)
-        device = KA.CPU()
-        kernel! = reactive_power_kernel!(KA.CPU())
-    else
-        device = KA.CUDADevice()
-        kernel! = reactive_power_kernel!(KA.CUDADevice())
-    end
+    kernel! = reactive_power_kernel!(device)
     range_ = length(pv) + length(ref)
     ev = kernel!(
         qg,
@@ -46,7 +40,7 @@ function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     _reactive_power_constraints(
         cons, vm, va, pbus, qbus, polar.reactive_load,
-        ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus
+        ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, polar.device
     )
 end
 
@@ -93,6 +87,7 @@ function adjoint!(
         pbm.intermediate.∂edge_va_to,
         polar.reactive_load,
         pv, pq, ref, pv_to_gen, ref_to_gen, nbus,
+        polar.device
     )
 end
 

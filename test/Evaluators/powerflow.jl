@@ -1,4 +1,5 @@
 using CUDA
+using CUDAKernels
 using ExaPF
 using KernelAbstractions
 using Test

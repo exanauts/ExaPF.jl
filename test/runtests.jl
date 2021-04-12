@@ -1,13 +1,14 @@
 using CUDA
 using CUDA.CUSPARSE
+using CUDAKernels
 using ExaPF
+using FiniteDiff
 using KernelAbstractions
 using LinearAlgebra
 using Random
 using SparseArrays
 using Test
 using TimerOutputs
-using FiniteDiff
 
 import ExaPF: AutoDiff
 Random.seed!(2713)

@@ -1,13 +1,14 @@
 using CUDA
 using CUDA.CUSPARSE
+using CUDAKernels
 using ExaPF
 using KernelAbstractions
+using Krylov
 using LinearAlgebra
 using Random
 using SparseArrays
 using Test
 using TimerOutputs
-using Krylov
 
 const LS = ExaPF.LinearSolvers
 
@@ -24,7 +25,7 @@ const LS = ExaPF.LinearSolvers
     spA = sparse(A)
     nblocks = 2
     precond = LS.BlockJacobiPreconditioner(spA, nblocks, CPU())
-    LS.update(spA, precond)
+    LS.update(precond, spA, CPU())
     @testset "BICGSTAB" begin
         LS.ldiv!(LS.BICGSTAB(precond), x, spA, b)
         r = b - spA * x
@@ -36,7 +37,7 @@ const LS = ExaPF.LinearSolvers
         cux = CuVector(x)
         cub = CuVector(b)
         cuprecond = LS.BlockJacobiPreconditioner(cuspA, nblocks, CUDADevice())
-        LS.update(cuspA, cuprecond)
+        LS.update(cuprecond, cuspA, CUDADevice())
         @testset "BICGSTAB" begin
             LS.ldiv!(LS.BICGSTAB(precond), cux, cuspA, cub)
             cur = cub - cuspA * cux
@@ -86,7 +87,7 @@ end
         # First test the custom implementation of BICGSTAB
         @testset "BICGSTAB" begin
             # Need to update preconditioner before resolution
-            LS.update(As, precond)
+            LS.update(precond, As, device)
             fill!(x0, 0.0)
             n_iters = LS.ldiv!(LS.BICGSTAB(precond), x0, As, bs)
             @test n_iters <= m

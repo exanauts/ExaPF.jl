@@ -2,7 +2,7 @@
 abstract type AbstractArchitecture end
 
 array_type(::KA.CPU) = Array
-array_type(::KA.CUDADevice) = CUDA.CuArray
+array_type(::KA.GPU) = CUDA.CuArray
 
 # norm
 xnorm(x::AbstractVector) = norm(x, 2)
