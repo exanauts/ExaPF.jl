@@ -350,7 +350,10 @@ function _update_full_jacobian_constraints!(nlp)
 end
 
 # Works only on the CPU!
-function jacobian!(nlp::ReducedSpaceEvaluator, jac, u)
+function jacobian!(nlp::ReducedSpaceEvaluator, J, u)
+    m, n = n_constraints(nlp), n_variables(nlp)
+    jac = reshape(J, m, n)
+
     _update_full_jacobian_constraints!(nlp)
 
     ∇cons = nlp.constraint_jacobians

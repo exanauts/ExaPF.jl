@@ -91,7 +91,7 @@ const LS = ExaPF.LinearSolvers
         ExaPF.init_buffer!(polar_gpu, physical_state_gpu)
 
         linear_solver = ExaPF.KrylovBICGSTAB(precond)
-        pf_algo = NewtonRaphson(; verbose=1, tol=1e-7)
+        pf_algo = NewtonRaphson(; verbose=0, tol=1e-7)
         convergence = ExaPF.powerflow(
             polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
             linear_solver=linear_solver

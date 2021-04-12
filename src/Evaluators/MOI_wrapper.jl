@@ -69,9 +69,7 @@ end
 function MOI.eval_constraint_jacobian(ev::MOIEvaluator, jac, x)
     _update!(ev, x)
     fill!(jac, 0)
-    m, n = n_constraints(ev.nlp), n_variables(ev.nlp)
-    J = reshape(jac, m, n) # reshape dense Jacobian
-    jacobian!(ev.nlp, J, x)
+    jacobian!(ev.nlp, jac, x)
 end
 
 function MOI.eval_hessian_lagrangian(ev::MOIEvaluator, hess, x, σ, μ)

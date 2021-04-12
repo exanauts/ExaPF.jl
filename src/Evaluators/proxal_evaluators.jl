@@ -269,8 +269,11 @@ function jacobian_structure!(nlp::ProxALEvaluator, rows, cols)
 end
 
 function jacobian!(nlp::ProxALEvaluator, jac, w)
+    m = n_constraints(nlp)
+    nnj = length(jac)
     u = @view w[1:nlp.nu]
-    Jᵤ = @view jac[:, 1:nlp.nu]
+    J = reshape(jac, m, div(nnj, m))
+    Jᵤ = @view J[:, 1:nlp.nu]
     jacobian!(nlp.inner, Jᵤ, u)
 end
 
