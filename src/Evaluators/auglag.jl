@@ -11,7 +11,7 @@ Augmented-Lagrangian evaluator.
 
 ### Description
 
-Takes as input any `AbstractNLPEvaluator` encoding a non-linear problem
+Takes as input any [`AbstractNLPEvaluator`](@ref) encoding a non-linear problem
 ```math
 \begin{aligned}
        \min_u \quad & f(u)\\

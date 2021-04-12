@@ -241,7 +241,7 @@ end
     KrylovBICGSTAB <: AbstractIterativeLinearSolver
     KrylovBICGSTAB(precond; verbose=0, rtol=1e-10, atol=1e-10)
 
-Wrap `Krylov.jl` BICGSTAB algorithm to solve iteratively the linear system
+Wrap `Krylov.jl`'s BICGSTAB algorithm to solve iteratively the linear system
 ``A x = y``.
 """
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver

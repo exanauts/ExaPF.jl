@@ -4,6 +4,17 @@
 #
 include("caches.jl")
 
+"""
+    PolarForm{T, IT, VT, MT}
+
+Takes as input a [`PS.PowerNetwork`](@ref) network and
+implement the polar formulation model associated to this network.
+The structure `PolarForm` stores the topology of the network, as
+well as the complete indexing used in the polar formulation.
+
+A `PolarForm` structure can be instantiated both on the host `CPU()`
+or directly on the device `CUDADevice()`.
+"""
 struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
     network::PS.PowerNetwork
     device::KA.Device
