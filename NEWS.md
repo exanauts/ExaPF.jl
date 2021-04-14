@@ -1,10 +1,8 @@
 ExaPF release notes
 ==================
 
-Version 0.5.0 (XXX)
------------------------------------
-
-## PowerSystem
+Version 0.5.0 (April 14, 2021)
+------------------------------
 
 ## AutoDiff
 
@@ -17,10 +15,10 @@ Version 0.5.0 (XXX)
 ## PolarForm
 
 - API changes
-  * Add a new `NewtonRaphsonSolver` object, storing all parameters associated with the Newton-Raphson algorithm. (#88)
+  * Add a new `NewtonRaphson` object, storing all parameters associated with the Newton-Raphson algorithm. (#88)
     The signature of the powerflow solver `ExaPF.powerflow` becomes:
     ```julia
-    algo = ExaPF.NewtonRaphsonSolver(tol=1e-10, verbose=1)
+    algo = ExaPF.NewtonRaphson(tol=1e-10, verbose=1)
     ExaPF.powerflow(polar, jacobian_autodiff, buffer, algo)
     ```
     instead of
@@ -83,7 +81,7 @@ Version 0.5.0 (XXX)
     to
     ```julia
     function ReducedSpaceEvaluator(
-        model, x, u;
+        model;
         constraints=Function[voltage_magnitude_constraints, active_power_constraints, reactive_power_constraints],
         linear_solver=DirectSolver(),
         powerflow_solver=NewtonRaphson(tol=1e-12),
@@ -136,11 +134,15 @@ Version 0.5.0 (XXX)
       ├── powersystem.jl
       └── runtests.jl
   ```
-* Update the documentation (#101)
+* Update the documentation (#101 #134 #149)
+* Update the README.md to include a quickstart guide
+* Update CI to use Julia 1.6 by default
 * Update `Krylov.jl` to version `0.6.0`. (#78)
+* Update `KernelAbstractions.jl` to version `0.5`.
 * Update benchmark script
 * Deprecated scripts have been removed. (#87)
 * Fix typing of attributes in `BlockJacobiPreconditioner`
+* Fix non-deterministic bug issued by a wrong initilization of KA kernels (#145)
 
 
 Version 0.4.0 (December 4, 2020)
