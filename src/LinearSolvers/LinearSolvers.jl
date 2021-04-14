@@ -262,8 +262,18 @@ function ldiv!(solver::KrylovBICGSTAB,
     return length(status.residuals)
 end
 
+"""
+    list_solvers(::KA.CPU)
 
+List all linear solvers available solving the power flow on the CPU.
+"""
 list_solvers(::KA.CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
+
+"""
+    list_solvers(::KA.CUDADevice)
+
+List all linear solvers available solving the power flow on an NVIDIA GPU.
+"""
 list_solvers(::KA.CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
 
 end

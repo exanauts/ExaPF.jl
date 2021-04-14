@@ -40,6 +40,7 @@ Depth=1
 ```@contents
 Pages = [
     "man/autodiff.md",
+    "man/benchmark.md",
     "man/linearsolver.md",
     "man/powersystem.md",
     "man/formulations.md",
