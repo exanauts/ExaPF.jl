@@ -102,7 +102,7 @@ DirectSolver() = DirectSolver(nothing)
 DirectSolver(precond::AbstractPreconditioner) = DirectSolver(nothing)
 
 # Reuse factorization in update
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Vector, J::AbstractMatrix, x::Vector)
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
     lu!(s.factorization, J) # Update factorization inplace
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
