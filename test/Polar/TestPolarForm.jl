@@ -20,6 +20,7 @@ include("api.jl")
 include("autodiff.jl")
 include("gradient.jl")
 include("hessian.jl")
+include("batch.jl")
 
 function runtests(datafile, device, AT)
     pf = PS.PowerNetwork(datafile)
@@ -46,6 +47,11 @@ function runtests(datafile, device, AT)
     @testset "PolarForm Hessians" begin
         test_hessian_with_matpower(polar, device, AT)
         test_hessian_with_finitediff(polar, device, AT)
+    end
+
+    @testset "Batch algorithms" begin
+        test_batch_powerflow(polar, device, AT)
+        test_batch_hessian(polar, device, AT)
     end
 end
 

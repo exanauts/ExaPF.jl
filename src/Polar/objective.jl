@@ -30,7 +30,7 @@ function adjoint!(
         ∂pinj,
         index_pv, index_ref, pv2gen, ref2gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
-        ndrange=ngen,
+        ndrange=(ngen, size(∂pg, 2)),
         dependencies=Event(polar.device)
     )
     wait(ev)
