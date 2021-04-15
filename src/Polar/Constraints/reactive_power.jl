@@ -9,13 +9,14 @@ function _reactive_power_constraints(
 )
     kernel! = reactive_power_kernel!(device)
     range_ = length(pv) + length(ref)
+    ndrange = (length(pv) + length(ref), size(qg, 2))
     ev = kernel!(
         qg,
         v_m, v_a, pinj,
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, qload,
-        ndrange=range_,
+        ndrange=ndrange,
         dependencies=Event(device)
     )
     wait(ev)

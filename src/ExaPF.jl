@@ -39,13 +39,10 @@ include("PowerSystem/PowerSystem.jl")
 using .PowerSystem
 
 const PS = PowerSystem
+const LS = LinearSolvers
 
 # Polar formulation
 include("Polar/polar.jl")
-
-# Batch Autodiff
-include("Polar/batch_kernel.jl")
-include("Polar/batch.jl")
 
 # Evaluators
 include("Evaluators/Evaluators.jl")

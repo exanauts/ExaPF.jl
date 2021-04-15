@@ -44,6 +44,7 @@ include("derivatives.jl")
 include("Constraints/constraints.jl")
 include("powerflow.jl")
 include("objective.jl")
+include("batch.jl")
 
 function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     if isa(device, KA.CPU)

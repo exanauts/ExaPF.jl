@@ -6,12 +6,13 @@ function _power_balance!(
     npv = length(pv)
     npq = length(pq)
     kernel! = residual_kernel!(device)
+    ndrange = (npv+npq, size(F, 2))
     ev = kernel!(
         F, v_m, v_a,
         ybus_re.colptr, ybus_re.rowval,
         ybus_re.nzval, ybus_im.nzval,
         pinj, qinj, pv, pq, nbus,
-        ndrange=npv+npq,
+        ndrange=ndrange,
         dependencies=Event(device)
     )
     wait(ev)

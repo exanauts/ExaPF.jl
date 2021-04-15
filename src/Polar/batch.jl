@@ -20,7 +20,7 @@ function batch_adjoint!(
     fill!(pbm.intermediate.∂edge_va_fr , 0.0)
     fill!(pbm.intermediate.∂edge_va_to , 0.0)
 
-    batch_adj_residual_polar!(
+    adj_residual_polar!(
         cons, ∂cons,
         vm, ∂vm,
         va, ∂va,
@@ -30,17 +30,17 @@ function batch_adjoint!(
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,
         pbm.intermediate.∂edge_va_to,
-        pv, pq, nbus,
+        pv, pq, nbus, polar.device
     )
 end
 
-function batch_hessian(polar::PolarForm{T, VI, VT, MT}, func, nbatch) where {T, VI, VT, MT}
+function BatchHessian(polar::PolarForm{T, VI, VT, MT}, func, nbatch) where {T, VI, VT, MT}
     @assert is_constraint(func)
 
     if isa(polar.device, CPU)
         A = Vector
         MMT = Matrix
-    elseif isa(polar.device, CUDADevice)
+    elseif isa(polar.device, GPU)
         A = CUDA.CuVector
         MMT = CUDA.CuMatrix
     end
@@ -72,6 +72,44 @@ function batch_hessian(polar::PolarForm{T, VI, VT, MT}, func, nbatch) where {T, 
     )
 end
 
+# Batch buffers
+function batch_buffer(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI, VT, MT}
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    nstates = get(polar, NumberOfState())
+    gen2bus = polar.indexing.index_generators
+    buffer =  PolarNetworkState{VI,MT}(
+        MT(undef, nbus, nbatch),
+        MT(undef, nbus, nbatch),
+        MT(undef, nbus, nbatch),
+        MT(undef, nbus, nbatch),
+        MT(undef, ngen, nbatch),
+        MT(undef, ngen, nbatch),
+        MT(undef, nstates, nbatch),
+        MT(undef, nstates, nbatch),
+        gen2bus,
+    )
+
+    # Init
+    pbus = real.(polar.network.sbus)
+    qbus = imag.(polar.network.sbus)
+    vmag = abs.(polar.network.vbus)
+    vang = angle.(polar.network.vbus)
+    pg = get(polar.network, PS.ActivePower())
+    qg = get(polar.network, PS.ReactivePower())
+
+    for i in 1:nbatch
+        copyto!(buffer.vmag, nbus * (i-1) + 1, vmag, 1, nbus)
+        copyto!(buffer.vang, nbus * (i-1) + 1, vang, 1, nbus)
+        copyto!(buffer.pinj, nbus * (i-1) + 1, pbus, 1, nbus)
+        copyto!(buffer.qinj, nbus * (i-1) + 1, qbus, 1, nbus)
+        copyto!(buffer.pg,   ngen * (i-1) + 1,   pg, 1, ngen)
+        copyto!(buffer.qg,   ngen * (i-1) + 1,   qg, 1, ngen)
+    end
+
+    return buffer
+end
+
 function batch_stack(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI, VT, MT}
     nbus = get(polar, PS.NumberOfBuses())
     return AdjointPolar{MT}(
@@ -97,27 +135,6 @@ function batch_tape(
     return AutoDiff.TapeMemory(func, nothing, intermediate)
 end
 
-function batch_init_seed_hessian!(dest, tmp, v::Matrix, nmap)
-    nbatch = size(dest, 2)
-    @inbounds for i in 1:nmap
-        for j in 1:nbatch
-            dest[i, j] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i, j]))
-        end
-    end
-    return
-end
-
-@kernel function _gpu_init_seed_hessian!(dest, v)
-    i, j = @index(Global, NTuple)
-    @inbounds dest[i, j] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i, j]))
-end
-
-function batch_init_seed_hessian!(dest, tmp, v::CUDA.CuMatrix, nmap)
-    ndrange = (nmap, size(dest, 2))
-    ev = _gpu_init_seed_hessian!(CUDADevice())(dest, v, ndrange=ndrange, workgroupsize=256)
-    wait(ev)
-end
-
 function update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
     x = H.x
     t1sx = H.t1sx
@@ -138,6 +155,7 @@ function batch_adj_hessian_prod!(
     polar, H::AutoDiff.Hessian, hv, buffer, λ, v,
 )
     @assert length(hv) == length(v)
+    device = polar.device
     nbus = get(polar, PS.NumberOfBuses())
     x = H.x
     ntgt = length(v)
@@ -154,8 +172,8 @@ function batch_adj_hessian_prod!(
     nmap = length(H.map)
 
     # Init seed
-    batch_init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
-    AutoDiff.batch_seed!(H.t1sseeds, H.varx, H.t1svarx)
+    AutoDiff.batch_init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap, device)
+    AutoDiff.batch_seed_hessian!(H.t1sseeds, H.varx, H.t1svarx, device)
 
     batch_adjoint!(
         polar, H.buffer,
@@ -165,7 +183,119 @@ function batch_adj_hessian_prod!(
         view(t1sx, 2*nbus+1:3*nbus, :), view(adj_t1sx, 2*nbus+1:3*nbus, :), # pinj
     )
 
-    AutoDiff.batch_partials!(hv, adj_t1sx, H.map)
+    AutoDiff.batch_partials_hessian!(hv, adj_t1sx, H.map, device)
     return nothing
+end
+
+function BatchJacobian(
+    polar::PolarForm{T, VI, VT, MT}, func, variable, nbatch,
+) where {T, VI, VT, MT}
+    @assert is_constraint(func)
+    device = polar.device
+
+    if isa(device, CPU)
+        SMT = SparseMatrixCSC{Float64,Int}
+        A = Array
+    elseif isa(device, GPU)
+        SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
+        A = CUDA.CuArray
+    end
+
+    # Tensor type
+    TT = A{T, 3}
+
+    pf = polar.network
+    nbus = PS.get(pf, PS.NumberOfBuses())
+    if isa(variable, State)
+        map = VI(polar.mapx)
+    elseif isa(variable, Control)
+        map = VI(polar.mapu)
+    end
+
+    nmap = length(map)
+
+    # Sparsity pattern
+    J = jacobian_sparsity(polar, func, variable)
+
+    # Coloring
+    coloring = AutoDiff.SparseDiffTools.matrix_colors(J)
+    ncolor = size(unique(coloring),1)
+
+    nx = 2 * nbus
+    x = MT(zeros(Float64, nx, nbatch))
+    m = size(J, 1)
+
+    # Move Jacobian to the GPU
+    if isa(polar.device, CPU)
+        Js = SMT[J for i in 1:nbatch]
+    else
+        Js = BatchCuSparseMatrixCSR(J, nbatch)
+    end
+
+    # Seedings
+    t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
+    t1sx = A{t1s{ncolor}}(x)
+    t1sF = A{t1s{ncolor}}(zeros(Float64, m, nbatch))
+    t1sseeds = AutoDiff.init_seed(coloring, ncolor, nmap)
+
+    # Move the seeds over to the device, if necessary
+    gput1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(t1sseeds)
+    compressedJ = TT(zeros(Float64, ncolor, m, nbatch))
+
+    # Views
+    varx = view(x, map, :)
+    t1svarx = view(t1sx, map, :)
+
+    return AutoDiff.Jacobian{typeof(func), VI, MT, TT, typeof(Js), typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
+        func, variable, Js, compressedJ, coloring,
+        gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
+    )
+end
+
+function batch_jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
+    device = polar.device
+    nbus = get(polar, PS.NumberOfBuses())
+    type = jac.var
+    nbatch = size(jac.x, 2)
+    if isa(type, State)
+        for i in 1:nbatch
+            f = (i-1) * nbus
+            copyto!(jac.x, 1 + 2 * f, buffer.vmag, 1 + f, nbus)
+            copyto!(jac.x, nbus + 2 * f + 1, buffer.vang, 1 + f, nbus)
+        end
+        jac.t1sx .= jac.x
+        jac.t1sF .= 0.0
+    elseif isa(type, Control)
+        copyto!(jac.x, 1, buffer.vmag, 1, nbus)
+        copyto!(jac.x, nbus+1, buffer.pinj, 1, nbus)
+        jac.t1sx .= jac.x
+        jac.t1sF .= 0.0
+    end
+
+    AutoDiff.batch_seed_jacobian!(jac.t1sseeds, jac.varx, jac.t1svarx, device)
+
+    if isa(type, State)
+        jac.func(
+            polar,
+            jac.t1sF,
+            view(jac.t1sx, 1:nbus, :),
+            view(jac.t1sx, nbus+1:2*nbus, :),
+            buffer.pinj,
+            buffer.qinj,
+        )
+    elseif isa(type, Control)
+        jac.func(
+            polar,
+            jac.t1sF,
+            view(jac.t1sx, 1:nbus, :),
+            buffer.vang,
+            view(jac.t1sx, nbus+1:2*nbus, :),
+            buffer.qinj,
+        )
+    end
+
+    AutoDiff.batch_partials_jacobian!(jac.compressedJ, jac.t1sF, device)
+    AutoDiff.batch_uncompress!(jac.J, jac.compressedJ, jac.coloring, device)
+    return jac.J
 end
 

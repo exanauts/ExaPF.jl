@@ -121,6 +121,16 @@ function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector)
     return 0
 end
 
+function batch_ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, Y, Js::Vector{SparseMatrixCSC{Float64, Int}}, X)
+    nbatch = length(Js)
+    for i in 1:nbatch
+        lu!(s.factorization, Js[i])
+        y = view(Y, :, i)
+        x = view(X, :, i)
+        LinearAlgebra.ldiv!(y, s.factorization, x)
+    end
+end
+
 function ldiv!(::DirectSolver{Nothing},
     y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector,
 )

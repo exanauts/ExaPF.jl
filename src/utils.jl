@@ -58,6 +58,39 @@ mutable struct Spmat{VTI<:AbstractVector, VTF<:AbstractVector}
     end
 end
 
+mutable struct BatchCuSparseMatrixCSR{Tv} <: CUSPARSE.AbstractCuSparseMatrix{Tv}
+    rowPtr::CUDA.CuVector{Cint}
+    colVal::CUDA.CuVector{Cint}
+    nzVal::CUDA.CuMatrix{Tv}
+    dims::NTuple{2,Int}
+    nnz::Cint
+    nbatch::Int
+
+    function BatchCuSparseMatrixCSR{Tv}(rowPtr::CUDA.CuVector{<:Integer}, colVal::CUDA.CuVector{<:Integer},
+                                   nzVal::CUDA.CuMatrix, dims::NTuple{2,<:Integer}, nnzJ::Int, nbatch::Int) where Tv
+        new(rowPtr, colVal, nzVal, dims, nnzJ, nbatch)
+    end
+end
+
+Base.size(J::BatchCuSparseMatrixCSR) = J.dims
+function BatchCuSparseMatrixCSR(J::SparseMatrixCSC{Tv, Int}, nbatch) where Tv
+    dims = size(J)
+    nnzJ = nnz(J)
+    d_J = CUSPARSE.CuSparseMatrixCSR(J)
+    nzVal = CUDA.zeros(Tv, nnzJ, nbatch)
+    for i in 1:nbatch
+        copyto!(nzVal, nnzJ * (i-1) + 1, J.nzval, 1, nnzJ)
+    end
+    return BatchCuSparseMatrixCSR{Tv}(d_J.rowPtr, d_J.colVal, nzVal, dims, nnzJ, nbatch)
+end
+
+function CUDA.unsafe_free!(xs::BatchCuSparseMatrixCSR)
+    unsafe_free!(xs.rowPtr)
+    unsafe_free!(xs.colVal)
+    unsafe_free!(xs.nzVal)
+    return
+end
+
 function _copy_csc!(J_dest, J_src, shift)
     @inbounds for i in 1:size(J_src, 2)
         for j in J_src.colptr[i]:J_src.colptr[i+1]-1
