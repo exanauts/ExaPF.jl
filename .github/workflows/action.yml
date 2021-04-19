@@ -1,15 +1,21 @@
 name: Run tests
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 jobs:
   test-github-cpuonly:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        julia-version: ['1.5']
+        julia-version: ['1.6']
         julia-arch: [x64]
-        os: [ubuntu-latest]
+        os: [ubuntu-20.04]
 
     steps:
       - uses: actions/checkout@v2
@@ -20,12 +26,14 @@ jobs:
       - uses: julia-actions/julia-runtest@latest
 
   test-moonshot:
+    env:
+      CUDA_VISIBLE_DEVICES: 1
     runs-on: self-hosted
     strategy:
       matrix:
-        julia-version: ['1.5']
+        julia-version: ['1.6']
         julia-arch: [x64]
-        os: [ubuntu-latest]
+        os: [ubuntu-20.04]
 
     steps:
       - uses: actions/checkout@v2

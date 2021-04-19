@@ -1,23 +1,33 @@
 ```@meta
 CurrentModule = ExaPF.AutoDiff
 ```
+# AutoDiff
 
-## Description
+## Adjoint
+
 ```@docs
-AbstractJacobian
+TapeMemory
 ```
 
-## API Reference
+## Jacobian
+
 ```@docs
-StateJacobian
-ControlJacobian
-seed_kernel_cpu!
-seed_kernel_gpu!
-seed_kernel!
-getpartials_kernel_cpu!
-getpartials_kernel_gpu!
+AbstractJacobian
+ConstantJacobian
+Jacobian
+jacobian!
+```
+
+### API reference for the Jacobian
+```@docs
+seed!
 getpartials_kernel!
-uncompress_kernel_gpu!
 uncompress_kernel!
-residual_jacobian!
+```
+
+## Hessian
+```@docs
+AbstractHessian
+Hessian
+adj_hessian_prod!
 ```

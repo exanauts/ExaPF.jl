@@ -1,11 +1,80 @@
+# Common interface for AbstractNLPEvaluator
+#
+function Base.show(io::IO, nlp::AbstractNLPEvaluator)
+    n = n_variables(nlp)
+    m = n_constraints(nlp)
+    println(io, "A Evaluator object")
+    println(io, "    * #vars: ", n)
+    println(io, "    * #cons: ", m)
+end
 
-# AutoDiff Factory
-abstract type AbstractAutoDiffFactory end
+## Generic callbacks
+function constraint(nlp::AbstractNLPEvaluator, x)
+    cons = similar(x, n_constraints(nlp)) ; fill!(cons, 0)
+    constraint!(nlp, cons, x)
+    return cons
+end
 
-struct AutoDiffFactory <: AbstractAutoDiffFactory
-    Jgₓ::AutoDiff.StateJacobian
-    Jgᵤ::AutoDiff.ControlJacobian
-    ∇f::AdjointStackObjective
+function gradient(nlp::AbstractNLPEvaluator, x)
+    ∇f = similar(x) ; fill!(∇f, 0)
+    gradient!(nlp, ∇f, x)
+    return ∇f
+end
+
+function jacobian(nlp::AbstractNLPEvaluator, x)
+    n = n_variables(nlp)
+    m = n_constraints(nlp)
+    J = similar(x, m, n) ; fill!(J, 0)
+    jacobian!(nlp, J, x)
+    return J
+end
+
+# Default implementation of jprod!, using full Jacobian matrix
+function jprod!(nlp::AbstractNLPEvaluator, jv, u, v)
+    nᵤ = length(u)
+    m  = n_constraints(nlp)
+    @assert nᵤ == length(v)
+    jac = jacobian(nlp, u)
+    mul!(jv, jac, v)
+    return
+end
+
+# Joint Objective Jacobian transpose vector product (default implementation)
+function ojtprod!(nlp::AbstractNLPEvaluator, jv, u, σ, v)
+    gradient!(nlp, jv, u)
+    jv .*= σ  # scale gradient
+    jtprod!(nlp, jv, u, v)
+    return
+end
+
+# Common interface for Hessian
+function hessian!(nlp::AbstractNLPEvaluator, hess, x)
+    n = n_variables(nlp)
+    v = similar(x)
+    @inbounds for i in 1:n
+        hv = @view hess[:, i]
+        fill!(v, 0)
+        v[i] = 1.0
+        hessprod!(nlp, hv, x, v)
+    end
+end
+
+function hessian_lagrangian_penalty!(nlp::AbstractNLPEvaluator, hess, x, y, σ, D,)
+    n = n_variables(nlp)
+    v = similar(x)
+    @inbounds for i in 1:n
+        hv = @view hess[:, i]
+        fill!(v, 0)
+        v[i] = 1.0
+        hessian_lagrangian_penalty_prod!(nlp, hv, x, y, σ, v, D)
+    end
+end
+
+function hessian(nlp::AbstractNLPEvaluator, x)
+    n = n_variables(nlp)
+    H = similar(x, n, n) ; fill!(H, 0)
+    hessian!(nlp, H, x)
+    return H
 end
 
 # Counters
@@ -43,48 +112,45 @@ function _inf_pr(nlp::AbstractNLPEvaluator, cons)
     return max(err_inf, err_sup)
 end
 
-function active_set(c, c♭, c♯; tol=1e-8)
-    @assert length(c) == length(c♭) == length(c♯)
-    active_lb = findall(c .< c♭ .+ tol)
-    active_ub = findall(c .> c♯ .- tol)
-    return active_lb, active_ub
-end
-
 # Scaler utils
 abstract type AbstractScaler end
 
 scale_factor(h, tol, η) = max(tol, η / max(1.0, h))
 
-struct MaxScaler{T} <: AbstractScaler
+struct MaxScaler{T, VT} <: AbstractScaler
     scale_obj::T
-    scale_cons::AbstractVector{T}
-    g_min::AbstractVector{T}
-    g_max::AbstractVector{T}
+    scale_cons::VT
+    g_min::VT
+    g_max::VT
 end
 function MaxScaler(g_min, g_max)
     @assert length(g_min) == length(g_max)
     m = length(g_min)
     sc = similar(g_min) ; fill!(sc, 1.0)
-    return MaxScaler(1.0, sc, g_min, g_max)
+    return MaxScaler{eltype(g_min), typeof(g_min)}(1.0, sc, g_min, g_max)
 end
 function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
                    η=100.0, tol=1e-8)
     n = n_variables(nlp)
     m = n_constraints(nlp)
-    update!(nlp, u0)
+    conv = update!(nlp, u0)
     ∇g = similar(u0) ; fill!(∇g, 0)
     gradient!(nlp, ∇g, u0)
     s_obj = scale_factor(norm(∇g, Inf), tol, η)
 
-    # TODO: avoid forming whole Jacobian
-    jac = similar(u0, (m, n))
-    s_cons = similar(u0, m)
-    jacobian!(nlp, jac, u0)
+    VT = typeof(u0)
+    ∇c = xzeros(VT, n)
+    s_cons = xzeros(VT, m)
+    v = xzeros(VT, m)
     for i in eachindex(s_cons)
-        ∇c = @view jac[i, :]
+        fill!(v, 0.0)
+        v[i] = 1.0
+        jtprod!(nlp, ∇c, u0, v)
         s_cons[i] = scale_factor(norm(∇c, Inf), tol, η)
     end
 
-    return MaxScaler(s_obj, s_cons, s_cons .* nlp.g_min, s_cons .* nlp.g_max)
+    g♭, g♯ = bounds(nlp, Constraints())
+
+    return MaxScaler{typeof(s_obj), typeof(s_cons)}(s_obj, s_cons, s_cons .* g♭, s_cons .* g♯)
 end
 

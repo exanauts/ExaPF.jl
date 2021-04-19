@@ -4,7 +4,8 @@ using KernelAbstractions
 using Test
 using TimerOutputs
 
-import ExaPF: ParsePSSE, PowerSystem
+import ExaPF: PowerSystem
+import ExaPF.PowerSystem: ParsePSSE
 
 const PS = PowerSystem
 
@@ -14,16 +15,18 @@ const PS = PowerSystem
     to = TimerOutputs.TimerOutput()
     datafile = joinpath(dirname(@__FILE__), "..", "data", local_case)
     data_raw = ParsePSSE.parse_raw(datafile)
-    data, bus_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
+    data = ParsePSSE.raw_to_exapf(data_raw)
 
     # Parsed data indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = PS.IndexSet.idx_bus()
 
     # retrive required data
     bus = data["bus"]
     gen = data["gen"]
     SBASE = data["baseMVA"][1]
+
+    bus_to_indexes = PS.get_bus_id_to_indexes(bus)
     nbus = size(bus, 1)
 
     # obtain V0 from raw data
@@ -50,7 +53,7 @@ const PS = PowerSystem
     ]
 
     # form Y matrix
-    Ybus = PS.makeYbus(data, bus_to_indexes);
+    Ybus = PS.makeYbus(data, bus_to_indexes).ybus;
 
     Vm = abs.(V)
     Va = angle.(V)
@@ -82,37 +85,6 @@ const PS = PowerSystem
         -0.11665673277410679 - 0.05281302692126483im,
         -0.13051302125309594 - 0.04527619677595794im
     ]
-
-    ref, pv, pq = PS.bustypeindex(bus, gen, bus_to_indexes)
-    npv = size(pv, 1)
-    npq = size(pq, 1)
-
-    @testset "Computing residuals" begin
-        F = zeros(Float64, npv + 2*npq)
-        # First compute a reference value for resisual computed at V
-        F♯ = ExaPF.power_balance(V, Ybus, Sbus, pv, pq)
-        # residual_polar! uses only binary types as this function is meant
-        # to be deported on the GPU
-        ExaPF.residual_polar!(F, Vm, Va,
-            ybus_re, ybus_im,
-            pbus, qbus, pv, pq, nbus)
-        @test F ≈ F♯
-    end
-    @testset "Computing Jacobian of residuals" begin
-        F = zeros(Float64, npv + 2*npq)
-        # Compute Jacobian at point V manually and use it as reference
-        J = ExaPF.residual_jacobian(V, Ybus, pv, pq)
-        J♯ = copy(J)
-
-        # Then, create a Jacobian object
-        jacobianAD = ExaPF.AutoDiff.StateJacobian(F, Vm, Va,
-                                              ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus)
-        # and compute Jacobian with ForwardDiff
-        ExaPF.AutoDiff.residual_jacobian!(
-            jacobianAD, ExaPF.residual_polar!, Vm, Va,
-            ybus_re, ybus_im, pbus, qbus, pv, pq, ref, nbus, to)
-        @test jacobianAD.J ≈ J♯
-    end
 end
 
 @testset "PowerNetwork object" begin
@@ -122,14 +94,14 @@ end
     # Test constructor
     @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
         datafile = joinpath(dirname(@__FILE__), "..", "data", name)
-        switch = endswith(name, ".m") ? 1 : 0
-        pf = PS.PowerNetwork(datafile, switch)
+        pf = PS.PowerNetwork(datafile)
         @test isa(pf, PS.PowerNetwork)
     end
 
     # From now on, test with "case9.m"
     datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
-    pf = PS.PowerNetwork(datafile, 1)
+    data = PS.import_dataset(datafile)
+    pf = PS.PowerNetwork(data)
 
     @testset "Computing cost coefficients" begin
         coefs = PS.get_costs_coefficients(pf)
@@ -161,11 +133,29 @@ end
         @test length(v_max) == n_bus
 
         n_gen = PS.get(pf, PS.NumberOfGenerators())
-        p_min, p_max = PS.bounds(pf, PS.Generator(), PS.ActivePower())
+        p_min, p_max = PS.bounds(pf, PS.Generators(), PS.ActivePower())
         @test length(p_min) == n_gen
         @test length(p_max) == n_gen
-        q_min, q_max = PS.bounds(pf, PS.Generator(), PS.ReactivePower())
+        q_min, q_max = PS.bounds(pf, PS.Generators(), PS.ReactivePower())
         @test length(q_min) == n_gen
         @test length(q_max) == n_gen
+
+        n_lines = PS.get(pf, PS.NumberOfLines())
+        f_min, f_max = PS.bounds(pf, PS.Lines(), PS.ActivePower())
+        @test length(f_min) == n_lines
+        @test length(f_max) == n_lines
+    end
+
+    @testset "Load from data" begin
+        pf_original = PS.PowerNetwork(data)
+        @test isa(pf_original, PS.PowerNetwork)
+        n_lines = PS.get(pf_original, PS.NumberOfLines())
+
+        pf_removed = PS.PowerNetwork(data; remove_lines=Int[1])
+        @test isa(pf_removed, PS.PowerNetwork)
+        n_after_removal = PS.get(pf_removed, PS.NumberOfLines())
+
+        @test n_lines - 1 == n_after_removal
+        @test pf_original.Ybus != pf_removed.Ybus
     end
 end

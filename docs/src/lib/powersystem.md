@@ -24,7 +24,7 @@ List of elements:
 ```@docs
 Buses
 Lines
-Generator
+Generators
 ```
 
 ### Network attributes
@@ -33,10 +33,6 @@ Generator
 AbstractNetworkAttribute
 ```
 
-Function for getting attributes from a network:
-```@docs
-get
-```
 
 List of attributes:
 ```@docs
@@ -47,6 +43,7 @@ NumberOfPVBuses
 NumberOfPQBuses
 NumberOfSlackBuses
 BaseMVA
+BusAdmittanceMatrix
 ```
 
 Query the indexing of the different elements in a given network:
@@ -70,6 +67,8 @@ VoltageMagnitude
 VoltageAngle
 ActivePower
 ReactivePower
+ActiveLoad
+ReactiveLoad
 
 ```
 

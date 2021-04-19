@@ -1,115 +1,53 @@
+abstract type AbstractPenaltyEvaluator <: AbstractNLPEvaluator end
 
-# Ref: https://github.com/JuliaSmoothOptimizers/Percival.jl/blob/master/src/AugLagModel.jl
-mutable struct PenaltyEvaluator{T} <: AbstractNLPEvaluator
-    inner::AbstractNLPEvaluator
-    cons::AbstractVector{T}
-    infeasibility::AbstractVector{T}
-    penalties::AbstractVector{T}
-    # Scaling
-    scaler::AbstractScaler
+n_variables(ag::AbstractPenaltyEvaluator) = n_variables(ag.inner)
+# All constraints moved inside the objective with penalties!
+n_constraints(ag::AbstractPenaltyEvaluator) = 0
+
+constraints_type(ag::AbstractPenaltyEvaluator) = :bound
+
+# Penalty evaluators don't have constraints so Lagrangian is objective
+has_hessian_lagrangian(nlp::AbstractPenaltyEvaluator) = has_hessian(nlp)
+
+# Getters
+get(ag::AbstractPenaltyEvaluator, attr::AbstractNLPAttribute) = get(ag.inner, attr)
+get(ag::AbstractPenaltyEvaluator, attr::AbstractVariable) = get(ag.inner, attr)
+get(ag::AbstractPenaltyEvaluator, attr::PS.AbstractNetworkAttribute) = get(ag.inner, attr)
+
+# Setters
+function setvalues!(ag::AbstractPenaltyEvaluator, attr::PS.AbstractNetworkValues, values)
+    setvalues!(ag.inner, attr, values)
 end
 
-function PenaltyEvaluator(nlp::AbstractNLPEvaluator, u0;
-                          scale=false,
-                          penalties=Float64[],
-                          c₀=0.1)
+# Initial position
+initial(ag::AbstractPenaltyEvaluator) = initial(ag.inner)
 
-    if n_constraints(nlp) == 0
-        @warn("Original model has no inequality constraint")
-    end
-    if length(penalties) != length(nlp.constraints)
-        penalties = Float64[c₀=c₀ for cons in nlp.constraints]
-    end
+# Bounds
+bounds(ag::AbstractPenaltyEvaluator, ::Variables) = bounds(ag.inner, Variables())
+bounds(ag::AbstractPenaltyEvaluator, ::Constraints) = Float64[], Float64[]
 
-    cons = similar(nlp.g_min)
-    cx = similar(nlp.g_min)
+# based objective
+objective_original(ag::AbstractPenaltyEvaluator, u) = objective(ag.inner, u)
 
-    if scale
-        scaler = MaxScaler(nlp, u0)
-    else
-        scaler = MaxScaler(nlp.g_min, nlp.g_max)
-    end
-
-    return PenaltyEvaluator(nlp, cons, cx, penalties, scaler)
+function constraint!(ag::AbstractPenaltyEvaluator, cons, u)
+    @assert length(cons) == 0
+    return
 end
 
-function update!(pen::PenaltyEvaluator, u)
-    conv = update!(pen.inner, u)
-    # Update constraints
-    constraint!(pen.inner, pen.cons, u)
-    # Rescale
-    pen.cons .*= pen.scaler.scale_cons
-    # Update infeasibility error
-    g♭ = pen.scaler.g_min
-    g♯ = pen.scaler.g_max
-    pen.infeasibility .= max.(0, pen.cons .- g♯) .+ min.(0, pen.cons .- g♭)
-    return conv
+function jacobian!(ag::AbstractPenaltyEvaluator, jac, u)
+    @assert length(jac) == 0
+    return
 end
 
-function update_penalty!(pen::PenaltyEvaluator; η=10.0)
-    fr_ = 0
-    pen.penalties = min.(η * pen.penalties, 10e12)
+jacobian_structure(ag::AbstractPenaltyEvaluator) = (Int[], Int[])
+function jacobian_structure!(ag::AbstractPenaltyEvaluator, rows, cols)
+    @assert length(rows) == length(cols) == 0
 end
 
-function objective(pen::PenaltyEvaluator, u)
-    base_nlp = pen.inner
-    # Internal objective
-    obj = pen.scaler.scale_obj * objective(base_nlp, u)
-    # Add penalty terms
-    fr_ = 0
-    for (πp, cons) in zip(pen.penalties, base_nlp.constraints)
-        n = size_constraint(base_nlp.model, cons)
-        mask = fr_+1:fr_+n
-        cx = pen.infeasibility[mask]
-        obj += 0.5 * πp * dot(cx, cx)
-        fr_ += n
-    end
-    return obj
+function hessian_structure(ag::AbstractPenaltyEvaluator)
+    return hessian_structure(ag.inner)
 end
 
-function gradient!(pen::PenaltyEvaluator, grad, u)
-    base_nlp = pen.inner
-    model = base_nlp.model
-    scaler = pen.scaler
-    λ = base_nlp.λ
-    # Import buffer (has been updated previously in update!)
-    buffer = base_nlp.buffer
-    # Import AutoDiff objects
-    ∇gᵤ = jacobian(model, base_nlp.autodiff.Jgᵤ, buffer)
-    ∂obj = base_nlp.autodiff.∇f
-    jvx = ∂obj.jvₓ ; fill!(jvx, 0)
-    jvu = ∂obj.jvᵤ ; fill!(jvu, 0)
-
-    # compute gradient of objective
-    ∂cost(model, ∂obj, buffer)
-    jvx .+= scaler.scale_obj .* ∂obj.∇fₓ
-    jvu .+= scaler.scale_obj .* ∂obj.∇fᵤ
-
-    # compute gradient of penalties
-    fr_ = 0
-    for (πp, cons) in zip(pen.penalties, base_nlp.constraints)
-        n = size_constraint(base_nlp.model, cons)
-        mask = fr_+1:fr_+n
-        cx = @view pen.infeasibility[mask]
-        v = cx .* πp .* scaler.scale_cons[mask]
-        jtprod(model, cons, ∂obj, buffer, v)
-        jvx .+= ∂obj.∇fₓ
-        jvu .+= ∂obj.∇fᵤ
-        fr_ += n
-    end
-    # evaluate reduced gradient
-    LinearSolvers.ldiv!(base_nlp.linear_solver, λ, base_nlp.∇gᵗ, jvx)
-    grad .= jvu
-    mul!(grad, transpose(∇gᵤ), λ, -1.0, 1.0)
-end
-
-primal_infeasibility!(pen::PenaltyEvaluator, cons, u) = primal_infeasibility!(pen.inner, cons, u)
-primal_infeasibility(pen::PenaltyEvaluator, u) = primal_infeasibility(pen.inner, u)
-
-function reset!(pen::PenaltyEvaluator)
-    reset!(pen.inner)
-    fill!(pen.cons, 0)
-    fill!(pen.infeasibility, 0)
-    fill!(pen.penalties, 0)
-end
+primal_infeasibility!(ag::AbstractPenaltyEvaluator, cons, u) = primal_infeasibility!(ag.inner, cons, u)
+primal_infeasibility(ag::AbstractPenaltyEvaluator, u) = primal_infeasibility(ag.inner, u)
 

@@ -11,14 +11,22 @@ PSSE input file. However, a correspondence between the two indexing
 attribute `bus_to_indexes`.
 
 ## Note
-The object `PowerNetwork` is created in the main memory.
+The object `PowerNetwork` is created in the host memory.
 Use a `AbstractFormulation` object to move data to the target device.
 
 """
 struct PowerNetwork <: AbstractPowerSystem
     vbus::Vector{Complex{Float64}}
+    # Admittance matrix
     Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
-    data::Dict{String,Array}
+    # Lines
+    lines::Branches{Complex{Float64}}
+    # Data
+    buses::Array{Float64, 2}
+    branches::Array{Float64, 2}
+    generators::Array{Float64, 2}
+    costs::Union{Array{Float64, 2}, Nothing}
+    baseMVA::Float64
 
     nbus::Int64
     ngen::Int64
@@ -32,16 +40,7 @@ struct PowerNetwork <: AbstractPowerSystem
     sbus::Vector{Complex{Float64}}
     sload::Vector{Complex{Float64}}
 
-    function PowerNetwork(datafile::String, data_format::Int64)
-
-        if data_format == 0
-            println("Reading PSSE format")
-            data_raw = ParsePSSE.parse_raw(datafile)
-            data, bus_id_to_indexes = ParsePSSE.raw_to_exapf(data_raw)
-        elseif data_format == 1
-            data_mat = ParseMAT.parse_mat(datafile)
-            data, bus_id_to_indexes = ParseMAT.mat_to_exapf(data_mat)
-        end
+    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
         # Parsed data indexes
         BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
         LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
@@ -49,7 +48,14 @@ struct PowerNetwork <: AbstractPowerSystem
         # retrive required data
         bus = data["bus"]
         gen = data["gen"]
+        lines = data["branch"]
         SBASE = data["baseMVA"][1]
+        costs = Base.get(data, "cost", nothing)
+
+        bus_id_to_indexes = get_bus_id_to_indexes(data["bus"])
+
+        # Remove specified lines
+        lines = get_active_branches(lines, remove_lines)
 
         # size of the system
         nbus = size(bus, 1)
@@ -62,41 +68,53 @@ struct PowerNetwork <: AbstractPowerSystem
         end
 
         # form Y matrix
-        Ybus = makeYbus(data, bus_id_to_indexes)
+        topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+
+        branches = Branches{Complex{Float64}}(
+            topology.yff, topology.yft, topology.ytf, topology.ytt,
+            topology.from_buses, topology.to_buses,
+        )
 
         # bus type indexing
         ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
 
         sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
+        Ybus = topology.ybus
 
-        new(vbus, Ybus, data, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
+        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
     end
 end
+
 function PowerNetwork(datafile::String)
-    if endswith(datafile, ".raw")
-        data_format = 0
-    elseif endswith(datafile, ".m")
-        data_format = 1
-    else
-        error("Unsupported format in file $(datafile): supported extensions are " *
-              "Matpower (.m) or PSSE (.raw)")
-    end
-    return PowerNetwork(datafile, data_format)
+    data = import_dataset(datafile)
+    return PowerNetwork(data)
 end
 
 # Getters
 ## Network attributes
 get(pf::PowerNetwork, ::NumberOfBuses) = pf.nbus
-get(pf::PowerNetwork, ::NumberOfLines) = size(pf.data["branch"], 2)
+get(pf::PowerNetwork, ::NumberOfLines) = size(pf.branches, 1)
 get(pf::PowerNetwork, ::NumberOfGenerators) = pf.ngen
 get(pf::PowerNetwork, ::NumberOfPVBuses) = length(pf.pv)
 get(pf::PowerNetwork, ::NumberOfPQBuses) = length(pf.pq)
 get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
 
+## Loads
+get(pf::PowerNetwork, ::ActiveLoad) = real.(pf.sload)
+get(pf::PowerNetwork, ::ReactiveLoad) = imag.(pf.sload)
+function get(pf::PowerNetwork, ::ActivePower)
+    GEN_BUS, PG, QG, _ = IndexSet.idx_gen()
+    return pf.generators[:, PG] ./ pf.baseMVA
+end
+function get(pf::PowerNetwork, ::ReactivePower)
+    GEN_BUS, PG, QG, _ = IndexSet.idx_gen()
+    return pf.generators[:, QG] ./ pf.baseMVA
+end
+
 ## Indexing
 function get(pf::PowerNetwork, ::GeneratorIndexes)
     GEN_BUS = IndexSet.idx_gen()[1]
-    gens = pf.data["gen"]
+    gens = pf.generators
     ngens = size(gens, 1)
     # Create array on host memory
     indexing = zeros(Int, ngens)
@@ -139,36 +157,49 @@ function bounds(pf::PowerNetwork, ::Buses, ::VoltageMagnitude)
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
-    bus = pf.data["bus"]
+    bus = pf.buses
     v_min = convert.(Float64, bus[:, VMIN])
     v_max = convert.(Float64, bus[:, VMAX])
     return v_min, v_max
 end
 
-function bounds(pf::PowerNetwork, ::Generator, ::ActivePower)
+function bounds(pf::PowerNetwork, ::Generators, ::ActivePower)
     GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
 
-    gens = pf.data["gen"]
-    baseMVA = pf.data["baseMVA"][1]
+    gens = pf.generators
+    baseMVA = pf.baseMVA
 
     p_min = convert.(Float64, gens[:, PMIN] / baseMVA)
     p_max = convert.(Float64, gens[:, PMAX] / baseMVA)
     return p_min, p_max
 end
 
-function bounds(pf::PowerNetwork, ::Generator, ::ReactivePower)
+function bounds(pf::PowerNetwork, ::Generators, ::ReactivePower)
     GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN, PC1, PC2, QC1MIN,
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
 
-    gens = pf.data["gen"]
-    baseMVA = pf.data["baseMVA"][1]
+    gens = pf.generators
+    baseMVA = pf.baseMVA
 
     q_min = convert.(Float64, gens[:, QMIN] / baseMVA)
     q_max = convert.(Float64, gens[:, QMAX] / baseMVA)
     return q_min, q_max
+end
+
+function bounds(pf::PowerNetwork, ::Lines, ::ActivePower)
+    RATE_A = IndexSet.idx_branch()[6]
+    n_lines = get(pf, NumberOfLines())
+    # Flow min is always set equal to 0
+    flow_min = zeros(n_lines)
+    flow_max = (pf.branches[:, RATE_A] ./ pf.baseMVA).^2
+    # According to the spec, if RATE_A is equal to 0, then the flow
+    # is unconstrained.
+    unlimited = findall(isequal(0), flow_max)
+    flow_max[unlimited] .= Inf
+    return (flow_min, flow_max)
 end
 
 """
@@ -193,9 +224,9 @@ function get_costs_coefficients(pf::PowerNetwork)
 
     # Matpower assumes gens are ordered. Generator in row i has its cost on row i
     # of the cost table.
-    gens = pf.data["gen"]
-    baseMVA = pf.data["baseMVA"][1]
-    bus = pf.data["bus"]
+    gens = pf.generators
+    baseMVA = pf.baseMVA
+    bus = pf.buses
     ngens = size(gens)[1]
     nbus = size(bus)[1]
 
@@ -207,12 +238,12 @@ function get_costs_coefficients(pf::PowerNetwork)
     # - 4th column: coefficient c2
     coefficients = zeros(ngens, 4)
     # If cost is not specified, we return the array coefficients as is
-    if !haskey(pf.data, "cost")
+    if isnothing(pf.costs)
         @warn("PowerSystem: cost is not specified in PowerNetwork dataset")
         return coefficients
     end
 
-    cost_data = pf.data["cost"]
+    cost_data = pf.costs
     # iterate generators and check if pv or ref.
     for i = 1:ngens
         # only 2nd degree polynomial implemented for now.
@@ -222,10 +253,9 @@ function get_costs_coefficients(pf::PowerNetwork)
         bustype = bus[genbus, BUS_TYPE]
 
         # polynomial coefficients
-        # TODO: currently scale by baseMVA. Is it a good idea?
-        c0 = cost_data[i, COST][3]
-        c1 = cost_data[i, COST][2] * baseMVA
-        c2 = cost_data[i, COST][1] * baseMVA^2
+        c0 = cost_data[i, COST+2]
+        c1 = cost_data[i, COST+1] * baseMVA
+        c2 = cost_data[i, COST] * baseMVA^2
         coefficients[i, :] .= (bustype, c0, c1, c2)
     end
     return coefficients

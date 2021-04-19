@@ -1,15 +1,25 @@
 module LinearSolvers
 
-using CUDA
-using KernelAbstractions
-using IterativeSolvers
-using Krylov
 using LinearAlgebra
 using Printf
 using SparseArrays
 
-import ..ExaPF: xnorm, csclsvqr!
 import Base: show
+
+using CUDA
+using KernelAbstractions
+import CUDA.CUBLAS
+import CUDA.CUSOLVER
+import CUDA.CUSPARSE
+import IterativeSolvers
+import Krylov
+import LightGraphs
+import Metis
+
+import ..ExaPF: xnorm, csclsvqr!
+
+const KA = KernelAbstractions
+
 
 export bicgstab, list_solvers
 export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
@@ -43,48 +53,89 @@ function list_solvers end
 get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 
 """
-    ldiv!(solver, y, J, x)
+    ldiv!(solver, x, A, y)
+    ldiv!(solver, x, y)
 
 * `solver::AbstractLinearSolver`: linear solver to solve the system
-* `y::AbstractVector`: Solution
-* `J::AbstractMatrix`: Input matrix
-* `x::AbstractVector`: RHS
+* `x::AbstractVector`: Solution
+* `A::AbstractMatrix`: Input matrix
+* `y::AbstractVector`: RHS
 
-Solve the linear system `J * y = Fx
+Solve the linear system ``A x = y`` using the algorithm
+specified in `solver`. If `A` is not specified, the function
+will used directly the factorization stored inplace.
 
 """
 function ldiv! end
 
 """
+    rdiv!(solver, x, A, y)
+    rdiv!(solver, x, y)
+
+* `solver::AbstractLinearSolver`: linear solver to solve the system
+* `x::AbstractVector`: Solution
+* `A::AbstractMatrix`: Input matrix
+* `y::AbstractVector`: RHS
+
+Solve the linear system ``A^⊤ x = y`` using the algorithm
+specified in `solver`. If `A` is not specified, the function
+will used directly the factorization stored inplace.
+
+"""
+function rdiv! end
+
+"""
     DirectSolver <: AbstractLinearSolver
 
-Solve linear system ``A * x = y`` with direct linear algebra.
+Solve linear system ``A x = y`` with direct linear algebra.
 
 * On the CPU, `DirectSolver` uses UMFPACK to solve the linear system
 * On CUDA GPU, `DirectSolver` redirects the resolution to the method `CUSOLVER.csrlsvqr`
 
 """
-struct DirectSolver <: AbstractLinearSolver end
-DirectSolver(precond) = DirectSolver()
-function ldiv!(::DirectSolver,
-    y::Vector, J::AbstractMatrix, x::Vector,
-)
+struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: AbstractLinearSolver
+    factorization::Fac
+end
+
+DirectSolver(J::SparseMatrixCSC) = DirectSolver(lu(J))
+DirectSolver() = DirectSolver(nothing)
+DirectSolver(precond::AbstractPreconditioner) = DirectSolver(nothing)
+
+# Reuse factorization in update
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
+    lu!(s.factorization, J) # Update factorization inplace
+    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+    return 0
+end
+# Solve system Ax = y
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
+    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+    return 0
+end
+# Solve system A'x = y
+function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, x::Array)
+    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
+    return 0
+end
+
+function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector)
     y .= J \ x
     return 0
 end
-function ldiv!(::DirectSolver,
-    y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSR, x::CuVector,
+
+function ldiv!(::DirectSolver{Nothing},
+    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector,
 )
     CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
-function ldiv!(::DirectSolver,
-    y::CuVector, J::CUDA.CUSPARSE.CuSparseMatrixCSC, x::CuVector,
+function ldiv!(::DirectSolver{Nothing},
+    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSC, x::CUDA.CuVector,
 )
     csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
-get_transpose(::DirectSolver, M::CUDA.CUSPARSE.CuSparseMatrixCSR) = CuSparseMatrixCSC(M)
+get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
 
 function update!(solver::AbstractIterativeLinearSolver, J)
     update(J, solver.precond)
@@ -95,7 +146,7 @@ end
     BICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false)
 
 Custom BICGSTAB implementation to solve iteratively the linear system
-``A * x = y``.
+``A  x = y``.
 """
 struct BICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
@@ -122,7 +173,7 @@ end
     EigenBICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false)
 
 Julia's port of Eigen's BICGSTAB to solve iteratively the linear system
-``A * x = y``.
+``A x = y``.
 """
 struct EigenBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
@@ -188,18 +239,18 @@ end
 
 """
     KrylovBICGSTAB <: AbstractIterativeLinearSolver
-    KrylovBICGSTAB(precond; verbose=false, rtol=1e-10, atol=1e-10)
+    KrylovBICGSTAB(precond; verbose=0, rtol=1e-10, atol=1e-10)
 
-Wrap `Krylov.jl` BICGSTAB algorithm to solve iteratively the linear system
-``A * x = y``.
+Wrap `Krylov.jl`'s BICGSTAB algorithm to solve iteratively the linear system
+``A x = y``.
 """
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
-    verbose::Bool
+    verbose::Int
     atol::Float64
     rtol::Float64
 end
-KrylovBICGSTAB(precond; verbose=false, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(precond, verbose, atol, rtol)
+KrylovBICGSTAB(precond; verbose=0, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(precond, verbose, atol, rtol)
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -211,8 +262,18 @@ function ldiv!(solver::KrylovBICGSTAB,
     return length(status.residuals)
 end
 
+"""
+    list_solvers(::KA.CPU)
 
-list_solvers(::CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
-list_solvers(::CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
+List all linear solvers available solving the power flow on the CPU.
+"""
+list_solvers(::KA.CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
+
+"""
+    list_solvers(::KA.CUDADevice)
+
+List all linear solvers available solving the power flow on an NVIDIA GPU.
+"""
+list_solvers(::KA.CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
 
 end
