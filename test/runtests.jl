@@ -18,6 +18,7 @@ const INSTANCES_DIR = joinpath(dirname(@__FILE__), "..", "data")
 # Load test modules
 include("test_linear_solvers.jl")
 include("Polar/TestPolarForm.jl")
+include("Evaluators/TestEvaluators.jl")
 
 # Define apart tests that are device dependent
 function test_suite(device, AT, SMT)
@@ -32,9 +33,17 @@ function test_suite(device, AT, SMT)
                 TestPolarFormulation.runtests(datafile, device, AT)
             end
         end
+
+        @testset "ExaPF.Evaluator on $device" begin
+            @testset "case $case" for case in ["case9.m", "case30.m"]
+                datafile = joinpath(INSTANCES_DIR, case)
+                TestEvaluators.runtests(datafile, device, AT)
+            end
+        end
     end
 end
 
+# Static test
 @testset "ExaPF.PowerSystem" begin
     include("powersystem.jl")
 end
@@ -45,19 +54,12 @@ if has_cuda_gpu()
     test_suite(CUDADevice(), CuArray, CuSparseMatrixCSR)
 end
 
-# @testset "Optimization evaluators" begin
-#     # Resolution of powerflow equations with NLPEvaluators
-#     include("Evaluators/powerflow.jl")
-#     # Test generic API
-#     include("Evaluators/interface.jl")
-#     # Test more in-depth each evaluator
-#     include("Evaluators/reduced_evaluator.jl")
-#     include("Evaluators/proxal_evaluator.jl")
-#     include("Evaluators/auglag.jl")
-#     include("Evaluators/MOI_wrapper.jl")
-#     # Test basic reduced gradient algorithm
-#     include("Evaluators/test_rgm.jl")
-# end
+@testset "Reduced gradient" begin
+    # Test basic reduced gradient algorithm
+    include("Evaluators/test_rgm.jl")
+    # Test resolution with Ipopt
+    include("Evaluators/MOI_wrapper.jl")
+end
 
 @testset "Documentation" begin
     include("quickstart.jl")

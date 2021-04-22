@@ -28,9 +28,9 @@ function runtests(datafile, device, AT)
     println(devnull, polar)
 
     @testset "PolarForm API" begin
-        test_polar_network_cache(polar, AT)
-        test_polar_api(polar, AT)
-        test_polar_constraints(polar, AT)
+        test_polar_network_cache(polar, device, AT)
+        test_polar_api(polar, device, AT)
+        test_polar_constraints(polar, device, AT)
     end
 
     @testset "PolarForm AutoDiff" begin
@@ -39,8 +39,8 @@ function runtests(datafile, device, AT)
     end
 
     @testset "PolarForm Gradient" begin
-        test_reduced_gradient(polar)
-        test_line_flow_gradient(polar)
+        test_reduced_gradient(polar, device, AT)
+        test_line_flow_gradient(polar, device, AT)
     end
 
     @testset "PolarForm Hessians" begin

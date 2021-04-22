@@ -1,4 +1,4 @@
-function test_polar_network_cache(polar, M)
+function test_polar_network_cache(polar, device, M)
     nₓ = ExaPF.get(polar, NumberOfState())
     ngen = get(polar, PS.NumberOfGenerators())
     nbus = get(polar, PS.NumberOfBuses())
@@ -45,7 +45,7 @@ function test_polar_network_cache(polar, M)
     return nothing
 end
 
-function test_polar_api(polar, M)
+function test_polar_api(polar, device, M)
     tolerance = 1e-8
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
@@ -83,7 +83,7 @@ function test_polar_api(polar, M)
     return nothing
 end
 
-function test_polar_constraints(polar, M)
+function test_polar_constraints(polar, device, M)
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
     ## Inequality constraint

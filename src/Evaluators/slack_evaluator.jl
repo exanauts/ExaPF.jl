@@ -81,7 +81,9 @@ function bounds(nlp::SlackEvaluator, ::Variables)
     u♭, u♯ = bounds(nlp.inner, Variables())
     return [u♭; nlp.s_min], [u♯; nlp.s_max]
 end
-bounds(nlp::SlackEvaluator, ::Constraints) = (zeros(nlp.ns), zeros(nlp.ns))
+function bounds(nlp::SlackEvaluator{Ev, T, VT}, ::Constraints) where {Ev, T, VT}
+    return (VT(zeros(nlp.ns)), VT(zeros(nlp.ns)))
+end
 
 function initial(nlp::SlackEvaluator)
     u0 = initial(nlp.inner)

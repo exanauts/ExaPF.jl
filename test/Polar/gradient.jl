@@ -1,4 +1,4 @@
-function test_reduced_gradient(polar)
+function test_reduced_gradient(polar, device, MT)
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
 
@@ -56,7 +56,7 @@ function test_reduced_gradient(polar)
     @test isapprox(grad_fd, grad_adjoint, rtol=1e-4)
 end
 
-function test_line_flow_gradient(polar)
+function test_line_flow_gradient(polar, device, MT)
     u = ExaPF.initial(polar, Control())
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
@@ -92,7 +92,7 @@ function test_line_flow_gradient(polar)
     fdgradg = FiniteDiff.finite_difference_gradient(sum_constraints,x)
     ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping.
     m_flows = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
-    weights = ones(m_flows) |> M
+    weights = ones(m_flows) |> MT
     gradg = ExaPF.xzeros(M, 2 * nbus)
     ExaPF.flow_constraints_grad!(polar, gradg, cache, weights)
     @test isapprox(adgradg, fdgradg)
