@@ -15,41 +15,49 @@ Random.seed!(2713)
 
 const INSTANCES_DIR = joinpath(dirname(@__FILE__), "..", "data")
 
+# Load test modules
+include("test_linear_solvers.jl")
+include("Polar/TestPolarForm.jl")
+
+# Define apart tests that are device dependent
+function test_suite(device, AT, SMT)
+    @testset "Launch tests on $device" begin
+        @testset "ExaPF.LinearSolvers on $device" begin
+            TestLinearSolvers.runtests(device, AT, SMT)
+        end
+
+        @testset "ExaPF.PolarForm on $device" begin
+            @testset "case $case" for case in ["case9.m", "case30.m"]
+                datafile = joinpath(INSTANCES_DIR, case)
+                TestPolarFormulation.runtests(datafile, device, AT)
+            end
+        end
+    end
+end
+
 @testset "ExaPF.PowerSystem" begin
-    # Test PowerNetwork object and parsers
     include("powersystem.jl")
 end
 
-@testset "ExaPF.LinearSolvers" begin
-    include("iterative_solvers.jl")
+test_suite(CPU(), Array, SparseMatrixCSC)
+
+if has_cuda_gpu()
+    test_suite(CUDADevice(), CuArray, CuSparseMatrixCSR)
 end
 
-@testset "Polar formulation" begin
-    # Test that behavior matches Matpower
-    include("Polar/matpower.jl")
-    # Test polar formulation
-    include("Polar/polar_form.jl")
-    # Autodiff's Jacobians
-    include("Polar/autodiff.jl")
-    # Reduced gradient
-    include("Polar/gradient.jl")
-    # Reduced Hessian
-    include("Polar/hessian.jl")
-end
-
-@testset "Optimization evaluators" begin
-    # Resolution of powerflow equations with NLPEvaluators
-    include("Evaluators/powerflow.jl")
-    # Test generic API
-    include("Evaluators/interface.jl")
-    # Test more in-depth each evaluator
-    include("Evaluators/reduced_evaluator.jl")
-    include("Evaluators/proxal_evaluator.jl")
-    include("Evaluators/auglag.jl")
-    include("Evaluators/MOI_wrapper.jl")
-    # Test basic reduced gradient algorithm
-    include("Evaluators/test_rgm.jl")
-end
+# @testset "Optimization evaluators" begin
+#     # Resolution of powerflow equations with NLPEvaluators
+#     include("Evaluators/powerflow.jl")
+#     # Test generic API
+#     include("Evaluators/interface.jl")
+#     # Test more in-depth each evaluator
+#     include("Evaluators/reduced_evaluator.jl")
+#     include("Evaluators/proxal_evaluator.jl")
+#     include("Evaluators/auglag.jl")
+#     include("Evaluators/MOI_wrapper.jl")
+#     # Test basic reduced gradient algorithm
+#     include("Evaluators/test_rgm.jl")
+# end
 
 @testset "Documentation" begin
     include("quickstart.jl")

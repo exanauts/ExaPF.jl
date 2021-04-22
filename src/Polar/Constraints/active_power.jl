@@ -121,7 +121,7 @@ function matpower_hessian(polar::PolarForm, ::typeof(active_power_constraints), 
     ref = polar.indexing.index_ref
     # Check consistency: currently only support a single slack node
     @assert length(λ) == 1
-    V = buffer.vmag .* exp.(im .* buffer.vang)
+    V = buffer.vmag .* exp.(im .* buffer.vang) |> Array
     hxx, hxu, huu = PS.active_power_hessian(V, polar.network.Ybus, pv, pq, ref)
 
     λₚ = λ[1]

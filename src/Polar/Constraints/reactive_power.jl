@@ -126,7 +126,7 @@ function matpower_hessian(polar::PolarForm, ::typeof(reactive_power_constraints)
     # Select only buses with generators
     λq[gen2bus] .= λ
 
-    V = buffer.vmag .* exp.(im .* buffer.vang)
+    V = buffer.vmag .* exp.(im .* buffer.vang) |> Array
     hxx, hxu, huu = PS.reactive_power_hessian(V, polar.network.Ybus, λq, pv, pq, ref)
     return FullSpaceHessian(
         hxx, hxu, huu,
