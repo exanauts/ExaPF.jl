@@ -20,7 +20,6 @@ function test_auglag_evaluator(nlp, device, MT)
         # Update penalty weigth
         # (with a large-enough factor to have a meaningful derivative check)
         ##################################################
-        pen.ρ = 10.0
         ExaPF.update_penalty!(pen, η=1e3)
         ExaPF.update_multipliers!(pen)
 

@@ -44,27 +44,23 @@ function runtests(datafile, device, AT)
         nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device, powerflow_solver=NewtonRaphson(tol=1e-6))
         test_powerflow_evaluator(nlp, device, AT)
     end
-    @testset "Evaluator Interface" begin
-        @testset "$Evaluator" for Evaluator in [
-            ExaPF.ReducedSpaceEvaluator,
-            ExaPF.AugLagEvaluator,
-            ExaPF.ProxALEvaluator,
-            ExaPF.SlackEvaluator,
-            ExaPF.FeasibilityEvaluator,
-        ]
-            nlp = Evaluator(datafile; device=device)
-            test_evaluator_api(nlp, device, AT)
-            test_evaluator_callbacks(nlp, device, AT)
-        end
+    @testset "$Evaluator Interface" for Evaluator in [
+        ExaPF.ReducedSpaceEvaluator,
+        ExaPF.AugLagEvaluator,
+        ExaPF.ProxALEvaluator,
+        ExaPF.SlackEvaluator,
+        ExaPF.FeasibilityEvaluator,
+    ]
+        nlp = Evaluator(datafile; device=device)
+        test_evaluator_api(nlp, device, AT)
+        test_evaluator_callbacks(nlp, device, AT)
     end
-    @testset "Evaluator Hessian" begin
-        @testset "$Evaluator" for Evaluator in [
-            ExaPF.ReducedSpaceEvaluator,
-            ExaPF.AugLagEvaluator,
-        ]
-            nlp = Evaluator(datafile; device=device)
-            test_evaluator_hessian(nlp, device, AT)
-        end
+    @testset "$Evaluator Hessian" for Evaluator in [
+        ExaPF.ReducedSpaceEvaluator,
+        ExaPF.AugLagEvaluator,
+    ]
+        nlp = Evaluator(datafile; device=device)
+        test_evaluator_hessian(nlp, device, AT)
     end
     @testset "ProxALEvaluator" begin
         nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device)
