@@ -17,8 +17,8 @@ function matpower_residual_jacobian(V, Ybus)
     diagIbus    = sparse(1:n, 1:n, Ibus, n, n)
     diagVnorm   = sparse(1:n, 1:n, V./abs.(V), n, n)
 
-    dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-    dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
+    dSbus_dVm = diagV * conj(Ybus * diagVnorm) .+ conj(diagIbus) * diagVnorm
+    dSbus_dVa = 1im * diagV * conj(diagIbus .- Ybus * diagV)
     return (dSbus_dVm, dSbus_dVa)
 end
 

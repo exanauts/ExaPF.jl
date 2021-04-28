@@ -95,17 +95,23 @@ function matpower_jacobian(polar::PolarForm, X::Union{State, Control}, ::typeof(
     dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
 
     if isa(X, State)
-        j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-        j12 = real(dSbus_dVm[[pv; pq], pq])
-        j21 = imag(dSbus_dVa[pq, [pv; pq]])
-        j22 = imag(dSbus_dVm[pq, pq])
-        return [j11 j12; j21 j22]
+        J_va_re = real(dSbus_dVa)
+        J_va_im = imag(dSbus_dVa)
+        J_vm_re = real(dSbus_dVm)
+        J_vm_im = imag(dSbus_dVm)
+        j11 = J_va_re[[pv; pq], [pv; pq]]
+        j12 = J_vm_re[[pv; pq], pq]
+        j21 = J_va_im[pq, [pv; pq]]
+        j22 = J_vm_im[pq, pq]
+        return [j11 j12; j21 j22]::SparseMatrixCSC{Float64, Int}
     elseif isa(X, Control)
-        j11 = real(dSbus_dVm[[pv; pq], [ref; pv]])
+        J_vm_re = real(dSbus_dVm)
+        J_vm_im = imag(dSbus_dVm)
+        j11 = J_vm_re[[pv; pq], [ref; pv]]
         j12 = sparse(I, npv + npq, npv)
-        j21 = imag(dSbus_dVm[pq, [ref; pv]])
+        j21 = J_vm_im[pq, [ref; pv]]
         j22 = spzeros(npq, npv)
-        return [j11 -j12; j21 j22]
+        return [j11 -j12; j21 j22]::SparseMatrixCSC{Float64, Int}
     end
 end
 

@@ -42,16 +42,16 @@ function makeYbus(bus, branch, baseMVA, bus_to_indexes)
     #      |    | = |          | * |    |
     #      | It |   | Ytf  Ytt |   | Vt |
     #
-    stat = branch[:, BR_STATUS]                     # ones at in-service branches
-    Ys = stat ./ (branch[:, BR_R] + 1im * branch[:, BR_X])  # series admittance
+    stat = @view branch[:, BR_STATUS]                     # ones at in-service branches
+    Ys = stat ./ (branch[:, BR_R] .+ 1im .* branch[:, BR_X])  # series admittance
     Bc = stat .* branch[:, BR_B]                           # line charging susceptance
-    tap = ones(nl)                               # default tap ratio = 1
+    tap = ones(ComplexF64, nl)                               # default tap ratio = 1
     i = findall(branch[:, TAP] .!= 0)              # indices of non-zero tap ratios
-    tap[i] = branch[i, TAP]                         # assign non-zero tap ratios
-    tap = tap .* exp.(1im*pi/180 * branch[:, SHIFT]) # add phase shifters
-    Ytt = Ys + 1im*Bc/2
-    Yff = Ytt ./ (tap .* conj(tap))
-    Yft = - Ys ./ conj(tap)
+    tap[i] .= branch[i, TAP]                         # assign non-zero tap ratios
+    tap .*= exp.(1im*pi/180 .* branch[:, SHIFT]) # add phase shifters
+    Ytt = Ys .+ 1im .* Bc ./ 2.0
+    Yff = Ytt ./ (tap .* conj.(tap))
+    Yft = - Ys ./ conj.(tap)
     Ytf = - Ys ./ tap
 
     # compute shunt admittance
@@ -59,7 +59,7 @@ function makeYbus(bus, branch, baseMVA, bus_to_indexes)
     # and Qsh is the reactive power injected by the shunt at V = 1.0 p.u.
     # then Psh - j Qsh = V * conj(Ysh * V) = conj(Ysh) = Gs - j Bs,
     # i.e. Ysh = Psh + j Qsh, so ...
-    Ysh = (bus[:, GS] + 1im * bus[:, BS]) / baseMVA[1] # vector of shunt admittances
+    Ysh = (bus[:, GS] .+ 1im .* bus[:, BS]) ./ baseMVA[1] # vector of shunt admittances
 
     # build connection matrices
     f = [bus_to_indexes[e] for e in branch[:, F_BUS]] # list of "from" buses
@@ -75,7 +75,7 @@ function makeYbus(bus, branch, baseMVA, bus_to_indexes)
     Yt = sparse(i, [f; t], [Ytf; Ytt], nl, nb)
 
     # build Ybus
-    Ybus = Cf' * Yf + Ct' * Yt + sparse(1:nb, 1:nb, Ysh, nb, nb)
+    Ybus = Cf' * Yf .+ Ct' * Yt .+ sparse(1:nb, 1:nb, Ysh, nb, nb)
 
     return (ybus=Ybus, yff=Yff, ytt=Ytt, ytf=Ytf, yft=Yft, from_buses=f, to_buses=t)
 end
@@ -103,16 +103,16 @@ function bustypeindex(bus, gen, bus_to_indexes)
     # Design note: this might be computed once and then modified for each contingency.
     gencon = zeros(Int8, size(bus, 1))
 
-    for i in 1:size(gen, 1)
+    @inbounds for i in 1:size(gen, 1)
         if gen[i, GEN_STATUS] == 1
             id_bus = bus_to_indexes[gen[i, GEN_BUS]]
             gencon[id_bus] += 1
         end
     end
 
-    bustype = copy(bus[:, BUS_TYPE])
+    bustype = convert(Vector{Int}, bus[:, BUS_TYPE])
 
-    for i in 1:size(bus, 1)
+    @inbounds for i in 1:size(bus, 1)
         if (bustype[i] == PV_BUS_TYPE) && (gencon[i] == 0)
             bustype[i] = PQ_BUS_TYPE
         elseif (bustype[i] == PQ_BUS_TYPE) && (gencon[i] > 0)
@@ -121,9 +121,9 @@ function bustypeindex(bus, gen, bus_to_indexes)
     end
 
     # form vectors
-    ref = findall(x -> x==REF_BUS_TYPE, bustype)
-    pv = findall(x -> x==PV_BUS_TYPE, bustype)
-    pq = findall(x -> x==PQ_BUS_TYPE, bustype)
+    ref = findall(x -> x==REF_BUS_TYPE, bustype)::Vector{Int}
+    pv = findall(x -> x==PV_BUS_TYPE, bustype)::Vector{Int}
+    pq = findall(x -> x==PQ_BUS_TYPE, bustype)::Vector{Int}
 
     return ref, pv, pq, bustype
 end

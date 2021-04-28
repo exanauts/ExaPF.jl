@@ -100,11 +100,11 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(f
     if isa(X, State)
         j11 = dSl_dVa[:, [pv; pq]]
         j12 = dSl_dVm[:, pq]
-        return [j11 j12]
+        return [j11 j12]::SparseMatrixCSC{Float64, Int}
     elseif isa(X, Control)
         j11 = dSl_dVm[:, [ref; pv]]
         j12 = spzeros(2 * nlines, npv)
-        return [j11 j12]
+        return [j11 j12]::SparseMatrixCSC{Float64, Int}
     end
 end
 

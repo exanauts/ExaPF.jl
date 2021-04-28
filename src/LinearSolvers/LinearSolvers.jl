@@ -118,7 +118,8 @@ function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, x::Arra
 end
 
 function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector)
-    y .= J \ x
+    fac = lu(J)
+    LinearAlgebra.ldiv!(y, fac, x)
     return 0
 end
 

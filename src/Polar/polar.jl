@@ -64,7 +64,7 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     nref = PS.get(pf, PS.NumberOfSlackBuses())
     ngens = PS.get(pf, PS.NumberOfGenerators())
 
-    topology = NetworkTopology{IT, VT}(pf)
+    topology = NetworkTopology(pf, IT, VT)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
     # Move load to the target device
@@ -221,12 +221,25 @@ function initial(polar::PolarForm{T, IT, VT, MT}, X::Union{State,Control}) where
     end
 end
 
-function get(form::PolarForm{T, IT, VT, MT}, ::PhysicalState) where {T, IT, VT, MT}
+function get(form::PolarForm{T, VI, VT, MT}, ::PhysicalState) where {T, VI, VT, MT}
     nbus = PS.get(form.network, PS.NumberOfBuses())
     ngen = PS.get(form.network, PS.NumberOfGenerators())
     n_state = get(form, NumberOfState())
     gen2bus = form.indexing.index_generators
-    return PolarNetworkState{VT}(nbus, ngen, n_state, gen2bus)
+
+    # Bus variables
+    pbus = zeros(nbus) |> VT
+    qbus = zeros(nbus) |> VT
+    vmag = zeros(nbus) |> VT
+    vang = zeros(nbus) |> VT
+    # Generators variables
+    pg = zeros(ngen) |> VT
+    qg = zeros(ngen) |> VT
+    # Buffers
+    balance = zeros(n_state) |> VT
+    dx = zeros(n_state) |> VT
+
+    return PolarNetworkState{VI,VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx, gen2bus)
 end
 
 function get!(

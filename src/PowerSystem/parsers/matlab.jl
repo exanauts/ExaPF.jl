@@ -47,14 +47,16 @@ function parse_matlab_string(data_string::String; extended = false)
                 if haskey(matrix_dict, "column_names")
                     column_names[matrix_dict["name"]] = matrix_dict["column_names"]
                 end
-                index = index + matrix_dict["line_count"] - 1
+                line_count = matrix_dict["line_count"]::Int
+                index = index + line_count - 1
             elseif occursin("{", line)
                 cell_dict = _parse_matlab_cells(data_lines, index)
                 matlab_dict[cell_dict["name"]] = cell_dict["data"]
                 if haskey(cell_dict, "column_names")
                     column_names[cell_dict["name"]] = cell_dict["column_names"]
                 end
-                index = index + cell_dict["line_count"] - 1
+                line_count = cell_dict["line_count"]::Int
+                index = index + line_count - 1
             else
                 name, value = _extract_matlab_assignment(line)
                 value = _type_value(value)
@@ -125,7 +127,7 @@ _parse_matlab_cells(lines, index) = _parse_matlab_data(lines, index, '{', '}')
 _parse_matlab_matrix(lines, index) = _parse_matlab_data(lines, index, '[', ']')
 
 ""
-function _parse_matlab_data(lines, index, start_char, end_char)
+function _parse_matlab_data(lines, index::Int, start_char::Char, end_char::Char)
     last_index = length(lines)
     line_count = 0
     columns = -1
@@ -177,7 +179,7 @@ function _parse_matlab_data(lines, index, start_char, end_char)
     matrix_body_rows = split(matrix_body, ';')
     matrix_body_rows = matrix_body_rows[1:(length(matrix_body_rows) - 1)]
 
-    matrix = []
+    matrix = Any[]
     for row in matrix_body_rows
         row_items = split_line(strip(row))
         #println(row_items)
@@ -195,7 +197,7 @@ function _parse_matlab_data(lines, index, start_char, end_char)
         matrix[r] = [typed_columns[c][r] for c in 1:columns]
     end
 
-    matrix_dict = Dict("name" => matrix_name, "data" => matrix, "line_count" => line_count)
+    matrix_dict = Dict{String, Any}("name" => matrix_name, "data" => matrix, "line_count" => line_count)
 
     if index > 1 && occursin("%column_names%", lines[index - 1])
         column_names_string = lines[index - 1]
@@ -204,7 +206,7 @@ function _parse_matlab_data(lines, index, start_char, end_char)
         if length(matrix[1]) != length(column_names)
             @error "column name parsing error, data rows $(length(matrix[1])), column names $(length(column_names)) \n$(column_names)"
         end
-        if any([column_name == "index" for column_name in column_names])
+        if any(Bool[column_name == "index" for column_name in column_names])
             @error "column name parsing error, \"index\" is a reserved column name \n$(column_names)"
         end
         matrix_dict["column_names"] = column_names
