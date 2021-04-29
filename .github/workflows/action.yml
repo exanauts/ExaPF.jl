@@ -8,7 +8,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   schedule:
-    cron:  '* * * * 1' 
+    cron: '* * * * 1'
 
 jobs:
   test-github-cpuonly:
