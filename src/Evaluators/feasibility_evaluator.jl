@@ -19,8 +19,8 @@ function FeasibilityEvaluator(nlp::AbstractNLPEvaluator)
     cx = similar(x_min, n_constraints(nlp))
     return FeasibilityEvaluator{typeof(nlp), eltype(x_min), typeof(x_min)}(nlp, x_min, x_max, cx)
 end
-function FeasibilityEvaluator(datafile::String)
-    nlp = SlackEvaluator(datafile)
+function FeasibilityEvaluator(datafile::String; device=CPU())
+    nlp = SlackEvaluator(datafile; device=device)
     return FeasibilityEvaluator(nlp)
 end
 

@@ -1,9 +1,8 @@
 using CUDA
-using ExaPF
 using KernelAbstractions
 using Test
-using TimerOutputs
 
+using ExaPF
 import ExaPF: PowerSystem
 import ExaPF.PowerSystem: ParsePSSE
 
@@ -12,7 +11,6 @@ const PS = PowerSystem
 @testset "Powerflow residuals and Jacobian" begin
     local_case = "case14.raw"
     # read data
-    to = TimerOutputs.TimerOutput()
     datafile = joinpath(dirname(@__FILE__), "..", "data", local_case)
     data_raw = ParsePSSE.parse_raw(datafile)
     data = ParsePSSE.raw_to_exapf(data_raw)
@@ -87,29 +85,17 @@ const PS = PowerSystem
     ]
 end
 
-@testset "PowerNetwork object" begin
-    psse_datafile = "case14.raw"
-    matpower_datafile = "case9.m"
+function test_powernetwork_parser(datafile)
+    pf = PS.PowerNetwork(datafile)
+    @test isa(pf, PS.PowerNetwork)
+    return nothing
+end
 
-    # Test constructor
-    @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
-        datafile = joinpath(dirname(@__FILE__), "..", "data", name)
-        pf = PS.PowerNetwork(datafile)
-        @test isa(pf, PS.PowerNetwork)
-    end
-
-    # From now on, test with "case9.m"
-    datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
+function test_powernetwork_api(datafile)
     data = PS.import_dataset(datafile)
     pf = PS.PowerNetwork(data)
 
-    @testset "Computing cost coefficients" begin
-        coefs = PS.get_costs_coefficients(pf)
-        @test size(coefs) == (3, 4)
-        @test isequal(coefs[:, 1], [3.0, 2.0, 2.0])
-    end
-
-    @testset "Getters" for Attr in [
+    for Attr in [
         PS.NumberOfBuses,
         PS.NumberOfPVBuses,
         PS.NumberOfPQBuses,
@@ -121,41 +107,62 @@ end
         @test isa(res, Int)
     end
 
-    @testset "Indexing" begin
-        idx = PS.get(pf, PS.GeneratorIndexes())
-        @test isequal(idx, [1, 2, 3])
-    end
+    # Buses
+    n_bus = PS.get(pf, PS.NumberOfBuses())
+    v_min, v_max = PS.bounds(pf, PS.Buses(), PS.VoltageMagnitude())
+    @test length(v_min) == n_bus
+    @test length(v_max) == n_bus
 
-    @testset "Bounds" begin
-        n_bus = PS.get(pf, PS.NumberOfBuses())
-        v_min, v_max = PS.bounds(pf, PS.Buses(), PS.VoltageMagnitude())
-        @test length(v_min) == n_bus
-        @test length(v_max) == n_bus
+    # Generators
+    n_gen = PS.get(pf, PS.NumberOfGenerators())
+    p_min, p_max = PS.bounds(pf, PS.Generators(), PS.ActivePower())
+    @test length(p_min) == n_gen
+    @test length(p_max) == n_gen
+    q_min, q_max = PS.bounds(pf, PS.Generators(), PS.ReactivePower())
+    @test length(q_min) == n_gen
+    @test length(q_max) == n_gen
+    idx = PS.get(pf, PS.GeneratorIndexes())
+    @test isequal(idx, [1, 2, 3])
+    # Test costs coefficients
+    coefs = PS.get_costs_coefficients(pf)
+    @test size(coefs) == (n_gen, 4)
+    @test isequal(coefs[:, 1], [3.0, 2.0, 2.0])
 
-        n_gen = PS.get(pf, PS.NumberOfGenerators())
-        p_min, p_max = PS.bounds(pf, PS.Generators(), PS.ActivePower())
-        @test length(p_min) == n_gen
-        @test length(p_max) == n_gen
-        q_min, q_max = PS.bounds(pf, PS.Generators(), PS.ReactivePower())
-        @test length(q_min) == n_gen
-        @test length(q_max) == n_gen
+    # Lines
+    n_lines = PS.get(pf, PS.NumberOfLines())
+    f_min, f_max = PS.bounds(pf, PS.Lines(), PS.ActivePower())
+    @test length(f_min) == n_lines
+    @test length(f_max) == n_lines
 
-        n_lines = PS.get(pf, PS.NumberOfLines())
-        f_min, f_max = PS.bounds(pf, PS.Lines(), PS.ActivePower())
-        @test length(f_min) == n_lines
-        @test length(f_max) == n_lines
-    end
-
-    @testset "Load from data" begin
-        pf_original = PS.PowerNetwork(data)
-        @test isa(pf_original, PS.PowerNetwork)
-        n_lines = PS.get(pf_original, PS.NumberOfLines())
-
-        pf_removed = PS.PowerNetwork(data; remove_lines=Int[1])
-        @test isa(pf_removed, PS.PowerNetwork)
-        n_after_removal = PS.get(pf_removed, PS.NumberOfLines())
-
-        @test n_lines - 1 == n_after_removal
-        @test pf_original.Ybus != pf_removed.Ybus
-    end
 end
+
+function test_powernetwork_contingencies(datafile)
+    data = PS.import_dataset(datafile)
+    pf_original = PS.PowerNetwork(data)
+    @test isa(pf_original, PS.PowerNetwork)
+    n_lines = PS.get(pf_original, PS.NumberOfLines())
+
+    pf_removed = PS.PowerNetwork(data; remove_lines=Int[1])
+    @test isa(pf_removed, PS.PowerNetwork)
+    n_after_removal = PS.get(pf_removed, PS.NumberOfLines())
+
+    @test n_lines - 1 == n_after_removal
+    @test pf_original.Ybus != pf_removed.Ybus
+end
+
+@testset "PowerNetwork object" begin
+    psse_datafile = "case14.raw"
+    matpower_datafile = "case9.m"
+
+    # Test constructor
+    @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
+        datafile = joinpath(dirname(@__FILE__), "..", "data", name)
+        test_powernetwork_parser(datafile)
+    end
+
+    # Test API with "case9.m"
+    datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
+    test_powernetwork_api(datafile)
+    test_powernetwork_contingencies(datafile)
+end
+

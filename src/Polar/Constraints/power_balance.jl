@@ -119,8 +119,9 @@ function matpower_hessian(
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
-    V = buffer.vmag .* exp.(im .* buffer.vang)
-    hxx, hxu, huu = PS.residual_hessian(V, polar.network.Ybus, λ, pv, pq, ref)
+    λ_host = λ |> Array
+    V = buffer.vmag .* exp.(im .* buffer.vang) |> Array
+    hxx, hxu, huu = PS.residual_hessian(V, polar.network.Ybus, λ_host, pv, pq, ref)
     return FullSpaceHessian(hxx, hxu, huu)
 end
 
