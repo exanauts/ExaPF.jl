@@ -245,7 +245,7 @@ function adj_residual_polar!(
 end
 
 KA.@kernel function transfer_kernel!(
-                                     vmag, vang, pinj, qinj, @Const(u), @Const(pv), @Const(pq), @Const(ref), @Const(pload), @Const(qload)
+    vmag, vang, pinj, qinj, @Const(u), @Const(pv), @Const(pq), @Const(ref), @Const(pload), @Const(qload)
 )
     i = @index(Global, Linear)
     npv = length(pv)
@@ -811,4 +811,3 @@ function adj_branch_flow!(
     )
     wait(ev)
 end
-
