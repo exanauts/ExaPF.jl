@@ -11,7 +11,6 @@ using KernelAbstractions
 import CUDA.CUBLAS
 import CUDA.CUSOLVER
 import CUDA.CUSPARSE
-import IterativeSolvers
 import Krylov
 import LightGraphs
 import Metis
@@ -195,33 +194,6 @@ function ldiv!(solver::EigenBICGSTAB,
     return n_iters
 end
 
-struct RefBICGSTAB <: AbstractIterativeLinearSolver
-    precond::AbstractPreconditioner
-    verbose::Bool
-end
-RefBICGSTAB(precond; verbose=true) = RefBICGSTAB(precond, verbose)
-function ldiv!(solver::RefBICGSTAB,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
-)
-    P = solver.precond.P
-    y[:], history = IterativeSolvers.bicgstabl(P*J, P*x, log=solver.verbose)
-    return history.iters
-end
-
-struct RefGMRES <: AbstractIterativeLinearSolver
-    precond::AbstractPreconditioner
-    restart::Int
-    verbose::Bool
-end
-RefGMRES(precond; restart=4, verbose=true) = RefGMRES(precond, restart, verbose)
-function ldiv!(solver::RefGMRES,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
-)
-    P = solver.precond.P
-    y[:], history = IterativeSolvers.gmres(P*J, P*x, restart=solver.restart, log=solver.verbose)
-    return history.iters
-end
-
 struct DQGMRES <: AbstractIterativeLinearSolver
     precond::AbstractPreconditioner
     memory::Int
@@ -266,12 +238,12 @@ end
 
 List all linear solvers available solving the power flow on the CPU.
 """
-list_solvers(::KA.CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
+list_solvers(::KA.CPU) = [DirectSolver, DQGMRES, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB]
 
 """
     list_solvers(::KA.GPU)
 
 List all linear solvers available solving the power flow on an NVIDIA GPU.
 """
-list_solvers(::KA.GPU) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
+list_solvers(::KA.GPU) = [DirectSolver, BICGSTAB, DQGMRES, EigenBICGSTAB, KrylovBICGSTAB]
 end
