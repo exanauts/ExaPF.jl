@@ -20,7 +20,7 @@ function flow_constraints(polar::PolarForm, cons, buffer::PolarNetworkState)
 end
 
 # Specialized function for AD with ForwardDiff
-function flow_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
+function flow_constraints(polar::PolarForm, cons, vm, va, pbus, qbus, pd, qd)
     _flow_constraints(polar, cons, vm, va)
 end
 
@@ -62,6 +62,7 @@ function adjoint!(
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
+    pload, qload,
 ) where {F<:typeof(flow_constraints), S, I}
     nlines = PS.get(polar.network, PS.NumberOfLines())
     nbus = PS.get(polar.network, PS.NumberOfBuses())

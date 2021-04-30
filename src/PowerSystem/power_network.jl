@@ -104,12 +104,15 @@ struct PowerNetwork <: AbstractPowerSystem
         )
 
         # bus type indexing
-        ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
+        ref, pv, pq, bustype, inactive_generators = bustypeindex(bus, gen, bus_id_to_indexes)
         # check consistency
         ref_id = bus[ref, 1]
         @assert bus[ref, 2] == [REF_BUS_TYPE]
         if !(ref_id[1] in gen[:, 1])
             error("[PS] No generator attached to slack node.")
+        end
+        if !isempty(inactive_generators)
+            println("[PS] Found $(length(inactive_generators)) inactive generators.")
         end
 
         sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
@@ -162,27 +165,16 @@ get(pf::PowerNetwork, ::PVIndexes) = pf.pv
 get(pf::PowerNetwork, ::PQIndexes) = pf.pq
 get(pf::PowerNetwork, ::SlackIndexes) = pf.ref
 
+has_inactive_generators(pf::PowerNetwork) = any(isequal(0), view(pf.generators, :, 8))
+active_generators(pf::PowerNetwork) = findall(isequal(1), view(pf.generators, :, 8))
+inactive_generators(pf::PowerNetwork) = findall(isequal(0), view(pf.generators, :, 8))
 
 # Pretty printing
 function Base.show(io::IO, pf::PowerNetwork)
-    println("Power Network characteristics:")
-    @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),
+    println("PowerNetwork object with:")
+    @printf("    Buses: %d (Slack: %d. PV: %d. PQ: %d)\n", pf.nbus, length(pf.ref),
             length(pf.pv), length(pf.pq))
-    println("\tGenerators: ", pf.ngen, ".")
-    # Print system status
-    @printf("\t==============================================\n")
-    @printf("\tBUS \t TYPE \t VMAG \t VANG \t P \t Q\n")
-    @printf("\t==============================================\n")
-
-    for i=1:pf.nbus
-        type = pf.bustype[i]
-        vmag = abs(pf.vbus[i])
-        vang = angle(pf.vbus[i])*(180.0/pi)
-        pinj = real(pf.sbus[i])
-        qinj = imag(pf.sbus[i])
-        @printf("\t%d \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
-                type, vmag, vang, pinj, qinj)
-    end
+    println("    Generators: ", pf.ngen, ".")
 end
 
 # Some utils function
@@ -207,6 +199,12 @@ function bounds(pf::PowerNetwork, ::Generators, ::ActivePower)
 
     p_min = convert.(Float64, gens[:, PMIN] / baseMVA)
     p_max = convert.(Float64, gens[:, PMAX] / baseMVA)
+    if has_inactive_generators(pf)
+        inactive_gens = inactive_generators(pf)
+        # Set lower and upper bounds to 0 for inactive generators
+        p_min[inactive_gens] .= 0.0
+        p_max[inactive_gens] .= 0.0
+    end
     return p_min, p_max
 end
 
@@ -220,6 +218,12 @@ function bounds(pf::PowerNetwork, ::Generators, ::ReactivePower)
 
     q_min = convert.(Float64, gens[:, QMIN] / baseMVA)
     q_max = convert.(Float64, gens[:, QMAX] / baseMVA)
+    if has_inactive_generators(pf)
+        inactive_gens = inactive_generators(pf)
+        # Set lower and upper bounds to 0 for inactive generators
+        q_min[inactive_gens] .= 0.0
+        q_max[inactive_gens] .= 0.0
+    end
     return q_min, q_max
 end
 
