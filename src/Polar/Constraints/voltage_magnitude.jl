@@ -3,7 +3,7 @@ is_constraint(::typeof(voltage_magnitude_constraints)) = true
 is_linear(polar::PolarForm, ::typeof(voltage_magnitude_constraints)) = true
 
 # We add constraint only on vmag_pq
-function voltage_magnitude_constraints(polar::PolarForm, cons, vm, va, pinj, qinj)
+function voltage_magnitude_constraints(polar::PolarForm, cons, vm, va, pinj, qinj, pd, qd)
     index_pq = polar.indexing.index_pq
     cons .= @view vm[index_pq]
     return
@@ -33,6 +33,7 @@ function adjoint!(
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
+    pload, qload,
 ) where {F<:typeof(voltage_magnitude_constraints), S, I}
     index_pq = polar.indexing.index_pq
     ∂vm[index_pq] .= ∂cons

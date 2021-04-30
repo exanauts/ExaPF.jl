@@ -9,6 +9,7 @@ function adjoint!(
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
+    pload, qload,
 ) where {F<:typeof(active_power_generation), S, I}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
@@ -97,7 +98,8 @@ function put(
         buffer.pg, adj_pg,
         buffer.vmag, adj_vmag,
         buffer.vang, adj_vang,
-        buffer.pinj, adj_pinj
+        buffer.pinj, adj_pinj,
+        buffer.pd, buffer.qd,
     )
 
     # Adjoint w.r.t. x and u

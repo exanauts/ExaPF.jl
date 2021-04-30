@@ -10,7 +10,7 @@ function active_power_constraints(polar::PolarForm, cons, buffer)
 end
 
 # Function for AutoDiff
-function active_power_constraints(polar::PolarForm, cons, vmag, vang, pinj, qinj)
+function active_power_constraints(polar::PolarForm, cons, vmag, vang, pinj, qinj, pd, qd)
     kernel! = active_power_kernel!(polar.device)
     ref = polar.indexing.index_ref
     ref_to_gen = polar.indexing.index_ref_to_gen
@@ -31,7 +31,7 @@ function active_power_constraints(polar::PolarForm, cons, vmag, vang, pinj, qinj
             sin_val = sin(aij)
             inj += coef_cos * cos_val + coef_sin * sin_val
         end
-        cons[i_] = inj + polar.active_load[bus]
+        cons[i_] = inj + pd[bus]
     end
 end
 
@@ -75,6 +75,7 @@ function adjoint!(
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
+    pload, qload,
 ) where {F<:typeof(active_power_constraints), S, I}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())

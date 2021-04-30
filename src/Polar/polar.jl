@@ -25,9 +25,6 @@ struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
     u_max::VT
     # costs
     costs_coefficients::MT
-    # Constant loads
-    active_load::VT
-    reactive_load::VT
     # Indexing of the PV, PQ and slack buses
     indexing::IndexingCache{IT}
     # struct
@@ -67,9 +64,6 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     topology = NetworkTopology{IT, VT}(pf)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
-    # Move load to the target device
-    pload = convert(VT, PS.get(pf, PS.ActiveLoad()))
-    qload = convert(VT, PS.get(pf, PS.ReactiveLoad()))
 
     # Move the indexing to the target device
     idx_gen = PS.get(pf, PS.GeneratorIndexes())
@@ -141,7 +135,7 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
         x_min, x_max, u_min, u_max,
-        coefs, pload, qload,
+        coefs,
         indexing,
         topology,
         statemap, controlmap,
@@ -170,16 +164,6 @@ function get(polar::PolarForm, attr::PS.AbstractNetworkAttribute)
     return get(polar.network, attr)
 end
 
-# Setters
-function setvalues!(polar::PolarForm, ::PS.ActiveLoad, values)
-    @assert length(polar.active_load) == length(values)
-    copyto!(polar.active_load, values)
-end
-function setvalues!(polar::PolarForm, ::PS.ReactiveLoad, values)
-    @assert length(polar.reactive_load) == length(values)
-    copyto!(polar.reactive_load, values)
-end
-
 ## Bounds
 function bounds(polar::PolarForm{T, IT, VT, MT}, ::State) where {T, IT, VT, MT}
     return polar.x_min, polar.x_max
@@ -192,10 +176,9 @@ end
 # Initial position
 function initial(polar::PolarForm{T, IT, VT, MT}, X::Union{State,Control}) where {T, IT, VT, MT}
     # Load data from PowerNetwork
-    pbus = real.(polar.network.sbus) |> VT
-    qbus = imag.(polar.network.sbus) |> VT
     vmag = abs.(polar.network.vbus) |> VT
     vang = angle.(polar.network.vbus) |> VT
+    pg = get(polar.network, PS.ActivePower())
 
     npv = get(polar, PS.NumberOfPVBuses())
     npq = get(polar, PS.NumberOfPQBuses())
@@ -213,10 +196,8 @@ function initial(polar::PolarForm{T, IT, VT, MT}, X::Union{State,Control}) where
         dimension = get(polar, NumberOfControl())
         u = xzeros(VT, dimension)
         u[1:nref] = vmag[polar.network.ref]
-        # u is equal to active power of generator (Pᵍ)
-        # As P = Pᵍ - Pˡ , we get
         u[nref + 1:nref + npv] = vmag[polar.network.pv]
-        u[nref + npv + 1:nref + 2*npv] = pbus[polar.network.pv] + polar.active_load[polar.network.pv]
+        u[nref + npv + 1:nref + 2*npv] = pg[polar.indexing.index_pv_to_gen]
         return u
     end
 end
@@ -267,10 +248,10 @@ end
 
 function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState) where {T, IT, VT, MT}
     # FIXME: add proper getters in PowerSystem
-    pbus = real.(form.network.sbus)
-    qbus = imag.(form.network.sbus)
     vmag = abs.(form.network.vbus)
     vang = angle.(form.network.vbus)
+    pd = PS.get(form.network, PS.ActiveLoad())
+    qd = PS.get(form.network, PS.ReactiveLoad())
 
     pg = get(form.network, PS.ActivePower())
     qg = get(form.network, PS.ReactivePower())
@@ -279,8 +260,14 @@ function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState)
     copyto!(buffer.vang, vang)
     copyto!(buffer.pg, pg)
     copyto!(buffer.qg, qg)
-    copyto!(buffer.pinj, pbus)
-    copyto!(buffer.qinj, qbus)
+    copyto!(buffer.pd, pd)
+    copyto!(buffer.qd, qd)
+
+    fill!(buffer.pinj, 0.0)
+    fill!(buffer.qinj, 0.0)
+    buffer.pinj[form.indexing.index_generators] .= pg
+    buffer.qinj[form.indexing.index_generators] .= qg
+    return
 end
 
 function direct_linear_solver(polar::PolarForm)

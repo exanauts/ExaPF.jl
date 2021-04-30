@@ -176,11 +176,9 @@ function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkValues, 
     setvalues!(nlp.model, attr, values)
 end
 function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.ActiveLoad, values)
-    setvalues!(nlp.model, attr, values)
     setvalues!(nlp.buffer, attr, values)
 end
 function setvalues!(nlp::ReducedSpaceEvaluator, attr::PS.ReactiveLoad, values)
-    setvalues!(nlp.model, attr, values)
     setvalues!(nlp.buffer, attr, values)
 end
 

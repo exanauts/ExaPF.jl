@@ -46,7 +46,7 @@ function test_constraints_jacobian(polar, device, MT)
             cache.vang[pq] .= x[npv+1:npv+npq]
             cache.vmag[pq] .= x[npv+npq+1:end]
             c = zeros(m) |> MT
-            cons(polar, c, cache.vmag, cache.vang, cache.pinj, cache.qinj)
+            cons(polar, c, cache.vmag, cache.vang, cache.pinj, cache.qinj, cache.pd, cache.qd)
             return c
         end
         x = [cache.vang[pv]; cache.vang[pq]; cache.vmag[pq]]
@@ -75,7 +75,7 @@ function test_constraints_jacobian(polar, device, MT)
                 cache.vmag[pv] .= u[nref+1:npv+nref]
                 cache.pinj[pv] .= u[nref+npv+1:end]
                 c = zeros(m) |> MT
-                cons(polar, c, cache.vmag, cache.vang, cache.pinj, cache.qinj)
+                cons(polar, c, cache.vmag, cache.vang, cache.pinj, cache.qinj, cache.pd, cache.qd)
                 return c
             end
             u = [cache.vmag[ref]; cache.vmag[pv]; cache.pinj[pv]]
@@ -123,7 +123,7 @@ function test_constraints_adjoint(polar, device, MT)
         function test_fd(vvm)
             cache.vmag .= vvm[1:nbus]
             cache.vang .= vvm[1+nbus:2*nbus]
-            cons(polar, c, cache.vmag, cache.vang, cache.pinj, cache.qinj)
+            cons(polar, c, cache.vmag, cache.vang, cache.pinj, cache.qinj, cache.pd, cache.qd)
             return dot(c, tgt)
         end
         vv = [cache.vmag; cache.vang]

@@ -30,7 +30,7 @@ function reactive_power_constraints(polar::PolarForm, cons, buffer)
 end
 
 # Function for AD with ForwardDiff
-function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
+function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus, pd, qd)
     nbus = length(vm)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
@@ -39,7 +39,7 @@ function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
     ref_to_gen = polar.indexing.index_ref_to_gen
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     _reactive_power_constraints(
-        cons, vm, va, pbus, qbus, polar.reactive_load,
+        cons, vm, va, pbus, qbus, qd,
         ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, polar.device
     )
 end
@@ -61,6 +61,7 @@ function adjoint!(
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
+    pload, qload,
 ) where {F<:typeof(reactive_power_constraints), S, I}
     nbus = get(polar, PS.NumberOfBuses())
     ref = polar.indexing.index_ref
@@ -85,7 +86,7 @@ function adjoint!(
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,
         pbm.intermediate.∂edge_va_to,
-        polar.reactive_load,
+        qload,
         pv, pq, ref, pv_to_gen, ref_to_gen, nbus,
         polar.device
     )
