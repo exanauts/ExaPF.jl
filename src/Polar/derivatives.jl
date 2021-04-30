@@ -108,6 +108,8 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
             view(jac.t1sx, nbus+1:2*nbus),
             buffer.pinj,
             buffer.qinj,
+            buffer.pd,
+            buffer.qd,
         )
     elseif isa(type, Control)
         jac.func(
@@ -117,6 +119,8 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
             buffer.vang,
             view(jac.t1sx, nbus+1:2*nbus),
             buffer.qinj,
+            buffer.pd,
+            buffer.qd,
         )
     end
 
@@ -241,6 +245,7 @@ function AutoDiff.adj_hessian_prod!(
         view(t1sx, 1:nbus), view(adj_t1sx, 1:nbus),                   # vmag
         view(t1sx, nbus+1:2*nbus), view(adj_t1sx, nbus+1:2*nbus),     # vang
         view(t1sx, 2*nbus+1:3*nbus), view(adj_t1sx, 2*nbus+1:3*nbus), # pinj
+        buffer.pd, buffer.qd,
     )
 
     AutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map, polar.device)

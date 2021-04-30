@@ -1,7 +1,7 @@
 is_constraint(::typeof(power_balance)) = true
 
 function _power_balance!(
-    F, v_m, v_a, pinj, qinj, ybus_re, ybus_im, pv, pq, ref, nbus, device
+    F, v_m, v_a, pinj, pload, qload, ybus_re, ybus_im, pv, pq, ref, nbus, device
 )
     npv = length(pv)
     npq = length(pq)
@@ -11,14 +11,14 @@ function _power_balance!(
         F, v_m, v_a,
         ybus_re.colptr, ybus_re.rowval,
         ybus_re.nzval, ybus_im.nzval,
-        pinj, qinj, pv, pq, nbus,
+        pinj, pload, qload, pv, pq, nbus,
         ndrange=ndrange,
         dependencies=Event(device)
     )
     wait(ev)
 end
 
-function power_balance(polar::PolarForm, cons, vm, va, pbus, qbus)
+function power_balance(polar::PolarForm, cons, vm, va, pbus, qbus, pd, qd)
     nbus = get(polar, PS.NumberOfBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -27,15 +27,19 @@ function power_balance(polar::PolarForm, cons, vm, va, pbus, qbus)
 
     fill!(cons, 0.0)
     _power_balance!(
-        cons, vm, va, pbus, qbus,
+        cons, vm, va, pbus, pd, qd,
         ybus_re, ybus_im,
         pv, pq, ref, nbus, polar.device
     )
 end
 
 function power_balance(polar::PolarForm, cons, buffer::PolarNetworkState)
-    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
-    power_balance(polar, cons, Vm, Va, pbus, qbus)
+    power_balance(
+        polar, cons,
+        buffer.vmag, buffer.vang,
+        buffer.pinj, buffer.qinj,
+        buffer.pd, buffer.qd,
+    )
 end
 
 function size_constraint(polar::PolarForm, ::typeof(power_balance))
@@ -57,12 +61,12 @@ function adjoint!(
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
+    pload, qload,
 ) where {F<:typeof(power_balance), S, I}
     nbus = get(polar, PS.NumberOfBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
-    qinj = polar.reactive_load
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
@@ -75,7 +79,7 @@ function adjoint!(
         vm, ∂vm,
         va, ∂va,
         ybus_re, ybus_im, polar.topology.sortperm,
-        pinj, ∂pinj, qinj,
+        pinj, ∂pinj, pload, qload,
         pbm.intermediate.∂edge_vm_fr,
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,

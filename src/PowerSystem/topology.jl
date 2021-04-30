@@ -95,18 +95,20 @@ function bustypeindex(bus, gen, bus_to_indexes)
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
 
-
     # form vector that lists the number of generators per bus.
     # If a PV bus has 0 generators (e.g. due to contingency)
     # then that bus turns to a PQ bus.
 
     # Design note: this might be computed once and then modified for each contingency.
     gencon = zeros(Int8, size(bus, 1))
+    inactive_generators = Int[]
 
     for i in 1:size(gen, 1)
         if gen[i, GEN_STATUS] == 1
             id_bus = bus_to_indexes[gen[i, GEN_BUS]]
             gencon[id_bus] += 1
+        else
+            push!(inactive_generators, i)
         end
     end
 
@@ -115,8 +117,10 @@ function bustypeindex(bus, gen, bus_to_indexes)
     for i in 1:size(bus, 1)
         if (bustype[i] == PV_BUS_TYPE) && (gencon[i] == 0)
             bustype[i] = PQ_BUS_TYPE
+            println("[dataset] Convert PV bus $(i) to PQ bus.")
         elseif (bustype[i] == PQ_BUS_TYPE) && (gencon[i] > 0)
             bustype[i] = PV_BUS_TYPE
+            println("[dataset] Convert PQ bus $(i) to PV bus.")
         end
     end
 
@@ -125,7 +129,7 @@ function bustypeindex(bus, gen, bus_to_indexes)
     pv = findall(x -> x==PV_BUS_TYPE, bustype)
     pq = findall(x -> x==PQ_BUS_TYPE, bustype)
 
-    return ref, pv, pq, bustype
+    return ref, pv, pq, bustype, inactive_generators
 end
 
 """

@@ -26,9 +26,8 @@ function test_polar_network_cache(polar, device, M)
     ExaPF.setvalues!(cache, PS.ReactiveLoad(), values)
     @test cache.vmag == values
     @test cache.vang == values
-    # Power generations are still equal to 0, so we get equality
-    @test cache.pinj == -values  # Pinj = 0 - Pd
-    @test cache.qinj == -values  # Qinj = 0 - Qd
+    @test cache.pd == values
+    @test cache.qd == values
 
     ## Generators
     vgens = similar(u0, ngen)
@@ -38,8 +37,8 @@ function test_polar_network_cache(polar, device, M)
     genbus = polar.indexing.index_generators
     @test cache.pg == vgens
     @test cache.qg == vgens
-    @test cache.pinj[genbus] == vgens - values[genbus]  # Pinj = Cg*Pg - Pd
-    @test cache.qinj[genbus] == vgens - values[genbus]  # Qinj = Cg*Qg - Pd
+    @test cache.pinj[genbus] == vgens # Pinj = Cg*Pg
+    @test cache.qinj[genbus] == vgens # Qinj = Cg*Qg
     @test !iszero(cache)
 
     return nothing

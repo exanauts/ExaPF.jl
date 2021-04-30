@@ -55,6 +55,7 @@ function adjoint!(
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
         buffer.pinj, stack.∂pinj,
+        buffer.pd, buffer.qd,
     )
 end
 
@@ -75,6 +76,7 @@ function jacobian_transpose_product!(
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
         buffer.pinj, stack.∂pinj,
+        buffer.pd, buffer.qd,
     )
     adjoint_transfer!(
         polar,

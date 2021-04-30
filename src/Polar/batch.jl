@@ -7,12 +7,12 @@ function batch_adjoint!(
     vm, ∂vm,
     va, ∂va,
     pinj, ∂pinj,
+    pload, qload,
 ) where {F<:typeof(power_balance), S, I}
     nbus = get(polar, PS.NumberOfBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
-    qinj = polar.reactive_load
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
@@ -25,7 +25,7 @@ function batch_adjoint!(
         vm, ∂vm,
         va, ∂va,
         ybus_re, ybus_im, polar.topology.sortperm,
-        pinj, ∂pinj, qinj,
+        pinj, ∂pinj, pload, qload,
         pbm.intermediate.∂edge_vm_fr,
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,
@@ -85,18 +85,24 @@ function batch_buffer(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI
         MT(undef, nbus, nbatch),
         MT(undef, ngen, nbatch),
         MT(undef, ngen, nbatch),
+        MT(undef, nbus, nbatch),
+        MT(undef, nbus, nbatch),
         MT(undef, nstates, nbatch),
         MT(undef, nstates, nbatch),
         gen2bus,
     )
 
     # Init
-    pbus = real.(polar.network.sbus)
-    qbus = imag.(polar.network.sbus)
+    pbus = zeros(nbus)
+    qbus = zeros(nbus)
     vmag = abs.(polar.network.vbus)
     vang = angle.(polar.network.vbus)
+    pd = get(polar.network, PS.ActiveLoad())
+    qd = get(polar.network, PS.ReactiveLoad())
     pg = get(polar.network, PS.ActivePower())
     qg = get(polar.network, PS.ReactivePower())
+    pbus[gen2bus] .= pg
+    qbus[gen2bus] .= qg
 
     for i in 1:nbatch
         copyto!(buffer.vmag, nbus * (i-1) + 1, vmag, 1, nbus)
@@ -105,6 +111,8 @@ function batch_buffer(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI
         copyto!(buffer.qinj, nbus * (i-1) + 1, qbus, 1, nbus)
         copyto!(buffer.pg,   ngen * (i-1) + 1,   pg, 1, ngen)
         copyto!(buffer.qg,   ngen * (i-1) + 1,   qg, 1, ngen)
+        copyto!(buffer.pd,   nbus * (i-1) + 1,   pd, 1, nbus)
+        copyto!(buffer.qd,   nbus * (i-1) + 1,   qd, 1, nbus)
     end
 
     return buffer
@@ -181,6 +189,7 @@ function batch_adj_hessian_prod!(
         view(t1sx, 1:nbus, :), view(adj_t1sx, 1:nbus, :),                   # vmag
         view(t1sx, nbus+1:2*nbus, :), view(adj_t1sx, nbus+1:2*nbus, :),     # vang
         view(t1sx, 2*nbus+1:3*nbus, :), view(adj_t1sx, 2*nbus+1:3*nbus, :), # pinj
+        buffer.pd, buffer.qd,
     )
 
     AutoDiff.batch_partials_hessian!(hv, adj_t1sx, H.map, device)
@@ -280,8 +289,8 @@ function batch_jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
             jac.t1sF,
             view(jac.t1sx, 1:nbus, :),
             view(jac.t1sx, nbus+1:2*nbus, :),
-            buffer.pinj,
-            buffer.qinj,
+            buffer.pinj, buffer.qinj,
+            buffer.pd, buffer.qd,
         )
     elseif isa(type, Control)
         jac.func(
@@ -289,8 +298,8 @@ function batch_jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
             jac.t1sF,
             view(jac.t1sx, 1:nbus, :),
             buffer.vang,
-            view(jac.t1sx, nbus+1:2*nbus, :),
-            buffer.qinj,
+            view(jac.t1sx, nbus+1:2*nbus, :), buffer.qinj,
+            buffer.pd, buffer.qd,
         )
     end
 
