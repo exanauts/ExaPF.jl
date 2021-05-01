@@ -11,10 +11,10 @@ import KernelAbstractions: @index
 The residual CPU/GPU kernel of the powerflow residual.
 """
 KA.@kernel function residual_kernel!(
-    F, vm, va,
-    colptr, rowval,
-    ybus_re_nzval, ybus_im_nzval,
-    pinj, qload, pv, pq, nbus
+    F, @Const(vm), @Const(va),
+    @Const(colptr), @Const(rowval),
+    @Const(ybus_re_nzval), @Const(ybus_im_nzval),
+    @Const(pinj), @Const(qload), @Const(pv), @Const(pq), nbus
 )
 
     npv = size(pv, 1)
@@ -61,12 +61,12 @@ and `adj_va` with respect to the residual `F` and the adjoint `adj_F`.
 To avoid a race condition, each thread sums its contribution on the edge of the network graph.
 """
 KA.@kernel function adj_residual_edge_kernel!(
-    F, adj_F, vm, adj_vm, va, adj_va,
-    colptr, rowval,
-    ybus_re_nzval, ybus_im_nzval,
+    F, @Const(adj_F), @Const(vm), adj_vm, va, adj_va,
+    @Const(colptr), @Const(rowval),
+    @Const(ybus_re_nzval), @Const(ybus_im_nzval),
     edge_vm_from, edge_vm_to,
     edge_va_from, edge_va_to,
-    pinj, adj_pinj, qinj, pv, pq
+    @Const(pinj), adj_pinj, @Const(qinj), @Const(pv), @Const(pq)
 )
 
     npv = size(pv, 1)
@@ -169,9 +169,9 @@ in vector `perm`.
 """
 KA.@kernel function gpu_adj_node_kernel!(
     adj_vm, adj_va,
-    colptr, rowval,
-    edge_vm_from, edge_vm_to,
-    edge_va_from, edge_va_to, dest
+    @Const(colptr), @Const(rowval),
+    @Const(edge_vm_from), @Const(edge_vm_to),
+    @Const(edge_va_from), @Const(edge_va_to), @Const(dest)
 )
     i = @index(Global, Linear)
     @inbounds for c in colptr[i]:colptr[i+1]-1
@@ -245,7 +245,7 @@ function adj_residual_polar!(
 end
 
 KA.@kernel function transfer_kernel!(
-    vmag, vang, pinj, qinj, u, pv, pq, ref, pload, qload
+    vmag, vang, pinj, qinj, @Const(u), @Const(pv), @Const(pq), @Const(ref), @Const(pload), @Const(qload)
 )
     i = @index(Global, Linear)
     npv = length(pv)
@@ -286,7 +286,7 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
 end
 
 KA.@kernel function adj_transfer_kernel!(
-    adj_u, adj_x, adj_vmag, adj_vang, adj_pinj, pv, pq, ref,
+    adj_u, adj_x, @Const(adj_vmag), @Const(adj_vang), @Const(adj_pinj), @Const(pv), @Const(pq), @Const(ref),
 )
     i = @index(Global, Linear)
     npv = length(pv)
@@ -370,10 +370,10 @@ function adjoint_transfer!(
 end
 
 KA.@kernel function active_power_kernel!(
-    pg, vmag, vang, pinj,
-    pv, ref, pv_to_gen, ref_to_gen,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-    ybus_im_nzval, pload
+    pg, @Const(vmag), @Const(vang), @Const(pinj),
+    @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
+    @Const(ybus_im_nzval), @Const(pload)
 )
     i = @index(Global, Linear)
     npv = length(pv)
@@ -430,9 +430,9 @@ end
 
 KA.@kernel function adj_active_power_kernel!(
     adj_pg,
-    vmag, adj_vmag, vang, adj_vang, adj_pinj,
-    pv, ref, pv_to_gen, ref_to_gen,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval, ybus_im_nzval,
+    @Const(vmag), adj_vmag, @Const(vang), adj_vang, adj_pinj,
+    @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
 )
     i = @index(Global, Linear)
     npv = length(pv)
@@ -478,10 +478,10 @@ KA.@kernel function adj_active_power_kernel!(
 end
 
 KA.@kernel function reactive_power_kernel!(
-    qg, vmag, vang, pinj,
-    pv, ref, pv_to_gen, ref_to_gen,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-    ybus_im_nzval, qload
+    qg, @Const(vmag), @Const(vang), @Const(pinj),
+    @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
+    @Const(ybus_im_nzval), @Const(qload)
 )
     i = @index(Global, Linear)
     npv = length(pv)
@@ -535,13 +535,13 @@ end
 
 KA.@kernel function adj_reactive_power_edge_kernel!(
     qg, adj_qg,
-    vmag, adj_vmag, vang, adj_vang,
-    pinj, adj_pinj,
-    pv, ref, pv_to_gen, ref_to_gen,
+    @Const(vmag), adj_vmag, @Const(vang), adj_vang,
+    @Const(pinj), adj_pinj,
+    @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
     edge_vmag_bus, edge_vmag_to,
     edge_vang_bus, edge_vang_to,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-    ybus_im_nzval, qload
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
+    @Const(ybus_im_nzval), @Const(qload)
 )
     i = @index(Global, Linear)
     npv = length(pv)
@@ -657,11 +657,11 @@ function adj_reactive_power!(
 end
 
 KA.@kernel function branch_flow_kernel!(
-        slines, vmag, vang,
-        yff_re, yft_re, ytf_re, ytt_re,
-        yff_im, yft_im, ytf_im, ytt_im,
-        f, t, nlines,
-   )
+    slines, @Const(vmag), @Const(vang),
+    @Const(yff_re), @Const(yft_re), @Const(ytf_re), @Const(ytt_re),
+    @Const(yff_im), @Const(yft_im), @Const(ytf_im), @Const(ytt_im),
+    @Const(f), @Const(t), nlines,
+)
     ℓ = @index(Global, Linear)
     fr_bus = f[ℓ]
     to_bus = t[ℓ]
@@ -696,12 +696,12 @@ KA.@kernel function branch_flow_kernel!(
 end
 
 KA.@kernel function adj_branch_flow_edge_kernel!(
-        adj_slines, vmag, adj_vmag, vang, adj_vang,
-        adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-        yff_re, yft_re, ytf_re, ytt_re,
-        yff_im, yft_im, ytf_im, ytt_im,
-        f, t, nlines,
-   )
+    @Const(adj_slines), @Const(vmag), @Const(adj_vmag), @Const(vang), @Const(adj_vang),
+    adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
+    @Const(yff_re), @Const(yft_re), @Const(ytf_re), @Const(ytt_re),
+    @Const(yff_im), @Const(yft_im), @Const(ytf_im), @Const(ytt_im),
+    @Const(f), @Const(t), nlines,
+)
     ℓ = @index(Global, Linear)
     fr_bus = f[ℓ]
     to_bus = t[ℓ]
@@ -764,9 +764,11 @@ KA.@kernel function adj_branch_flow_edge_kernel!(
     adj_va_to_lines[ℓ] -= adj_Δθ
 end
 
-KA.@kernel function adj_branch_flow_node_kernel!(vm, adj_vm, va, adj_va,
-        adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-        f, t, nlines
+KA.@kernel function adj_branch_flow_node_kernel!(
+    @Const(vm), adj_vm, @Const(va), adj_va,
+    @Const(adj_va_to_lines), @Const(adj_va_from_lines),
+    @Const(adj_vm_to_lines), @Const(adj_vm_from_lines),
+    @Const(f), @Const(t), nlines
 )
     i = @index(Global, Linear)
     @inbounds for ℓ in 1:nlines
@@ -809,4 +811,3 @@ function adj_branch_flow!(
     )
     wait(ev)
 end
-

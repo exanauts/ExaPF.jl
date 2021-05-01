@@ -149,7 +149,7 @@ end
 
 # Seeding
 # TODO
-@kernel function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor)
+@kernel function _init_seed!(t1sseeds, t1sseedvecs, @Const(coloring), ncolor)
     i = @index(Global, Linear)
     t1sseedvecs[:,i] .= 0
     @inbounds for j in 1:ncolor
@@ -170,8 +170,8 @@ function init_seed(coloring, ncolor, nmap)
 end
 
 @kernel function seed_kernel!(
-    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, x,
-    seeds::AbstractArray{ForwardDiff.Partials{N, V}}
+    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, @Const(x),
+    @Const(seeds)
 ) where {T,V,N}
     i = @index(Global, Linear)
     duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
@@ -192,7 +192,7 @@ end
 
 
 # Get partials
-@kernel function getpartials_kernel!(compressedJ, t1sF)
+@kernel function getpartials_kernel!(compressedJ, @Const(t1sF))
     i = @index(Global, Linear)
     for j in eachindex(ForwardDiff.partials.(t1sF[i]).values)
         @inbounds compressedJ[j, i] = ForwardDiff.partials.(t1sF[i]).values[j]
@@ -200,7 +200,7 @@ end
 end
 
 # Get partials for Hessian projection
-@kernel function getpartials_hv_kernel!(hv, adj_t1sx, map)
+@kernel function getpartials_hv_kernel!(hv, @Const(adj_t1sx), @Const(map))
     i = @index(Global, Linear)
     hv[i] = ForwardDiff.partials(adj_t1sx[map[i]]).values[1]
 end
@@ -227,7 +227,7 @@ end
 
 
 # Uncompress kernels
-@kernel function uncompress_kernel_gpu!(J_rowPtr, J_colVal, J_nzVal, compressedJ, coloring)
+@kernel function uncompress_kernel_gpu!(@Const(J_rowPtr), @Const(J_colVal), J_nzVal, @Const(compressedJ), @Const(coloring))
     i = @index(Global, Linear)
     @inbounds for j in J_rowPtr[i]:J_rowPtr[i+1]-1
         @inbounds J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
