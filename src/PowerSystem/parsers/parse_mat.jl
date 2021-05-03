@@ -125,9 +125,10 @@ function mat_to_exapf(data_mat)
         cost_array[i, STARTUP] = cos["startup"]
         cost_array[i, SHUTDOWN] = cos["shutdown"]
         cost_array[i, NCOST] = cos["ncost"]
-        cost_array[i, COST] = cos["cost"][1]
-        cost_array[i, COST+1] = cos["cost"][2]
-        cost_array[i, COST+2] = cos["cost"][3]
+        ncosts = cos["ncost"]::Int
+        for j in 1:ncosts
+            cost_array[i, NCOST+j] = cos["cost"][j]
+        end
     end
     data["cost"] = cost_array
 
@@ -281,9 +282,8 @@ const _mp_switch_columns = [
 
 ""
 function _parse_matpower_string(data_string::String)
-    matlab_data, func_name, colnames = parse_matlab_string(data_string, extended = true)
-
     case = Dict{String, Any}()
+    matlab_data, func_name, colnames = parse_matlab_string(data_string, extended = true)
 
     if func_name != nothing
         case["name"] = func_name
