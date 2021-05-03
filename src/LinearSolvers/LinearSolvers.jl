@@ -1,6 +1,7 @@
 module LinearSolvers
 
 using LinearAlgebra
+
 using Printf
 using SparseArrays
 
@@ -214,7 +215,8 @@ function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    (y[:], status) = Krylov.bicgstab(J, x, N=P,
+    #P = solver.precond
+    (y[:], status) = Krylov.bicgstab(J, x, M=P,
                                      atol=solver.atol,
                                      rtol=solver.rtol,
                                      verbose=solver.verbose)

@@ -1,3 +1,4 @@
+import LinearAlgebra: ldiv!, \, *, mul!
 """
     AbstractPreconditioner
 
@@ -136,6 +137,30 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
         end
         return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, blocks, cublocks, map, cumap, part, cupart, P, id)
     end
+end
+
+Base.eltype(::BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}) where {AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} = Float64
+
+@inline function (*)(C::BlockJacobiPreconditioner, b::AbstractVector)
+    n = size(b, 1)
+    y = Vector{Float64}(undef, n)
+    y .= 0.0
+
+    for i=1:C.nblocks
+        # Some of the blocks have dummy 0's appended to the partition. We need to work with
+        # the sub-set that does not include them.
+        rlen = findfirst(isequal(0), C.partitions[:, i])
+        if rlen == nothing
+            rlen = size(C.partitions[:, i], 1)
+        else
+            rlen = rlen - 1
+        end
+        part = C.partitions[1:rlen, i]
+        blck = C.blocks[1:rlen, 1:rlen, i]
+
+        y[part] += blck*b[part]
+    end
+    return y
 end
 
 """
