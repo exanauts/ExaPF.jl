@@ -1,3 +1,4 @@
+import LinearAlgebra: ldiv!, \, *, mul!
 """
     AbstractPreconditioner
 
@@ -5,6 +6,26 @@ Preconditioners for the iterative solvers mostly focused on GPUs
 
 """
 abstract type AbstractPreconditioner end
+
+"""
+      overlap(Graph, subset, level)
+Given subset embedded within Graph, compute subset2 such that
+subset2 contains subset and all of its adjacent vertices.
+"""
+function overlap(Graph, subset; level=1)
+
+  @assert level > 0
+  subset2 = [LightGraphs.neighbors(Graph, v) for v in subset]
+  subset2 = reduce(vcat, subset2)
+  subset2 = unique(vcat(subset, subset2))
+
+  level -= 1
+  if level == 0
+    return subset2
+  else
+    return overlap(Graph, subset2, level=level)
+  end
+end
 
 """
     BlockJacobiPreconditioner
@@ -26,13 +47,15 @@ Creates an object for the block-Jacobi preconditioner
 * `cupart`: `part` transferred to the GPU
 * `P`: The sparse precondition matrix whose values are updated at each iteration
 """
-struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPreconditioner
+struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: AbstractPreconditioner
     nblocks::Int64
     blocksize::Int64
     partitions::MI
     cupartitions::Union{GMI,Nothing}
     lpartitions::VI
     culpartitions::Union{GVI,Nothing}
+    rest_size::VI
+    curest_size::Union{GVI,Nothing}
     blocks::AT
     cublocks::Union{GAT,Nothing}
     map::VI
@@ -41,7 +64,9 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
     cupart::Union{GVI,Nothing}
     P::SMT
     id::Union{GMT,MT}
-    function BlockJacobiPreconditioner(J, npart, device=CPU()) where {}
+    yaux::VF
+    cuyaux::Union{GVF,Nothing}
+    function BlockJacobiPreconditioner(J, npart, device=CPU(), olevel=0) where {}
         if isa(device, CPU)
             AT  = Array{Float64,3}
             GAT = Nothing
@@ -52,6 +77,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             MI  = Matrix{Int64}
             GMI = Nothing
             SMT = SparseMatrixCSC{Float64,Int64}
+            VF = Vector{Float64}
+            GVF = Nothing
         elseif isa(device, GPU)
             AT  = Array{Float64,3}
             GAT = CuArray{Float64, 3, CUDA.Mem.DeviceBuffer}
@@ -62,6 +89,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             MI  = Matrix{Int64}
             GMI = CuArray{Int64, 2, CUDA.Mem.DeviceBuffer}
             SMT = CUDA.CUSPARSE.CuSparseMatrixCSR{Float64}
+            VF = Vector{Float64}
+            GVF = CuVector{Float64}
             J = SparseMatrixCSC(J)
         else
             error("Unknown device type")
@@ -80,6 +109,16 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
         end
         for (i,v) in enumerate(part)
             push!(partitions[v], i)
+        end
+        # We keep track of the partition size pre-overlap.
+        # This will allow us to implement the RAS update.
+        rest_size = VI(undef, npart)
+        rest_size = length.(partitions)
+        # overlap
+        if olevel > 0
+            for i in 1:npart
+                partitions[i] = overlap(g, partitions[i], level=olevel)
+            end
         end
         lpartitions = VI(undef, npart)
         lpartitions = length.(partitions)
@@ -107,6 +146,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
                 part[el] = b
             end
         end
+
         row = Vector{Float64}()
         col = Vector{Float64}()
         nzval = Vector{Float64}()
@@ -121,14 +161,17 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             end
         end
         P = sparse(row, col, nzval)
+        yaux = VF(undef, n)
         if isa(device, GPU)
             id = GMT(I, blocksize, blocksize)
             cubpartitions = GMI(bpartitions)
             culpartitions = GVI(lpartitions)
+            curest_size = GVI(rest_size)
             cublocks = GAT(blocks)
             cumap = CUDA.cu(map)
             cupart = CUDA.cu(part)
             P = SMT(P)
+            cuyaux = GVF(undef, n)
         else
             cublocks = nothing
             cubpartitions = nothing
@@ -136,8 +179,10 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             cupart = nothing
             id = MT(I, blocksize, blocksize)
             culpartitions = nothing
+            curest_size = nothing
+            cuyaux = nothing
         end
-        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, blocks, cublocks, map, cumap, part, cupart, P, id)
+        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, P, id, yaux, cuyaux)
     end
 end
 
@@ -151,6 +196,49 @@ function BlockJacobiPreconditioner(J::SparseMatrixCSC; nblocks=-1, device=CPU())
     return BlockJacobiPreconditioner(J, npartitions, device)
 end
 BlockJacobiPreconditioner(J::CUSPARSE.CuSparseMatrixCSR; options...) = BlockJacobiPreconditioner(SparseMatrixCSC(J); options...)
+Base.eltype(::BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}) where {AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} = Float64
+
+@kernel function multiply_blocks_gpu!(y, b, p_len, rp_len, part, blocks)
+    i = @index(Global, Linear)
+    len = p_len[i]
+    rlen = rp_len[i]
+    idxA = -1
+    idxB = -1
+    accum = 0.0
+    # homemade matrix multiply. This is probably not a good idea.
+    @inbounds for j=1:rlen
+        idxA = part[j, i]
+        accum = 0.0
+        @inbounds for k=1:len
+            idxB = part[k, i]
+            accum = accum + blocks[j, k, i]*b[idxB]
+        end
+        y[idxA] = accum
+    end
+end
+
+@inline function mul!(y, C::BlockJacobiPreconditioner, b::Vector{Float64})
+    n = size(b, 1)
+    y .= 0.0
+    for i=1:C.nblocks
+        rlen = C.lpartitions[i]
+        part = C.partitions[1:rlen, i]
+        blck = C.blocks[1:rlen, 1:rlen, i]
+        for j=1:C.rest_size[i]
+            idx = part[j]
+            y[idx] += dot(blck[j, :], b[part])
+        end
+    end
+end
+
+@inline function mul!(y, C::BlockJacobiPreconditioner, b::CuVector{Float64})
+    n = size(b, 1)
+    y .= 0.0
+    mblock_gpu_kernel! = multiply_blocks_gpu!(CUDADevice())
+    ev = mblock_gpu_kernel!(y, b, C.culpartitions, C.curest_size,
+                            C.cupartitions, C.cublocks, ndrange=C.nblocks)
+    wait(ev)
+end
 
 """
     build_adjmatrix
@@ -191,11 +279,19 @@ Fill the dense blocks of the preconditioner from the sparse CSR matrix arrays
             blocks[i,j,b] = id[i,j]
         end
     end
-
-    @inbounds for i in 1:lpartitions[b]
-        @inbounds for j in rowPtr[partition[i,b]]:rowPtr[partition[i,b]+1]-1
-            if b == part[colVal[j]]
-                @inbounds blocks[map[partition[i,b]], map[colVal[j]], b] = nzVal[j]
+    
+    @inbounds for k in 1:lpartitions[b]
+        # select row
+        i = partition[k, b]
+        # iterate matrix
+        for row_ptr in rowPtr[i]:(rowPtr[i + 1] - 1)
+            # retrieve column value
+            col = colVal[row_ptr]
+            # iterate partition list and see if pertains to it
+            for j in 1:lpartitions[b]
+                if col == partition[j, b]
+                    @inbounds blocks[k, j, b] = nzVal[row_ptr]
+                end
             end
         end
     end
@@ -258,6 +354,53 @@ end
 function update(p, J::Transpose{T, CUSPARSE.CuSparseMatrixCSR{T}}, device) where T
     Jt = CUSPARSE.CuSparseMatrixCSC(J.parent)
     _update_gpu(p, Jt.colPtr, Jt.rowVal, Jt.nzVal, device)
+end
+
+@kernel function update_cpu_kernel!(colptr, rowval, nzval, p, lpartitions)
+    nblocks = length(p.partitions)
+    # Fill Block Jacobi
+    b = @index(Global, Linear)
+    blocksize = size(p.id,1)
+    for i in 1:blocksize
+        for j in 1:blocksize
+            p.blocks[i,j,b] = p.id[i,j]
+        end
+    end
+    #for k in 1:lpartitions[b]
+    #    i = p.partitions[k,b]
+    #    println(i)
+    #    for j in colptr[i]:colptr[i+1]-1
+    #        if b == p.part[rowval[j]]
+    #            @inbounds p.blocks[p.map[rowval[j]], p.map[i], b] = nzval[j]
+    #        end
+    #    end
+    #end
+    for k in 1:lpartitions[b]
+        i = p.partitions[k, b]
+        for col_ptr in colptr[i]:(colptr[i + 1] - 1)
+            col = rowval[col_ptr]
+
+            ptr = findfirst(x -> x==col, p.partitions[:, b])
+            if typeof(ptr) != Nothing
+                # Here we assume the natural order of the partition
+                # matches that of the block.
+                @inbounds p.blocks[ptr, k, b] = nzval[col_ptr]
+            end
+        end
+    end
+
+    # Invert blocks
+    p.blocks[:,:,b] .= inv(p.blocks[:,:,b])
+    # Move blocks to P
+    for k in 1:lpartitions[b]
+        i = p.partitions[k,b]
+        for j in p.P.colptr[i]:p.P.colptr[i+1]-1
+            if b == p.part[p.P.rowval[j]]
+                @inbounds p.P.nzval[j] += p.blocks[p.map[p.P.rowval[j]], p.map[i], b]
+            end
+        end
+    end
+
 end
 
 """
