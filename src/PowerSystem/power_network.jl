@@ -248,14 +248,20 @@ function get_costs_coefficients(pf::PowerNetwork)
     for i = 1:ngens
         # only 2nd degree polynomial implemented for now.
         @assert cost_data[i, MODEL] == 2
-        @assert cost_data[i, NCOST] == 3
         genbus = b2i[gens[i, GEN_BUS]]
         bustype = bus[genbus, BUS_TYPE]
 
         # polynomial coefficients
-        c0 = cost_data[i, COST+2]
-        c1 = cost_data[i, COST+1] * baseMVA
-        c2 = cost_data[i, COST] * baseMVA^2
+        if cost_data[i, NCOST] == 3       # quadratic model
+            c0 = cost_data[i, COST+2]
+            c1 = cost_data[i, COST+1] * baseMVA
+            c2 = cost_data[i, COST] * baseMVA^2
+        elseif cost_data[i, NCOST] == 2   # linear model
+            c0 = cost_data[i, COST+1]
+            c1 = cost_data[i, COST] * baseMVA
+            c2 = 0.0
+        end
+
         coefficients[i, :] .= (bustype, c0, c1, c2)
     end
     return coefficients

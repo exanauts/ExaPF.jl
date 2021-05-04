@@ -287,8 +287,14 @@ function check_type(typ, value)
             value = parse(typ, value)
             return value
         catch e
-            @error "parsing error, the matlab string \"$(value)\" can not be parsed to $(typ) data"
-            rethrow(e)
+            if isequal(value, "Inf")
+                return Inf
+            elseif isequal(value, "-Inf")
+                return -Inf
+            else
+                @error "parsing error, the matlab string \"$(value)\" can not be parsed to $(typ) data"
+                rethrow(e)
+            end
         end
     else
         try
