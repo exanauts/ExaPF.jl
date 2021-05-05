@@ -228,7 +228,7 @@ function hessian_lagrangian_penalty!(
 
     if !iszero(w)
         D = Diagonal(w)
-        Jᵤ = Hᵥᵤ
+        Jᵤ = similar(Hᵥᵤ) ; fill!(Jᵤ, 0.0)
         jacobian!(nlp.inner, Jᵤ, u)
         mul!(Hᵤᵥ, Jᵤ', -D)
         mul!(Hᵥᵤ, - D, Jᵤ)
