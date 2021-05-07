@@ -20,8 +20,8 @@ function flow_constraints(polar::PolarForm, cons, buffer::PolarNetworkState)
 end
 
 # Specialized function for AD with ForwardDiff
-function flow_constraints(polar::PolarForm, cons, vm, va, pbus, qbus, pd, qd)
-    _flow_constraints(polar, cons, vm, va)
+function flow_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet, pload, qload)
+    _flow_constraints(polar, cons, vmag, vang)
 end
 
 function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
@@ -59,9 +59,9 @@ function adjoint!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory{F, S, I},
     cons, ∂cons,
-    vm, ∂vm,
-    va, ∂va,
-    pinj, ∂pinj,
+    vmag, ∂vmag,
+    vang, ∂vang,
+    pnet, ∂pnet,
     pload, qload,
 ) where {F<:typeof(flow_constraints), S, I}
     nlines = PS.get(polar.network, PS.NumberOfLines())
@@ -75,8 +75,8 @@ function adjoint!(
 
     adj_branch_flow!(
         ∂cons,
-        vm, ∂vm,
-        va, ∂va,
+        vmag, ∂vmag,
+        vang, ∂vang,
         pbm.intermediate.∂edge_vm_fr,
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,

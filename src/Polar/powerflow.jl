@@ -139,7 +139,7 @@ function batch_powerflow(
     linear_solver::LS.DirectSolver;
 ) where {T, IT, VT, MT}
     # Retrieve parameter and initial voltage guess
-    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
+    Vm, Va = buffer.vmag, buffer.vang
     nbatch = size(Vm, 2)
 
     nbus = PS.get(polar.network, PS.NumberOfBuses())

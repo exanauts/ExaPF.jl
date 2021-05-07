@@ -46,7 +46,7 @@ function test_constraints_jacobian(polar, device, MT)
             cache.vang[pq] .= x[npv+1:npv+npq]
             cache.vmag[pq] .= x[npv+npq+1:end]
             c = zeros(m) |> MT
-            cons(polar, c, cache.vmag, cache.vang, cache.pinj, cache.qinj, cache.pd, cache.qd)
+            cons(polar, c, cache.vmag, cache.vang, cache.pnet, cache.qnet, cache.pload, cache.qload)
             return c
         end
         x = [cache.vang[pv]; cache.vang[pq]; cache.vmag[pq]]
@@ -73,12 +73,12 @@ function test_constraints_jacobian(polar, device, MT)
             function jac_fd_u(u)
                 cache.vmag[ref] .= u[1:nref]
                 cache.vmag[pv] .= u[nref+1:npv+nref]
-                cache.pinj[pv] .= u[nref+npv+1:end]
+                cache.pnet[pv] .= u[nref+npv+1:end]
                 c = zeros(m) |> MT
-                cons(polar, c, cache.vmag, cache.vang, cache.pinj, cache.qinj, cache.pd, cache.qd)
+                cons(polar, c, cache.vmag, cache.vang, cache.pnet, cache.qnet, cache.pload, cache.qload)
                 return c
             end
-            u = [cache.vmag[ref]; cache.vmag[pv]; cache.pinj[pv]]
+            u = [cache.vmag[ref]; cache.vmag[pv]; cache.pnet[pv]]
             Jd = FiniteDiff.finite_difference_jacobian(jac_fd_u, u) |> Array
             Ju = ujacobianAD.J |> Array
             @test size(J) == (m, length(u))
@@ -123,7 +123,7 @@ function test_constraints_adjoint(polar, device, MT)
         function test_fd(vvm)
             cache.vmag .= vvm[1:nbus]
             cache.vang .= vvm[1+nbus:2*nbus]
-            cons(polar, c, cache.vmag, cache.vang, cache.pinj, cache.qinj, cache.pd, cache.qd)
+            cons(polar, c, cache.vmag, cache.vang, cache.pnet, cache.qnet, cache.pload, cache.qload)
             return dot(c, tgt)
         end
         vv = [cache.vmag; cache.vang]

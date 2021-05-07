@@ -165,8 +165,8 @@ get(nlp::ReducedSpaceEvaluator, ::AutoDiffBackend) = nlp.autodiff
 # Physics
 get(nlp::ReducedSpaceEvaluator, ::PS.VoltageMagnitude) = nlp.buffer.vmag
 get(nlp::ReducedSpaceEvaluator, ::PS.VoltageAngle) = nlp.buffer.vang
-get(nlp::ReducedSpaceEvaluator, ::PS.ActivePower) = nlp.buffer.pg
-get(nlp::ReducedSpaceEvaluator, ::PS.ReactivePower) = nlp.buffer.qg
+get(nlp::ReducedSpaceEvaluator, ::PS.ActivePower) = nlp.buffer.pgen
+get(nlp::ReducedSpaceEvaluator, ::PS.ReactivePower) = nlp.buffer.qgen
 function get(nlp::ReducedSpaceEvaluator, attr::PS.AbstractNetworkAttribute)
     return get(nlp.model, attr)
 end
@@ -499,11 +499,11 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     copyto!(tgt, 1, z, 1, nx)
     copyto!(tgt, nx+1, w, 1, nu)
 
-    ∂f = similar(buffer.pg)
-    ∂²f = similar(buffer.pg)
+    ∂f = similar(buffer.pgen)
+    ∂²f = similar(buffer.pgen)
 
     # Adjoint and Hessian of cost function
-    adjoint_cost!(nlp.model, ∂f, buffer.pg)
+    adjoint_cost!(nlp.model, ∂f, buffer.pgen)
     hessian_cost!(nlp.model, ∂²f)
 
     ## OBJECTIVE HESSIAN
@@ -539,10 +539,10 @@ function hessian_lagrangian_penalty_prod!(
     tgt[1:nx] .= z
     tgt[1+nx:nx+nu] .= w
 
-    ∂f = similar(buffer.pg)
-    ∂²f = similar(buffer.pg)
+    ∂f = similar(buffer.pgen)
+    ∂²f = similar(buffer.pgen)
     # Adjoint and Hessian of cost function
-    adjoint_cost!(nlp.model, ∂f, buffer.pg)
+    adjoint_cost!(nlp.model, ∂f, buffer.pgen)
     hessian_cost!(nlp.model, ∂²f)
 
     ## OBJECTIVE HESSIAN

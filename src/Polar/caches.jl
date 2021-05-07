@@ -19,12 +19,12 @@ the network, in polar formulation. Attributes are:
 
 - `vmag` (length: nbus): voltage magnitude at each bus
 - `vang` (length: nbus): voltage angle at each bus
-- `pinj` (length: nbus): power generation RHS. Equal to `Cg * Pg`
-- `qinj` (length: nbus): power generation RHS. Equal to `Cg * Qg`
-- `pg`   (length: ngen): active power of generators
-- `qg`   (length: ngen): reactive power of generators
-- `pd`   (length: nbus): active loads
-- `qd`   (length: nbus): reactive loads
+- `pnet` (length: nbus): power generation RHS. Equal to `Cg * Pg`
+- `qnet` (length: nbus): power generation RHS. Equal to `Cg * Qg`
+- `pgen`   (length: ngen): active power of generators
+- `qgen`   (length: ngen): reactive power of generators
+- `pload`  (length: nbus): active loads
+- `qload`  (length: nbus): reactive loads
 - `dx`   (length: nstates): cache the difference between two consecutive states (used in power flow resolution)
 - `balance` (length: nstates): cache for current power imbalance (used in power flow resolution)
 - `bus_gen` (length: ngen): generator-bus incidence matrix `Cg`
@@ -33,12 +33,12 @@ the network, in polar formulation. Attributes are:
 struct PolarNetworkState{VI,VT} <: AbstractNetworkBuffer
     vmag::VT
     vang::VT
-    pinj::VT
-    qinj::VT
-    pg::VT
-    qg::VT
-    pd::VT
-    qd::VT
+    pnet::VT
+    qnet::VT
+    pgen::VT
+    qgen::VT
+    pload::VT
+    qload::VT
     balance::VT
     dx::VT
     bus_gen::VI   # Generator-Bus incidence matrix
@@ -46,8 +46,8 @@ end
 
 function PolarNetworkState{VT}(nbus::Int, ngen::Int, nstates::Int, bus_gen::VI) where {VI, VT}
     # Bus variables
-    pbus = xzeros(VT, nbus)
-    qbus = xzeros(VT, nbus)
+    pnet = xzeros(VT, nbus)
+    qnet = xzeros(VT, nbus)
     vmag = xzeros(VT, nbus)
     vang = xzeros(VT, nbus)
     # Generators variables
@@ -58,37 +58,37 @@ function PolarNetworkState{VT}(nbus::Int, ngen::Int, nstates::Int, bus_gen::VI) 
     # Buffers
     balance = xzeros(VT, nstates)
     dx = xzeros(VT, nstates)
-    return PolarNetworkState{VI,VT}(vmag, vang, pbus, qbus, pg, qg, pd, qd, balance, dx, bus_gen)
+    return PolarNetworkState{VI,VT}(vmag, vang, pnet, qnet, pg, qg, pd, qd, balance, dx, bus_gen)
 end
 
 setvalues!(buf::PolarNetworkState, ::PS.VoltageMagnitude, values) = copyto!(buf.vmag, values)
 setvalues!(buf::PolarNetworkState, ::PS.VoltageAngle, values) = copyto!(buf.vang, values)
 function setvalues!(buf::PolarNetworkState, ::PS.ActivePower, values)
-    pgenbus = view(buf.pinj, buf.bus_gen)
+    pgenbus = view(buf.pnet, buf.bus_gen)
     pgenbus .= values
-    copyto!(buf.pg, values)
+    copyto!(buf.pgen, values)
 end
 function setvalues!(buf::PolarNetworkState, ::PS.ReactivePower, values)
-    qgenbus = view(buf.qinj, buf.bus_gen)
+    qgenbus = view(buf.qnet, buf.bus_gen)
     qgenbus .= values
-    copyto!(buf.qg, values)
+    copyto!(buf.qgen, values)
 end
 function setvalues!(buf::PolarNetworkState, ::PS.ActiveLoad, values)
-    copyto!(buf.pd, values)
+    copyto!(buf.pload, values)
 end
 function setvalues!(buf::PolarNetworkState, ::PS.ReactiveLoad, values)
-    copyto!(buf.qd, values)
+    copyto!(buf.qload, values)
 end
 
 function Base.iszero(buf::PolarNetworkState)
-    return iszero(buf.pinj) &&
-        iszero(buf.qinj) &&
+    return iszero(buf.pnet) &&
+        iszero(buf.qnet) &&
         iszero(buf.vmag) &&
         iszero(buf.vang) &&
-        iszero(buf.pg) &&
-        iszero(buf.qg) &&
-        iszero(buf.pd) &&
-        iszero(buf.qd) &&
+        iszero(buf.pgen) &&
+        iszero(buf.qgen) &&
+        iszero(buf.pload) &&
+        iszero(buf.qload) &&
         iszero(buf.balance) &&
         iszero(buf.dx)
 end

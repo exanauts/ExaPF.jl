@@ -54,8 +54,8 @@ function adjoint!(
         cons, ∂cons,
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
-        buffer.pinj, stack.∂pinj,
-        buffer.pd, buffer.qd,
+        buffer.pnet, stack.∂pinj,
+        buffer.pload, buffer.qload,
     )
 end
 
@@ -66,7 +66,6 @@ function jacobian_transpose_product!(
     buffer::PolarNetworkState,
     v::AbstractVector,
 )
-    # Adjoint w.r.t. vm, va, pinj, qinj
     stack = pbm.stack
     reset!(stack)
     cons = buffer.balance ; fill!(cons, 0.0) # TODO
@@ -75,8 +74,8 @@ function jacobian_transpose_product!(
         cons, v,
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
-        buffer.pinj, stack.∂pinj,
-        buffer.pd, buffer.qd,
+        buffer.pnet, stack.∂pinj,
+        buffer.pload, buffer.qload,
     )
     adjoint_transfer!(
         polar,

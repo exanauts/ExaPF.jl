@@ -79,8 +79,8 @@ function test_line_flow_gradient(polar, device, MT)
         VT = typeof(x)
         # Needed for ForwardDiff to have a cache with the right active type VT
         adcache = ExaPF.PolarNetworkState{VI, VT}(
-            cache.vmag, cache.vang, cache.pinj, cache.qinj,
-            cache.pg, cache.qg, cache.pd, cache.qd, cache.balance, cache.dx, bus_gen,
+            cache.vmag, cache.vang, cache.pnet, cache.qnet,
+            cache.pgen, cache.qgen, cache.pload, cache.qload, cache.balance, cache.dx, bus_gen,
         )
         adcache.vmag .= x[1:nbus]
         adcache.vang .= x[1+nbus:2*nbus]

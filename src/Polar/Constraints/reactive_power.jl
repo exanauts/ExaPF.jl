@@ -4,7 +4,7 @@ is_constraint(::typeof(reactive_power_constraints)) = true
 # Here, the power constraints are ordered as:
 # g = [qg_gen]
 function _reactive_power_constraints(
-    qg, v_m, v_a, pinj, qinj, qload,
+    qg, vmag, vang, pnet, qnet, qload,
     ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, device
 )
     kernel! = reactive_power_kernel!(device)
@@ -12,7 +12,7 @@ function _reactive_power_constraints(
     ndrange = (length(pv) + length(ref), size(qg, 2))
     ev = kernel!(
         qg,
-        v_m, v_a, pinj,
+        vmag, vang, pnet,
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
         ybus_im.nzval, qload,
@@ -26,13 +26,13 @@ function reactive_power_constraints(polar::PolarForm, cons, buffer)
     # Refresh reactive power generation in buffer
     update!(polar, PS.Generators(), PS.ReactivePower(), buffer)
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
-    copy!(cons, buffer.qg)
+    copy!(cons, buffer.qgen)
     return
 end
 
 # Function for AD with ForwardDiff
-function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus, pd, qd)
-    nbus = length(vm)
+function reactive_power_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet, pd, qd)
+    nbus = length(vmag)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
@@ -40,7 +40,7 @@ function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus, 
     ref_to_gen = polar.indexing.index_ref_to_gen
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     _reactive_power_constraints(
-        cons, vm, va, pbus, qbus, qd,
+        cons, vmag, vang, pnet, qnet, qd,
         ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, polar.device
     )
 end
@@ -59,9 +59,9 @@ function adjoint!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory{F, S, I},
     cons, ∂cons,
-    vm, ∂vm,
-    va, ∂va,
-    pinj, ∂pinj,
+    vmag, ∂vmag,
+    vang, ∂vang,
+    pnet, ∂pnet,
     pload, qload,
 ) where {F<:typeof(reactive_power_constraints), S, I}
     nbus = get(polar, PS.NumberOfBuses())
@@ -79,10 +79,10 @@ function adjoint!(
 
     adj_reactive_power!(
         cons, ∂cons,
-        vm, ∂vm,
-        va, ∂va,
+        vmag, ∂vmag,
+        vang, ∂vang,
         ybus_re, ybus_im, polar.topology.sortperm,
-        pinj, ∂pinj,
+        pnet, ∂pnet,
         pbm.intermediate.∂edge_vm_fr,
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,

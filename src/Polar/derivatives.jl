@@ -93,7 +93,7 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
         jac.t1sF .= 0.0
     elseif isa(type, Control)
         copyto!(jac.x, 1, buffer.vmag, 1, nbus)
-        copyto!(jac.x, nbus+1, buffer.pinj, 1, nbus)
+        copyto!(jac.x, nbus+1, buffer.pnet, 1, nbus)
         jac.t1sx .= jac.x
         jac.t1sF .= 0.0
     end
@@ -106,10 +106,10 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
             jac.t1sF,
             view(jac.t1sx, 1:nbus),
             view(jac.t1sx, nbus+1:2*nbus),
-            buffer.pinj,
-            buffer.qinj,
-            buffer.pd,
-            buffer.qd,
+            buffer.pnet,
+            buffer.qnet,
+            buffer.pload,
+            buffer.qload,
         )
     elseif isa(type, Control)
         jac.func(
@@ -118,9 +118,9 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
             view(jac.t1sx, 1:nbus),
             buffer.vang,
             view(jac.t1sx, nbus+1:2*nbus),
-            buffer.qinj,
-            buffer.pd,
-            buffer.qd,
+            buffer.qnet,
+            buffer.pload,
+            buffer.qload,
         )
     end
 
@@ -226,7 +226,7 @@ function AutoDiff.adj_hessian_prod!(
     # Move data
     copyto!(x, 1, buffer.vmag, 1, nbus)
     copyto!(x, nbus+1, buffer.vang, 1, nbus)
-    copyto!(x, 2*nbus+1, buffer.pinj, 1, nbus)
+    copyto!(x, 2*nbus+1, buffer.pnet, 1, nbus)
     # Init dual variables
     t1sx .= H.x
     adj_t1sx .= 0.0
@@ -244,8 +244,8 @@ function AutoDiff.adj_hessian_prod!(
         t1sF, adj_t1sF,
         view(t1sx, 1:nbus), view(adj_t1sx, 1:nbus),                   # vmag
         view(t1sx, nbus+1:2*nbus), view(adj_t1sx, nbus+1:2*nbus),     # vang
-        view(t1sx, 2*nbus+1:3*nbus), view(adj_t1sx, 2*nbus+1:3*nbus), # pinj
-        buffer.pd, buffer.qd,
+        view(t1sx, 2*nbus+1:3*nbus), view(adj_t1sx, 2*nbus+1:3*nbus), # pnet
+        buffer.pload, buffer.qload,
     )
 
     AutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map, polar.device)

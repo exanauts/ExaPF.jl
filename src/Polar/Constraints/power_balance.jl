@@ -1,24 +1,24 @@
 is_constraint(::typeof(power_balance)) = true
 
 function _power_balance!(
-    F, v_m, v_a, pinj, pload, qload, ybus_re, ybus_im, pv, pq, ref, nbus, device
+    F, vmag, vang, pnet, pload, qload, ybus_re, ybus_im, pv, pq, ref, nbus, device
 )
     npv = length(pv)
     npq = length(pq)
     kernel! = residual_kernel!(device)
     ndrange = (npv+npq, size(F, 2))
     ev = kernel!(
-        F, v_m, v_a,
+        F, vmag, vang,
         ybus_re.colptr, ybus_re.rowval,
         ybus_re.nzval, ybus_im.nzval,
-        pinj, pload, qload, pv, pq, nbus,
+        pnet, pload, qload, pv, pq, nbus,
         ndrange=ndrange,
         dependencies=Event(device)
     )
     wait(ev)
 end
 
-function power_balance(polar::PolarForm, cons, vm, va, pbus, qbus, pd, qd)
+function power_balance(polar::PolarForm, cons, vmag, vang, pnet, qnet, pload, qload)
     nbus = get(polar, PS.NumberOfBuses())
     ref = polar.indexing.index_ref
     pv = polar.indexing.index_pv
@@ -27,7 +27,7 @@ function power_balance(polar::PolarForm, cons, vm, va, pbus, qbus, pd, qd)
 
     fill!(cons, 0.0)
     _power_balance!(
-        cons, vm, va, pbus, pd, qd,
+        cons, vmag, vang, pnet, pload, qload,
         ybus_re, ybus_im,
         pv, pq, ref, nbus, polar.device
     )
@@ -37,8 +37,8 @@ function power_balance(polar::PolarForm, cons, buffer::PolarNetworkState)
     power_balance(
         polar, cons,
         buffer.vmag, buffer.vang,
-        buffer.pinj, buffer.qinj,
-        buffer.pd, buffer.qd,
+        buffer.pnet, buffer.qnet,
+        buffer.pload, buffer.qload,
     )
 end
 
@@ -58,9 +58,9 @@ function adjoint!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory{F, S, I},
     cons, ∂cons,
-    vm, ∂vm,
-    va, ∂va,
-    pinj, ∂pinj,
+    vmag, ∂vmag,
+    vang, ∂vang,
+    pnet, ∂pnet,
     pload, qload,
 ) where {F<:typeof(power_balance), S, I}
     nbus = get(polar, PS.NumberOfBuses())
@@ -76,10 +76,10 @@ function adjoint!(
 
     adj_residual_polar!(
         cons, ∂cons,
-        vm, ∂vm,
-        va, ∂va,
+        vmag, ∂vmag,
+        vang, ∂vang,
         ybus_re, ybus_im, polar.topology.sortperm,
-        pinj, ∂pinj, pload, qload,
+        pnet, ∂pnet, pload, qload,
         pbm.intermediate.∂edge_vm_fr,
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,

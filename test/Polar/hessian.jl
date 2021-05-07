@@ -93,7 +93,7 @@ function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
 
     # Initiate state and control for FiniteDiff
     x = [cache.vang[pv] ; cache.vang[pq] ; cache.vmag[pq]]
-    u = [cache.vmag[ref]; cache.vmag[pv]; cache.pg[pv2gen]]
+    u = [cache.vmag[ref]; cache.vmag[pv]; cache.pgen[pv2gen]]
 
     @testset "Compare with FiniteDiff Hessian ($constraints)" for constraints in [
         ExaPF.power_balance,

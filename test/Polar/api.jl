@@ -13,8 +13,8 @@ function test_polar_network_cache(polar, device, M)
     # Transfer control u0 inside cache
     ExaPF.transfer!(polar, cache, u0)
     # Test that all attributes have valid length
-    @test length(cache.vang) == length(cache.vmag) == length(cache.pinj) == length(cache.qinj) == nbus
-    @test length(cache.pg) == length(cache.qg) == length(cache.bus_gen) == ngen
+    @test length(cache.vang) == length(cache.vmag) == length(cache.pnet) == length(cache.qnet) == nbus
+    @test length(cache.pgen) == length(cache.qgen) == length(cache.bus_gen) == ngen
     @test length(cache.dx) == length(cache.balance) == nₓ
 
     ## Buses
@@ -26,8 +26,8 @@ function test_polar_network_cache(polar, device, M)
     ExaPF.setvalues!(cache, PS.ReactiveLoad(), values)
     @test cache.vmag == values
     @test cache.vang == values
-    @test cache.pd == values
-    @test cache.qd == values
+    @test cache.pload == values
+    @test cache.qload == values
 
     ## Generators
     vgens = similar(u0, ngen)
@@ -35,10 +35,10 @@ function test_polar_network_cache(polar, device, M)
     ExaPF.setvalues!(cache, PS.ActivePower(), vgens)
     ExaPF.setvalues!(cache, PS.ReactivePower(), vgens)
     genbus = polar.indexing.index_generators
-    @test cache.pg == vgens
-    @test cache.qg == vgens
-    @test cache.pinj[genbus] == vgens # Pinj = Cg*Pg
-    @test cache.qinj[genbus] == vgens # Qinj = Cg*Qg
+    @test cache.pgen == vgens
+    @test cache.qgen == vgens
+    @test cache.pnet[genbus] == vgens # Pinj = Cg*Pg
+    @test cache.qnet[genbus] == vgens # Qinj = Cg*Qg
     @test !iszero(cache)
 
     return nothing

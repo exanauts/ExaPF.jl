@@ -6,7 +6,7 @@ function batch_adjoint!(
     cons, ∂cons,
     vm, ∂vm,
     va, ∂va,
-    pinj, ∂pinj,
+    pnet, ∂pnet,
     pload, qload,
 ) where {F<:typeof(power_balance), S, I}
     nbus = get(polar, PS.NumberOfBuses())
@@ -25,7 +25,7 @@ function batch_adjoint!(
         vm, ∂vm,
         va, ∂va,
         ybus_re, ybus_im, polar.topology.sortperm,
-        pinj, ∂pinj, pload, qload,
+        pnet, ∂pnet, pload, qload,
         pbm.intermediate.∂edge_vm_fr,
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,
@@ -107,12 +107,12 @@ function batch_buffer(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI
     for i in 1:nbatch
         copyto!(buffer.vmag, nbus * (i-1) + 1, vmag, 1, nbus)
         copyto!(buffer.vang, nbus * (i-1) + 1, vang, 1, nbus)
-        copyto!(buffer.pinj, nbus * (i-1) + 1, pbus, 1, nbus)
-        copyto!(buffer.qinj, nbus * (i-1) + 1, qbus, 1, nbus)
-        copyto!(buffer.pg,   ngen * (i-1) + 1,   pg, 1, ngen)
-        copyto!(buffer.qg,   ngen * (i-1) + 1,   qg, 1, ngen)
-        copyto!(buffer.pd,   nbus * (i-1) + 1,   pd, 1, nbus)
-        copyto!(buffer.qd,   nbus * (i-1) + 1,   qd, 1, nbus)
+        copyto!(buffer.pnet, nbus * (i-1) + 1, pbus, 1, nbus)
+        copyto!(buffer.qnet, nbus * (i-1) + 1, qbus, 1, nbus)
+        copyto!(buffer.pgen,   ngen * (i-1) + 1,   pg, 1, ngen)
+        copyto!(buffer.qgen,   ngen * (i-1) + 1,   qg, 1, ngen)
+        copyto!(buffer.pload,  nbus * (i-1) + 1,   pd, 1, nbus)
+        copyto!(buffer.qload,  nbus * (i-1) + 1,   qd, 1, nbus)
     end
 
     return buffer
@@ -152,7 +152,7 @@ function update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
     # Move data
     copyto!(x, 1, buffer.vmag, 1, nbus)
     copyto!(x, nbus+1, buffer.vang, 1, nbus)
-    copyto!(x, 2*nbus+1, buffer.pinj, 1, nbus)
+    copyto!(x, 2*nbus+1, buffer.pnet, 1, nbus)
 
     @inbounds for i in 1:nbatch
         t1sx[:, i] .= H.x
@@ -189,7 +189,7 @@ function batch_adj_hessian_prod!(
         view(t1sx, 1:nbus, :), view(adj_t1sx, 1:nbus, :),                   # vmag
         view(t1sx, nbus+1:2*nbus, :), view(adj_t1sx, nbus+1:2*nbus, :),     # vang
         view(t1sx, 2*nbus+1:3*nbus, :), view(adj_t1sx, 2*nbus+1:3*nbus, :), # pinj
-        buffer.pd, buffer.qd,
+        buffer.pload, buffer.qload,
     )
 
     AutoDiff.batch_partials_hessian!(hv, adj_t1sx, H.map, device)
@@ -276,7 +276,7 @@ function batch_jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
         jac.t1sF .= 0.0
     elseif isa(type, Control)
         copyto!(jac.x, 1, buffer.vmag, 1, nbus)
-        copyto!(jac.x, nbus+1, buffer.pinj, 1, nbus)
+        copyto!(jac.x, nbus+1, buffer.pnet, 1, nbus)
         jac.t1sx .= jac.x
         jac.t1sF .= 0.0
     end
@@ -289,8 +289,8 @@ function batch_jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
             jac.t1sF,
             view(jac.t1sx, 1:nbus, :),
             view(jac.t1sx, nbus+1:2*nbus, :),
-            buffer.pinj, buffer.qinj,
-            buffer.pd, buffer.qd,
+            buffer.pnet, buffer.qnet,
+            buffer.pload, buffer.qload,
         )
     elseif isa(type, Control)
         jac.func(
@@ -298,8 +298,8 @@ function batch_jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
             jac.t1sF,
             view(jac.t1sx, 1:nbus, :),
             buffer.vang,
-            view(jac.t1sx, nbus+1:2*nbus, :), buffer.qinj,
-            buffer.pd, buffer.qd,
+            view(jac.t1sx, nbus+1:2*nbus, :), buffer.qnet,
+            buffer.pload, buffer.qload,
         )
     end
 

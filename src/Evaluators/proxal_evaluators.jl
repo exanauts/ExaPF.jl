@@ -337,10 +337,10 @@ function hessprod!(nlp::ProxALEvaluator, hessvec, w, v)
     tgt_xu[1+nx:nx+nu] .= vᵤ
 
     # Init adjoint
-    ∂f = similar(buffer.pg)
-    ∂²f = similar(buffer.pg)
+    ∂f = similar(buffer.pgen)
+    ∂²f = similar(buffer.pgen)
     # Adjoint w.r.t. ProxAL's objective
-    _adjoint_objective!(nlp, ∂f, buffer.pg)
+    _adjoint_objective!(nlp, ∂f, buffer.pgen)
 
     # Hessian of ProxAL's objective
     hessian_cost!(model, ∂²f)

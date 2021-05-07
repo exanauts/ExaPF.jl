@@ -5,12 +5,12 @@ function active_power_constraints(polar::PolarForm, cons, buffer)
     ref_to_gen = polar.indexing.index_ref_to_gen
     # Constraint on P_ref (generator) (P_inj = P_g - P_load)
     # NB: Active power generation has been updated previously inside buffer
-    copy!(cons, buffer.pg[ref_to_gen])
+    copy!(cons, buffer.pgen[ref_to_gen])
     return
 end
 
 # Function for AutoDiff
-function active_power_constraints(polar::PolarForm, cons, vmag, vang, pinj, qinj, pd, qd)
+function active_power_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet, pd, qd)
     kernel! = active_power_kernel!(polar.device)
     ref = polar.indexing.index_ref
     ref_to_gen = polar.indexing.index_ref_to_gen
@@ -74,7 +74,7 @@ function adjoint!(
     pg, ∂pg,
     vm, ∂vm,
     va, ∂va,
-    pinj, ∂pinj,
+    pnet, ∂pnet,
     pload, qload,
 ) where {F<:typeof(active_power_constraints), S, I}
     nbus = PS.get(polar.network, PS.NumberOfBuses())

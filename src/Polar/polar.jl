@@ -243,7 +243,7 @@ function get!(
     nᵤ = get(polar, NumberOfControl())
     u[1:nref] .= @view buffer.vmag[polar.network.ref]
     u[nref + 1:nref + npv] .= @view buffer.vmag[polar.network.pv]
-    u[nref + npv + 1:nref + 2*npv] .= @view buffer.pg[polar.indexing.index_pv_to_gen]
+    u[nref + npv + 1:nref + 2*npv] .= @view buffer.pgen[polar.indexing.index_pv_to_gen]
     return u
 end
 
@@ -259,13 +259,13 @@ function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState)
 
     copyto!(buffer.vmag, vmag)
     copyto!(buffer.vang, vang)
-    copyto!(buffer.pg, pg)
-    copyto!(buffer.qg, qg)
-    copyto!(buffer.pd, pd)
-    copyto!(buffer.qd, qd)
+    copyto!(buffer.pgen, pg)
+    copyto!(buffer.qgen, qg)
+    copyto!(buffer.pload, pd)
+    copyto!(buffer.qload, qd)
 
-    fill!(buffer.pinj, 0.0)
-    fill!(buffer.qinj, 0.0)
+    fill!(buffer.pnet, 0.0)
+    fill!(buffer.qnet, 0.0)
     copyto!(view(buffer.pnet, form.indexing.index_generators), pg)
     copyto!(view(buffer.qnet, form.indexing.index_generators), qg)
     return

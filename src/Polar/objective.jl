@@ -8,7 +8,7 @@ function adjoint!(
     pg, ∂pg,
     vm, ∂vm,
     va, ∂va,
-    pinj, ∂pinj,
+    pnet, ∂pnet,
     pload, qload,
 ) where {F<:typeof(active_power_generation), S, I}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
@@ -23,12 +23,12 @@ function adjoint!(
 
     fill!(∂vm, 0.0)
     fill!(∂va, 0.0)
-    fill!(∂pinj, 0.0)
+    fill!(∂pnet, 0.0)
     ev = adj_active_power_kernel!(polar.device)(
         ∂pg,
         vm, ∂vm,
         va, ∂va,
-        ∂pinj,
+        ∂pnet,
         index_pv, index_ref, pv2gen, ref2gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
         ndrange=(ngen, size(∂pg, 2)),
@@ -48,7 +48,7 @@ function pullback_objective(polar::PolarForm)
 end
 
 function cost_production(polar::PolarForm, buffer::PolarNetworkState)
-    pg = buffer.pg
+    pg = buffer.pgen
     ngen = PS.get(polar, PS.NumberOfGenerators())
     coefs = polar.costs_coefficients
     c2 = @view coefs[:, 2]
@@ -95,11 +95,11 @@ function put(
 
     # Adjoint of active power generation
     adjoint!(polar, pbm,
-        buffer.pg, adj_pg,
+        buffer.pgen, adj_pg,
         buffer.vmag, adj_vmag,
         buffer.vang, adj_vang,
-        buffer.pinj, adj_pinj,
-        buffer.pd, buffer.qd,
+        buffer.pnet, adj_pinj,
+        buffer.pload, buffer.qload,
     )
 
     # Adjoint w.r.t. x and u
@@ -112,7 +112,7 @@ end
 
 function gradient_objective!(polar::PolarForm, ∂obj::AutoDiff.TapeMemory, buffer::PolarNetworkState)
     ∂pg = ∂obj.stack.∂pg
-    adjoint_cost!(polar, ∂pg, buffer.pg)
+    adjoint_cost!(polar, ∂pg, buffer.pgen)
     put(polar, PS.Generators(), PS.ActivePower(), ∂obj, buffer)
     return
 end
