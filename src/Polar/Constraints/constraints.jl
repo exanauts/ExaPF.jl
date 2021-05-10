@@ -108,6 +108,13 @@ function _build_jacobian(polar::PolarForm, cons::Function, X::Union{State, Contr
 end
 
 _build_hessian(polar::PolarForm, cons::Function) = AutoDiff.Hessian(polar, cons)
+# Hessian of voltage magnitude is constant
+function _build_hessian(polar::PolarForm{T, VI, VT, MT}, cons::typeof(voltage_magnitude_constraints)) where {T, VI, VT, MT}
+    nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
+    hv = VT(undef, nx + nu)
+    fill!(hv, zero(T))
+    return AutoDiff.ConstantHessian(hv)
+end
 
 function FullSpaceJacobian(
     polar::PolarForm{T, VI, VT, MT},

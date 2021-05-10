@@ -143,7 +143,7 @@ function batch_tape(
     return AutoDiff.TapeMemory(func, nothing, intermediate)
 end
 
-function update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
+function batch_update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
     x = H.x
     t1sx = H.t1sx
     nbatch = size(t1sx, 2)

@@ -211,6 +211,19 @@ function _init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
     return
 end
 
+function update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
+    t1sx = H.t1sx
+    nbatch = size(t1sx, 2)
+    nbus = get(polar, PS.NumberOfBuses())
+
+    # Move data
+    copyto!(H.x, 1, buffer.vmag, 1, nbus)
+    copyto!(H.x, nbus+1, buffer.vang, 1, nbus)
+    copyto!(H.x, 2*nbus+1, buffer.pinj, 1, nbus)
+    t1sx .= H.x
+    return
+end
+
 # λ' * H * v
 function AutoDiff.adj_hessian_prod!(
     polar, H::AutoDiff.Hessian, hv, buffer, λ, v,
@@ -230,7 +243,6 @@ function AutoDiff.adj_hessian_prod!(
     # Init dual variables
     t1sx .= H.x
     adj_t1sx .= 0.0
-    t1sF .= 0.0
     adj_t1sF .= λ
     # Seeding
     nmap = length(H.map)
@@ -252,6 +264,12 @@ function AutoDiff.adj_hessian_prod!(
     return nothing
 end
 
+function AutoDiff.adj_hessian_prod!(
+    polar, H::AutoDiff.ConstantHessian, hv, buffer, λ, v,
+)
+    copyto!(hv, H.hv)
+    return nothing
+end
 
 # Adjoint's structure
 """
@@ -398,7 +416,7 @@ end
 struct HessianStorage{VT,Hess1,Hess2}
     state::Hess1
     obj::Hess2
-    constraints::Vector{AutoDiff.Hessian}
+    constraints::Vector{AutoDiff.AbstractHessian}
     # Adjoints
     z::VT
     ψ::VT
@@ -412,7 +430,7 @@ function HessianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Fun
 
     Hstate = AutoDiff.Hessian(polar, power_balance)
     Hobj = AutoDiff.Hessian(polar, active_power_generation)
-    Hcons = AutoDiff.Hessian[]
+    Hcons = AutoDiff.AbstractHessian[]
     for cons in constraints
         push!(Hcons, _build_hessian(polar, cons))
     end
