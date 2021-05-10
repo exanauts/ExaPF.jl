@@ -160,7 +160,7 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.ConstantJacobian, bu
 end
 
 
-function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
+function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func; tape=nothing) where {T, VI, VT, MT}
     @assert is_constraint(func)
 
     if isa(polar.device, CPU)
@@ -190,7 +190,11 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     VD = typeof(t1sx)
     adj_t1sx = similar(t1sx)
     adj_t1sF = similar(t1sF)
-    buffer = AutoDiff.TapeMemory(polar, func, VD; with_stack=false)
+    if isnothing(tape)
+        buffer = AutoDiff.TapeMemory(polar, func, VD; with_stack=false)
+    else
+        buffer = tape
+    end
     return AutoDiff.Hessian(
         func, host_t1sseeds, t1sseeds, x, t1sF, adj_t1sF, t1sx, adj_t1sx, map, varx, t1svarx, buffer,
     )
@@ -208,6 +212,19 @@ function _init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
         tmp[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
     end
     copyto!(dest, tmp)
+    return
+end
+
+function update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
+    t1sx = H.t1sx
+    nbatch = size(t1sx, 2)
+    nbus = get(polar, PS.NumberOfBuses())
+
+    # Move data
+    copyto!(H.x, 1, buffer.vmag, 1, nbus)
+    copyto!(H.x, nbus+1, buffer.vang, 1, nbus)
+    copyto!(H.x, 2*nbus+1, buffer.pinj, 1, nbus)
+    t1sx .= H.x
     return
 end
 
@@ -230,7 +247,6 @@ function AutoDiff.adj_hessian_prod!(
     # Init dual variables
     t1sx .= H.x
     adj_t1sx .= 0.0
-    t1sF .= 0.0
     adj_t1sF .= λ
     # Seeding
     nmap = length(H.map)
@@ -252,6 +268,12 @@ function AutoDiff.adj_hessian_prod!(
     return nothing
 end
 
+function AutoDiff.adj_hessian_prod!(
+    polar, H::AutoDiff.ConstantHessian, hv, buffer, λ, v,
+)
+    copyto!(hv, H.hv)
+    return nothing
+end
 
 # Adjoint's structure
 """
@@ -398,7 +420,7 @@ end
 struct HessianStorage{VT,Hess1,Hess2}
     state::Hess1
     obj::Hess2
-    constraints::Vector{AutoDiff.Hessian}
+    constraints::Vector{AutoDiff.AbstractHessian}
     # Adjoints
     z::VT
     ψ::VT
@@ -411,8 +433,8 @@ function HessianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Fun
     nu = get(polar, NumberOfControl())
 
     Hstate = AutoDiff.Hessian(polar, power_balance)
-    Hobj = AutoDiff.Hessian(polar, active_power_generation)
-    Hcons = AutoDiff.Hessian[]
+    Hobj = AutoDiff.Hessian(polar, cost_production)
+    Hcons = AutoDiff.AbstractHessian[]
     for cons in constraints
         push!(Hcons, _build_hessian(polar, cons))
     end

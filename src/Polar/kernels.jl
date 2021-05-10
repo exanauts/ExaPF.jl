@@ -247,6 +247,53 @@ function adj_residual_polar!(
     end
 end
 
+@inline function bus_injection(
+    bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval
+)
+    inj = 0.0
+    @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
+        to = ybus_re_rowval[c]
+        aij = vang[bus, j] - vang[to, j]
+        coef_cos = vmag[bus, j]*vmag[to, j]*ybus_re_nzval[c]
+        coef_sin = vmag[bus, j]*vmag[to, j]*ybus_im_nzval[c]
+        cos_val = cos(aij)
+        sin_val = sin(aij)
+        inj += coef_cos * cos_val + coef_sin * sin_val
+    end
+    return inj
+end
+
+@inline function adjoint_bus_injection!(
+    fr, j, adj_inj, adj_vmag, adj_vang, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval
+)
+    @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
+        to = ybus_re_rowval[c]
+        aij = vang[fr, j] - vang[to, j]
+        # f_re = a * cos + b * sin
+        # f_im = a * sin - b * cos
+        coef_cos = vmag[fr, j]*vmag[to, j]*ybus_re_nzval[c]
+        coef_sin = vmag[fr, j]*vmag[to, j]*ybus_im_nzval[c]
+        cosθ = cos(aij)
+        sinθ = sin(aij)
+
+        adj_coef_cos = cosθ  * adj_inj
+        adj_cos_val  = coef_cos * adj_inj
+        adj_coef_sin = sinθ  * adj_inj
+        adj_sin_val  = coef_sin * adj_inj
+
+        adj_aij =   cosθ * adj_sin_val
+        adj_aij -=  sinθ * adj_cos_val
+
+        adj_vmag[fr, j] += vmag[to, j] * ybus_re_nzval[c] * adj_coef_cos
+        adj_vmag[to, j] += vmag[fr, j] * ybus_re_nzval[c] * adj_coef_cos
+        adj_vmag[fr, j] += vmag[to, j] * ybus_im_nzval[c] * adj_coef_sin
+        adj_vmag[to, j] += vmag[fr, j] * ybus_im_nzval[c] * adj_coef_sin
+
+        adj_vang[fr, j] += adj_aij
+        adj_vang[to, j] -= adj_aij
+    end
+end
+
 KA.@kernel function transfer_kernel!(
     vmag, vang, pnet, qnet, @Const(u), @Const(pv), @Const(pq), @Const(ref), @Const(pload), @Const(qload)
 )
@@ -369,31 +416,6 @@ KA.@kernel function active_power_kernel!(
         end
         pg[i_gen, j] = inj + pload[bus]
     end
-end
-
-# Refresh active power (needed to evaluate objective)
-function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::PolarNetworkState)
-    kernel! = active_power_kernel!(polar.device)
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    ref = polar.indexing.index_ref
-    pv_to_gen = polar.indexing.index_pv_to_gen
-    ref_to_gen = polar.indexing.index_ref_to_gen
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-    transperm = polar.topology.sortperm
-
-    ndrange = (length(pv) + length(ref), size(buffer.pgen, 2))
-
-    ev = kernel!(
-        buffer.pgen,
-        buffer.vmag, buffer.vang, buffer.pnet,
-        pv, ref, pv_to_gen, ref_to_gen,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, transperm, buffer.pload,
-        ndrange=ndrange,
-        dependencies=Event(polar.device)
-    )
-    wait(ev)
 end
 
 KA.@kernel function adj_active_power_kernel!(
@@ -531,29 +553,6 @@ KA.@kernel function reactive_power_kernel!(
         inj += coef_cos * sin_val - coef_sin * cos_val
     end
     qg[i_gen, j] = inj + qload[bus]
-end
-
-function update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buffer::PolarNetworkState)
-    kernel! = reactive_power_kernel!(polar.device)
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    ref = polar.indexing.index_ref
-    pv_to_gen = polar.indexing.index_pv_to_gen
-    ref_to_gen = polar.indexing.index_ref_to_gen
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-    transperm = polar.topology.sortperm
-
-    ndrange = (length(pv) + length(ref), size(buffer.qgen, 2))
-    ev = kernel!(
-        buffer.qgen,
-        buffer.vmag, buffer.vang, buffer.pnet,
-        pv, ref, pv_to_gen, ref_to_gen,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, transperm, buffer.qload,
-        ndrange=ndrange,
-        dependencies=Event(polar.device)
-    )
-    wait(ev)
 end
 
 KA.@kernel function adj_reactive_power_edge_kernel!(

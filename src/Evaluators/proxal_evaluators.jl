@@ -18,8 +18,10 @@ Evaluator wrapping a `ReducedSpaceEvaluator` for use inside the
 decomposition algorithm implemented in [ProxAL.jl](https://github.com/exanauts/ProxAL.jl).
 
 """
-mutable struct ProxALEvaluator{T, VI, VT, MT} <: AbstractNLPEvaluator
+mutable struct ProxALEvaluator{T, VI, VT, MT, Pullback, Hess} <: AbstractNLPEvaluator
     inner::ReducedSpaceEvaluator{T, VI, VT, MT}
+    obj_stack::Pullback
+    hessian_obj::Hess
     s_min::VT
     s_max::VT
     nu::Int
@@ -35,17 +37,15 @@ mutable struct ProxALEvaluator{T, VI, VT, MT} <: AbstractNLPEvaluator
     pg_f::VT
     pg_ref::VT
     pg_t::VT
-    # Buffer
-    ramp_link_prev::VT
-    ramp_link_next::VT
 end
 function ProxALEvaluator(
     nlp::ReducedSpaceEvaluator{T, VI, VT, MT},
     time::ProxALTime;
-    τ=0.1, ρf=0.1, ρt=0.1, scale_obj=1.0,
+    τ=0.1, ρf=0.1, ρt=0.1, scale_obj=1.0, want_hessian=true,
 ) where {T, VI, VT, MT}
     nu = n_variables(nlp)
     ng = get(nlp, PS.NumberOfGenerators())
+
 
     s_min = xzeros(VT, ng)
     s_max = xones(VT, ng)
@@ -56,12 +56,30 @@ function ProxALEvaluator(
     pgc = xzeros(VT, ng)
     pgt = xzeros(VT, ng)
 
-    ramp_link_prev = xzeros(VT, ng)
-    ramp_link_next = xzeros(VT, ng)
+    intermediate = (
+        s = similar(s_min),
+        t = Int(time),
+        σ = scale_obj,
+        τ = τ,
+        λf = λf,
+        λt = λt,
+        ρf = ρf,
+        ρt = ρt,
+        p1 = pgf,
+        p2 = pgc,
+        p3 = pgt,
+    )
 
+    pbm = pullback_ramping(nlp.model, intermediate)
+
+    hess = nothing
+    if want_hessian
+        hess = AutoDiff.Hessian(nlp.model, cost_penalty_ramping_constraints; tape=pbm)
+    end
     return ProxALEvaluator(
-        nlp, s_min, s_max, nu, ng, time, scale_obj, τ, λf, λt, ρf, ρt,
-        pgf, pgc, pgt, ramp_link_prev, ramp_link_next,
+        nlp, pbm, hess, s_min, s_max, nu, ng, time, scale_obj,
+        τ, λf, λt, ρf, ρt,
+        pgf, pgc, pgt,
     )
 end
 function ProxALEvaluator(
@@ -73,8 +91,6 @@ function ProxALEvaluator(
     # Build network polar formulation
     model = PolarForm(pf, device)
     # Build reduced space evaluator
-    x = initial(model, State())
-    u = initial(model, Control())
     nlp = ReducedSpaceEvaluator(model; options...)
     return ProxALEvaluator(nlp, time)
 end
@@ -127,13 +143,7 @@ function update!(nlp::ProxALEvaluator, w)
     s = @view w[nlp.nu+1:end]
     conv = update!(nlp.inner, u)
     pg = get(nlp.inner, PS.ActivePower())
-    # Update terms for augmented penalties
-    if nlp.time != Origin
-        nlp.ramp_link_prev .= nlp.pg_f .- pg .+ s
-    end
-    if nlp.time != Final
-        nlp.ramp_link_next .= pg .- nlp.pg_t
-    end
+    copyto!(nlp.obj_stack.intermediate.s, s)
     return conv
 end
 
@@ -159,72 +169,31 @@ end
 function objective(nlp::ProxALEvaluator, w)
     u = @view w[1:nlp.nu]
     s = @view w[nlp.nu+1:end]
-    buffer = get(nlp.inner, PhysicalState())
-    pg = get(nlp.inner, PS.ActivePower())
-    # Operational costs
-    c = nlp.scale_objective * cost_production(nlp.inner.model, buffer)
-    # Augmented Lagrangian penalty
-    c += 0.5 * nlp.τ * xnorm(pg .- nlp.pg_ref)^2
-    if nlp.time != Origin
-        c += dot(nlp.λf, nlp.ramp_link_prev)
-        c += 0.5 * nlp.ρf * xnorm(nlp.ramp_link_prev)^2
-    end
-    if nlp.time != Final
-        c += dot(nlp.λt, nlp.ramp_link_next)
-        c += 0.5 * nlp.ρt * xnorm(nlp.ramp_link_next)^2
-    end
-    return c
-end
-
-function _adjoint_objective!(nlp::ProxALEvaluator, ∂f, pg)
-    # Import model
     model = nlp.inner.model
-    ## Seed left-hand side vector
-    adjoint_cost!(model, ∂f, pg)
-    ∂f .*= nlp.scale_objective
-    if nlp.time != Origin
-        ∂f .-= nlp.λf
-        ∂f .-= nlp.ρf .* nlp.ramp_link_prev
-    end
-    if nlp.time != Final
-        ∂f .+= nlp.λt
-        ∂f .+= nlp.ρt .* nlp.ramp_link_next
-    end
-    ∂f .+= nlp.τ .* (pg .- nlp.pg_ref)
-    return
+    buffer = get(nlp.inner, PhysicalState())
+    return cost_penalty_ramping_constraints(
+        model, buffer, s, Int(nlp.time),
+        nlp.scale_objective, nlp.τ, nlp.λf, nlp.λt, nlp.ρf, nlp.ρt, nlp.pg_f, nlp.pg_ref, nlp.pg_t
+    )
 end
 
 ## Gradient
 function full_gradient!(nlp::ProxALEvaluator, jx, ju, w)
-    # Import model
-    model = nlp.inner.model
-    # Import buffer (has been updated previously in update!)
     buffer = get(nlp.inner, PhysicalState())
-    # Import AutoDiff objects
-    ∂obj = nlp.inner.obj_stack
-    # Scaling
-    scale_obj = nlp.scale_objective
-    # Current active power
-    pg = get(nlp.inner, PS.ActivePower())
-
-    u = @view w[1:nlp.nu]
-
-    ## Compute adjoint of objective
-    _adjoint_objective!(nlp, ∂obj.stack.∂pg, pg)
-
-    ## Evaluate conjointly
-    # ∇fₓ = v' * J,  with J = ∂pg / ∂x
-    # ∇fᵤ = v' * J,  with J = ∂pg / ∂u
-    put(model, PS.Generators(), PS.ActivePower(), ∂obj, buffer)
+    ∂obj = nlp.obj_stack
+    # Evaluate adjoint of cost function and update inplace AdjointStackObjective
+    gradient_objective!(nlp.inner.model, ∂obj, buffer)
     copyto!(jx, ∂obj.stack.∇fₓ)
     copyto!(ju, ∂obj.stack.∇fᵤ)
 end
 
 function gradient_slack!(nlp::ProxALEvaluator, grad, w)
+    s = @view w[nlp.nu+1:end]
+    pg = get(nlp.inner, PS.ActivePower())
     # Gradient wrt s
     g_s = @view grad[nlp.nu+1:end]
     if nlp.time != Origin
-        g_s .= nlp.λf .+ nlp.ρf .* nlp.ramp_link_prev
+        g_s .= nlp.λf .+ nlp.ρf .* (nlp.pg_f .- pg .+ s)
     else
         g_s .= 0.0
     end
@@ -239,8 +208,7 @@ end
 ## Gradient
 function gradient!(nlp::ProxALEvaluator, g, w)
     # Import AutoDiff objects
-    ∂obj = nlp.inner.obj_stack
-
+    ∂obj = nlp.obj_stack
     jvu = ∂obj.stack.∇fᵤ ; jvx = ∂obj.stack.∇fₓ
     fill!(jvx, 0)  ; fill!(jvu, 0)
     full_gradient!(nlp, jvx, jvu, w)
@@ -297,7 +265,7 @@ function full_jtprod!(nlp::ProxALEvaluator, jvx, jvu, w, v)
 end
 
 function ojtprod!(nlp::ProxALEvaluator, jv, u, σ, v)
-    ∂obj = nlp.inner.obj_stack
+    ∂obj = nlp.obj_stack
     jvx = ∂obj.stack.jvₓ ; fill!(jvx, 0)
     jvu = ∂obj.stack.jvᵤ ; fill!(jvu, 0)
     # compute gradient of objective
@@ -310,7 +278,23 @@ function ojtprod!(nlp::ProxALEvaluator, jv, u, σ, v)
     reduced_gradient!(nlp, jv, jvx, jvu, u)
 end
 
+#=
+    For ProxAL, we have:
+    H = [ H_xx  H_ux  J_x' ]
+        [ H_xu  H_uu  J_u' ]
+        [ J_x   J_u   ρ I  ]
+
+    so, if `v = [v_x; v_u; v_s]`, we get
+
+    H * v = [ H_xx v_x  +   H_ux v_u  +  J_x' v_s ]
+            [ H_xu v_x  +   H_uu v_u  +  J_u' v_s ]
+            [  J_x v_x  +    J_u v_u  +   ρ I     ]
+
+=#
 function hessprod!(nlp::ProxALEvaluator, hessvec, w, v)
+    @assert nlp.inner.has_hessian
+    @assert nlp.inner.has_jacobian
+
     model = nlp.inner.model
     nx = get(model, NumberOfState())
     nu = get(model, NumberOfControl())
@@ -327,7 +311,7 @@ function hessprod!(nlp::ProxALEvaluator, hessvec, w, v)
     hvs = @view hessvec[1+nlp.nu:end]
 
     z = H.z
-    tgt_xu = H.tmp_tgt  # tangent wrt and u
+    tgt_xu = H.tmp_tgt  # tangent wrt x and u
     hv_xu = H.tmp_hv    # hv wrt x and u
 
     _second_order_adjoint_z!(nlp.inner, z, vᵤ)
@@ -336,26 +320,18 @@ function hessprod!(nlp::ProxALEvaluator, hessvec, w, v)
     tgt_xu[1:nx] .= z
     tgt_xu[1+nx:nx+nu] .= vᵤ
 
-    # Init adjoint
-    ∂f = similar(buffer.pgen)
-    ∂²f = similar(buffer.pgen)
-    # Adjoint w.r.t. ProxAL's objective
-    _adjoint_objective!(nlp, ∂f, buffer.pgen)
-
-    # Hessian of ProxAL's objective
-    hessian_cost!(model, ∂²f)
-    # Contribution of penalties
-    ∂²f .+= nlp.τ
-    if nlp.time != Origin
-        ∂²f .+= nlp.ρf
-    end
-    if nlp.time != Final
-        ∂²f .+= nlp.ρt
-    end
-
     ## OBJECTIVE HESSIAN
-    has_slack = (nlp.time != Origin)
-    hessian_prod_objective_proxal!(model, H.obj, nlp.inner.obj_stack, hv_xu, hvs, ∂²f, ∂f, buffer, tgt_xu, vₛ, nlp.ρf, has_slack)
+    σ = 1.0
+    AutoDiff.adj_hessian_prod!(nlp.inner.model, nlp.hessian_obj, hv_xu, buffer, σ, tgt_xu)
+
+    # Contribution of slack node
+    if nlp.time != Origin
+        hvs .+= nlp.ρf .* vₛ
+
+        # TODO: implement block corresponding to Jacobian
+        # and transpose-Jacobian
+    end
+
     ∇²fx = hv_xu[1:nx]       # / x
     ∇²fu = hv_xu[nx+1:nx+nu] # / u
 
@@ -373,9 +349,6 @@ function reset!(nlp::ProxALEvaluator)
     fill!(nlp.pg_f, 0)
     fill!(nlp.pg_ref, 0)
     fill!(nlp.pg_t, 0)
-    # Reset buffers
-    fill!(nlp.ramp_link_prev, 0)
-    fill!(nlp.ramp_link_next, 0)
 end
 
 function primal_infeasibility!(nlp::ProxALEvaluator, cons, w)

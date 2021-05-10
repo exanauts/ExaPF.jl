@@ -76,7 +76,7 @@ mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <
     buffer::PolarNetworkState{VI, VT}
     # AutoDiff
     state_jacobian::FullSpaceJacobian{Jacx, Jacu}
-    obj_stack::AutoDiff.TapeMemory{typeof(active_power_generation), AdjointStackObjective{VT}, Nothing}
+    obj_stack::AutoDiff.TapeMemory{typeof(cost_production), AdjointStackObjective{VT}, Nothing}
     cons_stacks::Vector{AutoDiff.TapeMemory} # / constraints
     constraint_jacobians::JacCons
     hessians::Hess
@@ -156,7 +156,7 @@ n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
 constraints_type(::ReducedSpaceEvaluator) = :inequality
-has_hessian(::ReducedSpaceEvaluator) = true
+has_hessian(nlp::ReducedSpaceEvaluator) = nlp.has_hessian
 
 # Getters
 get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints
@@ -226,8 +226,6 @@ function update!(nlp::ReducedSpaceEvaluator, u)
         return conv
     end
 
-    # Refresh values of active and reactive powers at generators
-    update!(nlp.model, PS.Generators(), PS.ActivePower(), nlp.buffer)
     # Evaluate Jacobian of power flow equation on current u
     AutoDiff.jacobian!(nlp.model, nlp.state_jacobian.u, nlp.buffer)
     # Specify that constraint's Jacobian is not up to date
@@ -504,15 +502,9 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     copyto!(tgt, 1, z, 1, nx)
     copyto!(tgt, nx+1, w, 1, nu)
 
-    ∂f = similar(buffer.pgen)
-    ∂²f = similar(buffer.pgen)
-
-    # Adjoint and Hessian of cost function
-    adjoint_cost!(nlp.model, ∂f, buffer.pgen)
-    hessian_cost!(nlp.model, ∂²f)
-
     ## OBJECTIVE HESSIAN
-    hessian_prod_objective!(nlp.model, H.obj, nlp.obj_stack, hv, ∂²f, ∂f, buffer, tgt)
+    σ = 1.0
+    AutoDiff.adj_hessian_prod!(nlp.model, H.obj, hv, buffer, σ, tgt)
     ∇²fx = hv[1:nx]
     ∇²fu = hv[nx+1:nx+nu]
 
@@ -544,16 +536,10 @@ function hessian_lagrangian_penalty_prod!(
     tgt[1:nx] .= z
     tgt[1+nx:nx+nu] .= w
 
-    ∂f = similar(buffer.pgen)
-    ∂²f = similar(buffer.pgen)
-    # Adjoint and Hessian of cost function
-    adjoint_cost!(nlp.model, ∂f, buffer.pgen)
-    hessian_cost!(nlp.model, ∂²f)
-
     ## OBJECTIVE HESSIAN
-    hessian_prod_objective!(nlp.model, H.obj, nlp.obj_stack, hv, ∂²f, ∂f, buffer, tgt)
-    ∇²Lx = σ .* @view hv[1:nx]
-    ∇²Lu = σ .* @view hv[nx+1:nx+nu]
+    AutoDiff.adj_hessian_prod!(nlp.model, H.obj, hv, buffer, σ, tgt)
+    ∇²Lx = hv[1:nx]
+    ∇²Lu = hv[nx+1:nx+nu]
 
     # CONSTRAINT HESSIAN
     shift = 0
@@ -632,7 +618,7 @@ function Base.show(io::IO, nlp::ReducedSpaceEvaluator)
     for cons in nlp.constraints
         println(io, "        - ", cons)
     end
-    print(io, "    * linear solver: ", nlp.linear_solver)
+    print(io, "    * linear solver: ", typeof(nlp.linear_solver))
 end
 
 function reset!(nlp::ReducedSpaceEvaluator)
