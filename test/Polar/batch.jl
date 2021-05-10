@@ -77,7 +77,6 @@ function test_batch_hessian(polar, device, VT; nbatch=64)
     AutoDiff.adj_hessian_prod!(polar, single_H, projp, cache, λ, tgt)
 
     batch_H = ExaPF.BatchHessian(polar, ExaPF.power_balance, nbatch)
-    ExaPF.update!(polar, batch_H, cache)
 
     MT = isa(device, GPU) ? CuMatrix : Matrix
 
@@ -89,6 +88,7 @@ function test_batch_hessian(polar, device, VT; nbatch=64)
         ∇²gλ.xu  ∇²gλ.uu
     ]
 
+    ExaPF.batch_update!(polar, batch_H, cache)
     ExaPF.batch_adj_hessian_prod!(polar, batch_H, batch_projp, cache, λ, batch_tgt)
 
     if !isa(device, GPU)

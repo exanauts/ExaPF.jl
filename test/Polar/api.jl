@@ -58,9 +58,6 @@ function test_polar_api(polar, device, M)
 
     # Get current state
     ExaPF.get!(polar, State(), xₖ, cache)
-    # Refresh power of generators in cache
-    ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
-    ExaPF.update!(polar, PS.Generators(), PS.ReactivePower(), cache)
 
     # Bounds on state and control
     u_min, u_max = ExaPF.bounds(polar, Control())
