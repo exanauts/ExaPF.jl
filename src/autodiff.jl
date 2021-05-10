@@ -136,6 +136,10 @@ struct Hessian{Func, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, Buff} <: AbstractH
     buffer::Buff
 end
 
+struct ConstantHessian{VT} <: AbstractHessian
+    hv::VT
+end
+
 # Cache for adjoint
 """
     TapeMemory{F, S, I}
@@ -154,23 +158,23 @@ struct TapeMemory{F, S, I}
 end
 
 # Seeding
-@kernel function _init_seed!(t1sseeds, t1sseedvecs, @Const(coloring), ncolor)
-    i = @index(Global, Linear)
-    t1sseedvecs[:,i] .= 0
-    @inbounds for j in 1:ncolor
-        if coloring[i] == j
-            t1sseedvecs[j,i] = 1.0
+function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor, nmap)
+    for i in 1:nmap
+        t1sseedvecs[:,i] .= 0
+        @inbounds for j in 1:ncolor
+            if coloring[i] == j
+                t1sseedvecs[j,i] = 1.0
+            end
         end
+        t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvecs[:,i]))
     end
-    t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvecs[:,i]))
 end
 
 function init_seed(coloring, ncolor, nmap)
     t1sseeds = Vector{ForwardDiff.Partials{ncolor, Float64}}(undef, nmap)
     t1sseedvecs = zeros(Float64, ncolor, nmap)
     # The seeding is always done on the CPU since it's faster
-    ev = _init_seed!(CPU())(t1sseeds, t1sseedvecs, Array(coloring), ncolor, ndrange=nmap, dependencies=Event(CPU()))
-    wait(ev)
+    _init_seed!(t1sseeds, t1sseedvecs, Array(coloring), ncolor, nmap)
     return t1sseeds
 end
 
@@ -207,7 +211,9 @@ end
 # Get partials for Hessian projection
 @kernel function getpartials_hv_kernel!(hv, @Const(adj_t1sx), @Const(map))
     i = @index(Global, Linear)
-    hv[i] = ForwardDiff.partials(adj_t1sx[map[i]]).values[1]
+    @inbounds begin
+        hv[i] = ForwardDiff.partials(adj_t1sx[map[i]]).values[1]
+    end
 end
 
 """

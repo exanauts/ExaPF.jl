@@ -1,14 +1,5 @@
 is_constraint(::typeof(active_power_constraints)) = true
 
-# g = [P_ref]
-function active_power_constraints(polar::PolarForm, cons, buffer)
-    ref_to_gen = polar.indexing.index_ref_to_gen
-    # Constraint on P_ref (generator) (P_inj = P_g - P_load)
-    # NB: Active power generation has been updated previously inside buffer
-    copyto!(cons, buffer.pgen[ref_to_gen])
-    return
-end
-
 # Function for AutoDiff
 function active_power_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet, pd, qd)
     kernel! = active_power_kernel!(polar.device)
@@ -22,6 +13,12 @@ function active_power_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet
     )
     wait(ev)
 end
+
+function active_power_constraints(polar::PolarForm, cons, buffer)
+    active_power_constraints(polar, cons, buffer.vmag, buffer.vang, buffer.pnet, buffer.qnet, buffer.pload, buffer.qload)
+    return
+end
+
 
 function size_constraint(polar::PolarForm{T, IT, VT, MT}, ::typeof(active_power_constraints)) where {T, IT, VT, MT}
     return PS.get(polar.network, PS.NumberOfSlackBuses())

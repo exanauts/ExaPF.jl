@@ -6,7 +6,7 @@ function test_reduced_gradient(polar, device, MT)
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
     ∂obj = ExaPF.AdjointStackObjective(polar)
-    pbm = AutoDiff.TapeMemory(ExaPF.active_power_generation, ∂obj, nothing)
+    pbm = AutoDiff.TapeMemory(ExaPF.cost_production, ∂obj, nothing)
 
     # Solve power flow
     conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
@@ -21,12 +21,13 @@ function test_reduced_gradient(polar, device, MT)
     V = ExaPF.voltage_host(cache)
     Jx = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
     Ju = ExaPF.matpower_jacobian(polar, Control(), ExaPF.power_balance, V)
+<<<<<<< HEAD
     h∇gₓ = ∇gₓ |> SparseMatrixCSC |> Array
     h∇gᵤ = ∇gᵤ |> SparseMatrixCSC |> Array
     @test isapprox(h∇gₓ, Jx)
     @test isapprox(h∇gᵤ, Ju)
-    # Refresh cache with new values of vmag and vang
-    ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
+
+    ExaPF.cost_production(polar, cache)
     ExaPF.gradient_objective!(polar, pbm, cache)
     ∇fₓ = ∂obj.∇fₓ
     ∇fᵤ = ∂obj.∇fᵤ
@@ -47,7 +48,6 @@ function test_reduced_gradient(polar, device, MT)
         # Ensure we remain in the manifold
         ExaPF.transfer!(polar, cache, u_)
         convergence = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-14))
-        ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
         return ExaPF.cost_production(polar, cache)
     end
 

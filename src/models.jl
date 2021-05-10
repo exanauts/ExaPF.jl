@@ -184,6 +184,14 @@ Get operational cost.
 """
 function cost_production end
 
+"""
+    cost_penalty_ramping_constraints(form::AbstractFormulation, buffer::AbstractNetworkBuffer, params...)::Float64
+
+Get operational cost, including a quadratic penalty penalizing the ramping
+constraints w.r.t. a given reference.
+"""
+function cost_penalty_ramping_constraints end
+
 # Generic constraints
 
 """
@@ -213,15 +221,6 @@ p_g^♭ ≤ p_g ≤ p_g^♯  .
 The result is stored inplace, inside the vector `cons`.
 """
 function active_power_constraints end
-
-"""
-    active_power_generation(form::AbstractFormulation, pg::AbstractVector, buffer::AbstractNetworkBuffer)
-
-Evaluate the **active power production** of all generators.
-Used to evaluate the operational cost.
-The result is stored inplace, inside the vector `pg`.
-"""
-function active_power_generation end
 
 """
     reactive_power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
