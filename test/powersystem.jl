@@ -122,11 +122,17 @@ function test_powernetwork_api(datafile)
     @test length(q_min) == n_gen
     @test length(q_max) == n_gen
     idx = PS.get(pf, PS.GeneratorIndexes())
-    @test isequal(idx, [1, 2, 3])
+    @test length(idx) == n_gen
+    @test n_gen == length(pf.ref) + length(pf.pv)
+
     # Test costs coefficients
     coefs = PS.get_costs_coefficients(pf)
+    @test size(pf.generators, 1) == size(pf.costs, 1) == n_gen
     @test size(coefs) == (n_gen, 4)
-    @test isequal(coefs[:, 1], [3.0, 2.0, 2.0])
+    @test 3 in coefs[:, 1]  #check that reference node is a generator
+    @test isequal(coefs[:, 2], pf.costs[:, 7])
+    @test isequal(coefs[:, 3], pf.costs[:, 6] .* pf.baseMVA)
+    @test isequal(coefs[:, 4], pf.costs[:, 5] .* pf.baseMVA^2)
 
     # Lines
     n_lines = PS.get(pf, PS.NumberOfLines())
@@ -153,16 +159,21 @@ end
 @testset "PowerNetwork object" begin
     psse_datafile = "case14.raw"
     matpower_datafile = "case9.m"
+    multi_generators_file = "case14multigenerators.m"
 
     # Test constructor
-    @testset "Parsers $name" for name in [psse_datafile, matpower_datafile]
+    @testset "Parsers $name" for name in [
+        psse_datafile,
+        matpower_datafile,
+        multi_generators_file,
+    ]
         datafile = joinpath(dirname(@__FILE__), "..", "data", name)
         test_powernetwork_parser(datafile)
+        test_powernetwork_api(datafile)
     end
 
     # Test API with "case9.m"
     datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
-    test_powernetwork_api(datafile)
     test_powernetwork_contingencies(datafile)
 end
 
