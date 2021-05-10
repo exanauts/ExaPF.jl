@@ -40,7 +40,7 @@ struct PowerNetwork <: AbstractPowerSystem
     sbus::Vector{Complex{Float64}}
     sload::Vector{Complex{Float64}}
 
-    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
+    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[], multi_generators=:aggregate)
         # Parsed data indexes
         BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
         LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
@@ -50,16 +50,44 @@ struct PowerNetwork <: AbstractPowerSystem
         gen = data["gen"]
         lines = data["branch"]
         SBASE = data["baseMVA"][1]
-        costs = Base.get(data, "cost", nothing)
+        cost_coefficients = Base.get(data, "cost", nothing)
 
-        bus_id_to_indexes = get_bus_id_to_indexes(data["bus"])
+        # BUSES
+        bus_id_to_indexes = get_bus_id_to_indexes(bus)
 
+        # GENERATORS
+        if has_multiple_generators(gen) && multi_generators == :aggregate
+            gen, σg = merge_multi_generators(gen)
+            if !isnothing(cost_coefficients)
+                cost_coefficients = merge_cost_coefficients(cost_coefficients, gen, σg)
+            end
+        end
+
+        # LINES
         # Remove specified lines
         lines = get_active_branches(lines, remove_lines)
 
         # size of the system
         nbus = size(bus, 1)
         ngen = size(gen, 1)
+
+        # COSTS
+        if isnothing(cost_coefficients)
+            @warn("[PS] Cost function not specified in dataset. Fallback to default coefficients.")
+            # if not specified, costs is set by default to a # quadratic polynomial
+            costs = zeros(ngen, 7)
+            costs[:, 1] .= 2.0 # polynomial model
+            costs[:, 2] .= 0.0 # no start-up cost
+            costs[:, 3] .= 0.0 # no shutdown cost
+            costs[:, 4] .= 3.0 # quadratic polynomial
+            costs[:, 5] .= 0.0 # c₁
+            costs[:, 6] .= 1.0 # c₂
+            costs[:, 7] .= 0.0 # c₃
+        else
+            costs = cost_coefficients
+        end
+        # Check consistency of cost coefficients
+        @assert size(costs, 1) == size(gen, 1)
 
         # obtain V0 from raw data
         vbus = zeros(Complex{Float64}, nbus)
@@ -77,6 +105,12 @@ struct PowerNetwork <: AbstractPowerSystem
 
         # bus type indexing
         ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
+        # check consistency
+        ref_id = bus[ref, 1]
+        @assert bus[ref, 2] == [REF_BUS_TYPE]
+        if !(ref_id[1] in gen[:, 1])
+            error("[PS] No generator attached to slack node.")
+        end
 
         sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
         Ybus = topology.ybus
@@ -85,9 +119,9 @@ struct PowerNetwork <: AbstractPowerSystem
     end
 end
 
-function PowerNetwork(datafile::String)
+function PowerNetwork(datafile::String; options...)
     data = import_dataset(datafile)
-    return PowerNetwork(data)
+    return PowerNetwork(data; options...)
 end
 
 # Getters
@@ -237,11 +271,6 @@ function get_costs_coefficients(pf::PowerNetwork)
     # - 3rd column: coefficient c1
     # - 4th column: coefficient c2
     coefficients = zeros(ngens, 4)
-    # If cost is not specified, we return the array coefficients as is
-    if isnothing(pf.costs)
-        @warn("PowerSystem: cost is not specified in PowerNetwork dataset")
-        return coefficients
-    end
 
     cost_data = pf.costs
     # iterate generators and check if pv or ref.
