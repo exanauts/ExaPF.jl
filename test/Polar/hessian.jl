@@ -11,10 +11,8 @@ function test_hessian_with_matpower(polar, device, AT; atol=1e-6, rtol=1e-6)
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
     ∂obj = ExaPF.AdjointStackObjective(polar)
-    pbm = AutoDiff.TapeMemory(ExaPF.active_power_generation, ∂obj, nothing)
 
     conv = powerflow(polar, jx, cache, NewtonRaphson())
-    ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
 
     ##################################################
     # Computation of Hessians
@@ -89,12 +87,12 @@ function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
     ∂obj = ExaPF.AdjointStackObjective(polar)
-    pbm = AutoDiff.TapeMemory(ExaPF.active_power_generation, ∂obj, nothing)
 
     # Initiate state and control for FiniteDiff
     x = [cache.vang[pv] ; cache.vang[pq] ; cache.vmag[pq]]
     u = [cache.vmag[ref]; cache.vmag[pv]; cache.pgen[pv2gen]]
 
+    # CONSTRAINTS
     @testset "Compare with FiniteDiff Hessian ($constraints)" for constraints in [
         ExaPF.power_balance,
         ExaPF.active_power_constraints,
@@ -113,7 +111,6 @@ function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
             cache.vang[pv] .= x_[1:npv]
             cache.vang[pq] .= x_[npv+1:npv+npq]
             cache.vmag[pq] .= x_[npv+npq+1:end]
-            ExaPF.update!(polar, PS.Generators(), PS.ActivePower(), cache)
             Jx = ExaPF.matpower_jacobian(polar, constraints, State(), cache)
             Ju = ExaPF.matpower_jacobian(polar, constraints, Control(), cache)
             return [Jx Ju]' * μ
@@ -130,5 +127,32 @@ function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
         projp = Array(dev_projp)
         @test isapprox(projp, H_fd * tgt, rtol=rtol)
     end
+
+    # OBJECTIVE
+    ncons = ExaPF.size_constraint(polar, ExaPF.cost_production)
+    μ = ones(ncons)
+
+    function obj_fd(z)
+        x_ = z[1:nx]
+        u_ = z[1+nx:end]
+        # Transfer control
+        ExaPF.transfer!(polar, cache, u_)
+        # Transfer state (manually)
+        cache.vang[pv] .= x_[1:npv]
+        cache.vang[pq] .= x_[npv+1:npv+npq]
+        cache.vmag[pq] .= x_[npv+npq+1:end]
+        return ExaPF.cost_production(polar, cache)
+    end
+    H_fd = FiniteDiff.finite_difference_hessian(obj_fd, [x; u])
+
+    HessianAD = AutoDiff.Hessian(polar, ExaPF.cost_production)
+    tgt = rand(nx + nu)
+    projp = zeros(nx + nu)
+    dev_tgt = MT(tgt)
+    dev_projp = MT(projp)
+    dev_μ = MT(μ)
+    AutoDiff.adj_hessian_prod!(polar, HessianAD, dev_projp, cache, dev_μ, dev_tgt)
+    projp = Array(dev_projp)
+    @test isapprox( projp, H_fd * tgt, rtol=rtol)
 end
 

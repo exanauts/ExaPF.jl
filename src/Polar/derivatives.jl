@@ -429,7 +429,7 @@ function HessianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Fun
     nu = get(polar, NumberOfControl())
 
     Hstate = AutoDiff.Hessian(polar, power_balance)
-    Hobj = AutoDiff.Hessian(polar, active_power_generation)
+    Hobj = AutoDiff.Hessian(polar, cost_production)
     Hcons = AutoDiff.AbstractHessian[]
     for cons in constraints
         push!(Hcons, _build_hessian(polar, cons))

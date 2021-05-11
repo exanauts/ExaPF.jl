@@ -23,8 +23,25 @@ function _reactive_power_constraints(
 end
 
 function reactive_power_constraints(polar::PolarForm, cons, buffer)
-    # Refresh reactive power generation in buffer
-    update!(polar, PS.Generators(), PS.ReactivePower(), buffer)
+    kernel! = reactive_power_kernel!(polar.device)
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ref = polar.indexing.index_ref
+    pv_to_gen = polar.indexing.index_pv_to_gen
+    ref_to_gen = polar.indexing.index_ref_to_gen
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
+    ndrange = (length(pv) + length(ref), size(buffer.qg, 2))
+    ev = kernel!(
+        buffer.qg,
+        buffer.vmag, buffer.vang, buffer.pinj,
+        pv, ref, pv_to_gen, ref_to_gen,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+        ybus_im.nzval, polar.reactive_load,
+        ndrange=ndrange,
+        dependencies=Event(polar.device)
+    )
+    wait(ev)
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
     copy!(cons, buffer.qgen)
     return

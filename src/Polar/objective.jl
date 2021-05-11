@@ -1,16 +1,131 @@
-# Adjoints needed in polar formulation
-is_constraint(::typeof(active_power_generation)) = true
-size_constraint(polar::PolarForm, ::typeof(active_power_generation)) = get(polar, PS.NumberOfGenerators())
+is_constraint(::typeof(cost_production)) = true
+size_constraint(polar::PolarForm, ::typeof(cost_production)) = 1
 
+function pullback_objective(polar::PolarForm)
+    return AutoDiff.TapeMemory(
+        cost_production,
+        AdjointStackObjective(polar),
+        nothing,
+    )
+end
+
+@inline quadratic_cost(pg, c0, c1, c2) = c0 + c1 * pg + c2 * pg^2
+@inline adj_quadratic_cost(pg, c0, c1, c2) = c1 + 2.0 * c2 * pg
+
+KA.@kernel function cost_production_kernel!(
+    costs, pg, @Const(vmag), @Const(vang), @Const(pinj), @Const(pload),
+    @Const(c0), @Const(c1), @Const(c2),
+    @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
+    @Const(ybus_im_nzval),
+)
+    i, j = @index(Global, NTuple)
+    npv = length(pv)
+    nref = length(ref)
+    # Evaluate active power at PV nodes
+    if i <= npv
+        bus = pv[i]
+        i_gen = pv_to_gen[i]
+        pg[i_gen, j] = pinj[bus, j] + pload[bus]
+    # Evaluate active power at slack nodes
+    elseif i <= npv + nref
+        i_ = i - npv
+        bus = ref[i_]
+        i_gen = ref_to_gen[i_]
+        inj = 0.0
+        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
+            to = ybus_re_rowval[c]
+            aij = vang[bus, j] - vang[to, j]
+            # f_re = a * cos + b * sin
+            # f_im = a * sin - b * cos
+            coef_cos = vmag[bus, j]*vmag[to, j]*ybus_re_nzval[c]
+            coef_sin = vmag[bus, j]*vmag[to, j]*ybus_im_nzval[c]
+            cos_val = cos(aij)
+            sin_val = sin(aij)
+            inj += coef_cos * cos_val + coef_sin * sin_val
+        end
+        pg[i_gen, j] = inj + pload[bus]
+    end
+
+    costs[i_gen, j] = quadratic_cost(pg[i_gen, j], c0[i_gen], c1[i_gen], c2[i_gen])
+end
+
+KA.@kernel function adj_cost_production_kernel!(
+    adj_costs,
+    @Const(vmag), adj_vmag, @Const(vang), adj_vang, @Const(pinj), adj_pinj, @Const(pload),
+    @Const(c0), @Const(c1), @Const(c2),
+    @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
+)
+    i, j = @index(Global, NTuple)
+    npv = length(pv)
+    nref = length(ref)
+    if i <= npv
+        bus = pv[i]
+        i_gen = pv_to_gen[i]
+        pg = pinj[bus, j] + pload[bus]
+        adj_pinj[bus, j] = adj_costs[1] * adj_quadratic_cost(pg, c0[i_gen], c1[i_gen], c2[i_gen])
+    # Evaluate active power at slack nodes
+    elseif i <= npv + nref
+        i_ = i - npv
+        fr = ref[i_]
+        i_gen = ref_to_gen[i_]
+
+        inj = 0.0
+        @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
+            to = ybus_re_rowval[c]
+            aij = vang[fr, j] - vang[to, j]
+            # f_re = a * cos + b * sin
+            # f_im = a * sin - b * cos
+            coef_cos = vmag[fr, j]*vmag[to, j]*ybus_re_nzval[c]
+            coef_sin = vmag[fr, j]*vmag[to, j]*ybus_im_nzval[c]
+            cos_val = cos(aij)
+            sin_val = sin(aij)
+            inj += coef_cos * cos_val + coef_sin * sin_val
+        end
+        pg = inj + pload[fr]
+
+        adj_inj = adj_costs[1] * adj_quadratic_cost(pg, c0[i_gen], c1[i_gen], c2[i_gen])
+        adj_pinj[fr, j] = adj_inj
+        @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
+            to = ybus_re_rowval[c]
+            aij = vang[fr, j] - vang[to, j]
+            # f_re = a * cos + b * sin
+            # f_im = a * sin - b * cos
+            coef_cos = vmag[fr, j]*vmag[to, j]*ybus_re_nzval[c]
+            coef_sin = vmag[fr, j]*vmag[to, j]*ybus_im_nzval[c]
+            cosθ = cos(aij)
+            sinθ = sin(aij)
+
+            adj_coef_cos = cosθ  * adj_inj
+            adj_cos_val  = coef_cos * adj_inj
+            adj_coef_sin = sinθ  * adj_inj
+            adj_sin_val  = coef_sin * adj_inj
+
+            adj_aij =   cosθ * adj_sin_val
+            adj_aij -=  sinθ * adj_cos_val
+
+            adj_vmag[fr, j] += vmag[to, j] * ybus_re_nzval[c] * adj_coef_cos
+            adj_vmag[to, j] += vmag[fr, j] * ybus_re_nzval[c] * adj_coef_cos
+            adj_vmag[fr, j] += vmag[to, j] * ybus_im_nzval[c] * adj_coef_sin
+            adj_vmag[to, j] += vmag[fr, j] * ybus_im_nzval[c] * adj_coef_sin
+
+            adj_vang[fr, j] += adj_aij
+            adj_vang[to, j] -= adj_aij
+        end
+    end
+end
+
+# Adjoints needed in polar formulation
 function adjoint!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory{F, S, I},
-    pg, ∂pg,
+    pg, ∂cost,
     vm, ∂vm,
     va, ∂va,
     pnet, ∂pnet,
     pload, qload,
-) where {F<:typeof(active_power_generation), S, I}
+) where {F<:typeof(cost_production), S, I}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
     index_pv = polar.indexing.index_pv
@@ -18,74 +133,63 @@ function adjoint!(
     pv2gen = polar.indexing.index_pv_to_gen
     ref2gen = polar.indexing.index_ref_to_gen
 
+    coefs = polar.costs_coefficients
+    c0 = @view coefs[:, 2]
+    c1 = @view coefs[:, 3]
+    c2 = @view coefs[:, 4]
+
     ngen = get(polar, PS.NumberOfGenerators())
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     fill!(∂vm, 0.0)
     fill!(∂va, 0.0)
     fill!(∂pnet, 0.0)
-    ev = adj_active_power_kernel!(polar.device)(
-        ∂pg,
+    ev = adj_cost_production_kernel!(polar.device)(
+        ∂cost,
         vm, ∂vm,
         va, ∂va,
-        ∂pnet,
+        pnet, ∂pnet, pload,
+        c0, c1, c2,
         index_pv, index_ref, pv2gen, ref2gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
-        ndrange=(ngen, size(∂pg, 2)),
+        ndrange=(ngen, size(∂vm, 2)),
         dependencies=Event(polar.device)
     )
     wait(ev)
     return
 end
-#
-
-function pullback_objective(polar::PolarForm)
-    return AutoDiff.TapeMemory(
-        active_power_generation,
-        AdjointStackObjective(polar),
-        nothing,
-    )
-end
 
 function cost_production(polar::PolarForm, buffer::PolarNetworkState)
-    pg = buffer.pgen
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ref = polar.indexing.index_ref
+    pv2gen = polar.indexing.index_pv_to_gen
+    ref2gen = polar.indexing.index_ref_to_gen
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
     ngen = PS.get(polar, PS.NumberOfGenerators())
     coefs = polar.costs_coefficients
-    c2 = @view coefs[:, 2]
-    c3 = @view coefs[:, 3]
-    c4 = @view coefs[:, 4]
-    # Return quadratic cost
-    # NB: this operation induces three allocations on the GPU,
-    #     but is faster than writing the sum manually
-    return sum(c2 .+ c3 .* pg .+ c4 .* pg.^2)
+    c0 = @view coefs[:, 2]
+    c1 = @view coefs[:, 3]
+    c2 = @view coefs[:, 4]
+    costs = similar(buffer.pg)
+
+    ev = cost_production_kernel!(polar.device)(
+        costs, buffer.pgen,
+        buffer.vmag, buffer.vang, buffer.pnet, buffer.pload,
+        c0, c1, c2,
+        pv, ref, pv2gen, ref2gen,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
+        ndrange=(ngen, size(buffer.pinj, 2)),
+        dependencies=Event(polar.device)
+    )
+    wait(ev)
+    return sum(costs)
 end
 
-function adjoint_cost!(polar::PolarForm, ∂f, pg)
-    coefs = polar.costs_coefficients
-    c3 = @view coefs[:, 3]
-    c4 = @view coefs[:, 4]
-    # Return adjoint of quadratic cost
-    ∂f .= c3 .+ 2.0 .* c4 .* pg
-    return
-end
-
-function hessian_cost!(polar, ∂²f)
-    coefs = polar.costs_coefficients
-    c4 = @view coefs[:, 4]
-    ∂²f .= 2.0 .* c4
-    return
-end
-
-function put(
-    polar::PolarForm{T, IT, VT, MT},
-    ::PS.Generators,
-    ::PS.ActivePower,
-    pbm::AutoDiff.TapeMemory,
-    buffer::PolarNetworkState
-) where {T, IT, VT, MT}
-
-    obj_autodiff = pbm.stack
-
+function gradient_objective!(polar::PolarForm, ∂obj::AutoDiff.TapeMemory, buffer::PolarNetworkState)
+    ∂pg = ∂obj.stack.∂pg
+    obj_autodiff = ∂obj.stack
     adj_pg = obj_autodiff.∂pg
     adj_x = obj_autodiff.∇fₓ
     adj_u = obj_autodiff.∇fᵤ
@@ -94,8 +198,8 @@ function put(
     adj_pinj = obj_autodiff.∂pinj
 
     # Adjoint of active power generation
-    adjoint!(polar, pbm,
-        buffer.pgen, adj_pg,
+    adjoint!(polar, ∂obj,
+        buffer.pgen, 1.0,
         buffer.vmag, adj_vmag,
         buffer.vang, adj_vang,
         buffer.pnet, adj_pinj,
@@ -106,75 +210,7 @@ function put(
     fill!(adj_x, 0.0)
     fill!(adj_u, 0.0)
     adjoint_transfer!(polar, adj_u, adj_x, adj_vmag, adj_vang, adj_pinj)
-
     return
-end
-
-function gradient_objective!(polar::PolarForm, ∂obj::AutoDiff.TapeMemory, buffer::PolarNetworkState)
-    ∂pg = ∂obj.stack.∂pg
-    adjoint_cost!(polar, ∂pg, buffer.pgen)
-    put(polar, PS.Generators(), PS.ActivePower(), ∂obj, buffer)
-    return
-end
-
-function hessian_prod_objective!(
-    polar::PolarForm,
-    ∇²f::AutoDiff.Hessian, adj_obj::AutoDiff.TapeMemory,
-    hv::AbstractVector,
-    ∂²f::AbstractVector, ∂f::AbstractVector,
-    buffer::PolarNetworkState,
-    tgt::AbstractVector,
-)
-    nx = get(polar, NumberOfState())
-    nu = get(polar, NumberOfControl())
-    # Indexing of generators
-    pv2gen = polar.indexing.index_pv_to_gen ; npv = length(pv2gen)
-    ref2gen = polar.indexing.index_ref_to_gen ; nref = length(ref2gen)
-
-    ∇f = adj_obj.stack
-
-    # Remember that
-    # ```math
-    # ∂f = (∂f / ∂pg) * ∂pg
-    # ```
-    # Using the chain-rule, we get
-    # ```math
-    # ∂²f = (∂f / ∂pg) * ∂²pg + ∂pg' * (∂²f / ∂²pg) * ∂pg
-    # ```
-
-    ## Step 1: evaluate (∂f / ∂pg) * ∂²pg
-    ∂pg_ref = @view ∂f[ref2gen]
-    AutoDiff.adj_hessian_prod!(polar, ∇²f, hv, buffer, ∂pg_ref, tgt)
-
-    ## Step 2: evaluate ∂pg' * (∂²f / ∂²pg) * ∂pg
-    # Compute adjoint w.r.t. ∂pg_ref
-    # copyto!(∇f.∂pg, ∂²f)
-    ∇f.∂pg .= 0.0
-
-    ∇f.∂pg[ref2gen] .= 1.0
-    put(polar, PS.Generators(), PS.ActivePower(), adj_obj, buffer)
-
-    tx = view(tgt, 1:nx)
-    tu = view(tgt, 1+nx:nx+nu)
-    tpg = view(tgt, nx+nu-npv+1:nx+nu)
-
-    hvx = view(hv, 1:nx)
-    hvu = view(hv, 1+nx:nx+nu)
-    hvpg = view(hv, nx+nu-npv+1:nx+nu)
-
-    ∇pgₓ = ∇f.∇fₓ
-    ∇pgᵤ = ∇f.∇fᵤ
-
-    scale_x = dot(∇pgₓ, ∂²f[ref2gen[1]], tx)
-    scale_u = dot(∇pgᵤ, ∂²f[ref2gen[1]], tu)
-    α = scale_x + scale_u
-    # Contribution of slack node
-    axpy!(α, ∇pgₓ, hvx)
-    axpy!(α, ∇pgᵤ, hvu)
-    # Contribution of PV nodes (only through power generation)
-    axpy!(1.0, tpg .* ∂²f[pv2gen], hvpg)
-
-    return nothing
 end
 
 #=
