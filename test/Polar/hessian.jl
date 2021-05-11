@@ -132,18 +132,22 @@ function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     ncons = ExaPF.size_constraint(polar, ExaPF.cost_production)
     μ = ones(ncons)
 
+    # Initiate on CPU for FiniteDiff
+    polar_cpu = PolarForm(polar.network, CPU())
+    cache_cpu = ExaPF.get(polar_cpu, ExaPF.PhysicalState())
+    x0 = [x; u] |> Array
     function obj_fd(z)
         x_ = z[1:nx]
         u_ = z[1+nx:end]
         # Transfer control
-        ExaPF.transfer!(polar, cache, u_)
+        ExaPF.transfer!(polar_cpu, cache_cpu, u_)
         # Transfer state (manually)
-        cache.vang[pv] .= x_[1:npv]
-        cache.vang[pq] .= x_[npv+1:npv+npq]
-        cache.vmag[pq] .= x_[npv+npq+1:end]
-        return ExaPF.cost_production(polar, cache)
+        cache_cpu.vang[pv] .= x_[1:npv]
+        cache_cpu.vang[pq] .= x_[npv+1:npv+npq]
+        cache_cpu.vmag[pq] .= x_[npv+npq+1:end]
+        return ExaPF.cost_production(polar_cpu, cache_cpu)
     end
-    H_fd = FiniteDiff.finite_difference_hessian(obj_fd, [x; u])
+    H_fd = FiniteDiff.finite_difference_hessian(obj_fd, x0)
 
     HessianAD = AutoDiff.Hessian(polar, ExaPF.cost_production)
     tgt = rand(nx + nu)

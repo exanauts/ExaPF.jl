@@ -31,13 +31,13 @@ function reactive_power_constraints(polar::PolarForm, cons, buffer)
     ref_to_gen = polar.indexing.index_ref_to_gen
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
-    ndrange = (length(pv) + length(ref), size(buffer.qg, 2))
+    ndrange = (length(pv) + length(ref), size(buffer.qgen, 2))
     ev = kernel!(
-        buffer.qg,
-        buffer.vmag, buffer.vang, buffer.pinj,
+        buffer.qgen,
+        buffer.vmag, buffer.vang, buffer.pnet,
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, polar.reactive_load,
+        ybus_im.nzval, buffer.qload,
         ndrange=ndrange,
         dependencies=Event(polar.device)
     )

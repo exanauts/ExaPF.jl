@@ -151,7 +151,7 @@ n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
 constraints_type(::ReducedSpaceEvaluator) = :inequality
-has_hessian(::ReducedSpaceEvaluator) = true
+has_hessian(nlp::ReducedSpaceEvaluator) = nlp.has_hessian
 
 # Getters
 get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints
@@ -613,7 +613,7 @@ function Base.show(io::IO, nlp::ReducedSpaceEvaluator)
     for cons in nlp.constraints
         println(io, "        - ", cons)
     end
-    print(io, "    * linear solver: ", nlp.linear_solver)
+    print(io, "    * linear solver: ", typeof(nlp.linear_solver))
 end
 
 function reset!(nlp::ReducedSpaceEvaluator)

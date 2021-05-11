@@ -11,6 +11,7 @@ include("voltage_magnitude.jl")
 include("active_power.jl")
 include("reactive_power.jl")
 include("line_flow.jl")
+include("ramping_rate.jl")
 
 # By default, function does not have any intermediate state
 _get_intermediate_stack(polar::PolarForm, func::Function, VT) = nothing

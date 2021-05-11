@@ -160,7 +160,7 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.ConstantJacobian, bu
 end
 
 
-function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
+function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func; tape=nothing) where {T, VI, VT, MT}
     @assert is_constraint(func)
 
     if isa(polar.device, CPU)
@@ -190,7 +190,11 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     VD = typeof(t1sx)
     adj_t1sx = similar(t1sx)
     adj_t1sF = similar(t1sF)
-    buffer = AutoDiff.TapeMemory(polar, func, VD; with_stack=false)
+    if isnothing(tape)
+        buffer = AutoDiff.TapeMemory(polar, func, VD; with_stack=false)
+    else
+        buffer = tape
+    end
     return AutoDiff.Hessian(
         func, host_t1sseeds, t1sseeds, x, t1sF, adj_t1sF, t1sx, adj_t1sx, map, varx, t1svarx, buffer,
     )
