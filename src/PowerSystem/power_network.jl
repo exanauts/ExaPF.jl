@@ -73,7 +73,7 @@ struct PowerNetwork <: AbstractPowerSystem
 
         # COSTS
         if isnothing(cost_coefficients)
-            println("[PS] Cost function not specified in dataset. Fallback to default coefficients.")
+            @warn("[PS] Cost function not specified in dataset. Fallback to default coefficients.")
             # if not specified, costs is set by default to a # quadratic polynomial
             costs = zeros(ngen, 7)
             costs[:, 1] .= 2.0 # polynomial model
@@ -109,7 +109,7 @@ struct PowerNetwork <: AbstractPowerSystem
         ref_id = bus[ref, 1]
         @assert bus[ref, 2] == [REF_BUS_TYPE]
         if !(ref_id[1] in gen[:, 1])
-            println("[PS] No generator affected to slack node.")
+            error("[PS] No generator attached to slack node.")
         end
 
         sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
