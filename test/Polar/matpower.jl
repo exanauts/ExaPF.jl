@@ -3,7 +3,7 @@ using KernelAbstractions
 using Test
 using ExaPF
 
-import ExaPF: PowerSystem
+import ExaPF: PowerSystem, AutoDiff
 
 const PS = PowerSystem
 

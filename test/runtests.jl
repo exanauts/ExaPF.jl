@@ -33,6 +33,11 @@ init_time = time()
         tic = time()
         include("powersystem.jl")
         println("Took $(round(time() - tic; digits=1)) seconds.")
+
+        @info "Compare power flow with MATPOWER ..."
+        tic = time()
+        include("Polar/matpower.jl")
+        println("Took $(round(time() - tic; digits=1)) seconds.")
     end
     println()
 
