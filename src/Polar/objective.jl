@@ -13,7 +13,7 @@ end
 @inline adj_quadratic_cost(pg, c0, c1, c2) = c1 + 2.0 * c2 * pg
 
 KA.@kernel function cost_production_kernel!(
-    costs, pg, @Const(vmag), @Const(vang), @Const(pinj), @Const(pload),
+    costs, pg, @Const(vmag), @Const(vang), pnet, @Const(pload),
     @Const(c0), @Const(c1), @Const(c2),
     @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
     @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
@@ -26,7 +26,7 @@ KA.@kernel function cost_production_kernel!(
     if i <= npv
         bus = pv[i]
         i_gen = pv_to_gen[i]
-        pg[i_gen, j] = pinj[bus, j]
+        pg[i_gen, j] = pnet[bus, j]
     # Evaluate active power at slack nodes
     elseif i <= npv + nref
         i_ = i - npv
@@ -34,6 +34,7 @@ KA.@kernel function cost_production_kernel!(
         i_gen = ref_to_gen[i_]
         inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval)
         pg[i_gen, j] = inj + pload[bus]
+        pnet[bus, j] = inj + pload[bus]
     end
 
     costs[i_gen, j] = quadratic_cost(pg[i_gen, j], c0[i_gen], c1[i_gen], c2[i_gen])
@@ -41,7 +42,7 @@ end
 
 KA.@kernel function adj_cost_production_kernel!(
     adj_costs,
-    @Const(vmag), adj_vmag, @Const(vang), adj_vang, @Const(pinj), adj_pinj, @Const(pload),
+    @Const(vmag), adj_vmag, @Const(vang), adj_vang, @Const(pnet), adj_pnet, @Const(pload),
     @Const(c0), @Const(c1), @Const(c2),
     @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
     @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
@@ -52,21 +53,21 @@ KA.@kernel function adj_cost_production_kernel!(
     if i <= npv
         bus = pv[i]
         i_gen = pv_to_gen[i]
-        pg = pinj[bus, j]
-        adj_pinj[bus, j] = adj_costs[1] * adj_quadratic_cost(pg, c0[i_gen], c1[i_gen], c2[i_gen])
+        pg = pnet[bus, j]
+        adj_pnet[bus, j] = adj_costs[1] * adj_quadratic_cost(pg, c0[i_gen], c1[i_gen], c2[i_gen])
     # Evaluate active power at slack nodes
     elseif i <= npv + nref
         i_ = i - npv
-        fr = ref[i_]
+        bus = ref[i_]
         i_gen = ref_to_gen[i_]
 
-        inj = bus_injection(fr, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval)
-        pg = inj + pload[fr]
+        inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval)
+        pg = inj + pload[bus]
 
-        adj_inj = adj_costs[1] * adj_quadratic_cost(pg, c0[i_gen], c1[i_gen], c2[i_gen])
-        adj_pinj[fr, j] = adj_inj
+        adj_net = adj_costs[1] * adj_quadratic_cost(pg, c0[i_gen], c1[i_gen], c2[i_gen])
+        adj_pnet[bus, j] = adj_net
         adjoint_bus_injection!(
-            fr, j, adj_inj, adj_vmag, adj_vang, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval
+            bus, j, adj_net, adj_vmag, adj_vang, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval
         )
     end
 end
@@ -96,6 +97,7 @@ function cost_production(polar::PolarForm, buffer::PolarNetworkState)
         dependencies=Event(polar.device)
     )
     wait(ev)
+    # TODO: supports batch
     return sum(costs)
 end
 
