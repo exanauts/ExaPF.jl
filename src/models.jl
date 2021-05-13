@@ -192,6 +192,8 @@ constraints w.r.t. a given reference.
 """
 function cost_penalty_ramping_constraints end
 
+function network_operations end
+
 # Generic constraints
 
 """
@@ -241,6 +243,7 @@ The result is stored inplace, inside the vector `cons`.
 """
 function flow_constraints end
 
+
 @doc raw"""
     power_balance(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
 
@@ -261,6 +264,8 @@ corresponding to the balance equations
 The result is stored inplace, inside the vector `cons`.
 """
 function power_balance end
+
+function bus_power_injection end
 
 # Interface for the constraints
 """

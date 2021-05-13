@@ -350,7 +350,7 @@ KA.@kernel function adj_transfer_kernel!(
         i_ = i - npq
         bus = pv[i_]
         adj_u[nref + i_, j] = adj_vmag[bus, j]
-        adj_u[nref + npv + i_, j] += adj_pnet[bus, j]
+        adj_u[nref + npv + i_, j] = adj_pnet[bus, j]
         adj_x[i_, j] = adj_vang[bus, j]
     # SLACK buses
     elseif i <= npq + npv + nref

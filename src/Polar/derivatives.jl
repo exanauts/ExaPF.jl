@@ -448,3 +448,22 @@ function HessianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Fun
     return HessianStorage{VT, typeof(Hstate), typeof(Hobj)}(Hstate, Hobj, Hcons, z, ψ, tgt, hv)
 end
 
+struct HessianLagrangian{VT,Hess}
+    hess::Hess
+    # Adjoints
+    z::VT
+    ψ::VT
+    tmp_tgt::VT
+    tmp_hv::VT
+end
+
+function HessianLagrangian(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+    nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
+    H = AutoDiff.Hessian(polar, network_operations)
+    z = xzeros(VT, nx)
+    ψ = xzeros(VT, nx)
+    tgt = xzeros(VT, nx+nu)
+    hv = xzeros(VT, nx+nu)
+    return HessianLagrangian{VT, typeof(H)}(H, z, ψ, tgt, hv)
+end
+
