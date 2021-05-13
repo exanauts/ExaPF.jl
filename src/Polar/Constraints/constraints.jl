@@ -7,18 +7,20 @@ is_linear(polar::PolarForm, ::Function) = false
 
 
 include("power_balance.jl")
+include("power_injection.jl")
 include("voltage_magnitude.jl")
 include("active_power.jl")
 include("reactive_power.jl")
 include("line_flow.jl")
 include("ramping_rate.jl")
+include("network_operation.jl")
 
 # By default, function does not have any intermediate state
 _get_intermediate_stack(polar::PolarForm, func::Function, VT) = nothing
 
 function _get_intermediate_stack(
     polar::PolarForm, func::F, VT
-) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance)}}
+) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance), typeof(bus_power_injection)}}
     nlines = PS.get(polar.network, PS.NumberOfLines())
     # Take care that flow_constraints needs a buffer with a different size
     nnz = isa(func, typeof(flow_constraints)) ? nlines : length(polar.topology.ybus_im.nzval)

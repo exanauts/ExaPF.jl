@@ -113,12 +113,15 @@ function test_constraints_adjoint(polar, device, MT)
         ExaPF.active_power_constraints,
         ExaPF.reactive_power_constraints,
         ExaPF.flow_constraints,
+        ExaPF.bus_power_injection,
+        ExaPF.network_operations,
     ]
         m = ExaPF.size_constraint(polar, cons)
         pbm = AutoDiff.TapeMemory(polar, cons, typeof(u))
         tgt = rand(m) |> MT
         c = zeros(m) |> MT
         # ADJOINT
+        cons(polar, c, cache)
         ExaPF.adjoint!(polar, pbm, tgt, c, cache)
         function test_fd(vvm)
             cache.vmag .= vvm[1:nbus]
