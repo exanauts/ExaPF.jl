@@ -19,8 +19,8 @@ KA.@kernel function _bus_operation_kernel!(
     if i <= npq
         bus = pq[i]
         # Balance
-        cons[i+npv, j]     = pinj[bus, j] + pload[bus, j]
-        cons[i+npv+npq, j] = qinj[bus, j] + qload[bus, j]
+        cons[i+npv, j]     = pinj[bus, j] + pload[bus]
+        cons[i+npv+npq, j] = qinj[bus, j] + qload[bus]
 
     #= PV NODE =#
     elseif i <= npq + npv
@@ -28,10 +28,10 @@ KA.@kernel function _bus_operation_kernel!(
         bus = pv[i_]
         i_gen = pv_to_gen[i_]
         # Balance
-        cons[i_, j] = pinj[bus, j] - pnet[bus, j] + pload[bus, j]
+        cons[i_, j] = pinj[bus, j] - pnet[bus, j] + pload[bus]
         # Reactive power generation
         shift = npv + 2 * npq + nref
-        cons[i_gen + shift, j] = qinj[bus, j] + qload[bus, j]
+        cons[i_gen + shift, j] = qinj[bus, j] + qload[bus]
 
     #= REF NODE =#
     elseif i <= npq + npv + nref
@@ -41,16 +41,16 @@ KA.@kernel function _bus_operation_kernel!(
 
         # Active power generation
         shift = npv + 2 * npq
-        pg = pinj[bus, j] + pload[bus, j]
+        pg = pinj[bus, j] + pload[bus]
         cons[i_ + shift, j] = pg
         pnet[bus, j] = pg
         # Reactive power generation
         shift = npv + 2 * npq + nref
-        cons[i_gen + shift, j] = qinj[bus, j] + qload[bus, j]
+        cons[i_gen + shift, j] = qinj[bus, j] + qload[bus]
     end
 end
 
-KA.@kernel function _bcost_kernel!(
+KA.@kernel function _cost_kernel!(
     costs, @Const(pnet), @Const(coefs),
     @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
 )
@@ -111,7 +111,7 @@ function network_operations(
     # Objective
     coefs = polar.costs_coefficients
     costs = similar(cons, ngen, nbatch)
-    ev = _bcost_kernel!(polar.device)(
+    ev = _cost_kernel!(polar.device)(
         costs, pnet, coefs, pv, ref, pv_to_gen, ref_to_gen,
         ndrange=(ngen, nbatch), dependencies=Event(polar.device),
     )
@@ -149,9 +149,10 @@ end
 
 KA.@kernel function _adjoint_bus_operation_kernel!(
     adj_inj, adj_pnet,
-    @Const(adj_op), @Const(pnet),
-    @Const(c0), @Const(c1), @Const(c2),
+    @Const(adj_op), @Const(vmag), @Const(vang), @Const(pnet), @Const(pload),
+    @Const(coefs),
     @Const(pv), @Const(pq), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
 )
     i, j = @index(Global, NTuple)
     npv = length(pv)
@@ -159,63 +160,73 @@ KA.@kernel function _adjoint_bus_operation_kernel!(
     nref = length(ref)
     nbus = npv + npq + nref
 
-    #= PQ NODE =#
-    if i <= npq
-        bus = pq[i]
-        # Injection
-        adj_inj[bus     , j] = adj_op[i+npv]      # wrt P
-        adj_inj[bus+nbus, j] = adj_op[i+npv+npq]  # wrt Q
+    @inbounds begin
+        #= PQ NODE =#
+        if i <= npq
+            bus = pq[i]
+            # Injection
+            adj_inj[bus     , j] = adj_op[i+npv]      # wrt P
+            adj_inj[bus+nbus, j] = adj_op[i+npv+npq]  # wrt Q
 
-    #= PV NODE =#
-    elseif i <= npq + npv
-        i_ = i - npq
-        bus = pv[i_]
-        i_gen = pv_to_gen[i_]
-        # Generation
-        pg = pnet[bus, j]
-        adj_pnet[bus, j] = adj_op[end] * adj_quadratic_cost(pg, c0[i_gen], c1[i_gen], c2[i_gen])
-        # Active injection
-        adj_inj[bus, j] = adj_op[i_]  # wrt P
-        # Reactive injection
-        shift = npv + 2 * npq + nref
-        adj_inj[bus + nbus, j] = adj_op[i_gen + shift]  # wrt Q
+        #= PV NODE =#
+        elseif i <= npq + npv
+            i_ = i - npq
+            bus = pv[i_]
+            i_gen = pv_to_gen[i_]
+            # Generation
+            pg = pnet[bus, j]
 
-    #= REF NODE =#
-    elseif i <= npq + npv + nref
-        i_ = i - npv - npq
-        bus = ref[i_]
-        i_gen = ref_to_gen[i_]
+            c0 = coefs[i_gen, 2]
+            c1 = coefs[i_gen, 3]
+            c2 = coefs[i_gen, 4]
+            adj_pnet[bus, j] = adj_op[end] * adj_quadratic_cost(pg, c0, c1, c2)
+            # Active injection
+            adj_inj[bus, j] = adj_op[i_]  # wrt P
+            # Reactive injection
+            shift = npv + 2 * npq + nref
+            adj_inj[bus + nbus, j] = adj_op[i_gen + shift]  # wrt Q
 
-        pg = pnet[bus, j]
-        adj_pg = adj_op[end] * adj_quadratic_cost(pg, c0[i_gen], c1[i_gen], c2[i_gen])
-        adj_pnet[bus, j] = adj_pg
+        #= REF NODE =#
+        elseif i <= npq + npv + nref
+            i_ = i - npv - npq
+            bus = ref[i_]
+            i_gen = ref_to_gen[i_]
 
-        shift = npv + 2 * npq
-        adj_inj[bus, j] = adj_op[i_+shift] + adj_pg
+            inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval)
+            pg = inj + pload[bus]
 
-        shift = npv + 2 * npq + nref
-        adj_inj[bus + nbus, j] = adj_op[i_gen+shift]
+            c0 = coefs[i_gen, 2]
+            c1 = coefs[i_gen, 3]
+            c2 = coefs[i_gen, 4]
+            adj_pg = adj_op[end] * adj_quadratic_cost(pg, c0, c1, c2)
+            adj_pnet[bus, j] = adj_pg
+
+            shift = npv + 2 * npq
+            adj_inj[bus, j] = adj_op[i_+shift] + adj_pg
+
+            shift = npv + 2 * npq + nref
+            adj_inj[bus + nbus, j] = adj_op[i_gen+shift]
+        end
     end
 end
 
-function _adjoint_network_operations(polar::PolarForm, ∂inj, ∂pnet, ∂cons, pnet)
+function _adjoint_network_operations(polar::PolarForm, ∂inj, ∂pnet, ∂cons, vmag, vang, pnet, pload)
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     pq = polar.indexing.index_pq
     pv = polar.indexing.index_pv
     ref = polar.indexing.index_ref
     pv2gen = polar.indexing.index_pv_to_gen
     ref2gen = polar.indexing.index_ref_to_gen
-
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     coefs = polar.costs_coefficients
-    c0 = @view coefs[:, 2]
-    c1 = @view coefs[:, 3]
-    c2 = @view coefs[:, 4]
 
     ndrange = (nbus, size(pnet, 2))
-    _adjoint_bus_operation_kernel!(polar.device)(
-        ∂inj, ∂pnet, ∂cons, pnet, c0, c1, c2, pv, pq, ref, pv2gen, ref2gen,
+    ev = _adjoint_bus_operation_kernel!(polar.device)(
+        ∂inj, ∂pnet, ∂cons, vmag, vang, pnet, pload, coefs, pv, pq, ref, pv2gen, ref2gen,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
         ndrange=ndrange, dependencies=Event(polar.device),
     )
+    wait(ev)
 end
 
 function adjoint!(
@@ -241,7 +252,7 @@ function adjoint!(
     fill!(∂pnet, 0.0)
 
     # Seed adjoint of injection
-    _adjoint_network_operations(polar, ∂inj, ∂pnet, ∂cons, pnet)
+    _adjoint_network_operations(polar, ∂inj, ∂pnet, ∂cons, vm, va, pnet, pload)
     # Backpropagate through the power injection to get ∂vm and ∂va
     _adjoint_bus_power_injection!(polar, pbm, ∂inj, vm, ∂vm, va, ∂va)
     return

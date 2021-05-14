@@ -451,6 +451,7 @@ end
 struct HessianLagrangian{VT,Hess}
     hess::Hess
     # Adjoints
+    y::VT
     z::VT
     ψ::VT
     tmp_tgt::VT
@@ -459,11 +460,25 @@ end
 
 function HessianLagrangian(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
+    nbus = get(polar, PS.NumberOfBuses())
     H = AutoDiff.Hessian(polar, network_operations)
+    y = xzeros(VT, 2 * nbus + 1)
     z = xzeros(VT, nx)
     ψ = xzeros(VT, nx)
     tgt = xzeros(VT, nx+nu)
     hv = xzeros(VT, nx+nu)
-    return HessianLagrangian{VT, typeof(H)}(H, z, ψ, tgt, hv)
+    return HessianLagrangian{VT, typeof(H)}(H, y, z, ψ, tgt, hv)
+end
+
+function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, nbatch) where {T, VI, VT, MT}
+    nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
+    nbus = get(polar, PS.NumberOfBuses())
+    H = AutoDiff.Hessian(polar, network_operations)
+    y = MT(undef, 2 * nbus + 1, nbatch)
+    z = MT(undef, nx, nbatch)
+    ψ = MT(undef, nx, nbatch)
+    tgt = MT(undef, nx+nu, nbatch)
+    hv = MT(undef, nx+nu, nbatch)
+    return HessianLagrangian{VT, typeof(H)}(H, y, z, ψ, tgt, hv)
 end
 
