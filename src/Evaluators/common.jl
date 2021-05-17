@@ -47,28 +47,27 @@ function ojtprod!(nlp::AbstractNLPEvaluator, jv, u, σ, v)
     return
 end
 
-# Common interface for Hessian
-function hessian!(nlp::AbstractNLPEvaluator, hess, x)
-    n = n_variables(nlp)
-    v = similar(x)
-    @inbounds for i in 1:n
-        hv = @view hess[:, i]
-        fill!(v, 0)
-        v[i] = 1.0
-        hessprod!(nlp, hv, x, v)
+# Generate Hessian using Hessian-vector product routine
+macro define_hessian(function_name, target_function, args...)
+    fname = Symbol(function_name)
+    argstup = Tuple(args)
+    quote
+        function $(esc(fname))(nlp::AbstractNLPEvaluator, hess, $(map(esc, argstup)...))
+            @assert has_hessian(nlp)
+            n = n_variables(nlp)
+            v = similar(x)
+            @inbounds for i in 1:n
+                hv = @view hess[:, i]
+                fill!(v, 0)
+                v[i] = 1.0
+                $target_function(nlp, hv, $(map(esc, argstup)...), v)
+            end
+        end
     end
 end
 
-function hessian_lagrangian_penalty!(nlp::AbstractNLPEvaluator, hess, x, y, σ, D,)
-    n = n_variables(nlp)
-    v = similar(x)
-    @inbounds for i in 1:n
-        hv = @view hess[:, i]
-        fill!(v, 0)
-        v[i] = 1.0
-        hessian_lagrangian_penalty_prod!(nlp, hv, x, y, σ, v, D)
-    end
-end
+@define_hessian hessian! hessprod! x
+@define_hessian hessian_lagrangian_penalty! hessian_lagrangian_penalty_prod! x y σ D
 
 function hessian(nlp::AbstractNLPEvaluator, x)
     n = n_variables(nlp)
@@ -158,5 +157,31 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
     s_cons = h_s_cons |> VT
 
     return MaxScaler{typeof(s_obj), typeof(s_cons)}(s_obj, s_cons, s_cons .* g♭, s_cons .* g♯)
+end
+
+struct BridgeDevice{VT, MT}
+    u::VT
+    g::VT
+    cons::VT
+    v::VT
+    y::VT
+    w::VT
+    jv::VT
+    J::MT
+    H::MT
+end
+
+function BridgeDevice(n::Int, m::Int, VT, MT)
+    BridgeDevice{VT, MT}(
+        VT(undef, n),
+        VT(undef, n),
+        VT(undef, m),
+        VT(undef, m),
+        VT(undef, m),
+        VT(undef, m),
+        VT(undef, n),
+        MT(undef, m, n),
+        MT(undef, n, n),
+    )
 end
 

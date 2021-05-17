@@ -36,14 +36,6 @@ to a given [`AbstractNLPEvaluator`](@ref).
 struct Constraints <: AbstractNLPAttribute end
 
 """
-    AutoDiffBackend <: AbstractNLPAttribute end
-
-Attribute corresponding to the autodiff backend used
-inside the [`AbstractNLPEvaluator`](@ref).
-"""
-struct AutoDiffBackend <: AbstractNLPAttribute end
-
-"""
     n_variables(nlp::AbstractNLPEvaluator)
 Get the number of variables in the problem.
 """
@@ -178,7 +170,7 @@ The vector `hessprod` should have the same length as `u`.
 function hessprod! end
 
 @doc raw"""
-    hessian_lagrangian_penalty_prod!(nlp::AbstractNLPEvaluator, hessvec, u, y, σ, v, d)
+    hessian_lagrangian_penalty_prod!(nlp::AbstractNLPEvaluator, hessvec, u, y, σ, d, v)
 
 Evaluate the Hessian-vector product of the Lagrangian
 function ``L(u, y) = f(u) + \sum_i y_i c_i(u) + \frac{1}{2} d_i c_i(u)^2`` with a vector `v`:

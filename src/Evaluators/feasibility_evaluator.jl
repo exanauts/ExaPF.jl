@@ -82,7 +82,7 @@ end
 function hessprod!(nlp::FeasibilityEvaluator, hessvec, u, v)
     σ = 0.0
     # Need to update the first-order adjoint λ first
-    hessian_lagrangian_penalty_prod!(nlp.inner, hessvec, u, nlp.cons, σ, v, 0.0)
+    hessian_lagrangian_penalty_prod!(nlp.inner, hessvec, u, nlp.cons, σ, 0.0, v)
     # J' * J * v
     jv = similar(nlp.cons)
     jtv = similar(u)

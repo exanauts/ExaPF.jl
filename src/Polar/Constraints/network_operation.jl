@@ -126,20 +126,29 @@ function network_operations(polar::PolarForm, cons::AbstractVector, buffer::Pola
 end
 
 function AutoDiff.TapeMemory(
-    polar::PolarForm, func::typeof(network_operations), VT; with_stack=true,
-    nbatch=1,
+    polar::PolarForm, func::typeof(network_operations), VT; with_stack=true, nbatch=1,
 )
     nnz = length(polar.topology.ybus_im.nzval)
     nx = get(polar, NumberOfState())
     nbus = get(polar, PS.NumberOfBuses())
     # Intermediate state
-    intermediate = (
-        ∂inj = VT(undef, 2*nbus),
-        ∂edge_vm_fr = VT(undef, nnz),
-        ∂edge_va_fr = VT(undef, nnz),
-        ∂edge_vm_to = VT(undef, nnz),
-        ∂edge_va_to = VT(undef, nnz),
-    )
+    intermediate = if nbatch == 1
+        (
+            ∂inj = VT(undef, 2*nbus),
+            ∂edge_vm_fr = VT(undef, nnz),
+            ∂edge_va_fr = VT(undef, nnz),
+            ∂edge_vm_to = VT(undef, nnz),
+            ∂edge_va_to = VT(undef, nnz),
+        )
+    else
+        (
+            ∂inj = VT(undef, 2*nbus, nbatch),
+            ∂edge_vm_fr = VT(undef, nnz, nbatch),
+            ∂edge_va_fr = VT(undef, nnz, nbatch),
+            ∂edge_vm_to = VT(undef, nnz, nbatch),
+            ∂edge_va_to = VT(undef, nnz, nbatch),
+        )
+    end
     return AutoDiff.TapeMemory(
         network_operations,
         (with_stack) ? AdjointPolar(polar) : nothing,

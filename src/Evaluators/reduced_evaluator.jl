@@ -61,7 +61,7 @@ and the by-product `y`. Each time we are calling the method `update!`,
 the values of the control are copied into the buffer.
 
 """
-mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <: AbstractNLPEvaluator
+mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, HessLag} <: AbstractNLPEvaluator
     model::PolarForm{T, VI, VT, MT}
     λ::VT
 
@@ -79,7 +79,7 @@ mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <
     obj_stack::AutoDiff.TapeMemory{typeof(cost_production), AdjointStackObjective{VT}, Nothing}
     cons_stacks::Vector{AutoDiff.TapeMemory} # / constraints
     constraint_jacobians::JacCons
-    hessians::Hess
+    hesslag::HessLag
 
     # Options
     linear_solver::LinearSolvers.AbstractLinearSolver
@@ -92,10 +92,9 @@ end
 function ReducedSpaceEvaluator(
     model::PolarForm{T, VI, VT, MT};
     constraints=Function[voltage_magnitude_constraints, active_power_constraints, reactive_power_constraints],
-    linear_solver=direct_linear_solver(model),
     powerflow_solver=NewtonRaphson(tol=1e-12),
     want_jacobian=true,
-    want_hessian=true,
+    nbatch_hessian=1,
 ) where {T, VI, VT, MT}
     # First, build up a network buffer
     buffer = get(model, PhysicalState())
@@ -119,6 +118,10 @@ function ReducedSpaceEvaluator(
         shift += m
     end
 
+    # Build Linear Algebra
+    J = powerflow_jacobian(model)
+    linear_solver = DirectSolver(J)
+
     obj_ad = pullback_objective(model)
     state_ad = FullSpaceJacobian(model, power_balance)
     cons_ad = AutoDiff.TapeMemory[]
@@ -133,9 +136,14 @@ function ReducedSpaceEvaluator(
     end
 
     # Hessians
+    want_hessian = (nbatch_hessian > 0)
     hess_ad = nothing
     if want_hessian
-        hess_ad = HessianStorage(model, constraints)
+        hess_ad = if nbatch_hessian > 1
+            BatchHessianLagrangian(model, J, nbatch_hessian)
+        else
+            HessianLagrangian(model, J)
+        end
     end
 
     return ReducedSpaceEvaluator(
@@ -157,6 +165,7 @@ n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
 
 constraints_type(::ReducedSpaceEvaluator) = :inequality
 has_hessian(nlp::ReducedSpaceEvaluator) = nlp.has_hessian
+number_batches_hessian(nlp::ReducedSpaceEvaluator) = nlp.has_hessian ? n_batches(nlp.hesslag) : 0
 
 # Getters
 get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints
@@ -166,7 +175,7 @@ function get(nlp::ReducedSpaceEvaluator, ::State)
     return x
 end
 get(nlp::ReducedSpaceEvaluator, ::PhysicalState) = nlp.buffer
-get(nlp::ReducedSpaceEvaluator, ::AutoDiffBackend) = nlp.autodiff
+
 # Physics
 get(nlp::ReducedSpaceEvaluator, ::PS.VoltageMagnitude) = nlp.buffer.vmag
 get(nlp::ReducedSpaceEvaluator, ::PS.VoltageAngle) = nlp.buffer.vang
@@ -230,6 +239,13 @@ function update!(nlp::ReducedSpaceEvaluator, u)
     AutoDiff.jacobian!(nlp.model, nlp.state_jacobian.u, nlp.buffer)
     # Specify that constraint's Jacobian is not up to date
     nlp.update_jacobian = nlp.has_jacobian
+    # Update Hessian factorization
+    if !isnothing(nlp.hesslag)
+        ∇gₓ = nlp.state_jacobian.x.J
+        update_factorization!(nlp.hesslag, ∇gₓ)
+        # Update values for Hessian's AutoDiff
+        update_hessian!(nlp.model, nlp.hesslag.hess, nlp.buffer)
+    end
     return conv
 end
 
@@ -252,17 +268,7 @@ function constraint!(nlp::ReducedSpaceEvaluator, g, u)
     end
 end
 
-
-function _forward_solve!(nlp::ReducedSpaceEvaluator, y, x)
-    if isa(y, CUDA.CuArray)
-        ∇gₓ = nlp.state_jacobian.x.J
-        LinearSolvers.ldiv!(nlp.linear_solver, y, ∇gₓ, x)
-    else
-        LinearSolvers.ldiv!(nlp.linear_solver, y, x)
-    end
-end
-
-function _backward_solve!(nlp::ReducedSpaceEvaluator, y::VT, x::VT) where {VT <: AbstractArray}
+function _backward_solve!(nlp::ReducedSpaceEvaluator, y, x)
     ∇gₓ = nlp.state_jacobian.x.J
     if isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
         # Iterative solver case
@@ -350,52 +356,27 @@ function _update_full_jacobian_constraints!(nlp)
     end
 end
 
-# Works only on the CPU!
-function jacobian!(nlp::ReducedSpaceEvaluator, J, u)
-    m, n = n_constraints(nlp), n_variables(nlp)
-    jac = reshape(J, m, n)
-
-    _update_full_jacobian_constraints!(nlp)
-
-    ∇cons = nlp.constraint_jacobians
-    Jx = ∇cons.Jx
-    Ju = ∇cons.Ju
-    m, nₓ = size(Jx)
-    m, nᵤ = size(Ju)
-    ∇gᵤ = nlp.state_jacobian.u.J
-    ∇gₓ = nlp.state_jacobian.x.J
-    # Compute state sensitivities all in once
-    μ = zeros(nₓ, nᵤ)
-    LinearSolvers.ldiv!(nlp.linear_solver, μ, ∇gᵤ)
-    # Compute reduced Jacobian
-    copy!(jac, Ju)
-    mul!(jac, Jx, μ, -1.0, 1.0)
-    return
-end
-
-function jprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+function jprod!(nlp::ReducedSpaceEvaluator, jm, u, v)
     nᵤ = length(u)
     m  = n_constraints(nlp)
-    @assert nᵤ == length(v)
+    @assert nᵤ == size(v, 1)
 
     _update_full_jacobian_constraints!(nlp)
-
-    ∇cons = nlp.constraint_jacobians
-
-    Jx = ∇cons.Jx
-    Ju = ∇cons.Ju
-
+    H = nlp.hesslag
     ∇gᵤ = nlp.state_jacobian.u.J
-    rhs = nlp.buffer.dx
-    z = nlp.buffer.balance
+
+    # Arrays
+    Jx = nlp.constraint_jacobians.Jx
+    Ju = nlp.constraint_jacobians.Ju
+    z = H.z
+
     # init RHS
-    mul!(rhs, ∇gᵤ, v)
-    # Compute z
-    _forward_solve!(nlp, z, rhs)
+    mul!(z, ∇gᵤ, v)
+    LinearAlgebra.ldiv!(H.lu, z)
 
     # jv .= Ju * v .- Jx * z
-    mul!(jv, Ju, v)
-    mul!(jv, Jx, z, -1.0, 1.0)
+    mul!(jm, Ju, v)
+    mul!(jm, Jx, z, -1.0, 1.0)
     return
 end
 
@@ -414,6 +395,7 @@ function full_jtprod!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
 end
 
 function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
+    @assert !isnothing(nlp.hesslag)
     ∂obj = nlp.obj_stack
     μ = nlp.buffer.balance
     jvx = ∂obj.stack.jvₓ ; fill!(jvx, 0)
@@ -440,140 +422,200 @@ end
 ###
 # Second-order code
 ####
-# z = -(∇gₓ  \ (∇gᵤ * w))
-function _second_order_adjoint_z!(
-    nlp::ReducedSpaceEvaluator, z, w,
-)
-    ∇gᵤ = nlp.state_jacobian.u.J
-    rhs = nlp.buffer.dx
-    mul!(rhs, ∇gᵤ, w, -1.0, 0.0)
-    _forward_solve!(nlp, z, rhs)
+# Single version
+function full_hessprod!(nlp::ReducedSpaceEvaluator, hv::AbstractVector, y::AbstractVector, tgt::AbstractVector)
+    nx, nu = get(nlp.model, NumberOfState()), get(nlp.model, NumberOfControl())
+    H = nlp.hesslag
+    AutoDiff.adj_hessian_prod!(nlp.model, H.hess, hv, nlp.buffer, y, tgt)
+    ∂fₓ = @view hv[1:nx]
+    ∂fᵤ = @view hv[nx+1:nx+nu]
+    return ∂fₓ , ∂fᵤ
 end
 
-# ψ = -(∇gₓ' \ (∇²fₓₓ .+ ∇²gₓₓ))
-function _second_order_adjoint_ψ!(
-    nlp::ReducedSpaceEvaluator, ψ, ∂fₓ,
-)
-    _backward_solve!(nlp, ψ, ∂fₓ)
-end
-
-function _reduced_hessian_prod!(
-    nlp::ReducedSpaceEvaluator, hessvec, ∂fₓ, ∂fᵤ, tgt,
-)
-    nx = get(nlp.model, NumberOfState())
-    nu = get(nlp.model, NumberOfControl())
-    H = nlp.hessians
-    ∇gᵤ = nlp.state_jacobian.u.J
-    ψ = H.ψ
-
-    hv = H.tmp_hv
-
-    ## POWER BALANCE HESSIAN
-    AutoDiff.adj_hessian_prod!(nlp.model, H.state, hv, nlp.buffer, nlp.λ, tgt)
-    ∂fₓ .-= @view hv[1:nx]
-    ∂fᵤ .-= @view hv[nx+1:nx+nu]
-
-    # Second order adjoint
-    _second_order_adjoint_ψ!(nlp, ψ, ∂fₓ)
-
-    hessvec .+= ∂fᵤ
-    mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
-    return
+# Batch version
+function full_hessprod!(nlp::ReducedSpaceEvaluator, hv::AbstractMatrix, y::AbstractMatrix, tgt::AbstractMatrix)
+    nx, nu = get(nlp.model, NumberOfState()), get(nlp.model, NumberOfControl())
+    H = nlp.hesslag
+    batch_adj_hessian_prod!(nlp.model, H.hess, hv, nlp.buffer, y, tgt)
+    ∂fₓ = hv[1:nx, :]
+    ∂fᵤ = hv[nx+1:nx+nu, :]
+    return ∂fₓ , ∂fᵤ
 end
 
 function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
-    @assert nlp.hessians != nothing
+    @assert nlp.hesslag != nothing
 
     nx = get(nlp.model, NumberOfState())
     nu = get(nlp.model, NumberOfControl())
-    buffer = nlp.buffer
-    H = nlp.hessians
+    H = nlp.hesslag
+    ∇gᵤ = nlp.state_jacobian.u.J
 
-    fill!(hessvec, 0.0)
+    # Number of batches
+    nbatch = size(w, 2)
+    @assert nbatch == size(H.z, 2) == size(hessvec, 2)
 
-    # Two vector products
+    # Load variables and buffers
     tgt = H.tmp_tgt
     hv = H.tmp_hv
+    y = H.y
     z = H.z
+    ψ = H.ψ
 
-    _second_order_adjoint_z!(nlp, z, w)
+    # Step 1: computation of first second-order adjoint
+    mul!(z, ∇gᵤ, w, -1.0, 0.0)
+    LinearAlgebra.ldiv!(H.lu, z)
 
-    # Init tangent
-    copyto!(tgt, 1, z, 1, nx)
-    copyto!(tgt, nx+1, w, 1, nu)
+    # Init tangent with z and w
+    for i in 1:nbatch
+        mxu = 1 + (i-1)*(nx+nu)
+        mx = 1 + (i-1)*nx
+        mu = 1 + (i-1)*nu
+        copyto!(tgt, mxu,    z, mx, nx)
+        copyto!(tgt, mxu+nx, w, mu, nu)
+    end
 
-    ## OBJECTIVE HESSIAN
-    σ = 1.0
-    AutoDiff.adj_hessian_prod!(nlp.model, H.obj, hv, buffer, σ, tgt)
-    ∇²fx = hv[1:nx]
-    ∇²fu = hv[nx+1:nx+nu]
+    # Init adjoint
+    fill!(y, 0.0)
+    y[end] = 1.0       # / objective
+    y[1:nx] .-= nlp.λ  # / power balance
 
-    _reduced_hessian_prod!(nlp, hessvec, ∇²fx, ∇²fu, tgt)
+    # STEP 2: AutoDiff
+    ∂fₓ, ∂fᵤ = full_hessprod!(nlp, hv, y, tgt)
+
+    # STEP 3: computation of second second-order adjoint
+    copyto!(ψ, ∂fₓ)
+    LinearAlgebra.ldiv!(H.adjlu, ψ)
+
+    hessvec .= ∂fᵤ
+    mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
 
     return
 end
 
 function hessian_lagrangian_penalty_prod!(
-    nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, w, D,
+    nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, D, w,
 )
-    @assert nlp.hessians != nothing
+    @assert nlp.hesslag != nothing
 
+    nbatch = size(w, 2)
     nx = get(nlp.model, NumberOfState())
     nu = get(nlp.model, NumberOfControl())
     buffer = nlp.buffer
-    H = nlp.hessians
+    H = nlp.hesslag
+    ∇gᵤ = nlp.state_jacobian.u.J
 
     fill!(hessvec, 0.0)
 
     z = H.z
-    _second_order_adjoint_z!(nlp, z, w)
+    ψ = H.ψ
+    ∇gᵤ = nlp.state_jacobian.u.J
+    mul!(z, ∇gᵤ, w, -1.0, 0.0)
+    LinearAlgebra.ldiv!(H.lu, z)
 
     # Two vector products
+    μ = H.y
     tgt = H.tmp_tgt
     hv = H.tmp_hv
 
-    # Init tangent
-    tgt[1:nx] .= z
-    tgt[1+nx:nx+nu] .= w
+    # Init tangent with z and w
+    for i in 1:nbatch
+        mxu = 1 + (i-1)*(nx+nu)
+        mx = 1 + (i-1)*nx
+        mu = 1 + (i-1)*nu
+        copyto!(tgt, mxu,    z, mx, nx)
+        copyto!(tgt, mxu+nx, w, mu, nu)
+    end
 
     ## OBJECTIVE HESSIAN
-    AutoDiff.adj_hessian_prod!(nlp.model, H.obj, hv, buffer, σ, tgt)
-    ∇²Lx = hv[1:nx]
-    ∇²Lu = hv[nx+1:nx+nu]
-
-    # CONSTRAINT HESSIAN
-    shift = 0
-    hvx = @view hv[1:nx]
-    hvu = @view hv[nx+1:nx+nu]
-    for (cons, Hc) in zip(nlp.constraints, H.constraints)
+    fill!(μ, 0.0)
+    μ[1:nx] .-= nlp.λ  # / power balance
+    μ[end] = σ         # / objective
+    # / constraints
+    shift_m = nx
+    shift_y = size_constraint(nlp.model, voltage_magnitude_constraints)
+    for cons in nlp.constraints
+        isa(cons, typeof(voltage_magnitude_constraints)) && continue
         m = size_constraint(nlp.model, cons)::Int
-        mask = shift+1:shift+m
-        yc = @view y[mask]
-        AutoDiff.adj_hessian_prod!(nlp.model, Hc, hv, buffer, yc, tgt)
-        ∇²Lx .+= hvx
-        ∇²Lu .+= hvu
-        shift += m
+        μ[shift_m+1:m+shift_m] .= view(y, shift_y+1:shift_y+m)
+        shift_m += m
+        shift_y += m
     end
+
+    ∇²Lx, ∇²Lu = full_hessprod!(nlp, hv, μ, tgt)
+
     # Add Hessian of quadratic penalty
-    diagjac = similar(y)
-    if !iszero(D)
-        _update_full_jacobian_constraints!(nlp)
-        Jx = nlp.constraint_jacobians.Jx
-        Ju = nlp.constraint_jacobians.Ju
-        # ∇²Lx .+= Jx' * (D * (Jx * z)) .+ Jx' * (D * (Ju * w))
-        # ∇²Lu .+= Ju' * (D * (Jx * z)) .+ Ju' * (D * (Ju * w))
-        mul!(diagjac, Jx, z)
-        mul!(diagjac, Ju, w, 1.0, 1.0)
-        diagjac .*= D
-        mul!(∇²Lx, Jx', diagjac, 1.0, 1.0)
-        mul!(∇²Lu, Ju', diagjac, 1.0, 1.0)
-    end
+    m = length(y)
+    diagjac = (nbatch > 1) ? similar(y, m, nbatch) : similar(y)
+    _update_full_jacobian_constraints!(nlp)
+    Jx = nlp.constraint_jacobians.Jx
+    Ju = nlp.constraint_jacobians.Ju
+    # ∇²Lx .+= Jx' * (D * (Jx * z)) .+ Jx' * (D * (Ju * w))
+    # ∇²Lu .+= Ju' * (D * (Jx * z)) .+ Ju' * (D * (Ju * w))
+    mul!(diagjac, Jx, z)
+    mul!(diagjac, Ju, w, 1.0, 1.0)
+    diagjac .*= D
+    mul!(∇²Lx, Jx', diagjac, 1.0, 1.0)
+    mul!(∇²Lu, Ju', diagjac, 1.0, 1.0)
 
     # Second order adjoint
-    _reduced_hessian_prod!(nlp, hessvec, ∇²Lx, ∇²Lu, tgt)
+    copyto!(ψ, ∇²Lx)
+    LinearAlgebra.ldiv!(H.adjlu, ψ)
+
+    hessvec .+= ∇²Lu
+    mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
 
     return
 end
+
+# Batch Hessian
+macro define_batch_hessian(function_name, target_function, args...)
+    fname = Symbol(function_name)
+    argstup = Tuple(args)
+    quote
+        function $(esc(fname))(nlp::ReducedSpaceEvaluator, dest, $(map(esc, argstup)...))
+            @assert has_hessian(nlp)
+            n = ExaPF.n_variables(nlp)
+            ∇²f = nlp.hesslag.hess
+            nbatch = size(nlp.hesslag.tmp_hv, 2)
+
+            # Allocate memory
+            v_cpu = zeros(n, nbatch)
+            v = similar(x, n, nbatch)
+
+            N = div(n, nbatch, RoundDown)
+            for i in 1:N
+                # Init tangents on CPU
+                fill!(v_cpu, 0.0)
+                @inbounds for j in 1:nbatch
+                    v_cpu[j+(i-1)*nbatch, j] = 1.0
+                end
+                # Pass tangents to the device
+                copyto!(v, v_cpu)
+
+                hm = @view dest[:, nbatch * (i-1) + 1: nbatch * i]
+                $target_function(nlp, hm, $(map(esc, argstup)...), v)
+            end
+
+            # Last slice
+            last_batch = n - N*nbatch
+            if last_batch > 0
+                fill!(v_cpu, 0.0)
+                @inbounds for j in 1:nbatch
+                    v_cpu[n-nbatch+j, j] = 1.0
+                end
+                copyto!(v, v_cpu)
+
+                hm = @view dest[:, (n - nbatch + 1) : n]
+                $target_function(nlp, hm, $(map(esc, argstup)...), v)
+            end
+        end
+    end
+end
+
+@define_batch_hessian hessian! hessprod! x
+@define_batch_hessian hessian_lagrangian_penalty! hessian_lagrangian_penalty_prod! x y σ D
+@define_batch_hessian jacobian! jprod! x
+
 
 # Return lower-triangular matrix
 function hessian_structure(nlp::ReducedSpaceEvaluator)

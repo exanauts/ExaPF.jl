@@ -215,16 +215,17 @@ function _init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
     return
 end
 
-function update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
-    t1sx = H.t1sx
-    nbatch = size(t1sx, 2)
+function update_hessian!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
+    nbatch = size(H.t1sx, 2)
     nbus = get(polar, PS.NumberOfBuses())
 
     # Move data
-    copyto!(H.x, 1, buffer.vmag, 1, nbus)
-    copyto!(H.x, nbus+1, buffer.vang, 1, nbus)
-    copyto!(H.x, 2*nbus+1, buffer.pinj, 1, nbus)
-    t1sx .= H.x
+    copyto!(H.x,        1, buffer.vmag, 1, nbus)
+    copyto!(H.x,   nbus+1, buffer.vang, 1, nbus)
+    copyto!(H.x, 2*nbus+1, buffer.pnet, 1, nbus)
+    @inbounds for i in 1:nbatch
+        H.t1sx[:, i] .= H.x
+    end
     return
 end
 
@@ -356,6 +357,9 @@ struct FullSpaceHessian{SpMT}
     uu::SpMT
 end
 
+#=
+    JACOBIAN
+=#
 struct ConstraintsJacobianStorage{SpMT}
     Jx::SpMT
     Ju::SpMT
@@ -417,38 +421,18 @@ function update_full_jacobian!(
     return
 end
 
-struct HessianStorage{VT,Hess1,Hess2}
-    state::Hess1
-    obj::Hess2
-    constraints::Vector{AutoDiff.AbstractHessian}
-    # Adjoints
-    z::VT
-    ψ::VT
-    tmp_tgt::VT
-    tmp_hv::VT
+#=
+    HESSIAN
+=#
+# Small utils to compute the factorization for batch Hessian algorithm
+function _batch_hessian_factorization(J::AbstractSparseMatrix, nbatch)
+    lufac = LS.exa_factorize(J)
+    return (lufac, lufac')
 end
 
-function HessianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Function}) where {T, VI, VT, MT}
-    nx = get(polar, NumberOfState())
-    nu = get(polar, NumberOfControl())
+abstract type AbstractHessianStorage end
 
-    Hstate = AutoDiff.Hessian(polar, power_balance)
-    Hobj = AutoDiff.Hessian(polar, cost_production)
-    Hcons = AutoDiff.AbstractHessian[]
-    for cons in constraints
-        push!(Hcons, _build_hessian(polar, cons))
-    end
-
-    z = xzeros(VT, nx)
-    ψ = xzeros(VT, nx)
-
-    tgt = xzeros(VT, nx+nu)
-    hv = xzeros(VT, nx+nu)
-
-    return HessianStorage{VT, typeof(Hstate), typeof(Hobj)}(Hstate, Hobj, Hcons, z, ψ, tgt, hv)
-end
-
-struct HessianLagrangian{VT,Hess}
+struct HessianLagrangian{VT,Hess,Fac1,Fac2} <: AbstractHessianStorage
     hess::Hess
     # Adjoints
     y::VT
@@ -456,29 +440,59 @@ struct HessianLagrangian{VT,Hess}
     ψ::VT
     tmp_tgt::VT
     tmp_hv::VT
+    lu::Fac1
+    adjlu::Fac2
 end
-
-function HessianLagrangian(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+function HessianLagrangian(polar::PolarForm{T, VI, VT, MT}, J::AbstractSparseMatrix) where {T, VI, VT, MT}
+    lu1, lu2 = _batch_hessian_factorization(J, 1)
     nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
-    nbus = get(polar, PS.NumberOfBuses())
+    m = size_constraint(polar, network_operations)
     H = AutoDiff.Hessian(polar, network_operations)
-    y = xzeros(VT, 2 * nbus + 1)
-    z = xzeros(VT, nx)
-    ψ = xzeros(VT, nx)
-    tgt = xzeros(VT, nx+nu)
-    hv = xzeros(VT, nx+nu)
-    return HessianLagrangian{VT, typeof(H)}(H, y, z, ψ, tgt, hv)
+    y = VT(undef, m)
+    z = VT(undef, nx)
+    ψ = VT(undef, nx)
+    tgt = VT(undef, nx+nu)
+    hv = VT(undef, nx+nu)
+    return HessianLagrangian(H, y, z, ψ, tgt, hv, lu1, lu2)
 end
+n_batches(hlag::HessianLagrangian) = 1
 
-function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, nbatch) where {T, VI, VT, MT}
+struct BatchHessianLagrangian{MT,Hess,Fac1,Fac2} <: AbstractHessianStorage
+    nbatch::Int
+    hess::Hess
+    # Adjoints
+    y::MT
+    z::MT
+    ψ::MT
+    tmp_tgt::MT
+    tmp_hv::MT
+    lu::Fac1
+    adjlu::Fac2
+end
+function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, J, nbatch) where {T, VI, VT, MT}
+    lu1, lu2 = _batch_hessian_factorization(J, nbatch)
     nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
-    nbus = get(polar, PS.NumberOfBuses())
-    H = AutoDiff.Hessian(polar, network_operations)
-    y = MT(undef, 2 * nbus + 1, nbatch)
-    z = MT(undef, nx, nbatch)
-    ψ = MT(undef, nx, nbatch)
+    m = size_constraint(polar, network_operations)
+    H = BatchHessian(polar, network_operations, nbatch)
+    y   = MT(undef, m, 1)  # adjoint is the same for all batches
+    z   = MT(undef, nx, nbatch)
+    ψ   = MT(undef, nx, nbatch)
     tgt = MT(undef, nx+nu, nbatch)
-    hv = MT(undef, nx+nu, nbatch)
-    return HessianLagrangian{VT, typeof(H)}(H, y, z, ψ, tgt, hv)
+    hv  = MT(undef, nx+nu, nbatch)
+    return BatchHessianLagrangian(nbatch, H, y, z, ψ, tgt, hv, lu1, lu2)
+end
+n_batches(hlag::BatchHessianLagrangian) = hlag.nbatch
+
+
+function update_factorization!(hlag::AbstractHessianStorage, J::AbstractSparseMatrix)
+    LinearAlgebra.lu!(hlag.lu, J)
+    return
+end
+
+function update_factorization!(hlag::AbstractHessianStorage, J::CUSPARSE.CuSparseMatrixCSR)
+    LinearAlgebra.lu!(hlag.lu, J)
+    ∇gₓᵀ = CUSPARSE.CuSparseMatrixCSC(J)
+    LinearAlgebra.lu!(hlag.adjlu, ∇gₓᵀ)
+    return
 end
 

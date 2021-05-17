@@ -25,6 +25,7 @@ function build_nlp(datafile, device)
 end
 
 function run_reduced_evaluator(nlp, u; device=CPU())
+    n = length(u)
     # Update nlp to stay on manifold
     print("Update   \t")
     @time ExaPF.update!(nlp, u)
@@ -56,7 +57,11 @@ function run_reduced_evaluator(nlp, u; device=CPU())
     y = similar(cons) ; fill!(y, 1.0)
     w = similar(cons) ; fill!(w, 1.0)
     print("HLagPen-prod \t")
-    @btime ExaPF.hessian_lagrangian_penalty_prod!($nlp, $hv, $u, $y, 1.0, $v, $w)
+    @btime ExaPF.hessian_lagrangian_penalty_prod!($nlp, $hv, $u, $y, 1.0, $w, $v)
+    print("Hessian \t")
+    H = similar(u, n, n)
+    @btime ExaPF.hessian!($nlp, $H, $u)
+    @btime ExaPF.batch_hessian!($nlp, $H, $u)
     return
 end
 

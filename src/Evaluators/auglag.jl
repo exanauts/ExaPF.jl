@@ -165,7 +165,7 @@ function hessprod!(ag::AugLagEvaluator, hessvec, u, w)
     y = (scaler.scale_cons .* ag.λc .* mask)
     ρ = ag.ρ .* (scaler.scale_cons .* scaler.scale_cons .* mask)
 
-    hessian_lagrangian_penalty_prod!(ag.inner, hessvec, u, y, σ, w, ρ)::Nothing
+    hessian_lagrangian_penalty_prod!(ag.inner, hessvec, u, y, σ, ρ, w)::Nothing
     return
 end
 
