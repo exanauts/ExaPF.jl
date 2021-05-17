@@ -61,7 +61,7 @@ and the by-product `y`. Each time we are calling the method `update!`,
 the values of the control are copied into the buffer.
 
 """
-mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <: AbstractNLPEvaluator
+mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess, HessLag} <: AbstractNLPEvaluator
     model::PolarForm{T, VI, VT, MT}
     λ::VT
 
@@ -80,6 +80,7 @@ mutable struct ReducedSpaceEvaluator{T, VI, VT, MT, Jacx, Jacu, JacCons, Hess} <
     cons_stacks::Vector{AutoDiff.TapeMemory} # / constraints
     constraint_jacobians::JacCons
     hessians::Hess
+    hesslag::HessLag
 
     # Options
     linear_solver::LinearSolvers.AbstractLinearSolver
@@ -131,13 +132,14 @@ function ReducedSpaceEvaluator(
     hess_ad = nothing
     if want_hessian
         hess_ad = HessianStorage(model, constraints)
+        hess_lag = HessianLagrangian(model)
     end
 
     return ReducedSpaceEvaluator(
         model, λ, u_min, u_max,
         constraints, g_min, g_max,
         buffer,
-        state_ad, obj_ad, cons_ad, cons_jac, hess_ad,
+        state_ad, obj_ad, cons_ad, cons_jac, hess_ad, hess_lag,
         linear_solver, powerflow_solver, want_jacobian, false, want_hessian,
     )
 end
@@ -508,6 +510,47 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     return
 end
 
+function hessprod_!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
+    @assert nlp.hessians != nothing
+
+    nbus = get(nlp.model, PS.NumberOfBuses())
+    nx = get(nlp.model, NumberOfState())
+    nu = get(nlp.model, NumberOfControl())
+    buffer = nlp.buffer
+    H = nlp.hesslag
+    ∇gᵤ = nlp.state_jacobian.u.J
+
+    fill!(hessvec, 0.0)
+
+    # Two vector products
+    tgt = H.tmp_tgt
+    hv = H.tmp_hv
+    y = H.y
+    z = H.z
+    ψ = H.ψ
+
+    _second_order_adjoint_z!(nlp, z, w)
+
+    # Init tangent
+    copyto!(tgt, 1, z, 1, nx)
+    copyto!(tgt, nx+1, w, 1, nu)
+
+    ## OBJECTIVE HESSIAN
+    fill!(y, 0.0)
+    y[end] = 1.0       # / objective
+    y[1:nx] .-= nlp.λ  # / power balance
+    AutoDiff.adj_hessian_prod!(nlp.model, H.hess, hv, buffer, y, tgt)
+    ∂fₓ = hv[1:nx]
+    ∂fᵤ = hv[nx+1:nx+nu]
+
+    _second_order_adjoint_ψ!(nlp, ψ, ∂fₓ)
+
+    hessvec .+= ∂fᵤ
+    mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
+
+    return
+end
+
 function hessian_lagrangian_penalty_prod!(
     nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, w, D,
 )
@@ -566,6 +609,73 @@ function hessian_lagrangian_penalty_prod!(
 
     # Second order adjoint
     _reduced_hessian_prod!(nlp, hessvec, ∇²Lx, ∇²Lu, tgt)
+
+    return
+end
+
+function hessian_lagrangian_penalty_prod_!(
+    nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, w, D,
+)
+    @assert nlp.hessians != nothing
+
+    nx = get(nlp.model, NumberOfState())
+    nu = get(nlp.model, NumberOfControl())
+    buffer = nlp.buffer
+    H = nlp.hesslag
+    ∇gᵤ = nlp.state_jacobian.u.J
+
+    fill!(hessvec, 0.0)
+
+    z = H.z
+    ψ = H.ψ
+    _second_order_adjoint_z!(nlp, z, w)
+
+    # Two vector products
+    μ = H.y
+    tgt = H.tmp_tgt
+    hv = H.tmp_hv
+
+    # Init tangent
+    tgt[1:nx] .= z
+    tgt[1+nx:nx+nu] .= w
+
+    ## OBJECTIVE HESSIAN
+    fill!(μ, 0.0)
+    μ[1:nx] .-= nlp.λ  # / power balance
+    μ[end] = σ         # / objective
+    # / constraints
+    shift = 0
+    for cons in nlp.constraints
+        isa(cons, typeof(voltage_magnitude_constraints)) && continue
+        m = size_constraint(nlp.model, cons)::Int
+        μ[nx+1+shift:nx+m+shift] .= view(y, shift+1:shift+m)
+        shift += m
+    end
+
+    AutoDiff.adj_hessian_prod!(nlp.model, H.hess, hv, buffer, μ, tgt)
+    ∇²Lx = hv[1:nx]
+    ∇²Lu = hv[nx+1:nx+nu]
+
+    # Add Hessian of quadratic penalty
+    diagjac = similar(y)
+    if !iszero(D)
+        _update_full_jacobian_constraints!(nlp)
+        Jx = nlp.constraint_jacobians.Jx
+        Ju = nlp.constraint_jacobians.Ju
+        # ∇²Lx .+= Jx' * (D * (Jx * z)) .+ Jx' * (D * (Ju * w))
+        # ∇²Lu .+= Ju' * (D * (Jx * z)) .+ Ju' * (D * (Ju * w))
+        mul!(diagjac, Jx, z)
+        mul!(diagjac, Ju, w, 1.0, 1.0)
+        diagjac .*= D
+        mul!(∇²Lx, Jx', diagjac, 1.0, 1.0)
+        mul!(∇²Lu, Ju', diagjac, 1.0, 1.0)
+    end
+
+    # Second order adjoint
+    _second_order_adjoint_ψ!(nlp, ψ, ∇²Lx)
+
+    hessvec .+= ∇²Lu
+    mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
 
     return
 end
