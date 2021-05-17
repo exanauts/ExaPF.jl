@@ -24,8 +24,8 @@ include("auglag.jl")
 function _init(datafile, ::Type{ExaPF.ReducedSpaceEvaluator}, device)
     constraints = Function[
         ExaPF.voltage_magnitude_constraints,
-        ExaPF.reactive_power_constraints,
         ExaPF.active_power_constraints,
+        ExaPF.reactive_power_constraints,
         # ExaPF.flow_constraints,
     ]
     return ExaPF.ReducedSpaceEvaluator(datafile; device=device, constraints=constraints)
@@ -61,6 +61,10 @@ function runtests(datafile, device, AT)
     ]
         nlp = Evaluator(datafile; device=device)
         test_evaluator_hessian(nlp, device, AT)
+    end
+    @testset "ReducedSpaceEvaluator BatchHessian" begin
+        nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device, nbatch_hessian=2)
+        test_evaluator_batch_hessian(nlp, device, AT)
     end
     @testset "ProxALEvaluator" begin
         nlp = ExaPF.ReducedSpaceEvaluator(datafile; device=device)

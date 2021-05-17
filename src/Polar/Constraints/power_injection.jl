@@ -42,21 +42,21 @@ KA.@kernel function adj_bus_power_injection_kernel!(
         y_im = ybus_im_nzval[c]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
-        coef_cos = v_fr*v_to*y_re[c]
-        coef_sin = v_fr*v_to*y_im[c]
+        coef_cos = v_fr*v_to*y_re
+        coef_sin = v_fr*v_to*y_im
 
         cos_val = cos(aij)
         sin_val = sin(aij)
 
-        adj_coef_cos = cos_val  * adj_inj[bus]
-        adj_coef_sin = sin_val  * adj_inj[bus]
-        adj_cos_val  = coef_cos * adj_inj[bus]
-        adj_sin_val  = coef_sin * adj_inj[bus]
+        adj_coef_cos = cos_val  * adj_inj[bus, j]
+        adj_coef_sin = sin_val  * adj_inj[bus, j]
+        adj_cos_val  = coef_cos * adj_inj[bus, j]
+        adj_sin_val  = coef_sin * adj_inj[bus, j]
 
-        adj_coef_cos +=  sin_val  * adj_inj[bus+nbus]
-        adj_coef_sin += -cos_val  * adj_inj[bus+nbus]
-        adj_cos_val  += -coef_sin * adj_inj[bus+nbus]
-        adj_sin_val  +=  coef_cos * adj_inj[bus+nbus]
+        adj_coef_cos +=  sin_val  * adj_inj[bus+nbus, j]
+        adj_coef_sin += -cos_val  * adj_inj[bus+nbus, j]
+        adj_cos_val  += -coef_sin * adj_inj[bus+nbus, j]
+        adj_sin_val  +=  coef_cos * adj_inj[bus+nbus, j]
 
         adj_aij =   cos_val * adj_sin_val
         adj_aij += -sin_val * adj_cos_val
@@ -107,9 +107,9 @@ function _adjoint_bus_power_injection!(
     fill!(pbm.intermediate.∂edge_va_fr , 0.0)
     fill!(pbm.intermediate.∂edge_va_to , 0.0)
 
-    ndrange = (nbus, size(vmag, 2))
+    ndrange = (nbus, size(∂vmag, 2))
     # ADJOINT WRT EDGES
-    adj_bus_power_injection_kernel!(polar.device)(
+    ev = adj_bus_power_injection_kernel!(polar.device)(
         pbm.intermediate.∂edge_vm_fr,
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,
@@ -119,6 +119,7 @@ function _adjoint_bus_power_injection!(
         ybus_re.colptr, ybus_re.rowval, ybus_re.nzval, ybus_im.nzval, nbus,
         ndrange=ndrange, dependencies=Event(polar.device),
     )
+    wait(ev)
 
     # ADJOINT WRT NODES
     ev = gpu_adj_node_kernel!(polar.device)(
@@ -145,5 +146,30 @@ function adjoint!(
     fill!(∂va, 0)
     _adjoint_bus_power_injection!(polar, pbm, ∂cons, vm, ∂vm, va, ∂va)
     return
+end
+
+function matpower_jacobian(polar::PolarForm, X::Union{State, Control}, ::typeof(bus_power_injection), V)
+    nbus = get(polar, PS.NumberOfBuses())
+    pf = polar.network
+    ref = pf.ref ; nref = length(ref)
+    pv = pf.pv ; npv = length(pv)
+    pq = pf.pq ; npq = length(pq)
+    Ybus = pf.Ybus
+
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
+
+    if isa(X, State)
+        j11 = real(dSbus_dVa[:, [pv; pq]])
+        j12 = real(dSbus_dVm[:, pq])
+        j21 = imag(dSbus_dVa[:, [pv; pq]])
+        j22 = imag(dSbus_dVm[:, pq])
+        return [j11 j12; j21 j22]
+    elseif isa(X, Control)
+        j11 = real(dSbus_dVm[:, [ref; pv]])
+        j12 = spzeros(nbus, npv)
+        j21 = imag(dSbus_dVm[:, [ref; pv]])
+        j22 = spzeros(nbus, npv)
+        return [j11 j12; j21 j22]
+    end
 end
 

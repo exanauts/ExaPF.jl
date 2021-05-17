@@ -298,8 +298,6 @@ function hessprod!(nlp::ProxALEvaluator, hessvec, w, v)
     model = nlp.inner.model
     nx = get(model, NumberOfState())
     nu = get(model, NumberOfControl())
-    buffer = get(nlp.inner, PhysicalState())
-    H = nlp.inner.hessians
 
     u = @view w[1:nlp.nu]
     vᵤ = @view v[1:nlp.nu]
@@ -310,32 +308,16 @@ function hessprod!(nlp::ProxALEvaluator, hessvec, w, v)
     hvu = @view hessvec[1:nlp.nu]
     hvs = @view hessvec[1+nlp.nu:end]
 
-    z = H.z
-    tgt_xu = H.tmp_tgt  # tangent wrt x and u
-    hv_xu = H.tmp_hv    # hv wrt x and u
-
-    _second_order_adjoint_z!(nlp.inner, z, vᵤ)
-
-    # Init tangent
-    tgt_xu[1:nx] .= z
-    tgt_xu[1+nx:nx+nu] .= vᵤ
-
     ## OBJECTIVE HESSIAN
     σ = 1.0
-    AutoDiff.adj_hessian_prod!(nlp.inner.model, nlp.hessian_obj, hv_xu, buffer, σ, tgt_xu)
+    hessprod!(nlp.inner, hvu, u, vᵤ)
 
     # Contribution of slack node
     if nlp.time != Origin
         hvs .+= nlp.ρf .* vₛ
-
         # TODO: implement block corresponding to Jacobian
         # and transpose-Jacobian
     end
-
-    ∇²fx = hv_xu[1:nx]       # / x
-    ∇²fu = hv_xu[nx+1:nx+nu] # / u
-
-    _reduced_hessian_prod!(nlp.inner, hvu, ∇²fx, ∇²fu, tgt_xu)
     return
 end
 

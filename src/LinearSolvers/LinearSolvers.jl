@@ -95,9 +95,14 @@ struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: Abstrac
     factorization::Fac
 end
 
-DirectSolver(J::SparseMatrixCSC) = DirectSolver(lu(J))
-DirectSolver() = DirectSolver(nothing)
+exa_factorize(J::AbstractSparseMatrix) = nothing
+exa_factorize(J::SparseMatrixCSC{T, Int}) where T = lu(J)
+exa_factorize(J::Adjoint{T, SparseMatrixCSC{T, Int}}) where T = lu(J.parent)'
+
+DirectSolver(J) = DirectSolver(exa_factorize(J))
 DirectSolver(precond::AbstractPreconditioner) = DirectSolver(nothing)
+DirectSolver() = DirectSolver(nothing)
+
 
 # Reuse factorization in update
 function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
@@ -110,8 +115,12 @@ function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray,
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray)
+    LinearAlgebra.ldiv!(s.factorization, y) # Forward-backward solve
+    return 0
+end
 # Solve system A'x = y
-function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, x::Array)
+function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
     LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
     return 0
 end
