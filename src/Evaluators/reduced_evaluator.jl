@@ -97,6 +97,7 @@ function ReducedSpaceEvaluator(
     powerflow_solver=NewtonRaphson(tol=1e-12),
     want_jacobian=true,
     want_hessian=true,
+    nbatch_hessian=1,
 ) where {T, VI, VT, MT}
     # First, build up a network buffer
     buffer = get(model, PhysicalState())
@@ -132,7 +133,11 @@ function ReducedSpaceEvaluator(
     hess_ad = nothing
     if want_hessian
         hess_ad = HessianStorage(model, constraints)
-        hess_lag = HessianLagrangian(model)
+        hess_lag = if nbatch_hessian == 1
+            HessianLagrangian(model)
+        else
+            BatchHessianLagrangian(model, nbatch_hessian)
+        end
     end
 
     return ReducedSpaceEvaluator(
@@ -259,7 +264,7 @@ function _forward_solve!(nlp::ReducedSpaceEvaluator, y, x)
     end
 end
 
-function _backward_solve!(nlp::ReducedSpaceEvaluator, y::VT, x::VT) where {VT <: AbstractArray}
+function _backward_solve!(nlp::ReducedSpaceEvaluator, y, x)
     ∇gₓ = nlp.state_jacobian.x.J
     if isa(nlp.linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
         # Iterative solver case
@@ -442,9 +447,8 @@ function _second_order_adjoint_z!(
     nlp::ReducedSpaceEvaluator, z, w,
 )
     ∇gᵤ = nlp.state_jacobian.u.J
-    rhs = nlp.buffer.dx
-    mul!(rhs, ∇gᵤ, w, -1.0, 0.0)
-    _forward_solve!(nlp, z, rhs)
+    mul!(z, ∇gᵤ, w, -1.0, 0.0)
+    LinearSolvers.ldiv!(nlp.linear_solver, z)
 end
 
 # ψ = -(∇gₓ' \ (∇²fₓₓ .+ ∇²gₓₓ))
@@ -510,42 +514,68 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     return
 end
 
+# Single version
+function full_hessprod!(nlp::ReducedSpaceEvaluator, hv::AbstractVector, y::AbstractVector, tgt::AbstractVector)
+    nx, nu = get(nlp.model, NumberOfState()), get(nlp.model, NumberOfControl())
+    H = nlp.hesslag
+    AutoDiff.adj_hessian_prod!(nlp.model, H.hess, hv, nlp.buffer, y, tgt)
+    ∂fₓ = @view hv[1:nx]
+    ∂fᵤ = @view hv[nx+1:nx+nu]
+    return ∂fₓ , ∂fᵤ
+end
+# Batch version
+function full_hessprod!(nlp::ReducedSpaceEvaluator, hv::AbstractMatrix, y::AbstractMatrix, tgt::AbstractMatrix)
+    nx, nu = get(nlp.model, NumberOfState()), get(nlp.model, NumberOfControl())
+    H = nlp.hesslag
+    batch_adj_hessian_prod!(nlp.model, H.hess, hv, nlp.buffer, y, tgt)
+    ∂fₓ = @view hv[1:nx, :]
+    ∂fᵤ = @view hv[nx+1:nx+nu, :]
+    return ∂fₓ , ∂fᵤ
+end
+
 function hessprod_!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     @assert nlp.hessians != nothing
 
-    nbus = get(nlp.model, PS.NumberOfBuses())
     nx = get(nlp.model, NumberOfState())
     nu = get(nlp.model, NumberOfControl())
-    buffer = nlp.buffer
     H = nlp.hesslag
     ∇gᵤ = nlp.state_jacobian.u.J
 
-    fill!(hessvec, 0.0)
+    # Number of batches
+    nbatch = size(w, 2)
+    @assert nbatch == size(H.z, 2) == size(hessvec, 2)
 
-    # Two vector products
+    # Load variables and buffers
     tgt = H.tmp_tgt
     hv = H.tmp_hv
     y = H.y
     z = H.z
     ψ = H.ψ
 
+    # Step 1: computation of first second-order adjoint
     _second_order_adjoint_z!(nlp, z, w)
 
-    # Init tangent
-    copyto!(tgt, 1, z, 1, nx)
-    copyto!(tgt, nx+1, w, 1, nu)
+    # Init tangent with z and w
+    for i in 1:nbatch
+        mxu = 1 + (i-1)*(nx+nu)
+        mx = 1 + (i-1)*nx
+        mu = 1 + (i-1)*nu
+        copyto!(tgt, mxu,    z, mx, nx)
+        copyto!(tgt, mxu+nx, w, mu, nu)
+    end
 
-    ## OBJECTIVE HESSIAN
+    # Init adjoint
     fill!(y, 0.0)
     y[end] = 1.0       # / objective
     y[1:nx] .-= nlp.λ  # / power balance
-    AutoDiff.adj_hessian_prod!(nlp.model, H.hess, hv, buffer, y, tgt)
-    ∂fₓ = hv[1:nx]
-    ∂fᵤ = hv[nx+1:nx+nu]
 
+    # STEP 2: AutoDiff
+    ∂fₓ, ∂fᵤ = full_hessprod!(nlp, hv, y, tgt)
+
+    # STEP 3: computation of second second-order adjoint
     _second_order_adjoint_ψ!(nlp, ψ, ∂fₓ)
 
-    hessvec .+= ∂fᵤ
+    hessvec .= ∂fᵤ
     mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
 
     return

@@ -16,30 +16,39 @@ include("ramping_rate.jl")
 include("network_operation.jl")
 
 # By default, function does not have any intermediate state
-_get_intermediate_stack(polar::PolarForm, func::Function, VT) = nothing
+_get_intermediate_stack(polar::PolarForm, func::Function, VT, nbatch) = nothing
 
 function _get_intermediate_stack(
-    polar::PolarForm, func::F, VT
+    polar::PolarForm, func::F, VT, nbatch
 ) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance), typeof(bus_power_injection)}}
     nlines = PS.get(polar.network, PS.NumberOfLines())
     # Take care that flow_constraints needs a buffer with a different size
     nnz = isa(func, typeof(flow_constraints)) ? nlines : length(polar.topology.ybus_im.nzval)
     # Return a NamedTuple storing all the intermediate states
-    return (
-        ∂edge_vm_fr = xzeros(VT, nnz),
-        ∂edge_va_fr = xzeros(VT, nnz),
-        ∂edge_vm_to = xzeros(VT, nnz),
-        ∂edge_va_to = xzeros(VT, nnz),
-    )
+    if nbatch == 1
+        return (
+            ∂edge_vm_fr = xzeros(VT, nnz),
+            ∂edge_va_fr = xzeros(VT, nnz),
+            ∂edge_vm_to = xzeros(VT, nnz),
+            ∂edge_va_to = xzeros(VT, nnz),
+        )
+    else
+        return (
+            ∂edge_vm_fr = VT(undef, nnz, nbatch),
+            ∂edge_va_fr = VT(undef, nnz, nbatch),
+            ∂edge_vm_to = VT(undef, nnz, nbatch),
+            ∂edge_va_to = VT(undef, nnz, nbatch),
+        )
+    end
 end
 
 # Generic functions
 function AutoDiff.TapeMemory(
-    polar::PolarForm, func::Function, VT; with_stack=true,
+    polar::PolarForm, func::Function, VT; with_stack=true, nbatch=1,
 )
     @assert is_constraint(func)
     stack = (with_stack) ? AdjointPolar(polar) : nothing
-    intermediate = _get_intermediate_stack(polar, func, VT)
+    intermediate = _get_intermediate_stack(polar, func, VT, nbatch)
     return AutoDiff.TapeMemory(func, stack, intermediate)
 end
 

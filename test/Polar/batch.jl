@@ -88,13 +88,11 @@ function test_batch_hessian(polar, device, VT; nbatch=64)
         ∇²gλ.xu  ∇²gλ.uu
     ]
 
-    ExaPF.batch_update!(polar, batch_H, cache)
+    ExaPF.update_hessian!(polar, batch_H, cache)
     ExaPF.batch_adj_hessian_prod!(polar, batch_H, batch_projp, cache, λ, batch_tgt)
 
     if !isa(device, GPU)
-        for i in 1:nbatch
-            @test isapprox(batch_projp[:, i], H * batch_tgt[:, i])
-        end
+        @test isapprox(batch_projp, H * batch_tgt)
     end
 end
 

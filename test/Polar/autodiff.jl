@@ -24,6 +24,7 @@ function test_constraints_jacobian(polar, device, MT)
         ExaPF.active_power_constraints,
         ExaPF.reactive_power_constraints,
         ExaPF.flow_constraints,
+        ExaPF.bus_power_injection,
     ]
         m = ExaPF.size_constraint(polar, cons)
         # Allocation

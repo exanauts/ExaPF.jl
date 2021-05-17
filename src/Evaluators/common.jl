@@ -49,13 +49,54 @@ end
 
 # Common interface for Hessian
 function hessian!(nlp::AbstractNLPEvaluator, hess, x)
+    @assert has_hessian(nlp)
     n = n_variables(nlp)
     v = similar(x)
     @inbounds for i in 1:n
         hv = @view hess[:, i]
         fill!(v, 0)
         v[i] = 1.0
-        hessprod!(nlp, hv, x, v)
+        hessprod_!(nlp, hv, x, v)
+    end
+end
+
+function batch_hessian!(nlp::AbstractNLPEvaluator, hess, x)
+    @assert has_hessian(nlp)
+    n = ExaPF.n_variables(nlp)
+    ∇²f = nlp.hesslag.hess
+    nbatch = size(nlp.hesslag.tmp_hv, 2)
+
+    # Allocate memory
+    v_cpu = zeros(n, nbatch)
+    v = similar(x, n, nbatch)
+
+    update_hessian!(nlp.model, ∇²f, nlp.buffer)
+
+    N = div(n, nbatch, RoundDown)
+    for i in 1:N
+        # Init tangents on CPU
+        fill!(v_cpu, 0.0)
+        @inbounds for j in 1:nbatch
+            v_cpu[j+(i-1)*nbatch, j] = 1.0
+        end
+        # Pass tangents to the device
+        copyto!(v, v_cpu)
+
+        hm = @view hess[:, nbatch * (i-1) + 1: nbatch * i]
+        hessprod_!(nlp, hm, x, v)
+    end
+
+    # Last slice
+    last_batch = n - N*nbatch
+    if last_batch > 0
+        fill!(v_cpu, 0.0)
+        @inbounds for j in 1:nbatch
+            v_cpu[n-nbatch+j, j] = 1.0
+        end
+        copyto!(v, v_cpu)
+
+        hm = @view hess[:, (n - nbatch + 1) : n]
+        hessprod_!(nlp, hm, x, v)
     end
 end
 
@@ -66,7 +107,7 @@ function hessian_lagrangian_penalty!(nlp::AbstractNLPEvaluator, hess, x, y, σ, 
         hv = @view hess[:, i]
         fill!(v, 0)
         v[i] = 1.0
-        hessian_lagrangian_penalty_prod!(nlp, hv, x, y, σ, v, D)
+        hessian_lagrangian_penalty_prod_!(nlp, hv, x, y, σ, v, D)
     end
 end
 
