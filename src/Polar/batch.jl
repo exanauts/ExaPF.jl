@@ -1,39 +1,4 @@
 
-# Adjoint
-function batch_adjoint!(
-    polar::PolarForm,
-    pbm::AutoDiff.TapeMemory{F, S, I},
-    cons, ∂cons,
-    vm, ∂vm,
-    va, ∂va,
-    pnet, ∂pnet,
-    pload, qload,
-) where {F<:typeof(power_balance), S, I}
-    nbus = get(polar, PS.NumberOfBuses())
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-
-    fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
-    fill!(pbm.intermediate.∂edge_vm_to , 0.0)
-    fill!(pbm.intermediate.∂edge_va_fr , 0.0)
-    fill!(pbm.intermediate.∂edge_va_to , 0.0)
-
-    adj_residual_polar!(
-        cons, ∂cons,
-        vm, ∂vm,
-        va, ∂va,
-        ybus_re, ybus_im, polar.topology.sortperm,
-        pnet, ∂pnet, pload, qload,
-        pbm.intermediate.∂edge_vm_fr,
-        pbm.intermediate.∂edge_vm_to,
-        pbm.intermediate.∂edge_va_fr,
-        pbm.intermediate.∂edge_va_to,
-        pv, pq, nbus, polar.device
-    )
-end
-
 function BatchHessian(polar::PolarForm{T, VI, VT, MT}, func, nbatch) where {T, VI, VT, MT}
     @assert is_constraint(func)
 
@@ -66,7 +31,7 @@ function BatchHessian(polar::PolarForm{T, VI, VT, MT}, func, nbatch) where {T, V
     VD = typeof(t1sx)
     adj_t1sx = MMT{t1s{1}}(zeros(Float64, 3 * nbus, nbatch))
     adj_t1sF = A{t1s{1}}(zeros(Float64, n_cons))
-    buffer = batch_tape(polar, func, nbatch, typeof(adj_t1sx))
+    buffer = AutoDiff.TapeMemory(polar, func, typeof(adj_t1sx); with_stack=false, nbatch=nbatch)
     return AutoDiff.Hessian(
         func, host_t1sseeds, t1sseeds, x, t1sF, adj_t1sF, t1sx, adj_t1sx, map, varx, t1svarx, buffer,
     )
@@ -118,47 +83,6 @@ function batch_buffer(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI
     return buffer
 end
 
-function batch_stack(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI, VT, MT}
-    nbus = get(polar, PS.NumberOfBuses())
-    return AdjointPolar{MT}(
-        MT(undef, nbus, nbatch),
-        MT(undef, nbus, nbatch),
-        MT(undef, nbus, nbatch),
-        MT(undef, nbus, nbatch),
-        MT(undef, 0, 0),
-        MT(undef, 0, 0),
-    )
-end
-
-function batch_tape(
-    polar::PolarForm, func, nbatch, MD,
-)
-    nnz = length(polar.topology.ybus_im.nzval)
-    intermediate = (
-        ∂edge_vm_fr = MD(undef, nnz, nbatch),
-        ∂edge_va_fr = MD(undef, nnz, nbatch),
-        ∂edge_vm_to = MD(undef, nnz, nbatch),
-        ∂edge_va_to = MD(undef, nnz, nbatch),
-    )
-    return AutoDiff.TapeMemory(func, nothing, intermediate)
-end
-
-function batch_update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
-    x = H.x
-    t1sx = H.t1sx
-    nbatch = size(t1sx, 2)
-    nbus = get(polar, PS.NumberOfBuses())
-
-    # Move data
-    copyto!(x, 1, buffer.vmag, 1, nbus)
-    copyto!(x, nbus+1, buffer.vang, 1, nbus)
-    copyto!(x, 2*nbus+1, buffer.pnet, 1, nbus)
-
-    @inbounds for i in 1:nbatch
-        t1sx[:, i] .= H.x
-    end
-end
-
 function batch_adj_hessian_prod!(
     polar, H::AutoDiff.Hessian, hv, buffer, λ, v,
 )
@@ -175,7 +99,7 @@ function batch_adj_hessian_prod!(
     # Init dual variables
     adj_t1sx .= 0.0
     t1sF .= 0.0
-    adj_t1sF .= λ
+    copyto!(adj_t1sF, 1, λ, 1, length(λ))
     # Seeding
     nmap = length(H.map)
 
@@ -183,7 +107,7 @@ function batch_adj_hessian_prod!(
     AutoDiff.batch_init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap, device)
     AutoDiff.batch_seed_hessian!(H.t1sseeds, H.varx, H.t1svarx, device)
 
-    batch_adjoint!(
+    adjoint!(
         polar, H.buffer,
         t1sF, adj_t1sF,
         view(t1sx, 1:nbus, :), view(adj_t1sx, 1:nbus, :),                   # vmag

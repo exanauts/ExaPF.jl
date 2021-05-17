@@ -215,16 +215,17 @@ function _init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
     return
 end
 
-function update!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
-    t1sx = H.t1sx
-    nbatch = size(t1sx, 2)
+function update_hessian!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
+    nbatch = size(H.t1sx, 2)
     nbus = get(polar, PS.NumberOfBuses())
 
     # Move data
-    copyto!(H.x, 1, buffer.vmag, 1, nbus)
-    copyto!(H.x, nbus+1, buffer.vang, 1, nbus)
-    copyto!(H.x, 2*nbus+1, buffer.pinj, 1, nbus)
-    t1sx .= H.x
+    copyto!(H.x,        1, buffer.vmag, 1, nbus)
+    copyto!(H.x,   nbus+1, buffer.vang, 1, nbus)
+    copyto!(H.x, 2*nbus+1, buffer.pnet, 1, nbus)
+    @inbounds for i in 1:nbatch
+        H.t1sx[:, i] .= H.x
+    end
     return
 end
 
@@ -448,7 +449,7 @@ function HessianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Fun
     return HessianStorage{VT, typeof(Hstate), typeof(Hobj)}(Hstate, Hobj, Hcons, z, ψ, tgt, hv)
 end
 
-struct HessianLagrangian{VT,Hess}
+struct HessianLagrangian{VT,Hess,Fac1,Fac2}
     hess::Hess
     # Adjoints
     y::VT
@@ -456,29 +457,46 @@ struct HessianLagrangian{VT,Hess}
     ψ::VT
     tmp_tgt::VT
     tmp_hv::VT
+    lu::Fac1
+    adjlu::Fac2
 end
 
-function HessianLagrangian(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+function HessianLagrangian(polar::PolarForm{T, VI, VT, MT}, lu1, lu2) where {T, VI, VT, MT}
     nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
-    nbus = get(polar, PS.NumberOfBuses())
+    m = size_constraint(polar, network_operations)
     H = AutoDiff.Hessian(polar, network_operations)
-    y = xzeros(VT, 2 * nbus + 1)
-    z = xzeros(VT, nx)
-    ψ = xzeros(VT, nx)
-    tgt = xzeros(VT, nx+nu)
-    hv = xzeros(VT, nx+nu)
-    return HessianLagrangian{VT, typeof(H)}(H, y, z, ψ, tgt, hv)
+    y = VT(undef, m)
+    z = VT(undef, nx)
+    ψ = VT(undef, nx)
+    tgt = VT(undef, nx+nu)
+    hv = VT(undef, nx+nu)
+
+    return HessianLagrangian(H, y, z, ψ, tgt, hv, lu1, lu2)
 end
 
-function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, nbatch) where {T, VI, VT, MT}
+function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, lu1, lu2, nbatch) where {T, VI, VT, MT}
     nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
-    nbus = get(polar, PS.NumberOfBuses())
-    H = AutoDiff.Hessian(polar, network_operations)
-    y = MT(undef, 2 * nbus + 1, nbatch)
-    z = MT(undef, nx, nbatch)
-    ψ = MT(undef, nx, nbatch)
+    m = size_constraint(polar, network_operations)
+    H = BatchHessian(polar, network_operations, nbatch)
+    y   = MT(undef, m, 1)  # adjoint is the same for all batches
+    z   = MT(undef, nx, nbatch)
+    ψ   = MT(undef, nx, nbatch)
     tgt = MT(undef, nx+nu, nbatch)
-    hv = MT(undef, nx+nu, nbatch)
-    return HessianLagrangian{VT, typeof(H)}(H, y, z, ψ, tgt, hv)
+    hv  = MT(undef, nx+nu, nbatch)
+    return HessianLagrangian(H, y, z, ψ, tgt, hv, lu1, lu2)
+end
+
+n_batches(hlag::HessianLagrangian) = size(hlag.z, 2)
+
+function update_factorization!(hlag::HessianLagrangian{VT,Hess,Fac1,Fac2}, J::AbstractSparseMatrix) where {VT<:Array,Hess,Fac1,Fac2}
+    LinearAlgebra.lu!(hlag.lu, J)
+    return
+end
+
+function update_factorization!(hlag::HessianLagrangian{VT,Hess,Fac1,Fac2}, J::AbstractSparseMatrix) where {VT<:CUDA.CuArray,Hess,Fac1,Fac2}
+    LinearAlgebra.lu!(hlag.lu, J)
+    ∇gₓᵀ = CUSPARSE.CuSparseMatrixCSC(J)
+    LinearAlgebra.lu!(hlag.adjlu, ∇gₓᵀ)
+    return
 end
 

@@ -110,8 +110,12 @@ function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray,
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray)
+    LinearAlgebra.ldiv!(s.factorization, y) # Forward-backward solve
+    return 0
+end
 # Solve system A'x = y
-function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, x::Array)
+function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
     LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
     return 0
 end

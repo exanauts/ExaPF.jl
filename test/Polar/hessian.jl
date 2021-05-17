@@ -98,6 +98,7 @@ function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
         ExaPF.active_power_constraints,
         ExaPF.reactive_power_constraints,
         ExaPF.flow_constraints,
+        ExaPF.bus_power_injection,
     ]
         ncons = ExaPF.size_constraint(polar, constraints)
         μ = rand(ncons)
