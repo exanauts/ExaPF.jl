@@ -486,6 +486,8 @@ function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, lu1, lu2, nbatc
     return HessianLagrangian(H, y, z, ψ, tgt, hv, lu1, lu2)
 end
 
+n_batches(hlag::HessianLagrangian) = size(hlag.z, 2)
+
 function update_factorization!(hlag::HessianLagrangian{VT,Hess,Fac1,Fac2}, J::AbstractSparseMatrix) where {VT<:Array,Hess,Fac1,Fac2}
     LinearAlgebra.lu!(hlag.lu, J)
     return

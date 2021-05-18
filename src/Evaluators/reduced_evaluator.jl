@@ -696,8 +696,9 @@ function hessian_lagrangian_penalty_prod_!(
     ∇²Lx, ∇²Lu = full_hessprod!(nlp, hv, μ, tgt)
 
     # Add Hessian of quadratic penalty
-    # diagjac = similar(y, )
-    if false #!iszero(D)
+    m = length(y)
+    diagjac = similar(y, m, nbatch)
+    if !iszero(D)
         _update_full_jacobian_constraints!(nlp)
         Jx = nlp.constraint_jacobians.Jx
         Ju = nlp.constraint_jacobians.Ju

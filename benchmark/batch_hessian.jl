@@ -50,7 +50,9 @@ function build_batch_nlp(datafile, device, nbatch)
     return nlp
 end
 
-function run_batch_hessian(nlp, nbatch)
+function run_batch_hessian(nlp)
+    @assert !isnothing(nlp.hesslag)
+    nbatch = ExaPF.n_batches(nlp.hesslag)
     # Update nlp to stay on manifold
     u = ExaPF.initial(nlp)
     n = ExaPF.n_variables(nlp)
@@ -64,7 +66,6 @@ function run_batch_hessian(nlp, nbatch)
     fill!(g, 0)
     print("Gradient \t")
     @btime ExaPF.gradient!($nlp, $g, $u)
-    println(g[1:10])
 
     if nbatch == 1
         hv = similar(u) ; fill!(hv, 0)
@@ -77,7 +78,6 @@ function run_batch_hessian(nlp, nbatch)
     end
     print("Hessprod \t")
     @btime ExaPF.hessprod_!($nlp, $hv, $u, $v)
-    # println(hv[1:10])
     y = similar(nlp.g_min) ; fill!(y, 1.0)
     w = similar(nlp.g_min) ; fill!(w, 1.0)
     print("HLagPen-prod \t")
