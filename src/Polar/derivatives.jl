@@ -483,7 +483,7 @@ function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, lu1, lu2, nbatc
     ψ   = MT(undef, nx, nbatch)
     tgt = MT(undef, nx+nu, nbatch)
     hv  = MT(undef, nx+nu, nbatch)
-    return HessianLagrangian{MT, typeof(H)}(H, y, z, ψ, tgt, hv, lu1, lu2)
+    return HessianLagrangian(H, y, z, ψ, tgt, hv, lu1, lu2)
 end
 
 function update_factorization!(hlag::HessianLagrangian{VT,Hess,Fac1,Fac2}, J::AbstractSparseMatrix) where {VT<:Array,Hess,Fac1,Fac2}

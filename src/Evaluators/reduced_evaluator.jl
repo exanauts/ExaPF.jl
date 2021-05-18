@@ -447,8 +447,9 @@ function _second_order_adjoint_z!(
     nlp::ReducedSpaceEvaluator, z, w,
 )
     ∇gᵤ = nlp.state_jacobian.u.J
-    mul!(z, ∇gᵤ, w, -1.0, 0.0)
-    LinearSolvers.ldiv!(nlp.linear_solver, z)
+    rhs = nlp.buffer.dx
+    mul!(rhs, ∇gᵤ, w, -1.0, 0.0)
+    _forward_solve!(nlp, z, rhs)
 end
 
 # ψ = -(∇gₓ' \ (∇²fₓₓ .+ λ ∇²gₓₓ) * w)
@@ -574,7 +575,8 @@ function hessprod_!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     ∂fₓ, ∂fᵤ = full_hessprod!(nlp, hv, y, tgt)
 
     # STEP 3: computation of second second-order adjoint
-    LinearAlgebra.ldiv!(ψ, H.adjlu, ∂fₓ)
+    copyto!(ψ, ∂fₓ)
+    LinearAlgebra.ldiv!(H.adjlu, ψ)
 
     hessvec .= ∂fᵤ
     mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
@@ -649,6 +651,7 @@ function hessian_lagrangian_penalty_prod_!(
 )
     @assert nlp.hesslag != nothing
 
+    nbatch = size(w, 2)
     nx = get(nlp.model, NumberOfState())
     nu = get(nlp.model, NumberOfControl())
     buffer = nlp.buffer
@@ -668,9 +671,14 @@ function hessian_lagrangian_penalty_prod_!(
     tgt = H.tmp_tgt
     hv = H.tmp_hv
 
-    # Init tangent
-    tgt[1:nx] .= z
-    tgt[1+nx:nx+nu] .= w
+    # Init tangent with z and w
+    for i in 1:nbatch
+        mxu = 1 + (i-1)*(nx+nu)
+        mx = 1 + (i-1)*nx
+        mu = 1 + (i-1)*nu
+        copyto!(tgt, mxu,    z, mx, nx)
+        copyto!(tgt, mxu+nx, w, mu, nu)
+    end
 
     ## OBJECTIVE HESSIAN
     fill!(μ, 0.0)
@@ -685,13 +693,11 @@ function hessian_lagrangian_penalty_prod_!(
         shift += m
     end
 
-    AutoDiff.adj_hessian_prod!(nlp.model, H.hess, hv, buffer, μ, tgt)
-    ∇²Lx = hv[1:nx]
-    ∇²Lu = hv[nx+1:nx+nu]
+    ∇²Lx, ∇²Lu = full_hessprod!(nlp, hv, μ, tgt)
 
     # Add Hessian of quadratic penalty
-    diagjac = similar(y)
-    if !iszero(D)
+    # diagjac = similar(y, )
+    if false #!iszero(D)
         _update_full_jacobian_constraints!(nlp)
         Jx = nlp.constraint_jacobians.Jx
         Ju = nlp.constraint_jacobians.Ju
@@ -705,7 +711,8 @@ function hessian_lagrangian_penalty_prod_!(
     end
 
     # Second order adjoint
-    LinearAlgebra.ldiv!(ψ, H.adjlu, ∇²Lx)
+    copyto!(ψ, ∇²Lx)
+    LinearAlgebra.ldiv!(H.adjlu, ψ)
 
     hessvec .+= ∇²Lu
     mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)

@@ -23,14 +23,24 @@ function build_batch_nlp(datafile, device, nbatch)
     if isa(device, CPU)
         lufac = lu(J)
         linear_solver = LS.DirectSolver(lufac)
-        hessian_lagrangian = ExaPF.HessianLagrangian(polar, lufac, lufac')
+        if nbatch == 1
+            hessian_lagrangian = ExaPF.HessianLagrangian(polar, lufac, lufac')
+        else
+            hessian_lagrangian = ExaPF.BatchHessianLagrangian(polar, lufac, lufac', nbatch)
+        end
     else
         gJ = CuSparseMatrixCSR(J)
         lufac = CUSOLVERRF.CusolverRfLU(gJ)
-        blufac = CUSOLVERRF.CusolverRfLU(gJ)
-        badjlu = CUSOLVERRF.CusolverRfLU(CuSparseMatrixCSC(J))
         linear_solver = LS.DirectSolver(lufac)
-        hessian_lagrangian = ExaPF.HessianLagrangian(polar, blufac, badjlu)
+        if nbatch == 1
+            blufac = CUSOLVERRF.CusolverRfLU(gJ)
+            badjlu = CUSOLVERRF.CusolverRfLU(CuSparseMatrixCSC(J))
+            hessian_lagrangian = ExaPF.HessianLagrangian(polar, blufac, badjlu)
+        else
+            blufac = CUSOLVERRF.CusolverRfLUBatch(gJ, nbatch)
+            badjlu = CUSOLVERRF.CusolverRfLUBatch(CuSparseMatrixCSC(J), nbatch)
+            hessian_lagrangian = ExaPF.BatchHessianLagrangian(polar, blufac, badjlu, nbatch)
+        end
     end
 
     nlp = @time ExaPF.ReducedSpaceEvaluator(polar; constraints=constraints,
@@ -40,9 +50,10 @@ function build_batch_nlp(datafile, device, nbatch)
     return nlp
 end
 
-function run_batch_hessian(nlp)
+function run_batch_hessian(nlp, nbatch)
     # Update nlp to stay on manifold
     u = ExaPF.initial(nlp)
+    n = ExaPF.n_variables(nlp)
     print("Update   \t")
     @time ExaPF.update!(nlp, u)
     # Compute objective
@@ -53,22 +64,24 @@ function run_batch_hessian(nlp)
     fill!(g, 0)
     print("Gradient \t")
     @btime ExaPF.gradient!($nlp, $g, $u)
+    println(g[1:10])
 
-    hv = similar(u) ; fill!(hv, 0)
-    v = similar(u) ; fill!(v, 0)
-    v[1] = 1
+    if nbatch == 1
+        hv = similar(u) ; fill!(hv, 0)
+        v = similar(u) ; fill!(v, 0)
+        v[1] = 1.0
+    else
+        hv = similar(u, n, nbatch) ; fill!(hv, 0)
+        v = similar(u, n, nbatch) ; fill!(v, 0)
+        v[1, :] .= 1.0
+    end
     print("Hessprod \t")
     @btime ExaPF.hessprod_!($nlp, $hv, $u, $v)
+    # println(hv[1:10])
     y = similar(nlp.g_min) ; fill!(y, 1.0)
     w = similar(nlp.g_min) ; fill!(w, 1.0)
     print("HLagPen-prod \t")
     @btime ExaPF.hessian_lagrangian_penalty_prod_!($nlp, $hv, $u, $y, 1.0, $v, $w)
-
-    print("Hessian \t")
-    n = ExaPF.n_variables(nlp)
-    hess = similar(u, n, n)
-    @time ExaPF.batch_hessian!(nlp, hess, u)
-    @time ExaPF.batch_hessian!(nlp, hess, u)
     return
 end
 
