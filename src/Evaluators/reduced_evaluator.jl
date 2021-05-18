@@ -524,13 +524,14 @@ function full_hessprod!(nlp::ReducedSpaceEvaluator, hv::AbstractVector, y::Abstr
     ∂fᵤ = @view hv[nx+1:nx+nu]
     return ∂fₓ , ∂fᵤ
 end
+
 # Batch version
 function full_hessprod!(nlp::ReducedSpaceEvaluator, hv::AbstractMatrix, y::AbstractMatrix, tgt::AbstractMatrix)
     nx, nu = get(nlp.model, NumberOfState()), get(nlp.model, NumberOfControl())
     H = nlp.hesslag
     batch_adj_hessian_prod!(nlp.model, H.hess, hv, nlp.buffer, y, tgt)
-    ∂fₓ = @view hv[1:nx, :]
-    ∂fᵤ = @view hv[nx+1:nx+nu, :]
+    ∂fₓ = hv[1:nx, :]
+    ∂fᵤ = hv[nx+1:nx+nu, :]
     return ∂fₓ , ∂fᵤ
 end
 
@@ -697,19 +698,17 @@ function hessian_lagrangian_penalty_prod_!(
 
     # Add Hessian of quadratic penalty
     m = length(y)
-    diagjac = similar(y, m, nbatch)
-    if !iszero(D)
-        _update_full_jacobian_constraints!(nlp)
-        Jx = nlp.constraint_jacobians.Jx
-        Ju = nlp.constraint_jacobians.Ju
-        # ∇²Lx .+= Jx' * (D * (Jx * z)) .+ Jx' * (D * (Ju * w))
-        # ∇²Lu .+= Ju' * (D * (Jx * z)) .+ Ju' * (D * (Ju * w))
-        mul!(diagjac, Jx, z)
-        mul!(diagjac, Ju, w, 1.0, 1.0)
-        diagjac .*= D
-        mul!(∇²Lx, Jx', diagjac, 1.0, 1.0)
-        mul!(∇²Lu, Ju', diagjac, 1.0, 1.0)
-    end
+    diagjac = (nbatch > 1) ? similar(y, m, nbatch) : similar(y)
+    _update_full_jacobian_constraints!(nlp)
+    Jx = nlp.constraint_jacobians.Jx
+    Ju = nlp.constraint_jacobians.Ju
+    # ∇²Lx .+= Jx' * (D * (Jx * z)) .+ Jx' * (D * (Ju * w))
+    # ∇²Lu .+= Ju' * (D * (Jx * z)) .+ Ju' * (D * (Ju * w))
+    mul!(diagjac, Jx, z)
+    mul!(diagjac, Ju, w, 1.0, 1.0)
+    diagjac .*= D
+    mul!(∇²Lx, Jx', diagjac, 1.0, 1.0)
+    mul!(∇²Lu, Ju', diagjac, 1.0, 1.0)
 
     # Second order adjoint
     copyto!(ψ, ∇²Lx)
