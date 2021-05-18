@@ -449,7 +449,7 @@ function HessianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Fun
     return HessianStorage{VT, typeof(Hstate), typeof(Hobj)}(Hstate, Hobj, Hcons, z, ψ, tgt, hv)
 end
 
-struct HessianLagrangian{VT,Hess}
+struct HessianLagrangian{VT,Hess,Fac1,Fac2}
     hess::Hess
     # Adjoints
     y::VT
@@ -457,9 +457,11 @@ struct HessianLagrangian{VT,Hess}
     ψ::VT
     tmp_tgt::VT
     tmp_hv::VT
+    lu::Fac1
+    adjlu::Fac2
 end
 
-function HessianLagrangian(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+function HessianLagrangian(polar::PolarForm{T, VI, VT, MT}, lu1, lu2) where {T, VI, VT, MT}
     nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
     m = size_constraint(polar, network_operations)
     H = AutoDiff.Hessian(polar, network_operations)
@@ -468,10 +470,11 @@ function HessianLagrangian(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT
     ψ = VT(undef, nx)
     tgt = VT(undef, nx+nu)
     hv = VT(undef, nx+nu)
-    return HessianLagrangian{VT, typeof(H)}(H, y, z, ψ, tgt, hv)
+
+    return HessianLagrangian(H, y, z, ψ, tgt, hv, lu1, lu2)
 end
 
-function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, nbatch) where {T, VI, VT, MT}
+function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, lu1, lu2, nbatch) where {T, VI, VT, MT}
     nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
     m = size_constraint(polar, network_operations)
     H = BatchHessian(polar, network_operations, nbatch)
@@ -480,6 +483,18 @@ function BatchHessianLagrangian(polar::PolarForm{T, VI, VT, MT}, nbatch) where {
     ψ   = MT(undef, nx, nbatch)
     tgt = MT(undef, nx+nu, nbatch)
     hv  = MT(undef, nx+nu, nbatch)
-    return HessianLagrangian{MT, typeof(H)}(H, y, z, ψ, tgt, hv)
+    return HessianLagrangian{MT, typeof(H)}(H, y, z, ψ, tgt, hv, lu1, lu2)
+end
+
+function update_factorization!(hlag::HessianLagrangian{VT,Hess,Fac1,Fac2}, J::AbstractSparseMatrix) where {VT<:Array,Hess,Fac1,Fac2}
+    LinearAlgebra.lu!(hlag.lu, J)
+    return
+end
+
+function update_factorization!(hlag::HessianLagrangian{VT,Hess,Fac1,Fac2}, J::AbstractSparseMatrix) where {VT<:CUDA.CuArray,Hess,Fac1,Fac2}
+    LinearAlgebra.lu!(hlag.lu, J)
+    ∇gₓᵀ = CUSPARSE.CuSparseMatrixCSC(J)
+    LinearAlgebra.lu!(hlag.adjlu, ∇gₓᵀ)
+    return
 end
 

@@ -56,7 +56,7 @@ function hessian!(nlp::AbstractNLPEvaluator, hess, x)
         hv = @view hess[:, i]
         fill!(v, 0)
         v[i] = 1.0
-        hessprod_!(nlp, hv, x, v)
+        hessprod!(nlp, hv, x, v)
     end
 end
 
@@ -107,7 +107,7 @@ function hessian_lagrangian_penalty!(nlp::AbstractNLPEvaluator, hess, x, y, σ, 
         hv = @view hess[:, i]
         fill!(v, 0)
         v[i] = 1.0
-        hessian_lagrangian_penalty_prod_!(nlp, hv, x, y, σ, v, D)
+        hessian_lagrangian_penalty_prod!(nlp, hv, x, y, σ, v, D)
     end
 end
 

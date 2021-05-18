@@ -97,7 +97,7 @@ function ReducedSpaceEvaluator(
     powerflow_solver=NewtonRaphson(tol=1e-12),
     want_jacobian=true,
     want_hessian=true,
-    nbatch_hessian=1,
+    hessian_lagrangian=nothing,
 ) where {T, VI, VT, MT}
     # First, build up a network buffer
     buffer = get(model, PhysicalState())
@@ -133,18 +133,13 @@ function ReducedSpaceEvaluator(
     hess_ad = nothing
     if want_hessian
         hess_ad = HessianStorage(model, constraints)
-        hess_lag = if nbatch_hessian == 1
-            HessianLagrangian(model)
-        else
-            BatchHessianLagrangian(model, nbatch_hessian)
-        end
     end
 
     return ReducedSpaceEvaluator(
         model, λ, u_min, u_max,
         constraints, g_min, g_max,
         buffer,
-        state_ad, obj_ad, cons_ad, cons_jac, hess_ad, hess_lag,
+        state_ad, obj_ad, cons_ad, cons_jac, hess_ad, hessian_lagrangian,
         linear_solver, powerflow_solver, want_jacobian, false, want_hessian,
     )
 end
@@ -232,6 +227,11 @@ function update!(nlp::ReducedSpaceEvaluator, u)
     AutoDiff.jacobian!(nlp.model, nlp.state_jacobian.u, nlp.buffer)
     # Specify that constraint's Jacobian is not up to date
     nlp.update_jacobian = nlp.has_jacobian
+    # Update Hessian factorization
+    if !isnothing(nlp.hesslag)
+        ∇gₓ = nlp.state_jacobian.x.J
+        update_factorization!(nlp.hesslag, ∇gₓ)
+    end
     return conv
 end
 
@@ -451,7 +451,7 @@ function _second_order_adjoint_z!(
     LinearSolvers.ldiv!(nlp.linear_solver, z)
 end
 
-# ψ = -(∇gₓ' \ (∇²fₓₓ .+ ∇²gₓₓ))
+# ψ = -(∇gₓ' \ (∇²fₓₓ .+ λ ∇²gₓₓ) * w)
 function _second_order_adjoint_ψ!(
     nlp::ReducedSpaceEvaluator, ψ, ∂fₓ,
 )
@@ -534,7 +534,7 @@ function full_hessprod!(nlp::ReducedSpaceEvaluator, hv::AbstractMatrix, y::Abstr
 end
 
 function hessprod_!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
-    @assert nlp.hessians != nothing
+    @assert nlp.hesslag != nothing
 
     nx = get(nlp.model, NumberOfState())
     nu = get(nlp.model, NumberOfControl())
@@ -553,7 +553,8 @@ function hessprod_!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     ψ = H.ψ
 
     # Step 1: computation of first second-order adjoint
-    _second_order_adjoint_z!(nlp, z, w)
+    mul!(z, ∇gᵤ, w, -1.0, 0.0)
+    LinearAlgebra.ldiv!(H.lu, z)
 
     # Init tangent with z and w
     for i in 1:nbatch
@@ -573,7 +574,7 @@ function hessprod_!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
     ∂fₓ, ∂fᵤ = full_hessprod!(nlp, hv, y, tgt)
 
     # STEP 3: computation of second second-order adjoint
-    _second_order_adjoint_ψ!(nlp, ψ, ∂fₓ)
+    LinearAlgebra.ldiv!(ψ, H.adjlu, ∂fₓ)
 
     hessvec .= ∂fᵤ
     mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
@@ -646,7 +647,7 @@ end
 function hessian_lagrangian_penalty_prod_!(
     nlp::ReducedSpaceEvaluator, hessvec, u, y, σ, w, D,
 )
-    @assert nlp.hessians != nothing
+    @assert nlp.hesslag != nothing
 
     nx = get(nlp.model, NumberOfState())
     nu = get(nlp.model, NumberOfControl())
@@ -658,7 +659,9 @@ function hessian_lagrangian_penalty_prod_!(
 
     z = H.z
     ψ = H.ψ
-    _second_order_adjoint_z!(nlp, z, w)
+    ∇gᵤ = nlp.state_jacobian.u.J
+    mul!(z, ∇gᵤ, w, -1.0, 0.0)
+    LinearAlgebra.ldiv!(H.lu, z)
 
     # Two vector products
     μ = H.y
@@ -702,7 +705,7 @@ function hessian_lagrangian_penalty_prod_!(
     end
 
     # Second order adjoint
-    _second_order_adjoint_ψ!(nlp, ψ, ∇²Lx)
+    LinearAlgebra.ldiv!(ψ, H.adjlu, ∇²Lx)
 
     hessvec .+= ∇²Lu
     mul!(hessvec, transpose(∇gᵤ), ψ, -1.0, 1.0)
