@@ -37,27 +37,36 @@ $m$ slack variables $s_1, ⋯, s_m$. The new problem writes out
 - `ns::Int`: number of slack variables
 
 """
-mutable struct SlackEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT} <: AbstractNLPEvaluator
+mutable struct SlackEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT,MT} <: AbstractNLPEvaluator
     inner::Evaluator
     s_min::VT
     s_max::VT
     nv::Int
     ns::Int
+    bridge::BridgeDevice{VT, MT}
 end
-function SlackEvaluator(nlp::AbstractNLPEvaluator)
+function SlackEvaluator(nlp::AbstractNLPEvaluator, device)
     if !is_constrained(nlp)
         error("Input problem must have inequality constraints")
     end
     nv, ns = n_variables(nlp), n_constraints(nlp)
     s_min, s_max = bounds(nlp, Constraints())
-    return SlackEvaluator{typeof(nlp), eltype(s_min), typeof(s_min)}(nlp, s_min, s_max, nv, ns)
+    if isa(device, CPU)
+        VT = Array{Float64, 1}
+        MT = Array{Float64, 2}
+    else
+        VT = CuArray{Float64, 1}
+        MT = CuArray{Float64, 2}
+    end
+    bridge = BridgeDevice(nv, ns, VT, MT)
+    return SlackEvaluator{typeof(nlp), eltype(s_min), VT, MT}(nlp, s_min, s_max, nv, ns, bridge)
 end
 function SlackEvaluator(
     datafile::String;
     device=KA.CPU(), options...
 )
     nlp = ReducedSpaceEvaluator(datafile; device=device)
-    return SlackEvaluator(nlp)
+    return SlackEvaluator(nlp, device)
 end
 
 n_variables(nlp::SlackEvaluator) = nlp.nv + nlp.ns
@@ -94,20 +103,22 @@ end
 
 function update!(nlp::SlackEvaluator, w)
     u = @view w[1:nlp.nv]
-    return update!(nlp.inner, u)
+    copyto!(nlp.bridge.u, u)
+    return update!(nlp.inner, nlp.bridge.u)
 end
 
 # f(x) = f₀(u)   , with x = (u, s)
 function objective(nlp::SlackEvaluator, w)
     u = @view w[1:nlp.nv]
-    return objective(nlp.inner, u)
+    return objective(nlp.inner, nlp.bridge.u)
 end
 
 # h(x) = h₀(u) - s
 function constraint!(nlp::SlackEvaluator, cons, w)
     u = @view w[1:nlp.nv]
     s = @view w[nlp.nv+1:end]
-    constraint!(nlp.inner, cons, u)
+    constraint!(nlp.inner, nlp.bridge.cons, nlp.bridge.u)
+    copyto!(cons, nlp.bridge.cons)
     cons .-= s
     return
 end
@@ -118,7 +129,8 @@ function gradient!(nlp::SlackEvaluator, grad, w)
     # w.r.t. u
     u = @view w[1:nlp.nv]
     gu = @view grad[1:nlp.nv]
-    gradient!(nlp.inner, gu, u)
+    gradient!(nlp.inner, nlp.bridge.g, nlp.bridge.u)
+    copyto!(gu, nlp.bridge.g)
     # w.r.t. s
     gs = @view grad[nlp.nv+1:end]
     fill!(gs, 0.0)
@@ -134,7 +146,9 @@ function jtprod!(nlp::SlackEvaluator, jv, w, v)
     # w.r.t. u
     u = @view w[1:nlp.nv]
     jvu = @view jv[1:nlp.nv]
-    jtprod!(nlp.inner, jvu, u, v)
+    copyto!(nlp.bridge.v, v)
+    jtprod!(nlp.inner, nlp.bridge.jv, nlp.bridge.u, nlp.bridge.v)
+    copyto!(jvu, nlp.bridge.jv)
     # w.r.t. s
     jvs = @view jv[nlp.nv+1:end]
     jvs .= -v
@@ -157,7 +171,9 @@ function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
     # w.r.t. u
     u = @view w[1:nlp.nv]
     jvu = @view jv[1:nlp.nv]
-    ojtprod!(nlp.inner, jvu, u, σ, v)
+    copyto!(nlp.bridge.v, v)
+    ojtprod!(nlp.inner, nlp.bridge.jv, nlp.bridge.u, σ, nlp.bridge.v)
+    copyto!(jvu, nlp.bridge.jv)
     # w.r.t. s
     jvs = @view jv[nlp.nv+1:end]
     jvs .= -v
@@ -230,6 +246,42 @@ function hessian_lagrangian_penalty!(
         D = Diagonal(w)
         Jᵤ = similar(Hᵥᵤ) ; fill!(Jᵤ, 0.0)
         jacobian!(nlp.inner, Jᵤ, u)
+        mul!(Hᵤᵥ, Jᵤ', -D)
+        mul!(Hᵥᵤ, - D, Jᵤ)
+        fill!(Hᵥᵥ, 0)
+        @inbounds for i in 1:nlp.ns
+            Hᵥᵥ[i, i] = w[i]
+        end
+    else
+        fill!(Hᵤᵥ, 0)
+        fill!(Hᵥᵤ, 0)
+        fill!(Hᵥᵥ, 0)
+    end
+end
+
+function batch_hessian_lagrangian_penalty!(
+    nlp::SlackEvaluator, H, x, y, σ, w,
+)
+    n = n_variables(nlp)
+    @views begin
+        u   = x[1:nlp.nv]
+        Hᵤᵤ = H[1:nlp.nv, 1:nlp.nv]
+        Hᵤᵥ = H[1:nlp.nv, 1+nlp.nv:n]
+        Hᵥᵤ = H[1+nlp.nv:n, 1:nlp.nv]
+        Hᵥᵥ = H[1+nlp.nv:n, 1+nlp.nv:n]
+    end
+    # w.r.t. uu
+    # ∇²L + ρ Jᵤ' * Jᵤ
+    copyto!(nlp.bridge.w, w)
+    copyto!(nlp.bridge.y, y)
+    batch_hessian_lagrangian_penalty!(nlp.inner, nlp.bridge.H, nlp.bridge.u, nlp.bridge.y, σ, nlp.bridge.w)
+    copyto!(Hᵤᵤ, nlp.bridge.H)
+
+    if !iszero(w)
+        D = Diagonal(w)
+        Jᵤ = similar(Hᵥᵤ) ; fill!(Jᵤ, 0.0)
+        batch_jacobian!(nlp.inner, nlp.bridge.J, nlp.bridge.u)
+        copyto!(Jᵤ, nlp.bridge.J)
         mul!(Hᵤᵥ, Jᵤ', -D)
         mul!(Hᵥᵤ, - D, Jᵤ)
         fill!(Hᵥᵥ, 0)
