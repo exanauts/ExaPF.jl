@@ -401,6 +401,30 @@ function jprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
     return
 end
 
+function jprod_!(nlp::ReducedSpaceEvaluator, jm, u, v)
+    nᵤ = length(u)
+    m  = n_constraints(nlp)
+    @assert nᵤ == size(v, 1)
+
+    _update_full_jacobian_constraints!(nlp)
+    H = nlp.hesslag
+    ∇gᵤ = nlp.state_jacobian.u.J
+
+    # Arrays
+    Jx = nlp.constraint_jacobians.Jx
+    Ju = nlp.constraint_jacobians.Ju
+    z = H.z
+
+    # init RHS
+    mul!(z, ∇gᵤ, v)
+    LinearAlgebra.ldiv!(H.lu, z)
+
+    # jv .= Ju * v .- Jx * z
+    mul!(jm, Ju, v)
+    mul!(jm, Jx, z, -1.0, 1.0)
+    return
+end
+
 function full_jtprod!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
     fr_ = 0::Int
     for (cons, stack) in zip(nlp.constraints, nlp.cons_stacks)
