@@ -710,12 +710,14 @@ function hessian_lagrangian_penalty_prod_!(
     μ[1:nx] .-= nlp.λ  # / power balance
     μ[end] = σ         # / objective
     # / constraints
-    shift = 0
+    shift_m = nx
+    shift_y = size_constraint(nlp.model, voltage_magnitude_constraints)
     for cons in nlp.constraints
         isa(cons, typeof(voltage_magnitude_constraints)) && continue
         m = size_constraint(nlp.model, cons)::Int
-        μ[nx+1+shift:nx+m+shift] .= view(y, shift+1:shift+m)
-        shift += m
+        μ[shift_m+1:m+shift_m] .= view(y, shift_y+1:shift_y+m)
+        shift_m += m
+        shift_y += m
     end
 
     ∇²Lx, ∇²Lu = full_hessprod!(nlp, hv, μ, tgt)

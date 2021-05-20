@@ -37,29 +37,35 @@ $m$ slack variables $s_1, ⋯, s_m$. The new problem writes out
 - `ns::Int`: number of slack variables
 
 """
-mutable struct SlackEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT,MT} <: AbstractNLPEvaluator
+mutable struct SlackEvaluator{Evaluator<:AbstractNLPEvaluator, T, VT, Bridge} <: AbstractNLPEvaluator
     inner::Evaluator
     s_min::VT
     s_max::VT
     nv::Int
     ns::Int
-    bridge::BridgeDevice{VT, MT}
+    bridge::Bridge
 end
 function SlackEvaluator(nlp::AbstractNLPEvaluator, device)
     if !is_constrained(nlp)
         error("Input problem must have inequality constraints")
     end
     nv, ns = n_variables(nlp), n_constraints(nlp)
+    # Target device
+    VT = isa(device, CPU) ? Vector{Float64} : CuVector{Float64}
     s_min, s_max = bounds(nlp, Constraints())
-    if isa(device, CPU)
-        VT = Array{Float64, 1}
-        MT = Array{Float64, 2}
+    s_min = s_min |> VT
+    s_max = s_max |> VT
+
+    # Deporting device
+    if isa(nlp.model.device, CPU)
+        VTD = Array{Float64, 1}
+        MTD = Array{Float64, 2}
     else
-        VT = CuArray{Float64, 1}
-        MT = CuArray{Float64, 2}
+        VTD = CUDA.CuArray{Float64, 1}
+        MTD = CUDA.CuArray{Float64, 2}
     end
-    bridge = BridgeDevice(nv, ns, VT, MT)
-    return SlackEvaluator{typeof(nlp), eltype(s_min), VT, MT}(nlp, s_min, s_max, nv, ns, bridge)
+    bridge = BridgeDevice(nv, ns, VTD, MTD)
+    return SlackEvaluator{typeof(nlp), eltype(s_min), VT, typeof(bridge)}(nlp, s_min, s_max, nv, ns, bridge)
 end
 function SlackEvaluator(
     datafile::String;
@@ -86,19 +92,19 @@ function setvalues!(nlp::SlackEvaluator, attr::PS.AbstractNetworkValues, values)
 end
 
 # Bounds
-function bounds(nlp::SlackEvaluator, ::Variables)
+function bounds(nlp::SlackEvaluator{Ev, T, VT, B}, ::Variables) where {Ev, T, VT, B}
     u♭, u♯ = bounds(nlp.inner, Variables())
-    return [u♭; nlp.s_min], [u♯; nlp.s_max]
+    return [u♭; nlp.s_min] |> VT , [u♯; nlp.s_max] |> VT
 end
-function bounds(nlp::SlackEvaluator{Ev, T, VT}, ::Constraints) where {Ev, T, VT}
+function bounds(nlp::SlackEvaluator{Ev, T, VT, B}, ::Constraints) where {Ev, T, VT, B}
     return (VT(zeros(nlp.ns)), VT(zeros(nlp.ns)))
 end
 
-function initial(nlp::SlackEvaluator)
+function initial(nlp::SlackEvaluator{Ev, T, VT, B}) where {Ev, T, VT, B}
     u0 = initial(nlp.inner)
     update!(nlp.inner, u0)
     cons = constraint(nlp.inner, u0)
-    return [u0; -cons]
+    return [u0; -cons] |> VT
 end
 
 function update!(nlp::SlackEvaluator, w)
@@ -229,7 +235,6 @@ end
 function hessian_lagrangian_penalty!(
     nlp::SlackEvaluator, H, x, y, σ, w,
 )
-
     n = n_variables(nlp)
     @views begin
         u   = x[1:nlp.nv]
@@ -274,8 +279,10 @@ function batch_hessian_lagrangian_penalty!(
     # ∇²L + ρ Jᵤ' * Jᵤ
     copyto!(nlp.bridge.w, w)
     copyto!(nlp.bridge.y, y)
+    H = similar(Hᵤᵤ)
     batch_hessian_lagrangian_penalty!(nlp.inner, nlp.bridge.H, nlp.bridge.u, nlp.bridge.y, σ, nlp.bridge.w)
-    copyto!(Hᵤᵤ, nlp.bridge.H)
+    copyto!(H, nlp.bridge.H)
+    Hᵤᵤ .= H
 
     if !iszero(w)
         D = Diagonal(w)
