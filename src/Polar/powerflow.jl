@@ -54,7 +54,7 @@ function powerflow(
     power_balance(polar, F, buffer)
 
     # check for convergence
-    normF = norm(F, Inf)
+    normF = xnorm(F)
     if algo.verbose >= VERBOSE_LEVEL_LOW
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
     end
