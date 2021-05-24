@@ -8,6 +8,26 @@ Preconditioners for the iterative solvers mostly focused on GPUs
 abstract type AbstractPreconditioner end
 
 """
+      overlap(Graph, subset, level)
+Given subset embedded within Graph, compute subset2 such that
+subset2 contains subset and all of its adjacent vertices.
+"""
+function overlap(Graph, subset; level=1)
+
+  @assert level > 0
+  subset2 = [LightGraphs.neighbors(Graph, v) for v in subset]
+  subset2 = reduce(vcat, subset2)
+  subset2 = sort(unique(vcat(subset, subset2)))
+
+  level -= 1
+  if level == 0
+    return subset2
+  else
+    return overlap(Graph, subset2, level=level)
+  end
+end
+
+"""
     BlockJacobiPreconditioner
 
 Creates an object for the block-Jacobi preconditioner
@@ -39,7 +59,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
     cupart::Union{GVI,Nothing}
     P::SMT
     id::Union{GMT,MT}
-    function BlockJacobiPreconditioner(J, npart, device=CPU()) where {}
+    function BlockJacobiPreconditioner(J, npart, device=CPU(), olevel=0) where {}
         if device == CPU()
             AT  = Array{Float64,3}
             GAT = Nothing
@@ -79,6 +99,12 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
         for (i,v) in enumerate(part)
             push!(partitions[v], i)
         end
+        # overlap
+        if olevel > 0
+            for i in 1:npart
+                partitions[i] = overlap(g, partitions[i], level=olevel)
+            end
+        end
         lpartitions = VI(undef, npart)
         lpartitions = length.(partitions)
         blocksize = maximum(length.(partitions))
@@ -105,6 +131,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
                 part[el] = b
             end
         end
+
         row = Vector{Float64}()
         col = Vector{Float64}()
         nzval = Vector{Float64}()
@@ -281,14 +308,28 @@ end
             p.blocks[i,j,b] = p.id[i,j]
         end
     end
+    #for k in 1:lpartitions[b]
+    #    i = p.partitions[k,b]
+    #    println(i)
+    #    for j in colptr[i]:colptr[i+1]-1
+    #        if b == p.part[rowval[j]]
+    #            @inbounds p.blocks[p.map[rowval[j]], p.map[i], b] = nzval[j]
+    #        end
+    #    end
+    #end
     for k in 1:lpartitions[b]
-        i = p.partitions[k,b]
-        for j in colptr[i]:colptr[i+1]-1
-            if b == p.part[rowval[j]]
-                @inbounds p.blocks[p.map[rowval[j]], p.map[i], b] = nzval[j]
+        i = p.partitions[k, b]
+        for col_ptr in colptr[i]:(colptr[i + 1] - 1)
+            col = rowval[col_ptr]
+            ptr = findfirst(x -> x==col, p.partitions[:, b])
+            if typeof(ptr) != Nothing
+                # Here we assume the natural order of the partition
+                # matches that of the block.
+                @inbounds p.blocks[k, ptr, b] = nzval[col_ptr]
             end
         end
     end
+
     # Invert blocks
     p.blocks[:,:,b] .= inv(p.blocks[:,:,b])
     # Move blocks to P
