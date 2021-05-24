@@ -17,7 +17,7 @@ function overlap(Graph, subset; level=1)
   @assert level > 0
   subset2 = [LightGraphs.neighbors(Graph, v) for v in subset]
   subset2 = reduce(vcat, subset2)
-  subset2 = sort(unique(vcat(subset, subset2)))
+  subset2 = unique(vcat(subset, subset2))
 
   level -= 1
   if level == 0
@@ -51,6 +51,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
     cupartitions::Union{GMI,Nothing}
     lpartitions::VI
     culpartitions::Union{GVI,Nothing}
+    rest_size::VI
+    curest_size::Union{GVI,Nothing}
     blocks::AT
     cublocks::Union{GAT,Nothing}
     map::VI
@@ -105,6 +107,10 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
         for (i,v) in enumerate(part)
             push!(partitions[v], i)
         end
+        # We keep track of the partition size pre-overlap.
+        # This will allow us to implement the RAS update.
+        rest_size = VI(undef, npart)
+        rest_size = length.(partitions)
         # overlap
         if olevel > 0
             for i in 1:npart
@@ -157,6 +163,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             id = GMT(I, blocksize, blocksize)
             cubpartitions = GMI(bpartitions)
             culpartitions = GVI(lpartitions)
+            curest_size = GVI(rest_size)
             cublocks = GAT(blocks)
             cumap = CUDA.cu(map)
             cupart = CUDA.cu(part)
@@ -169,9 +176,10 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             cupart = nothing
             id = MT(I, blocksize, blocksize)
             culpartitions = nothing
+            curest_size = nothing
             cuyaux = nothing
         end
-        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, blocks, cublocks, map, cumap, part, cupart, P, id, yaux, cuyaux)
+        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, P, id, yaux, cuyaux)
     end
 end
 
@@ -184,7 +192,10 @@ Base.eltype(::BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}) where 
         rlen = C.lpartitions[i]
         part = C.partitions[1:rlen, i]
         blck = C.blocks[1:rlen, 1:rlen, i]
-        C.yaux[part] .+= blck*b[part]
+        for j=1:C.rest_size[i]
+            idx = part[j]
+            C.yaux[idx] += dot(blck[j, :], b[part])
+        end
     end
     return C.yaux
 end
@@ -353,6 +364,7 @@ end
             end
         end
     end
+
 end
 
 """
