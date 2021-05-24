@@ -214,8 +214,8 @@ KrylovBICGSTAB(precond; verbose=0, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(prec
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
-    P = solver.precond.P
-    #P = solver.precond
+    #P = solver.precond.P
+    P = solver.precond
     (y[:], status) = Krylov.bicgstab(J, x, M=P,
                                      atol=solver.atol,
                                      rtol=solver.rtol,
