@@ -185,7 +185,6 @@ Base.eltype(::BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}) where 
     n = size(b, 1)
     y = Vector{Float64}(undef, n)
     y .= 0.0
-
     for i=1:C.nblocks
         # Some of the blocks have dummy 0's appended to the partition. We need to work with
         # the sub-set that does not include them.
@@ -197,7 +196,6 @@ Base.eltype(::BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}) where 
         end
         part = C.partitions[1:rlen, i]
         blck = C.blocks[1:rlen, 1:rlen, i]
-
         y[part] += blck*b[part]
     end
     return y
@@ -334,11 +332,12 @@ end
         i = p.partitions[k, b]
         for col_ptr in colptr[i]:(colptr[i + 1] - 1)
             col = rowval[col_ptr]
+
             ptr = findfirst(x -> x==col, p.partitions[:, b])
             if typeof(ptr) != Nothing
                 # Here we assume the natural order of the partition
                 # matches that of the block.
-                @inbounds p.blocks[k, ptr, b] = nzval[col_ptr]
+                @inbounds p.blocks[ptr, k, b] = nzval[col_ptr]
             end
         end
     end

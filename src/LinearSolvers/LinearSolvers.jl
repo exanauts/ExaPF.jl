@@ -293,7 +293,7 @@ function ldiv!(solver::KrylovBICGSTAB,
 )
     CUDA.allowscalar() do
         Krylov.bicgstab!(solver.inner, J, x;
-                                        M=solver.precond.P,
+                                        M=solver.precond,
                                         atol=solver.atol,
                                         rtol=solver.rtol,
                                         verbose=solver.verbose)
