@@ -47,7 +47,7 @@ Creates an object for the block-Jacobi preconditioner
 * `cupart`: `part` transferred to the GPU
 * `P`: The sparse precondition matrix whose values are updated at each iteration
 """
-struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPreconditioner
+struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: AbstractPreconditioner
     nblocks::Int64
     blocksize::Int64
     partitions::MI
@@ -62,6 +62,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
     cupart::Union{GVI,Nothing}
     P::SMT
     id::Union{GMT,MT}
+    yaux::VF
+    cuyaux::Union{GVF,Nothing}
     function BlockJacobiPreconditioner(J, npart, device=CPU(), olevel=0) where {}
         if isa(device, CPU)
             AT  = Array{Float64,3}
@@ -73,6 +75,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             MI  = Matrix{Int64}
             GMI = Nothing
             SMT = SparseMatrixCSC{Float64,Int64}
+            VF = Vector{Float64}
+            GVF = Nothing
         elseif isa(device, GPU)
             AT  = Array{Float64,3}
             GAT = CuArray{Float64, 3, CUDA.Mem.DeviceBuffer}
@@ -83,6 +87,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             MI  = Matrix{Int64}
             GMI = CuArray{Int64, 2, CUDA.Mem.DeviceBuffer}
             SMT = CUDA.CUSPARSE.CuSparseMatrixCSR{Float64}
+            VF = Vector{Float64}
+            GVF = CuVector{Float64}
             J = SparseMatrixCSC(J)
         else
             error("Unknown device type")
@@ -149,6 +155,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             end
         end
         P = sparse(row, col, nzval)
+        yaux = VF(undef, n)
         if isa(device, GPU)
             id = GMT(I, blocksize, blocksize)
             cubpartitions = GMI(bpartitions)
@@ -157,6 +164,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             cumap = CUDA.cu(map)
             cupart = CUDA.cu(part)
             P = SMT(P)
+            cuyaux = GVF(undef, n)
         else
             cublocks = nothing
             cubpartitions = nothing
@@ -164,8 +172,9 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             cupart = nothing
             id = MT(I, blocksize, blocksize)
             culpartitions = nothing
+            cuyaux = nothing
         end
-        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, blocks, cublocks, map, cumap, part, cupart, P, id)
+        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, blocks, cublocks, map, cumap, part, cupart, P, id, yaux, cuyaux)
     end
 end
 
@@ -181,44 +190,26 @@ end
 BlockJacobiPreconditioner(J::CUSPARSE.CuSparseMatrixCSR; options...) = BlockJacobiPreconditioner(SparseMatrixCSC(J); options...)
 Base.eltype(::BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}) where {AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} = Float64
 
-@inline function (*)(C::BlockJacobiPreconditioner, b::Vector{Float64})
+@inline function mul!(y, C::BlockJacobiPreconditioner, b::Vector{Float64})
     n = size(b, 1)
-    y = Vector{Float64}(undef, n)
     y .= 0.0
     for i=1:C.nblocks
-        # Some of the blocks have dummy 0's appended to the partition. We need to work with
-        # the sub-set that does not include them.
-        rlen = findfirst(isequal(0), C.partitions[:, i])
-        if rlen == nothing
-            rlen = size(C.partitions[:, i], 1)
-        else
-            rlen = rlen - 1
-        end
+        rlen = C.lpartitions[i]
         part = C.partitions[1:rlen, i]
         blck = C.blocks[1:rlen, 1:rlen, i]
-        y[part] += blck*b[part]
+        y[part] .+= blck*b[part]
     end
-    return y
 end
 
-@inline function (*)(C::BlockJacobiPreconditioner, b::CuVector{Float64})
+@inline function mul!(y, C::BlockJacobiPreconditioner, b::CuVector{Float64})
     n = size(b, 1)
-    y = CuVector{Float64}(undef, n)
     y .= 0.0
     for i=1:C.nblocks
-        # Some of the blocks have dummy 0's appended to the partition. We need to work with
-        # the sub-set that does not include them.
-        rlen = findfirst(isequal(0), C.cupartitions[:, i])
-        if rlen == nothing
-            rlen = size(C.cupartitions[:, i], 1)
-        else
-            rlen = rlen - 1
-        end
+        rlen = C.culpartitions[i]
         part = C.cupartitions[1:rlen, i]
         blck = C.cublocks[1:rlen, 1:rlen, i]
         y[part] += blck*b[part]
     end
-    return y
 end
 
 """
