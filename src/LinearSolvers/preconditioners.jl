@@ -185,6 +185,25 @@ end
 
 Base.eltype(::BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}) where {AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} = Float64
 
+@kernel function multiply_blocks_gpu!(y, b, p_len, rp_len, part, blocks)
+    i = @index(Global, Linear)
+    len = p_len[i]
+    rlen = rp_len[i]
+    idxA = -1
+    idxB = -1
+    accum = 0.0
+    # homemade matrix multiply. This is probably not a good idea.
+    @inbounds for j=1:rlen
+        idxA = part[j, i]
+        accum = 0.0
+        @inbounds for k=1:len
+            idxB = part[k, i]
+            accum = accum + blocks[j, k, i]*b[idxB]
+        end
+        y[idxA] = accum
+    end
+end
+
 @inline function (*)(C::BlockJacobiPreconditioner, b::Vector{Float64})
     n = size(b, 1)
     C.yaux .= 0.0
@@ -203,12 +222,10 @@ end
 @inline function (*)(C::BlockJacobiPreconditioner, b::CuVector{Float64})
     n = size(b, 1)
     C.cuyaux .= 0.0
-    for i=1:C.nblocks
-        rlen = C.culpartitions[i]
-        part = C.cupartitions[1:rlen, i]
-        blck = C.cublocks[1:rlen, 1:rlen, i]
-        C.cuyaux[part] += blck*b[part]
-    end
+    mblock_gpu_kernel! = multiply_blocks_gpu!(CUDADevice())
+    ev = mblock_gpu_kernel!(C.cuyaux, b, C.culpartitions, C.curest_size,
+                            C.cupartitions, C.cublocks, ndrange=C.nblocks)
+    wait(ev)
     return C.cuyaux
 end
 
