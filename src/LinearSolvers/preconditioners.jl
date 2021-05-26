@@ -1,4 +1,5 @@
 import LinearAlgebra: ldiv!, \, *, mul!
+using CUDAKernels
 """
     AbstractPreconditioner
 
@@ -62,7 +63,6 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
     cumap::Union{GVI,Nothing}
     part::VI
     cupart::Union{GVI,Nothing}
-    P::SMT
     id::Union{GMT,MT}
     yaux::VF
     cuyaux::Union{GVF,Nothing}
@@ -160,7 +160,6 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
                 end
             end
         end
-        P = sparse(row, col, nzval)
         yaux = VF(undef, n)
         if isa(device, GPU)
             id = GMT(I, blocksize, blocksize)
@@ -170,7 +169,6 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             cublocks = GAT(blocks)
             cumap = CUDA.cu(map)
             cupart = CUDA.cu(part)
-            P = SMT(P)
             cuyaux = GVF(undef, n)
         else
             cublocks = nothing
@@ -182,7 +180,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             curest_size = nothing
             cuyaux = nothing
         end
-        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, P, id, yaux, cuyaux)
+        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, id, yaux, cuyaux)
     end
 end
 
@@ -288,27 +286,9 @@ Fill the dense blocks of the preconditioner from the sparse CSR matrix arrays
     end
 end
 
-"""
-    fillP_gpu
-
-Update the values of the preconditioner matrix from the dense Jacobi blocks
-
-"""
-@kernel function fillP_gpu!(blocks, partition, map, rowPtr, colVal, nzVal, part, lpartitions)
-    b = @index(Global, Linear)
-    @inbounds for i in 1:lpartitions[b]
-        @inbounds for j in rowPtr[partition[i,b]]:rowPtr[partition[i,b]+1]-1
-            if b == part[colVal[j]]
-                @inbounds nzVal[j] += blocks[map[partition[i,b]], map[colVal[j]],b]
-            end
-        end
-    end
-end
-
 function _update_gpu(p, j_rowptr, j_colval, j_nzval, device)
     nblocks = p.nblocks
     fillblock_gpu_kernel! = fillblock_gpu!(device)
-    fillP_gpu_kernel! = fillP_gpu!(device)
     # Fill Block Jacobi" begin
     ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks, dependencies=Event(device))
     wait(ev)
@@ -322,11 +302,6 @@ function _update_gpu(p, j_rowptr, j_colval, j_nzval, device)
     for b in 1:nblocks
         p.cublocks[:,:,b] .= blocklist[b]
     end
-    p.P.nzVal .= 0.0
-    # Move blocks to P" begin
-    ev = fillP_gpu_kernel!(p.cublocks, p.cupartitions, p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, p.culpartitions, ndrange=nblocks, dependencies=Event(device))
-    wait(ev)
-    return p.P
 end
 
 """
@@ -357,20 +332,10 @@ end
             p.blocks[i,j,b] = p.id[i,j]
         end
     end
-    #for k in 1:lpartitions[b]
-    #    i = p.partitions[k,b]
-    #    println(i)
-    #    for j in colptr[i]:colptr[i+1]-1
-    #        if b == p.part[rowval[j]]
-    #            @inbounds p.blocks[p.map[rowval[j]], p.map[i], b] = nzval[j]
-    #        end
-    #    end
-    #end
     for k in 1:lpartitions[b]
         i = p.partitions[k, b]
         for col_ptr in colptr[i]:(colptr[i + 1] - 1)
             col = rowval[col_ptr]
-
             ptr = findfirst(x -> x==col, p.partitions[:, b])
             if typeof(ptr) != Nothing
                 # Here we assume the natural order of the partition
@@ -379,19 +344,8 @@ end
             end
         end
     end
-
     # Invert blocks
     p.blocks[:,:,b] .= inv(p.blocks[:,:,b])
-    # Move blocks to P
-    for k in 1:lpartitions[b]
-        i = p.partitions[k,b]
-        for j in p.P.colptr[i]:p.P.colptr[i+1]-1
-            if b == p.part[p.P.rowval[j]]
-                @inbounds p.P.nzval[j] += p.blocks[p.map[p.P.rowval[j]], p.map[i], b]
-            end
-        end
-    end
-
 end
 
 """
@@ -404,10 +358,8 @@ Note that this implements the same algorithm as for the GPU and becomes very slo
 """
 function update(p, J::SparseMatrixCSC, device)
     kernel! = update_cpu_kernel!(device)
-    p.P.nzval .= 0.0
     ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks, dependencies=Event(device))
     wait(ev)
-    return p.P
 end
 function update(p, J::Transpose{T, SparseMatrixCSC{T, I}}) where {T, I}
     ix, jx, zx = findnz(J.parent)
@@ -420,9 +372,6 @@ _check_nan(P::CUSPARSE.CuSparseMatrixCSR) = !any(isnan.(P.nzVal))
 
 function Base.show(precond::BlockJacobiPreconditioner)
     npartitions = precond.npart
-    nblock = div(size(precond.P, 1), npartitions)
-    println("#partitions: $npartitions, Blocksize: n = ", nblock,
-            " Mbytes = ", (nblock*nblock*npartitions*8.0)/(1024.0*1024.0))
     println("Block Jacobi block size: $(precond.nJs)")
 end
 
