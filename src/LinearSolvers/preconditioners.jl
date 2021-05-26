@@ -268,11 +268,19 @@ Fill the dense blocks of the preconditioner from the sparse CSR matrix arrays
             blocks[i,j,b] = id[i,j]
         end
     end
-
-    @inbounds for i in 1:lpartitions[b]
-        @inbounds for j in rowPtr[partition[i,b]]:rowPtr[partition[i,b]+1]-1
-            if b == part[colVal[j]]
-                @inbounds blocks[map[partition[i,b]], map[colVal[j]], b] = nzVal[j]
+    
+    @inbounds for k in 1:lpartitions[b]
+        # select row
+        i = partition[k, b]
+        # iterate matrix
+        for row_ptr in rowPtr[i]:(rowPtr[i + 1] - 1)
+            # retrieve column value
+            col = colVal[row_ptr]
+            # iterate partition list and see if pertains to it
+            for j in 1:lpartitions[b]
+                if col == partition[j, b]
+                    @inbounds blocks[k, j, b] = nzVal[row_ptr]
+                end
             end
         end
     end
