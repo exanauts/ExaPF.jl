@@ -19,7 +19,7 @@ SparseDiffTools = "47a9eef4-7e08-11e9-0b38-333d64bd3804"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [compat]
-CUDA = "^3.0"
+CUDA = "~2.3, 3.0"
 FiniteDiff = "2.7"
 ForwardDiff = "0.10"
 KernelAbstractions = "= 0.6.0"
