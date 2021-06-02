@@ -1,5 +1,6 @@
 import LinearAlgebra: ldiv!, \, *, mul!
 using CUDAKernels
+using SparseMatricesCSR
 """
     AbstractPreconditioner
 
@@ -26,6 +27,45 @@ function overlap(Graph, subset; level=1)
   else
     return overlap(Graph, subset2, level=level)
   end
+end
+
+function count_nnz(partitions, lpartitions, colptr, rowval, nzval, b)
+    cnt = 0
+    for k in 1:lpartitions[b]
+        i = partitions[k, b]
+        for col_ptr in colptr[i]:(colptr[i + 1] - 1)
+            col = rowval[col_ptr]
+            ptr = findfirst(x -> x==col, partitions[:, b])
+            if typeof(ptr) != Nothing
+                cnt += 1
+            end
+        end
+    end
+    return cnt
+end
+
+function create_nnz_indexes(nnz_idx, blk_idx, partitions, lpartitions,
+                            rowPtr, colVal, nzVal, blocksize, npart)
+    cnt = 0
+    for b in 1:npart
+        for k in 1:lpartitions[b]
+            # select row
+            i = partitions[k, b]
+            # iterate matrix
+            for row_ptr in rowPtr[i]:(rowPtr[i + 1] - 1)
+                # retrieve column value
+                col = colVal[row_ptr]
+                # iterate partition list and see if pertains to it
+                for j in 1:lpartitions[b]
+                    if col == partitions[j, b]
+                        cnt += 1
+                        nnz_idx[cnt] = row_ptr
+                        blk_idx[cnt] = k + (j - 1)*blocksize + (b - 1)*blocksize*blocksize
+                    end
+                end
+            end
+        end
+    end
 end
 
 """
@@ -66,6 +106,11 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
     id::Union{GMT,MT}
     yaux::VF
     cuyaux::Union{GVF,Nothing}
+    # block extraction auxiliary structures
+    nnz_idx::VI
+    blk_idx::VI
+    cunnz_idx::Union{GVI, Nothing}
+    cublk_idx::Union{GVI, Nothing}
     function BlockJacobiPreconditioner(J, npart, device=CPU(), olevel=0) where {}
         if isa(device, CPU)
             AT  = Array{Float64,3}
@@ -161,6 +206,24 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             end
         end
         yaux = VF(undef, n)
+
+        # here we create data structures to accelerate the block extraction.
+        # 1) For each partition, obtain number of nnz's in J
+        
+        ctr = 0
+        for b in 1:npart
+            ctr += count_nnz(bpartitions, lpartitions, J.colptr, J.rowval, J.nzval, b)
+        end
+        println("Total number of non-zeros in blocks: ", ctr)
+        # 2) Create index vector that will track all NNZ
+        nnz_idx = VI(undef, ctr)
+        blk_idx = VI(undef, ctr)
+        
+        II, JJ, VV = findnz(J)
+        JCSR = sparsecsr(II, JJ, VV)
+        
+        create_nnz_indexes(nnz_idx, blk_idx, bpartitions, lpartitions,
+                            JCSR.rowptr, JCSR.colval, JCSR.nzval, blocksize, npart)
         if isa(device, GPU)
             id = GMT(I, blocksize, blocksize)
             cubpartitions = GMI(bpartitions)
@@ -170,6 +233,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             cumap = CUDA.cu(map)
             cupart = CUDA.cu(part)
             cuyaux = GVF(undef, n)
+            cunnz_idx = GVI(nnz_idx)
+            cublk_idx = GVI(blk_idx)
         else
             cublocks = nothing
             cubpartitions = nothing
@@ -179,8 +244,10 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             culpartitions = nothing
             curest_size = nothing
             cuyaux = nothing
+            cunnz_idx = nothing
+            cublk_idx = nothing
         end
-        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, id, yaux, cuyaux)
+        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, id, yaux, cuyaux, nnz_idx, blk_idx, cunnz_idx, cublk_idx)
     end
 end
 
@@ -264,11 +331,6 @@ Fill the dense blocks of the preconditioner from the sparse CSR matrix arrays
 """
 @kernel function fillblock_gpu!(blocks, blocksize, partition, map, rowPtr, colVal, nzVal, part, lpartitions, id)
     b = @index(Global, Linear)
-    for i in 1:blocksize
-        for j in 1:blocksize
-            blocks[i,j,b] = id[i,j]
-        end
-    end
     @inbounds for k in 1:lpartitions[b]
         # select row
         i = partition[k, b]
@@ -286,10 +348,31 @@ Fill the dense blocks of the preconditioner from the sparse CSR matrix arrays
     end
 end
 
+@kernel function fillblock_direct_gpu!(blocks, block_idx, nnz_idx, nzVal)
+    i = @index(Global, Linear)
+    blocks[block_idx[i]] = nzVal[nnz_idx[i]]
+end
+
+@kernel function reset_blocks!(blocks, blocksize, nblocks, id)
+    b = @index(Global, Linear)
+    for i in 1:blocksize
+        for j in 1:blocksize
+            blocks[i,j,b] = id[i,j]
+        end
+    end
+end
+
 function _update_gpu(p, j_rowptr, j_colval, j_nzval, device)
     nblocks = p.nblocks
+    reset_blocks_kernel! = reset_blocks!(device)
     fillblock_gpu_kernel! = fillblock_gpu!(device)
+    fillblock_direct_gpu_kernel! = fillblock_direct_gpu!(device)
     # Fill Block Jacobi" begin
+    ev = reset_blocks_kernel!(p.cublocks, size(p.id,1), nblocks, p.id,
+                              ndrange=nblocks, dependencies=Event(device))
+    wait(ev)
+    #ev = fillblock_direct_gpu_kernel!(p.cublocks, p.cublk_idx, p.cunnz_idx, j_nzval,
+    #                                  ndrange=size(p.cublk_idx, 1), dependencies=Event(device))
     ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks, dependencies=Event(device))
     wait(ev)
     # Invert blocks begin
