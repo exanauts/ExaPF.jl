@@ -15,7 +15,9 @@ import Krylov
 import LightGraphs
 import Metis
 
-import ..ExaPF: xnorm, csclsvqr!
+import ..ExaPF: xnorm, csclsvqr!, getbackend
+import ..ExaPF: array_type, vector_type, matrix_type, sparse_matrix_type, xzeros, xones
+import ..ExaPF: HostBackend, CUDABackend, ROCBackend, OneAPIBackend
 
 const KA = KernelAbstractions
 
@@ -283,16 +285,23 @@ function ldiv!(solver::KrylovBICGSTAB,
 end
 
 """
-    list_solvers(::KA.CPU)
+    list_solvers(::HostBackend)
 
-List all linear solvers available solving the power flow on the CPU.
+List all linear solvers available solving the power flow on the host.
 """
-list_solvers(::KA.CPU) = [DirectSolver, DQGMRES, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB]
+list_solvers(::HostBackend) = [DirectSolver, DQGMRES, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB]
 
 """
-    list_solvers(::KA.GPU)
+    list_solvers(::CUDABackend)
 
 List all linear solvers available solving the power flow on an NVIDIA GPU.
 """
-list_solvers(::KA.GPU) = [DirectSolver, BICGSTAB, DQGMRES, EigenBICGSTAB, KrylovBICGSTAB]
+list_solvers(::CUDABackend) = [DirectSolver, BICGSTAB, DQGMRES, EigenBICGSTAB, KrylovBICGSTAB]
+
+"""
+    list_solvers(::ROCBackend)
+
+List all linear solvers available solving the power flow on an NVIDIA GPU.
+"""
+list_solvers(::ROCBackend) = [EigenBICGSTAB, KrylovBICGSTAB]
 end

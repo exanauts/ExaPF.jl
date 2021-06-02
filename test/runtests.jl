@@ -3,8 +3,11 @@ using Random
 using LinearAlgebra
 using SparseArrays
 
+using AMDGPU
 using CUDA
 using KernelAbstractions
+using CUDAKernels
+using ROCKernels
 
 using FiniteDiff
 
@@ -21,6 +24,7 @@ if has_cuda_gpu()
     include("cusolver.jl")
     push!(ARCHS, CUDA_ARCH)
 end
+AMDGPU.hsa_configured && push!(ARCHS, (ROCDevice(), ROCArray, Nothing))
 
 # Load test modules
 @isdefined(TestLinearSolvers)    || include("TestLinearSolvers.jl")

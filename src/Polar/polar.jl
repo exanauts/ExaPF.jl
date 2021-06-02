@@ -44,16 +44,17 @@ include("objective.jl")
 include("batch.jl")
 
 function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
+    backend = getbackend(device)
     if isa(device, KA.CPU)
         IT = Vector{Int}
         VT = Vector{Float64}
         M = SparseMatrixCSC
         AT = Array
     elseif isa(device, KA.GPU)
-        IT = CUDA.CuVector{Int64}
-        VT = CUDA.CuVector{Float64}
-        M = CUSPARSE.CuSparseMatrixCSR
-        AT = CUDA.CuArray
+        IT = vector_type(backend){Int64}
+        VT = vector_type(backend){Float64}
+        M = sparse_matrix_type(backend)
+        AT = array_type(backend)
     end
 
     nbus = PS.get(pf, PS.NumberOfBuses())

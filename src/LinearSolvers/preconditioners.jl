@@ -42,6 +42,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
     P::SMT
     id::Union{GMT,MT}
     function BlockJacobiPreconditioner(J, npart, device=CPU()) where {}
+        backend = getbackend(device)
         if isa(device, CPU)
             AT  = Array{Float64,3}
             GAT = Nothing
@@ -54,14 +55,14 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             SMT = SparseMatrixCSC{Float64,Int64}
         elseif isa(device, GPU)
             AT  = Array{Float64,3}
-            GAT = CuArray{Float64,3}
+            GAT = array_type(backend){Float64,3}
             VI  = Vector{Int64}
-            GVI = CuVector{Int64}
+            GVI = vector_type(backend){Int64}
             MT  = Matrix{Float64}
-            GMT = CuMatrix{Float64}
+            GMT = matrix_type(backend){Float64}
             MI  = Matrix{Int64}
-            GMI = CuMatrix{Int64}
-            SMT = CUDA.CUSPARSE.CuSparseMatrixCSR{Float64}
+            GMI = matrix_type(backend){Int64}
+            SMT = sparse_matrix_type(backend){Float64}
             J = SparseMatrixCSC(J)
         else
             error("Unknown device type")
@@ -126,8 +127,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             cubpartitions = GMI(bpartitions)
             culpartitions = GVI(lpartitions)
             cublocks = GAT(blocks)
-            cumap = CUDA.cu(map)
-            cupart = CUDA.cu(part)
+            cumap = GVI(map)
+            cupart = GVI(part)
             P = SMT(P)
         else
             cublocks = nothing
@@ -292,20 +293,37 @@ end
 end
 
 """
-    function update(J::SparseMatrixCSC, p)
+    function update(J::SparseMatrixCSC, p, device::KA.CPU)
 
 Update the preconditioner `p` from the sparse Jacobian `J` in CSC format for the CPU
 
 Note that this implements the same algorithm as for the GPU and becomes very slow on CPU with growing number of blocks.
 
 """
-function update(p, J::SparseMatrixCSC, device)
+function update(p, J::SparseMatrixCSC, device::KA.CPU)
     kernel! = update_cpu_kernel!(device)
     p.P.nzval .= 0.0
     ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks, dependencies=Event(device))
     wait(ev)
     return p.P
 end
+
+
+"""
+    function update(J::SparseMatrixCSC, p, device::KA.GPU)
+
+This is a workaround for AMD GPUs since we don't have a sparse matrix structure yet.
+
+"""
+function update(p, J::SparseMatrixCSC, device::KA.GPU)
+    # Disable preconditioner for ROCm
+    p.P .= 0.0   
+    for i in 1:size(p.P,1)
+        p.P[i,i] = J[i,i]
+    end
+    return p.P
+end
+
 function update(p, J::Transpose{T, SparseMatrixCSC{T, I}}) where {T, I}
     ix, jx, zx = findnz(J.parent)
     update(p, sparse(jx, ix, zx))
