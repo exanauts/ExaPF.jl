@@ -111,6 +111,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
     blk_idx::VI
     cunnz_idx::Union{GVI, Nothing}
     cublk_idx::Union{GVI, Nothing}
+    max_rlen::Int64
+    max_len::Int64
     function BlockJacobiPreconditioner(J, npart, device=CPU(), olevel=0) where {}
         if isa(device, CPU)
             AT  = Array{Float64,3}
@@ -159,6 +161,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
         # This will allow us to implement the RAS update.
         rest_size = VI(undef, npart)
         rest_size = length.(partitions)
+        max_rlen = maximum(rest_size)
         # overlap
         if olevel > 0
             for i in 1:npart
@@ -167,6 +170,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
         end
         lpartitions = VI(undef, npart)
         lpartitions = length.(partitions)
+        max_len = maximum(lpartitions)
         blocksize = maximum(length.(partitions))
         blocks = AT(undef, blocksize, blocksize, npart)
         # Get partitions into bit typed structure
@@ -247,29 +251,33 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             cunnz_idx = nothing
             cublk_idx = nothing
         end
-        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, id, yaux, cuyaux, nnz_idx, blk_idx, cunnz_idx, cublk_idx)
+        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, id, yaux, cuyaux, nnz_idx, blk_idx, cunnz_idx, cublk_idx, max_rlen, max_len)
     end
 end
 
 Base.eltype(::BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}) where {AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} = Float64
 
-@kernel function multiply_blocks_gpu!(y, b, p_len, rp_len, part, blocks)
-    i = @index(Global, Linear)
+function mblock_cuda!(y, b, p_len, rp_len, part, blocks)
+    i = threadIdx().x
+    j = threadIdx().y
     len = p_len[i]
     rlen = rp_len[i]
+
+    if rlen < j
+        return
+    end
+
     idxA = -1
     idxB = -1
     accum = 0.0
-    # homemade matrix multiply. This is probably not a good idea.
-    @inbounds for j=1:rlen
-        idxA = part[j, i]
-        accum = 0.0
-        @inbounds for k=1:len
-            idxB = part[k, i]
-            accum = accum + blocks[j, k, i]*b[idxB]
-        end
-        y[idxA] = accum
+    
+    idxA = part[j, i]
+    for k=1:len
+        idxB = part[k, i]
+        accum = accum + blocks[j, k, i]*b[idxB]
     end
+    y[idxA] = accum
+    return
 end
 
 @inline function (*)(C::BlockJacobiPreconditioner, b::Vector{Float64})
@@ -290,10 +298,9 @@ end
 @inline function (*)(C::BlockJacobiPreconditioner, b::CuVector{Float64})
     n = size(b, 1)
     C.cuyaux .= 0.0
-    mblock_gpu_kernel! = multiply_blocks_gpu!(CUDADevice())
-    ev = mblock_gpu_kernel!(C.cuyaux, b, C.culpartitions, C.curest_size,
-                            C.cupartitions, C.cublocks, ndrange=C.nblocks)
-    wait(ev)
+    @cuda threads=(C.nblocks, C.max_rlen) mblock_cuda!(C.cuyaux, b, C.culpartitions, C.curest_size,
+                            C.cupartitions, C.cublocks)
+    synchronize()
     return C.cuyaux
 end
 
@@ -371,9 +378,9 @@ function _update_gpu(p, j_rowptr, j_colval, j_nzval, device)
     ev = reset_blocks_kernel!(p.cublocks, size(p.id,1), nblocks, p.id,
                               ndrange=nblocks, dependencies=Event(device))
     wait(ev)
-    #ev = fillblock_direct_gpu_kernel!(p.cublocks, p.cublk_idx, p.cunnz_idx, j_nzval,
-    #                                  ndrange=size(p.cublk_idx, 1), dependencies=Event(device))
-    ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks, dependencies=Event(device))
+    ev = fillblock_direct_gpu_kernel!(p.cublocks, p.cublk_idx, p.cunnz_idx, j_nzval,
+                                      ndrange=size(p.cublk_idx, 1), dependencies=Event(device))
+    #ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks, dependencies=Event(device))
     wait(ev)
     # Invert blocks begin
     blocklist = Array{CuArray{Float64,2}}(undef, nblocks)
