@@ -103,7 +103,6 @@ DirectSolver(J) = DirectSolver(exa_factorize(J))
 DirectSolver(precond::AbstractPreconditioner) = DirectSolver(nothing)
 DirectSolver() = DirectSolver(nothing)
 
-
 # Reuse factorization in update
 function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
     lu!(s.factorization, J) # Update factorization inplace
@@ -172,12 +171,11 @@ struct BICGSTAB <: AbstractIterativeLinearSolver
     tol::Float64
     verbose::Bool
 end
-BICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = BICGSTAB(precond, maxiter, tol, verbose)
+BICGSTAB(J::AbstractSparseMatrix, precond; maxiter=2_000, tol=1e-8, verbose=false) = BICGSTAB(precond, maxiter, tol, verbose)
 function ldiv!(solver::BICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-
     y[:], n_iters, status = bicgstab(J, x, P, y; maxiter=solver.maxiter,
                                         verbose=solver.verbose, tol=solver.tol)
     if status != Converged
@@ -199,7 +197,7 @@ struct EigenBICGSTAB <: AbstractIterativeLinearSolver
     tol::Float64
     verbose::Bool
 end
-EigenBICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = EigenBICGSTAB(precond, maxiter, tol, verbose)
+EigenBICGSTAB(J::AbstractSparseMatrix, precond; maxiter=2_000, tol=1e-8, verbose=false) = EigenBICGSTAB(precond, maxiter, tol, verbose)
 function ldiv!(solver::EigenBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -215,16 +213,22 @@ function ldiv!(solver::EigenBICGSTAB,
 end
 
 struct DQGMRES <: AbstractIterativeLinearSolver
+    inner::Krylov.DqgmresSolver
     precond::AbstractPreconditioner
     memory::Int
     verbose::Bool
 end
-DQGMRES(precond; memory=4, verbose=false) = DQGMRES(precond, memory, verbose)
+function DQGMRES(J::AbstractSparseMatrix, precond; memory=4, verbose=false)
+    n, m = size(J)
+    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuVector{Float64} : Vector{Float64}
+    solver = Krylov.DqgmresSolver(n, m, memory, S)
+    return DQGMRES(solver, precond, memory, verbose)
+end
 function ldiv!(solver::DQGMRES,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    (y[:], status) = Krylov.dqgmres(J, x, N=P, memory=solver.memory)
+    (y[:], status) = Krylov.dqgmres!(solver.inner, J, x; N=P)
     return length(status.residuals)
 end
 
@@ -236,20 +240,26 @@ Wrap `Krylov.jl`'s BICGSTAB algorithm to solve iteratively the linear system
 ``A x = y``.
 """
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
+    inner::Krylov.BicgstabSolver
     precond::AbstractPreconditioner
     verbose::Int
     atol::Float64
     rtol::Float64
 end
-KrylovBICGSTAB(precond; verbose=0, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(precond, verbose, atol, rtol)
+function KrylovBICGSTAB(J::AbstractSparseMatrix, precond; verbose=0, rtol=1e-10, atol=1e-10)
+    n, m = size(J)
+    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuVector{Float64} : Vector{Float64}
+    solver = Krylov.BicgstabSolver(n, m, S)
+    return KrylovBICGSTAB(solver, precond, verbose, atol, rtol)
+end
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
-    P = solver.precond.P
-    (y[:], status) = Krylov.bicgstab(J, x, N=P,
-                                     atol=solver.atol,
-                                     rtol=solver.rtol,
-                                     verbose=solver.verbose)
+    (y[:], status) = Krylov.bicgstab!(solver.inner, J, x;
+                                      N=solver.precond.P,
+                                      atol=solver.atol,
+                                      rtol=solver.rtol,
+                                      verbose=solver.verbose)
     return length(status.residuals)
 end
 
