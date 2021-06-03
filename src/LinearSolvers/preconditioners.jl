@@ -106,6 +106,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
     id::Union{GMT,MT}
     yaux::VF
     cuyaux::Union{GVF,Nothing}
+    cuB::Union{GAT,Nothing}
+    cuC::Union{GAT,Nothing}
     # block extraction auxiliary structures
     nnz_idx::VI
     blk_idx::VI
@@ -213,7 +215,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
 
         # here we create data structures to accelerate the block extraction.
         # 1) For each partition, obtain number of nnz's in J
-        
+
         ctr = 0
         for b in 1:npart
             ctr += count_nnz(bpartitions, lpartitions, J.colptr, J.rowval, J.nzval, b)
@@ -222,10 +224,10 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
         # 2) Create index vector that will track all NNZ
         nnz_idx = VI(undef, ctr)
         blk_idx = VI(undef, ctr)
-        
+
         II, JJ, VV = findnz(J)
         JCSR = sparsecsr(II, JJ, VV)
-        
+
         create_nnz_indexes(nnz_idx, blk_idx, bpartitions, lpartitions,
                             JCSR.rowptr, JCSR.colval, JCSR.nzval, blocksize, npart)
         if isa(device, GPU)
@@ -237,6 +239,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             cumap = CUDA.cu(map)
             cupart = CUDA.cu(part)
             cuyaux = GVF(undef, n)
+            cuB = similar(cublocks, blocksize, 1, npart)
+            cuC = similar(cublocks, blocksize, 1, npart)
             cunnz_idx = GVI(nnz_idx)
             cublk_idx = GVI(blk_idx)
         else
@@ -248,36 +252,56 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
             culpartitions = nothing
             curest_size = nothing
             cuyaux = nothing
+            cuy_blocks = nothing
             cunnz_idx = nothing
             cublk_idx = nothing
         end
-        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, id, yaux, cuyaux, nnz_idx, blk_idx, cunnz_idx, cublk_idx, max_rlen, max_len)
+        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, id, yaux, cuyaux, cuB, cuC, nnz_idx, blk_idx, cunnz_idx, cublk_idx, max_rlen, max_len)
     end
 end
 
 Base.eltype(::BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}) where {AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} = Float64
 
-function mblock_cuda!(y, b, p_len, rp_len, part, blocks)
-    i = threadIdx().x
-    j = threadIdx().y
+# i: block's id
+# j : row
+# k : column
+@kernel function mblock_cuda!(y, b, p_len, rp_len, part, blocks)
+    i, j = @index(Global, NTuple)
     len = p_len[i]
     rlen = rp_len[i]
 
-    if rlen < j
-        return
-    end
+    if j <= rlen
+        idxA = -1
+        idxB = -1
+        accum = 0.0
 
-    idxA = -1
-    idxB = -1
-    accum = 0.0
-    
-    idxA = part[j, i]
-    for k=1:len
-        idxB = part[k, i]
-        accum = accum + blocks[j, k, i]*b[idxB]
+        idxA = @inbounds part[j, i]
+        for k=1:len
+            idxB = @inbounds part[k, i]
+            @inbounds accum = accum + blocks[j, k, i]*b[idxB]
+        end
+        y[idxA] = accum
     end
-    y[idxA] = accum
-    return
+end
+
+# i: block's id
+# j : row
+@kernel function eexpand_block_batch!(B, x, part)
+    i, j = @index(Global, NTuple)
+    idX = @inbounds part[j, i]
+    if idX == 0
+        @inbounds B[j, 1, i] = 0.0
+    else
+        @inbounds B[j, 1, i] = x[idX]
+    end
+end
+
+@kernel function ccontract_block_batch!(y, C, part)
+    i, j = @index(Global, NTuple)
+    idX = @inbounds part[j, i]
+    if idX != 0
+        @inbounds y[idX] = C[j, 1, i]
+    end
 end
 
 @inline function (*)(C::BlockJacobiPreconditioner, b::Vector{Float64})
@@ -298,9 +322,29 @@ end
 @inline function (*)(C::BlockJacobiPreconditioner, b::CuVector{Float64})
     n = size(b, 1)
     C.cuyaux .= 0.0
-    @cuda threads=(C.nblocks, C.max_rlen) mblock_cuda!(C.cuyaux, b, C.culpartitions, C.curest_size,
-                            C.cupartitions, C.cublocks)
-    synchronize()
+    ndrange = (C.nblocks, C.max_rlen)
+    ev = mblock_cuda!(CUDADevice())(C.cuyaux, b, C.culpartitions, C.curest_size,
+                                    C.cupartitions, C.cublocks, ndrange=ndrange)
+    # @cuda threads=(C.nblocks, C.max_rlen) mblock_cuda!(C.cuyaux, b, C.culpartitions, C.curest_size,
+    #                         C.cupartitions, C.cublocks)
+    wait(ev)
+    return C.cuyaux
+end
+
+function mul_test(C::BlockJacobiPreconditioner, b::CuVector{Float64})
+    n = size(b, 1)
+    C.cuyaux .= 0.0
+    nb = C.nblocks
+    np = C.blocksize
+    ndrange = (nb, np)
+
+    ev = eexpand_block_batch!(CUDADevice())(C.cuB, b, C.cupartitions, ndrange=ndrange)
+    wait(ev)
+
+    @time CUBLAS.gemm_strided_batched!('N', 'N', 1.0, C.cublocks, C.cuB, 0.0, C.cuC)
+
+    ev = ccontract_block_batch!(CUDADevice())(C.cuyaux, C.cuC, C.cupartitions, ndrange=ndrange)
+    wait(ev)
     return C.cuyaux
 end
 
