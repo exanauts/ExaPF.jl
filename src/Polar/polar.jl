@@ -271,15 +271,11 @@ function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState)
     return
 end
 
-function direct_linear_solver(polar::PolarForm)
-    is_cpu = isa(polar.device, KA.CPU)
-    if is_cpu
-        jac = jacobian_sparsity(polar, power_balance, State())
-        return LinearSolvers.DirectSolver(jac)
-    else
-        # Factorization is not yet supported on the GPU
-        return LinearSolvers.DirectSolver(nothing)
-    end
+# Power flow linear solvers
+function powerflow_jacobian(polar)
+    nbus = get(polar, PS.NumberOfBuses())
+    v0 = polar.network.vbus .+ 0.01 .* rand(ComplexF64, nbus)
+    return matpower_jacobian(polar, State(), power_balance, v0)
 end
 
 function build_preconditioner(polar::PolarForm; nblocks=-1)

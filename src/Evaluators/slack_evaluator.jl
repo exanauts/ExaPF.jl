@@ -201,7 +201,7 @@ end
 # J' * J = [ Jᵤ' * Jᵤ    - Jᵤ']
 #          [ - Jᵤ           I ]
 function hessian_lagrangian_penalty_prod!(
-    nlp::SlackEvaluator, hessvec, x, y, σ, v, ρ,
+    nlp::SlackEvaluator, hessvec, x, y, σ, ρ, v,
 )
     @views begin
         u   = x[1:nlp.nv]
@@ -215,7 +215,7 @@ function hessian_lagrangian_penalty_prod!(
     y_buf = similar(y) ; fill!(y_buf, 0)
     # w.r.t. uu
     # ∇²L + ρ Jᵤ' * Jᵤ
-    hessian_lagrangian_penalty_prod!(nlp.inner, hvu, u, y, σ, vᵤ, ρ)
+    hessian_lagrangian_penalty_prod!(nlp.inner, hvu, u, y, σ, ρ, vᵤ)
 
     if !iszero(ρ)
         # w.r.t. us
@@ -251,44 +251,6 @@ function hessian_lagrangian_penalty!(
         D = Diagonal(w)
         Jᵤ = similar(Hᵥᵤ) ; fill!(Jᵤ, 0.0)
         jacobian!(nlp.inner, Jᵤ, u)
-        mul!(Hᵤᵥ, Jᵤ', -D)
-        mul!(Hᵥᵤ, - D, Jᵤ)
-        fill!(Hᵥᵥ, 0)
-        @inbounds for i in 1:nlp.ns
-            Hᵥᵥ[i, i] = w[i]
-        end
-    else
-        fill!(Hᵤᵥ, 0)
-        fill!(Hᵥᵤ, 0)
-        fill!(Hᵥᵥ, 0)
-    end
-end
-
-function batch_hessian_lagrangian_penalty!(
-    nlp::SlackEvaluator, H, x, y, σ, w,
-)
-    n = n_variables(nlp)
-    @views begin
-        u   = x[1:nlp.nv]
-        Hᵤᵤ = H[1:nlp.nv, 1:nlp.nv]
-        Hᵤᵥ = H[1:nlp.nv, 1+nlp.nv:n]
-        Hᵥᵤ = H[1+nlp.nv:n, 1:nlp.nv]
-        Hᵥᵥ = H[1+nlp.nv:n, 1+nlp.nv:n]
-    end
-    # w.r.t. uu
-    # ∇²L + ρ Jᵤ' * Jᵤ
-    copyto!(nlp.bridge.w, w)
-    copyto!(nlp.bridge.y, y)
-    H = similar(Hᵤᵤ)
-    batch_hessian_lagrangian_penalty!(nlp.inner, nlp.bridge.H, nlp.bridge.u, nlp.bridge.y, σ, nlp.bridge.w)
-    copyto!(H, nlp.bridge.H)
-    Hᵤᵤ .= H
-
-    if !iszero(w)
-        D = Diagonal(w)
-        Jᵤ = similar(Hᵥᵤ) ; fill!(Jᵤ, 0.0)
-        batch_jacobian!(nlp.inner, nlp.bridge.J, nlp.bridge.u)
-        copyto!(Jᵤ, nlp.bridge.J)
         mul!(Hᵤᵥ, Jᵤ', -D)
         mul!(Hᵥᵤ, - D, Jᵤ)
         fill!(Hᵥᵥ, 0)

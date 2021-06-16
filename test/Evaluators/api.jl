@@ -87,14 +87,12 @@ function test_evaluator_callbacks(nlp, device, M; rtol=1e-6)
         @test isapprox(jv, jv_fd, rtol=1e-4)
 
         ## Evaluation of the Jacobian (only on CPU)
-        if isa(device, CPU)
-            J = ExaPF.jacobian(nlp, u)
-            # Test transpose Jacobian vector product
-            @test isapprox(jv, J' * v)
-            # Test Jacobian vector product
-            ExaPF.jprod!(nlp, v, u, jv)
-            @test isapprox(J * jv, v)
-        end
+        J = ExaPF.jacobian(nlp, u)
+        # Test transpose Jacobian vector product
+        @test isapprox(jv, J' * v)
+        # Test Jacobian vector product
+        ExaPF.jprod!(nlp, v, u, jv)
+        @test isapprox(J * jv, v)
     end
 
     ExaPF.reset!(nlp)
@@ -126,5 +124,52 @@ function test_evaluator_hessian(nlp, device, M; rtol=1e-6)
 
     @test H * w == hv
     @test H ≈ hess_fd.data rtol=rtol
+end
+
+function test_evaluator_batch_hessian(nlp, device, M; rtol=1e-5)
+    n = ExaPF.n_variables(nlp)
+    nbatch = ExaPF.number_batches_hessian(nlp)
+    @test ExaPF.has_hessian(nlp)
+    @test nbatch > 1
+    function reduced_cost(u_)
+        ExaPF.update!(nlp, u_)
+        return ExaPF.objective(nlp, u_)
+    end
+
+    u = ExaPF.initial(nlp)
+    n = length(u)
+    ExaPF.update!(nlp, u)
+    g = ExaPF.gradient(nlp, u) # compute the gradient to update the adjoint internally
+
+    # 0/ Update Hessian object
+    # 1/ Hessian-vector product
+    hv = similar(u, n, nbatch) ; fill!(hv, 0)
+    w = similar(u, n, nbatch) ; fill!(w, 0)
+    w[1, :] .= 1.0
+    ExaPF.hessprod!(nlp, hv, u, w)
+
+    # 2/ Full Hessian
+    H = similar(u, n, n) ; fill!(H, 0)
+    ExaPF.hessian!(nlp, H, u)
+
+    # 3/ FiniteDiff
+    hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
+
+    @test H * w == hv
+    @test H ≈ hess_fd.data rtol=rtol
+
+    m = ExaPF.n_constraints(nlp)
+    if m > 0
+        J = similar(u, m, n)
+        ExaPF.jacobian!(nlp, J, u)
+        function reduced_cons(u_)
+            cons = similar(u_, m)
+            ExaPF.update!(nlp, u_)
+            ExaPF.constraint!(nlp, cons, u_)
+            return cons
+        end
+        J_fd = FiniteDiff.finite_difference_jacobian(reduced_cons, u)
+        @test J ≈ J_fd rtol=rtol
+    end
 end
 
