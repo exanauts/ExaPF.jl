@@ -162,6 +162,7 @@ KA.@kernel function _adjoint_bus_operation_kernel!(
     @Const(coefs),
     @Const(pv), @Const(pq), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
     @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
+    @Const(transperm),
 )
     i, j = @index(Global, NTuple)
     npv = length(pv)
@@ -201,7 +202,7 @@ KA.@kernel function _adjoint_bus_operation_kernel!(
             bus = ref[i_]
             i_gen = ref_to_gen[i_]
 
-            inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval)
+            inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm)
             pg = inj + pload[bus]
 
             c0 = coefs[i_gen, 2]
@@ -227,12 +228,13 @@ function _adjoint_network_operations(polar::PolarForm, ∂inj, ∂pnet, ∂cons,
     pv2gen = polar.indexing.index_pv_to_gen
     ref2gen = polar.indexing.index_ref_to_gen
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
     coefs = polar.costs_coefficients
 
     ndrange = (nbus, size(pnet, 2))
     ev = _adjoint_bus_operation_kernel!(polar.device)(
         ∂inj, ∂pnet, ∂cons, vmag, vang, pnet, pload, coefs, pv, pq, ref, pv2gen, ref2gen,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval, transperm,
         ndrange=ndrange, dependencies=Event(polar.device),
     )
     wait(ev)

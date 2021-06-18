@@ -12,12 +12,12 @@ end
 @inline quadratic_cost(pg, c0, c1, c2) = c0 + c1 * pg + c2 * pg^2
 @inline adj_quadratic_cost(pg, c0, c1, c2) = c1 + 2.0 * c2 * pg
 
-KA.@kernel function cost_production_kernel!(
+KA.@kernel function ccost_production_kernel!(
     costs, pg, @Const(vmag), @Const(vang), pnet, @Const(pload),
     @Const(c0), @Const(c1), @Const(c2),
     @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
     @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
-    @Const(ybus_im_nzval),
+    @Const(ybus_im_nzval), @Const(transperm),
 )
     i, j = @index(Global, NTuple)
     npv = length(pv)
@@ -32,7 +32,7 @@ KA.@kernel function cost_production_kernel!(
         i_ = i - npv
         bus = ref[i_]
         i_gen = ref_to_gen[i_]
-        inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval)
+        inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm)
         pg[i_gen, j] = inj + pload[bus]
         pnet[bus, j] = inj + pload[bus]
     end
@@ -40,12 +40,13 @@ KA.@kernel function cost_production_kernel!(
     costs[i_gen, j] = quadratic_cost(pg[i_gen, j], c0[i_gen], c1[i_gen], c2[i_gen])
 end
 
-KA.@kernel function adj_cost_production_kernel!(
+KA.@kernel function aadj_cost_production_kernel!(
     adj_costs,
     @Const(vmag), adj_vmag, @Const(vang), adj_vang, @Const(pnet), adj_pnet, @Const(pload),
     @Const(c0), @Const(c1), @Const(c2),
     @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
     @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
+    @Const(transperm),
 )
     i, j = @index(Global, NTuple)
     npv = length(pv)
@@ -61,13 +62,14 @@ KA.@kernel function adj_cost_production_kernel!(
         bus = ref[i_]
         i_gen = ref_to_gen[i_]
 
-        inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval)
+        inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm)
         pg = inj + pload[bus]
 
         adj_net = adj_costs[1] * adj_quadratic_cost(pg, c0[i_gen], c1[i_gen], c2[i_gen])
         adj_pnet[bus, j] = adj_net
         adjoint_bus_injection!(
-            bus, j, adj_net, adj_vmag, adj_vang, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval
+            bus, j, adj_net, adj_vmag, adj_vang, vmag, vang,
+            ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm,
         )
     end
 end
@@ -79,6 +81,7 @@ function cost_production(polar::PolarForm, buffer::PolarNetworkState)
     pv2gen = polar.indexing.index_pv_to_gen
     ref2gen = polar.indexing.index_ref_to_gen
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
 
     ngen = PS.get(polar, PS.NumberOfGenerators())
     coefs = polar.costs_coefficients
@@ -87,12 +90,12 @@ function cost_production(polar::PolarForm, buffer::PolarNetworkState)
     c2 = @view coefs[:, 4]
     costs = similar(buffer.pgen)
 
-    ev = cost_production_kernel!(polar.device)(
+    ev = ccost_production_kernel!(polar.device)(
         costs, buffer.pgen,
         buffer.vmag, buffer.vang, buffer.pnet, buffer.pload,
         c0, c1, c2,
         pv, ref, pv2gen, ref2gen,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval, transperm,
         ndrange=(ngen, size(buffer.pgen, 2)),
         dependencies=Event(polar.device)
     )
@@ -129,7 +132,7 @@ function adjoint!(
     fill!(∂vm, 0.0)
     fill!(∂va, 0.0)
     fill!(∂pnet, 0.0)
-    ev = adj_cost_production_kernel!(polar.device)(
+    ev = aadj_cost_production_kernel!(polar.device)(
         ∂cost,
         vm, ∂vm,
         va, ∂va,

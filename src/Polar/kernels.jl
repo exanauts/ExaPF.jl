@@ -248,14 +248,14 @@ function adj_residual_polar!(
 end
 
 @inline function bus_injection(
-    bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval
+    bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm,
 )
     inj = 0.0
     @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
         to = ybus_re_rowval[c]
         aij = vang[bus, j] - vang[to, j]
-        coef_cos = vmag[bus, j]*vmag[to, j]*ybus_re_nzval[c]
-        coef_sin = vmag[bus, j]*vmag[to, j]*ybus_im_nzval[c]
+        coef_cos = vmag[bus, j]*vmag[to, j]*ybus_re_nzval[transperm[c]]
+        coef_sin = vmag[bus, j]*vmag[to, j]*ybus_im_nzval[transperm[c]]
         cos_val = cos(aij)
         sin_val = sin(aij)
         inj += coef_cos * cos_val + coef_sin * sin_val
@@ -264,15 +264,18 @@ end
 end
 
 @inline function adjoint_bus_injection!(
-    fr, j, adj_inj, adj_vmag, adj_vang, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval
+    fr, j, adj_inj, adj_vmag, adj_vang, vmag, vang,
+    ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm,
 )
     @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
         to = ybus_re_rowval[c]
         aij = vang[fr, j] - vang[to, j]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
-        coef_cos = vmag[fr, j]*vmag[to, j]*ybus_re_nzval[c]
-        coef_sin = vmag[fr, j]*vmag[to, j]*ybus_im_nzval[c]
+        yre = ybus_re_nzval[transperm[c]]
+        yim = ybus_im_nzval[transperm[c]]
+        coef_cos = vmag[fr, j]*vmag[to, j]*yre
+        coef_sin = vmag[fr, j]*vmag[to, j]*yim
         cosθ = cos(aij)
         sinθ = sin(aij)
 
@@ -284,10 +287,10 @@ end
         adj_aij =   cosθ * adj_sin_val
         adj_aij -=  sinθ * adj_cos_val
 
-        adj_vmag[fr, j] += vmag[to, j] * ybus_re_nzval[c] * adj_coef_cos
-        adj_vmag[to, j] += vmag[fr, j] * ybus_re_nzval[c] * adj_coef_cos
-        adj_vmag[fr, j] += vmag[to, j] * ybus_im_nzval[c] * adj_coef_sin
-        adj_vmag[to, j] += vmag[fr, j] * ybus_im_nzval[c] * adj_coef_sin
+        adj_vmag[fr, j] += vmag[to, j] * yre * adj_coef_cos
+        adj_vmag[to, j] += vmag[fr, j] * yre * adj_coef_cos
+        adj_vmag[fr, j] += vmag[to, j] * yim * adj_coef_sin
+        adj_vmag[to, j] += vmag[fr, j] * yim * adj_coef_sin
 
         adj_vang[fr, j] += adj_aij
         adj_vang[to, j] -= adj_aij
