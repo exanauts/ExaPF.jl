@@ -65,7 +65,7 @@ function SlackEvaluator(
     datafile::String;
     device=KA.CPU(), options...
 )
-    nlp = ReducedSpaceEvaluator(datafile; device=device)
+    nlp = ReducedSpaceEvaluator(datafile; device=device, options...)
     return SlackEvaluator(nlp)
 end
 

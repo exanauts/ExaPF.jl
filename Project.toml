@@ -4,7 +4,9 @@ authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@an
 version = "0.5.0"
 
 [deps]
+BlockPowerFlow = "0ca6dcf5-c23f-4097-a3ba-dae6c919a0c0"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CUDAKernels = "72cfdca4-0801-4ab0-bf6a-d52aa10adc57"
 FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"

@@ -19,7 +19,10 @@ const BENCHMARK_DIR = joinpath(dirname(@__FILE__), "..", "benchmark")
 const CASES = ["case9.m", "case30.m"]
 
 ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
-has_cuda_gpu() && push!(ARCHS, (CUDADevice(), CuArray, CuSparseMatrixCSR))
+if has_cuda_gpu()
+    push!(ARCHS, (CUDADevice(), CuArray, CuSparseMatrixCSR))
+    include("cusolver.jl")
+end
 
 # Load test modules
 @isdefined(TestLinearSolvers)    || include("TestLinearSolvers.jl")

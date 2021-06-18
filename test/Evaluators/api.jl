@@ -87,12 +87,12 @@ function test_evaluator_callbacks(nlp, device, M; rtol=1e-6)
         @test isapprox(jv, jv_fd, rtol=1e-4)
 
         ## Evaluation of the Jacobian (only on CPU)
-        J = ExaPF.jacobian(nlp, u)
-        # Test transpose Jacobian vector product
-        @test isapprox(jv, J' * v)
-        # Test Jacobian vector product
-        ExaPF.jprod!(nlp, v, u, jv)
-        @test isapprox(J * jv, v)
+        # J = ExaPF.jacobian(nlp, u)
+        # # Test transpose Jacobian vector product
+        # @test isapprox(jv, J' * v)
+        # # Test Jacobian vector product
+        # ExaPF.jprod!(nlp, v, u, jv)
+        # @test isapprox(J * jv, v)
     end
 
     ExaPF.reset!(nlp)

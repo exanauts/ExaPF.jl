@@ -113,8 +113,9 @@ function ReducedSpaceEvaluator(
         append!(g_max, cu)
     end
 
+    SpMT = isa(model.device, CPU) ? SparseMatrixCSC : CUSPARSE.CuSparseMatrixCSR
     # Build Linear Algebra
-    J = powerflow_jacobian(model)
+    J = powerflow_jacobian(model) |> SpMT
     linear_solver = DirectSolver(J)
 
     obj_ad = pullback_objective(model)
@@ -390,7 +391,6 @@ function full_jtprod!(nlp::ReducedSpaceEvaluator, jvx, jvu, u, v)
 end
 
 function jtprod!(nlp::ReducedSpaceEvaluator, jv, u, v)
-    @assert !isnothing(nlp.hesslag)
     ∂obj = nlp.obj_stack
     μ = nlp.buffer.balance
     jvx = ∂obj.stack.jvₓ ; fill!(jvx, 0)
@@ -564,14 +564,16 @@ end
 
 # Batch Hessian
 macro define_batch_hessian(function_name, target_function, args...)
+    fname_dispatch = Symbol("_" * String(function_name))
     fname = Symbol(function_name)
     argstup = Tuple(args)
     quote
-        function $(esc(fname))(nlp::ReducedSpaceEvaluator, dest, $(map(esc, argstup)...))
+        function $(esc(fname_dispatch))(nlp::ReducedSpaceEvaluator, hesslag::BatchHessianLagrangian, dest, $(map(esc, argstup)...))
             @assert has_hessian(nlp)
+            @assert n_batches(hesslag) > 1
             n = ExaPF.n_variables(nlp)
-            ∇²f = nlp.hesslag.hess
-            nbatch = size(nlp.hesslag.tmp_hv, 2)
+            ∇²f = hesslag.hess
+            nbatch = size(hesslag.tmp_hv, 2)
 
             # Allocate memory
             v_cpu = zeros(n, nbatch)
@@ -604,6 +606,18 @@ macro define_batch_hessian(function_name, target_function, args...)
                 $target_function(nlp, hm, $(map(esc, argstup)...), v)
             end
         end
+        function $(esc(fname_dispatch))(nlp::ReducedSpaceEvaluator, hesslag::HessianLagrangian, dest, $(map(esc, argstup)...))
+            @assert has_hessian(nlp)
+            n = n_variables(nlp)
+            v = similar(x)
+            @inbounds for i in 1:n
+                hv = @view dest[:, i]
+                fill!(v, 0)
+                v[i] = 1.0
+                $target_function(nlp, hv, $(map(esc, argstup)...), v)
+            end
+        end
+        $(esc(fname))(nlp::ReducedSpaceEvaluator, dest, $(map(esc, argstup)...)) = $(esc(fname_dispatch))(nlp, nlp.hesslag, dest, $(map(esc, argstup)...))
     end
 end
 
