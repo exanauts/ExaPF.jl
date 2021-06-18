@@ -427,6 +427,9 @@ end
 # Small utils to compute the factorization for batch Hessian algorithm
 function _batch_hessian_factorization(J::AbstractSparseMatrix, nbatch)
     lufac = LS.exa_factorize(J)
+    if isnothing(lufac)
+        error("Unable to find a factorization routine for type $(typeof(J))")
+    end
     return (lufac, lufac')
 end
 

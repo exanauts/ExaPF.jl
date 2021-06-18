@@ -39,7 +39,7 @@ KA.@kernel function cost_ramping_kernel!(
     @Const(σ), @Const(t), @Const(τ), @Const(λf), @Const(λt), @Const(ρf), @Const(ρt), @Const(p1), @Const(p2), @Const(p3),
     @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
     @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
-    @Const(ybus_im_nzval),
+    @Const(ybus_im_nzval), @Const(transperm),
 )
     i, j = @index(Global, NTuple)
     npv = length(pv)
@@ -54,7 +54,7 @@ KA.@kernel function cost_ramping_kernel!(
         i_ = i - npv
         bus = ref[i_]
         i_gen = ref_to_gen[i_]
-        inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval)
+        inj = bus_injection(bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm)
         pg[i_gen, j] = inj + pload[bus]
     end
 
@@ -72,6 +72,7 @@ KA.@kernel function adj_cost_ramping_kernel!(
     @Const(σ), @Const(t), @Const(τ), @Const(λf), @Const(λt), @Const(ρf), @Const(ρt), @Const(p1), @Const(p2), @Const(p3),
     @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
     @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
+    @Const(transperm),
 )
     i, j = @index(Global, NTuple)
     npv = length(pv)
@@ -90,7 +91,7 @@ KA.@kernel function adj_cost_ramping_kernel!(
         fr = ref[i_]
         i_gen = ref_to_gen[i_]
 
-        inj = bus_injection(fr, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval)
+        inj = bus_injection(fr, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm)
         pg = inj + pload[fr]
 
         adj_inj = adj_costs[1] * _adjoint_cost_ramping(
@@ -100,7 +101,8 @@ KA.@kernel function adj_cost_ramping_kernel!(
         adj_pinj[fr, j] = adj_inj
         # Update adj_vmag, adj_vang
         adjoint_bus_injection!(
-            fr, j, adj_inj, adj_vmag, adj_vang, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval
+            fr, j, adj_inj, adj_vmag, adj_vang, vmag, vang,
+            ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm,
         )
     end
 end
@@ -115,6 +117,7 @@ function cost_penalty_ramping_constraints(
     pv2gen = polar.indexing.index_pv_to_gen
     ref2gen = polar.indexing.index_ref_to_gen
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
 
     ngen = PS.get(polar, PS.NumberOfGenerators())
     coefs = polar.costs_coefficients
@@ -130,6 +133,7 @@ function cost_penalty_ramping_constraints(
         σ, t, τ, λf, λt, ρf, ρt, p1, p2, p3,
         pv, ref, pv2gen, ref2gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
+        transperm,
         ndrange=(ngen, size(buffer.pgen, 2)),
         dependencies=Event(polar.device),
     )
@@ -160,6 +164,7 @@ function adjoint!(
 
     ngen = get(polar, PS.NumberOfGenerators())
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
 
     fill!(∂vm, 0.0)
     fill!(∂va, 0.0)
@@ -182,6 +187,7 @@ function adjoint!(
         pbm.intermediate.p3,
         index_pv, index_ref, pv2gen, ref2gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
+        transperm,
         ndrange=(ngen, size(∂vm, 2)),
         dependencies=Event(polar.device)
     )

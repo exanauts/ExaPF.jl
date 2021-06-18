@@ -111,7 +111,9 @@ function _inf_pr(nlp::AbstractNLPEvaluator, cons)
     return max(err_inf, err_sup)
 end
 
-# Scaler utils
+#=
+    SCALER
+=#
 abstract type AbstractScaler end
 
 scale_factor(h, tol, η) = max(tol, η / max(1.0, h))
@@ -157,31 +159,5 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
     s_cons = h_s_cons |> VT
 
     return MaxScaler{typeof(s_obj), typeof(s_cons)}(s_obj, s_cons, s_cons .* g♭, s_cons .* g♯)
-end
-
-struct BridgeDevice{VT, MT}
-    u::VT
-    g::VT
-    cons::VT
-    v::VT
-    y::VT
-    w::VT
-    jv::VT
-    J::MT
-    H::MT
-end
-
-function BridgeDevice(n::Int, m::Int, VT, MT)
-    BridgeDevice{VT, MT}(
-        VT(undef, n),
-        VT(undef, n),
-        VT(undef, m),
-        VT(undef, m),
-        VT(undef, m),
-        VT(undef, m),
-        VT(undef, n),
-        MT(undef, m, n),
-        MT(undef, n, n),
-    )
 end
 

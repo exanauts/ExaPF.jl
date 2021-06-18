@@ -88,11 +88,11 @@ function AugLagEvaluator(
     return AugLagEvaluator(nlp, cons_type, cx, c₀, λ, λc, scaler, NLPCounter())
 end
 function AugLagEvaluator(
-    datafile::String; device=CPU(), options...
+    datafile::String; device=CPU(), scale=false, c₀=0.1, options...
 )
-    nlp = ReducedSpaceEvaluator(datafile; device=device)
+    nlp = ReducedSpaceEvaluator(datafile; device=device, options...)
     u0 = initial(nlp)
-    return AugLagEvaluator(nlp, u0; options...)
+    return AugLagEvaluator(nlp, u0; scale=scale, c₀=c₀)
 end
 
 has_hessian(nlp::AugLagEvaluator) = has_hessian(nlp.inner)

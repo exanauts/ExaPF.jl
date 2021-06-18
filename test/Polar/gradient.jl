@@ -21,7 +21,6 @@ function test_reduced_gradient(polar, device, MT)
     V = ExaPF.voltage_host(cache)
     Jx = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
     Ju = ExaPF.matpower_jacobian(polar, Control(), ExaPF.power_balance, V)
-<<<<<<< HEAD
     h∇gₓ = ∇gₓ |> SparseMatrixCSC |> Array
     h∇gᵤ = ∇gᵤ |> SparseMatrixCSC |> Array
     @test isapprox(h∇gₓ, Jx)

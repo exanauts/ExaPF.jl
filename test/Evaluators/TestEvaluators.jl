@@ -50,6 +50,7 @@ function runtests(datafile, device, AT)
         ExaPF.ProxALEvaluator,
         ExaPF.SlackEvaluator,
         ExaPF.FeasibilityEvaluator,
+        ExaPF.BridgeDeviceEvaluator,
     ]
         nlp = Evaluator(datafile; device=device)
         test_evaluator_api(nlp, device, AT)
