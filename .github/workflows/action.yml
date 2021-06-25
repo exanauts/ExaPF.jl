@@ -22,6 +22,7 @@ jobs:
       - uses: julia-actions/setup-julia@latest
         with:
           version: ${{ matrix.julia-version }}
+      - run: julia --project -e 'using Pkg; Pkg.add(url="https://github.com/exanauts/BlockPowerFlow.jl", rev="master")'
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-runtest@latest
 
@@ -40,5 +41,6 @@ jobs:
       - uses: julia-actions/setup-julia@latest
         with:
           version: ${{ matrix.julia-version }}
+      - run: julia --project -e 'using Pkg; Pkg.add(url="https://github.com/exanauts/BlockPowerFlow.jl", rev="master")'
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-runtest@latest

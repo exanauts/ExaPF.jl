@@ -155,7 +155,7 @@ function test_evaluator_batch_hessian(nlp, device, M; rtol=1e-5)
     # 3/ FiniteDiff
     hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
 
-    @test H * w == hv
+    @test H * w ≈ hv
     @test H ≈ hess_fd.data rtol=rtol
 
     m = ExaPF.n_constraints(nlp)

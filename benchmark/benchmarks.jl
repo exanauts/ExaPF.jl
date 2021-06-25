@@ -53,7 +53,8 @@ function run_benchmark(datafile, device, linsolver)
     algo = linsolver(precond)
     powerflow_solver = NewtonRaphson(tol=ntol)
     nlp = ExaPF.ReducedSpaceEvaluator(polar;
-                                        linear_solver=algo, powerflow_solver=powerflow_solver)
+                                      powerflow_solver=powerflow_solver)
+    nlp.linear_solver = algo
     convergence = ExaPF.update!(nlp, u0)
     ExaPF.reset!(nlp)
     convergence = ExaPF.update!(nlp, u0)
