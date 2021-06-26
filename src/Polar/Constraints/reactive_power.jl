@@ -26,7 +26,7 @@ function reactive_power_constraints(polar::PolarForm, cons, buffer)
     # Refresh reactive power generation in buffer
     update!(polar, PS.Generators(), PS.ReactivePower(), buffer)
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
-    copy!(cons, buffer.qgen)
+    copyto!(cons, buffer.qgen)
     return
 end
 
@@ -99,7 +99,7 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(r
     ref = pf.ref
     pv = pf.pv
     pq = pf.pq
-    gen2bus = polar.indexing.index_generators
+    gen2bus = polar.indexing.index_generators |> Array
     Ybus = pf.Ybus
 
     dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
@@ -117,10 +117,10 @@ end
 
 function matpower_hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer, λ)
     nbus = get(polar, PS.NumberOfBuses())
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    gen2bus = polar.indexing.index_generators
+    ref = polar.network.ref
+    pv = polar.network.pv
+    pq = polar.network.pq
+    gen2bus = polar.indexing.index_generators |> Array
     # Check consistency
     @assert length(λ) == length(gen2bus)
 

@@ -91,7 +91,7 @@ end
 
 function ReducedSpaceEvaluator(
     model::PolarForm{T, VI, VT, MT};
-    constraints=Function[voltage_magnitude_constraints, active_power_constraints, reactive_power_constraints],
+    constraints=Function[voltage_magnitude_constraints, reactive_power_constraints],
     linear_solver=direct_linear_solver(model),
     powerflow_solver=NewtonRaphson(tol=1e-12),
     want_jacobian=true,
@@ -106,12 +106,17 @@ function ReducedSpaceEvaluator(
     u_min, u_max = bounds(model, Control())
     λ = similar(buffer.dx)
 
-    g_min = VT()
-    g_max = VT()
+    m = sum([size_constraint(model, cons) for cons in constraints])
+    g_min = VT(undef, m)
+    g_max = VT(undef, m)
+
+    shift = 1
     for cons in constraints
         cb, cu = bounds(model, cons)
-        append!(g_min, cb)
-        append!(g_max, cu)
+        m = size_constraint(model, cons)
+        copyto!(g_min, shift, cb, 1, m)
+        copyto!(g_max, shift, cu, 1, m)
+        shift += m
     end
 
     obj_ad = pullback_objective(model)

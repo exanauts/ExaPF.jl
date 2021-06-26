@@ -441,6 +441,51 @@ KA.@kernel function adj_active_power_kernel!(
     end
 end
 
+KA.@kernel function active_power_slack!(
+    cons, vmag, vang, ref, pd,
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
+)
+    i = @index(Global, Linear)
+    bus = ref[i]
+    inj = 0.0
+    @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
+        to = ybus_re_rowval[c]
+        aij = vang[bus] - vang[to]
+        # f_re = a * cos + b * sin
+        # f_im = a * sin - b * cos
+        coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
+        coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
+        cos_val = cos(aij)
+        sin_val = sin(aij)
+        inj += coef_cos * cos_val + coef_sin * sin_val
+    end
+    cons[i] = inj + pd[bus]
+end
+
+KA.@kernel function adj_active_power_slack!(
+    v_m, v_a, adj_v_m, adj_v_a, adj_P, ref,
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
+)
+    i = @index(Global, Linear)
+    fr = ref[i]
+    @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
+        to = ybus_re_rowval[c]
+        aij = v_a[fr] - v_a[to]
+        cosθ = cos(aij)
+        sinθ = sin(aij)
+        cθ = ybus_re_nzval[c]*cosθ
+        sθ = ybus_im_nzval[c]*sinθ
+        adj_v_m[fr] += v_m[to] * (cθ + sθ) * adj_P[i]
+        adj_v_m[to] += v_m[fr] * (cθ + sθ) * adj_P[i]
+
+        adj_aij = -(v_m[fr]*v_m[to]*(ybus_re_nzval[c]*sinθ))
+        adj_aij += v_m[fr]*v_m[to]*(ybus_im_nzval[c]*cosθ)
+        adj_aij *= adj_P[i]
+        adj_v_a[to] += -adj_aij
+        adj_v_a[fr] += adj_aij
+    end
+end
+
 KA.@kernel function reactive_power_kernel!(
     qg, @Const(vmag), @Const(vang), @Const(pnet),
     @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),

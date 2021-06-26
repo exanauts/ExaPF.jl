@@ -34,8 +34,10 @@ function test_auglag_evaluator(nlp, device, MT)
             ExaPF.update!(pen, u_)
             return ExaPF.objective(pen, u_)
         end
-        grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
-        @test isapprox(grad_fd, g, rtol=1e-5)
+        grad_fd = FiniteDiff.finite_difference_jacobian(reduced_cost, u)
+        h_grad_fd = grad_fd[:] |> Array
+        h_g = g |> Array
+        @test isapprox(h_grad_fd, h_g, rtol=1e-5)
 
         # Test Hessian only on ReducedSpaceEvaluator and SlackEvaluator
         if (
@@ -45,8 +47,10 @@ function test_auglag_evaluator(nlp, device, MT)
             n = length(u)
             ExaPF.update!(pen, u)
             hv = similar(u) ; fill!(hv, 0)
-            w = similar(u) ; fill!(w, 0)
-            w[1] = 1
+            w = similar(u)
+            h_w = zeros(n) ; h_w[1] = 1.0
+            copyto!(w, h_w)
+
             ExaPF.hessprod!(pen, hv, u, w)
             H = similar(u, n, n) ; fill!(H, 0)
             ExaPF.hessian!(pen, H, u)
@@ -54,7 +58,11 @@ function test_auglag_evaluator(nlp, device, MT)
             @test H * w ≈ hv
             # Is Hessian correct?
             hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
-            @test isapprox(H, hess_fd.data, rtol=1e-5)
+
+            h_H = H |> Array
+            h_H_fd = hess_fd.data
+
+            @test isapprox(h_H, h_H_fd, rtol=1e-5)
         end
         # Test estimation of multipliers (only on SlackEvaluator)
         if isa(nlp, ExaPF.SlackEvaluator) && isa(device, CPU)

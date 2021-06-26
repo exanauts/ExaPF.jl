@@ -15,7 +15,7 @@ function test_constraints_jacobian(polar, device, MT)
     # Solve power flow
     conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
     # Get solution in complex form.
-    V = cache.vmag .* exp.(im .* cache.vang)
+    V = cache.vmag .* exp.(im .* cache.vang) |> Array
 
     # Test Jacobian w.r.t. State
     @testset "Constraint $(cons)" for cons in [
@@ -51,7 +51,7 @@ function test_constraints_jacobian(polar, device, MT)
         end
         x = [cache.vang[pv]; cache.vang[pq]; cache.vmag[pq]]
         Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x) |> Array
-        Jx = xjacobianAD.J |> Array
+        Jx = xjacobianAD.J |> SparseMatrixCSC |> Array
         ## JACOBIAN VECTOR PRODUCT
         ExaPF.jacobian_transpose_product!(polar, pbm, cache, tgt)
         ∂cons = pbm.stack
@@ -80,7 +80,7 @@ function test_constraints_jacobian(polar, device, MT)
             end
             u = [cache.vmag[ref]; cache.vmag[pv]; cache.pnet[pv]]
             Jd = FiniteDiff.finite_difference_jacobian(jac_fd_u, u) |> Array
-            Ju = ujacobianAD.J |> Array
+            Ju = ujacobianAD.J |> SparseMatrixCSC |> Array
             @test size(J) == (m, length(u))
             @test isapprox(Jd, Ju, rtol=1e-5)
             @test isapprox(Jmat_u, Ju, rtol=1e-6)
@@ -127,9 +127,13 @@ function test_constraints_adjoint(polar, device, MT)
             return dot(c, tgt)
         end
         vv = [cache.vmag; cache.vang]
-        vv_fd = FiniteDiff.finite_difference_gradient(test_fd, vv)
-        @test isapprox(vv_fd[1:nbus], pbm.stack.∂vm, rtol=1e-6)
-        @test isapprox(vv_fd[1+nbus:2*nbus], pbm.stack.∂va, rtol=1e-6)
+        vv_fd = FiniteDiff.finite_difference_jacobian(test_fd, vv)
+        # Transfer data back to the CPU
+        h_vm = pbm.stack.∂vm |> Array
+        h_va = pbm.stack.∂va |> Array
+        h_vv_fd = vv_fd |> Array
+        @test isapprox(h_vv_fd[1:nbus], h_vm, rtol=1e-6)
+        @test isapprox(h_vv_fd[1+nbus:2*nbus], h_va, rtol=1e-6)
     end
 end
 

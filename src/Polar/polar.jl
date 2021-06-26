@@ -177,29 +177,16 @@ end
 # Initial position
 function initial(polar::PolarForm{T, IT, VT, MT}, X::Union{State,Control}) where {T, IT, VT, MT}
     # Load data from PowerNetwork
-    vmag = abs.(polar.network.vbus) |> VT
-    vang = angle.(polar.network.vbus) |> VT
+    vmag = abs.(polar.network.vbus)
+    vang = angle.(polar.network.vbus)
     pg = get(polar.network, PS.ActivePower())
-
-    npv = get(polar, PS.NumberOfPVBuses())
-    npq = get(polar, PS.NumberOfPQBuses())
-    nref = get(polar, PS.NumberOfSlackBuses())
+    pv2gen = polar.indexing.index_pv_to_gen |> Array
 
     if isa(X, State)
         # build vector x
-        dimension = get(polar, NumberOfState())
-        x = xzeros(VT, dimension)
-        x[1:npv] = vang[polar.network.pv]
-        x[npv+1:npv+npq] = vang[polar.network.pq]
-        x[npv+npq+1:end] = vmag[polar.network.pq]
-        return x
+        return [vang[polar.network.pv] ; vang[polar.network.pq] ; vmag[polar.network.pq]] |> VT
     elseif isa(X, Control)
-        dimension = get(polar, NumberOfControl())
-        u = xzeros(VT, dimension)
-        u[1:nref] = vmag[polar.network.ref]
-        u[nref + 1:nref + npv] = vmag[polar.network.pv]
-        u[nref + npv + 1:nref + 2*npv] = pg[polar.indexing.index_pv_to_gen]
-        return u
+        return [vmag[polar.network.ref] ; vmag[polar.network.pv] ; pg[pv2gen]] |> VT
     end
 end
 

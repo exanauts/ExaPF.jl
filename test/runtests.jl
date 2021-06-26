@@ -26,6 +26,7 @@ has_cuda_gpu() && push!(ARCHS, (CUDADevice(), CuArray, CuSparseMatrixCSR))
 @isdefined(TestPolarFormulation) || include("Polar/TestPolarForm.jl")
 @isdefined(TestEvaluators)       || include("Evaluators/TestEvaluators.jl")
 
+error()
 init_time = time()
 @testset "Test ExaPF" begin
     @testset "ExaPF.PowerSystem" begin
