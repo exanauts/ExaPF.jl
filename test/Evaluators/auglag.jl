@@ -60,7 +60,7 @@ function test_auglag_evaluator(nlp, device, MT)
             hess_fd = FiniteDiff.finite_difference_hessian(reduced_cost, u)
 
             h_H = H |> Array
-            h_H_fd = hess_fd.data
+            h_H_fd = hess_fd.data |> Array
 
             @test isapprox(h_H, h_H_fd, rtol=1e-5)
         end

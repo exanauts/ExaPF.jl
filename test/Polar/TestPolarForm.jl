@@ -31,7 +31,7 @@ end
 function myisapprox(a, b; options...)
     h_a = a |> Array
     h_b = b |> Array
-    return isapprox(a, b; options...)
+    return isapprox(h_a, h_b; options...)
 end
 
 function runtests(datafile, device, AT)

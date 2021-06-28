@@ -6,6 +6,7 @@ using SparseArrays
 using CUDA
 using CUDA.CUSPARSE
 using KernelAbstractions
+using CUDAKernels
 
 using FiniteDiff
 
