@@ -34,7 +34,7 @@ function test_auglag_evaluator(nlp, device, MT)
             ExaPF.update!(pen, u_)
             return ExaPF.objective(pen, u_)
         end
-        grad_fd = FiniteDiff.finite_difference_jacobian(reduced_cost, u)
+        grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
         h_grad_fd = grad_fd[:] |> Array
         h_g = g |> Array
         @test isapprox(h_grad_fd, h_g, rtol=1e-5)

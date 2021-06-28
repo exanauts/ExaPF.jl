@@ -10,6 +10,8 @@ struct IndexingCache{IVT} <: AbstractBuffer
     index_pv_to_gen::IVT
     index_ref_to_gen::IVT
 end
+index_buses(idx::IndexingCache) = (idx.index_ref, idx.index_pv, idx.index_pq)
+index_generators(idx::IndexingCache) = (idx.index_generators, idx.index_ref_to_gen, idx.index_pv_to_gen)
 
 """
     PolarNetworkState{VI, VT} <: AbstractNetworkBuffer
@@ -92,6 +94,9 @@ function Base.iszero(buf::PolarNetworkState)
         iszero(buf.balance) &&
         iszero(buf.dx)
 end
+
+voltage(buf::PolarNetworkState) = buf.vmag .* exp.(im .* buf.vang)
+voltage_host(buf::PolarNetworkState) = voltage(buf) |> Array
 
 "Store topology of the network on target device."
 struct NetworkTopology{VTI, VTD}

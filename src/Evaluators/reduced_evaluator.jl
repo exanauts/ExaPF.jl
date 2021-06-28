@@ -91,7 +91,7 @@ end
 
 function ReducedSpaceEvaluator(
     model::PolarForm{T, VI, VT, MT};
-    constraints=Function[voltage_magnitude_constraints, reactive_power_constraints],
+    constraints=Function[voltage_magnitude_constraints, active_power_constraints, reactive_power_constraints],
     linear_solver=direct_linear_solver(model),
     powerflow_solver=NewtonRaphson(tol=1e-12),
     want_jacobian=true,

@@ -12,7 +12,7 @@ end
 # Function for AutoDiff
 function active_power_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet, pd, qd)
     kernel! = active_power_kernel!(polar.device)
-    ref = polar.indexing.index_ref
+    ref, _, _ = index_buses_device(polar)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     ndrange = length(ref)
     ev = active_power_slack!(polar.device)(cons, vmag, vang, ref, pd,
@@ -29,9 +29,9 @@ end
 function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(active_power_constraints)) where {T, IT, VT, MT}
     # Get all bounds (lengths of p_min, p_max, q_min, q_max equal to ngen)
     p_min, p_max = PS.bounds(polar.network, PS.Generators(), PS.ActivePower())
-    ref_to_gen = polar.indexing.index_ref_to_gen |> Array
-    pq_min = p_min[ref_to_gen]
-    pq_max = p_max[ref_to_gen]
+    _, ref2gen, _ = index_generators_host(polar)
+    pq_min = p_min[ref2gen]
+    pq_max = p_max[ref2gen]
     return convert(VT, pq_min), convert(VT, pq_max)
 end
 
@@ -47,7 +47,7 @@ function adjoint!(
 ) where {F<:typeof(active_power_constraints), S, I}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    ref = polar.indexing.index_ref
+    ref, _, _ = index_buses_device(polar)
 
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     ndrange = nref
@@ -63,11 +63,10 @@ end
 function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(active_power_constraints), V)
     nbus = get(polar, PS.NumberOfBuses())
     pf = polar.network
-    ref = pf.ref ; nref = length(ref)
-    pv = pf.pv ; npv = length(pv)
-    pq = pf.pq ; npq = length(pq)
-    gen2bus = polar.indexing.index_generators
-    ngen = length(gen2bus)
+    ref, pv, pq = index_buses_host(polar)
+    nref = length(ref)
+    npv = length(pv)
+    npq = length(pq)
     Ybus = pf.Ybus
 
     dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
@@ -84,12 +83,10 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(a
 end
 
 function matpower_hessian(polar::PolarForm, ::typeof(active_power_constraints), buffer, λ)
-    pv = polar.network.pv
-    pq = polar.network.pq
-    ref = polar.network.ref
+    ref, pv, pq = index_buses_host(polar)
     # Check consistency: currently only support a single slack node
     @assert length(λ) == 1
-    V = buffer.vmag .* exp.(im .* buffer.vang) |> Array
+    V = voltage_host(buffer)
     hxx, hxu, huu = PS.active_power_hessian(V, polar.network.Ybus, pv, pq, ref)
 
     λₚ = sum(λ)  # TODO

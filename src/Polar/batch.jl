@@ -77,8 +77,7 @@ function batch_buffer(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
     nstates = get(polar, NumberOfState())
-    gen2bus = polar.indexing.index_generators
-    h_gen2bus = polar.indexing.index_generators |> Array
+    gen2bus, _, _ = index_generators_device(polar)
     buffer =  PolarNetworkState{VI,MT}(
         MT(undef, nbus, nbatch),
         MT(undef, nbus, nbatch),
@@ -102,6 +101,7 @@ function batch_buffer(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI
     qd = get(polar.network, PS.ReactiveLoad())
     pg = get(polar.network, PS.ActivePower())
     qg = get(polar.network, PS.ReactivePower())
+    h_gen2bus, _, _ = index_generators_host(polar)
     pbus[h_gen2bus] .= pg
     qbus[h_gen2bus] .= qg
 

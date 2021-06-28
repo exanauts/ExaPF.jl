@@ -77,7 +77,6 @@ function hessian(nlp::AbstractNLPEvaluator, x)
     return H
 end
 
-mynorm(a) = maximum(abs.(a))
 # Counters
 abstract type AbstractCounter end
 
@@ -103,8 +102,8 @@ function _check(val, val_min, val_max)
     violated_sup = findall(val .> val_max)
     n_inf = length(violated_inf)
     n_sup = length(violated_sup)
-    err_inf = mynorm(val_min[violated_inf] .- val[violated_inf])
-    err_sup = mynorm(val[violated_sup] .- val_max[violated_sup])
+    err_inf = xnorm_inf(val_min[violated_inf] .- val[violated_inf])
+    err_sup = xnorm_inf(val[violated_sup] .- val_max[violated_sup])
     return (n_inf, err_inf, n_sup, err_sup)
 end
 
@@ -140,7 +139,7 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
     ∇g = similar(u0) ; fill!(∇g, 0)
     gradient!(nlp, ∇g, u0)
 
-    s_obj = scale_factor(mynorm(∇g), tol, η)
+    s_obj = scale_factor(xnorm_inf(∇g), tol, η)
 
     VT = typeof(u0)
     ∇c = xzeros(VT, n)
@@ -152,7 +151,7 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
         h_v[i] = 1.0
         copyto!(v, h_v)
         jtprod!(nlp, ∇c, u0, v)
-        h_s_cons[i] = scale_factor(mynorm(∇c), tol, η)
+        h_s_cons[i] = scale_factor(xnorm_inf(∇c), tol, η)
     end
 
     g♭, g♯ = bounds(nlp, Constraints())

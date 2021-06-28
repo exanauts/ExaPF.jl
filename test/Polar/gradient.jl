@@ -18,7 +18,7 @@ function test_reduced_gradient(polar, device, MT)
     @test isequal(∇gₓ, ∇gᵥ)
 
     # Test with Matpower's Jacobian
-    V = cache.vmag .* exp.(im * cache.vang) |> Array
+    V = ExaPF.voltage_host(cache)
     Jx = ExaPF.matpower_jacobian(polar, State(), ExaPF.power_balance, V)
     Ju = ExaPF.matpower_jacobian(polar, Control(), ExaPF.power_balance, V)
     h∇gₓ = ∇gₓ |> SparseMatrixCSC |> Array
@@ -52,8 +52,7 @@ function test_reduced_gradient(polar, device, MT)
     end
 
     grad_fd = FiniteDiff.finite_difference_jacobian(reduced_cost, u)
-    grad_fd = grad_fd[:] |> Array # Transfer gradient to host
-    @test isapprox(grad_fd, grad_adjoint, rtol=1e-4)
+    @test isapprox(grad_fd[:], grad_adjoint, rtol=1e-4)
 end
 
 function test_line_flow_gradient(polar, device, MT)
@@ -97,8 +96,6 @@ function test_line_flow_gradient(polar, device, MT)
     ExaPF.flow_constraints_grad!(polar, gradg, cache, weights)
     # @test isapprox(adgradg, fdgradg)
     # TODO: The gradient is slightly off with the handwritten adjoint
-    h_gradg = gradg |> Array
-    h_fdgradg = fdgradg[:] |> Array
-    @test_broken isapprox(gradg, fdgradg)
+    @test_broken isapprox(gradg, fdgradg[:])
 end
 

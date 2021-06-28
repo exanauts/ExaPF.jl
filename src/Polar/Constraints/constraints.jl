@@ -94,7 +94,7 @@ function jacobian_sparsity(polar::PolarForm, func::Function, xx::AbstractVariabl
 end
 
 function matpower_jacobian(polar::PolarForm, func::Function, X::AbstractVariable, buffer::PolarNetworkState)
-    V = buffer.vmag .* exp.(im .* buffer.vang) |> Array
+    V = voltage_host(buffer)
     return matpower_jacobian(polar, X, func, V)
 end
 

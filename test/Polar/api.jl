@@ -76,8 +76,7 @@ function test_polar_api(polar, device, M)
     cons = cache.balance
     ExaPF.power_balance(polar, cons, cache)
     # As we run powerflow before, the balance should be below tolerance
-    h_cons = cons |> Array
-    @test norm(h_cons, Inf) < tolerance
+    @test ExaPF.xnorm_inf(cons) < tolerance
 
     ## Cost Production
     c2 = ExaPF.cost_production(polar, cache)
@@ -107,7 +106,7 @@ function test_polar_constraints(polar, device, M)
         @test length(g_max) == m
         @test isa(g_min, M)
         @test isa(g_max, M)
-        @test Array(g_min) <= Array(g_max)
+        @test myisless(g_min, g_max)
     end
     return nothing
 end

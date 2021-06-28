@@ -15,7 +15,7 @@ function test_constraints_jacobian(polar, device, MT)
     # Solve power flow
     conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
     # Get solution in complex form.
-    V = cache.vmag .* exp.(im .* cache.vang) |> Array
+    V = ExaPF.voltage_host(cache)
 
     # Test Jacobian w.r.t. State
     @testset "Constraint $(cons)" for cons in [
@@ -128,12 +128,10 @@ function test_constraints_adjoint(polar, device, MT)
         end
         vv = [cache.vmag; cache.vang]
         vv_fd = FiniteDiff.finite_difference_jacobian(test_fd, vv)
-        # Transfer data back to the CPU
-        h_vm = pbm.stack.∂vm |> Array
-        h_va = pbm.stack.∂va |> Array
-        h_vv_fd = vv_fd |> Array
-        @test isapprox(h_vv_fd[1:nbus], h_vm, rtol=1e-6)
-        @test isapprox(h_vv_fd[1+nbus:2*nbus], h_va, rtol=1e-6)
+        # Loosen the tolerance to 1e-5 there (finite_difference_jacobian
+        # is less accurate than finite_difference_gradient)
+        @test myisapprox(vv_fd[1:nbus], pbm.stack.∂vm, rtol=1e-5)
+        @test myisapprox(vv_fd[1+nbus:2*nbus], pbm.stack.∂va, rtol=1e-5)
     end
 end
 
