@@ -4,13 +4,13 @@ is_linear(polar::PolarForm, ::typeof(voltage_magnitude_constraints)) = true
 
 # We add constraint only on vmag_pq
 function voltage_magnitude_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet, pload, qload)
-    index_pq = polar.indexing.index_pq
-    cons .= @view vmag[index_pq]
+    _, _, pq = index_buses_device(polar)
+    cons .= @view vmag[pq]
     return
 end
 function voltage_magnitude_constraints(polar::PolarForm, cons, buffer)
-    index_pq = polar.indexing.index_pq
-    cons .= @view buffer.vmag[index_pq]
+    _, _, pq = index_buses_device(polar)
+    cons .= @view buffer.vmag[pq]
     return
 end
 
@@ -35,8 +35,8 @@ function adjoint!(
     pnet, ∂pnet,
     pload, qload,
 ) where {F<:typeof(voltage_magnitude_constraints), S, I}
-    index_pq = polar.indexing.index_pq
-    ∂vmag[index_pq] .= ∂cons
+    _, _, pq = index_buses_device(polar)
+    ∂vmag[pq] .= ∂cons
 end
 
 function matpower_jacobian(

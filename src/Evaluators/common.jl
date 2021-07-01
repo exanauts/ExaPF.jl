@@ -102,8 +102,8 @@ function _check(val, val_min, val_max)
     violated_sup = findall(val .> val_max)
     n_inf = length(violated_inf)
     n_sup = length(violated_sup)
-    err_inf = norm(val_min[violated_inf] .- val[violated_inf], Inf)
-    err_sup = norm(val[violated_sup] .- val_max[violated_sup] , Inf)
+    err_inf = xnorm_inf(val_min[violated_inf] .- val[violated_inf])
+    err_sup = xnorm_inf(val[violated_sup] .- val_max[violated_sup])
     return (n_inf, err_inf, n_sup, err_sup)
 end
 
@@ -129,6 +129,8 @@ function MaxScaler(g_min, g_max)
     sc = similar(g_min) ; fill!(sc, 1.0)
     return MaxScaler{eltype(g_min), typeof(g_min)}(1.0, sc, g_min, g_max)
 end
+
+
 function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
                    η=100.0, tol=1e-8)
     n = n_variables(nlp)
@@ -136,20 +138,24 @@ function MaxScaler(nlp::AbstractNLPEvaluator, u0::AbstractVector;
     conv = update!(nlp, u0)
     ∇g = similar(u0) ; fill!(∇g, 0)
     gradient!(nlp, ∇g, u0)
-    s_obj = scale_factor(norm(∇g, Inf), tol, η)
+
+    s_obj = scale_factor(xnorm_inf(∇g), tol, η)
 
     VT = typeof(u0)
     ∇c = xzeros(VT, n)
-    s_cons = xzeros(VT, m)
+    h_s_cons = zeros(m)
     v = xzeros(VT, m)
-    for i in eachindex(s_cons)
-        fill!(v, 0.0)
-        v[i] = 1.0
+    h_v = zeros(m)
+    for i in eachindex(h_s_cons)
+        fill!(h_v, 0.0)
+        h_v[i] = 1.0
+        copyto!(v, h_v)
         jtprod!(nlp, ∇c, u0, v)
-        s_cons[i] = scale_factor(norm(∇c, Inf), tol, η)
+        h_s_cons[i] = scale_factor(xnorm_inf(∇c), tol, η)
     end
 
     g♭, g♯ = bounds(nlp, Constraints())
+    s_cons = h_s_cons |> VT
 
     return MaxScaler{typeof(s_obj), typeof(s_cons)}(s_obj, s_cons, s_cons .* g♭, s_cons .* g♯)
 end

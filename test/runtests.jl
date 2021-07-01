@@ -5,8 +5,8 @@ using SparseArrays
 
 using CUDA
 using CUDA.CUSPARSE
-using CUDAKernels
 using KernelAbstractions
+using CUDAKernels
 
 using FiniteDiff
 

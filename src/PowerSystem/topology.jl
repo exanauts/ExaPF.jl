@@ -132,6 +132,36 @@ function bustypeindex(bus, gen, bus_to_indexes)
     return ref, pv, pq, bustype, inactive_generators
 end
 
+function generators_to_buses(gens, bus_to_indexes)
+    GEN_BUS = IndexSet.idx_gen()[1]
+    ngens = size(gens, 1)
+    # Create array on host memory
+    indexing = zeros(Int, ngens)
+    # Here, we keep the same ordering as specified in Matpower.
+    for i in 1:ngens
+        indexing[i] = bus_to_indexes[gens[i, GEN_BUS]]
+    end
+    return indexing
+end
+
+function buses_to_generators(gen2bus, pv, ref)
+    pv2gen = zeros(Int, length(pv))
+    ref2gen = zeros(Int, length(ref))
+    for i in eachindex(gen2bus)
+        bus = gen2bus[i]
+        i_pv = findfirst(isequal(bus), pv)
+        if !isnothing(i_pv)
+            pv2gen[i_pv] = i
+        else
+            i_ref = findfirst(isequal(bus), ref)
+            if !isnothing(i_ref)
+                ref2gen[i_ref] = i
+            end
+        end
+    end
+    return (pv2gen, ref2gen)
+end
+
 """
     assembleSbus(gen, load, SBASE, nbus)
 

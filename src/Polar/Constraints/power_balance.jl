@@ -20,9 +20,7 @@ end
 
 function power_balance(polar::PolarForm, cons, vmag, vang, pnet, qnet, pload, qload)
     nbus = get(polar, PS.NumberOfBuses())
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
+    ref, pv, pq = index_buses_device(polar)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     fill!(cons, 0.0)
@@ -64,9 +62,7 @@ function adjoint!(
     pload, qload,
 ) where {F<:typeof(power_balance), S, I}
     nbus = get(polar, PS.NumberOfBuses())
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
+    ref, pv, pq = index_buses_device(polar)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
@@ -92,9 +88,10 @@ end
 function matpower_jacobian(polar::PolarForm, X::Union{State, Control}, ::typeof(power_balance), V)
     nbus = get(polar, PS.NumberOfBuses())
     pf = polar.network
-    ref = pf.ref ; nref = length(ref)
-    pv = pf.pv ; npv = length(pv)
-    pq = pf.pq ; npq = length(pq)
+    ref, pv, pq = index_buses_host(polar)
+    nref = length(ref)
+    npv = length(pv)
+    npq = length(pq)
     Ybus = pf.Ybus
 
     dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
@@ -121,11 +118,9 @@ function matpower_hessian(
     buffer::PolarNetworkState,
     λ::AbstractVector,
 )
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
+    ref, pv, pq = index_buses_host(polar)
     λ_host = λ |> Array
-    V = buffer.vmag .* exp.(im .* buffer.vang) |> Array
+    V = voltage_host(buffer)
     hxx, hxu, huu = PS.residual_hessian(V, polar.network.Ybus, λ_host, pv, pq, ref)
     return FullSpaceHessian(hxx, hxu, huu)
 end

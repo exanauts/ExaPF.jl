@@ -28,9 +28,7 @@ function powerflow(
     nvbus = length(polar.network.vbus)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
+    ref, pv, pq = index_buses_device(polar)
 
     # iteration variables
     iter = 0
@@ -150,9 +148,7 @@ function batch_powerflow(
     nvbus = length(polar.network.vbus)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
+    ref, pv, pq = index_buses_device(polar)
 
     # iteration variables
     iter = 0

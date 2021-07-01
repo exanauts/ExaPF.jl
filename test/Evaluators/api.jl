@@ -1,3 +1,9 @@
+function myisless(a, b)
+    h_a = a |> Array
+    h_b = b |> Array
+    return h_a <= h_b
+end
+
 function test_evaluator_api(nlp, device, M)
     # Test printing
     println(devnull, nlp)
@@ -13,10 +19,10 @@ function test_evaluator_api(nlp, device, M)
     # Test consistence
     @test n == length(u)
     @test length(u_min) == length(u_max) == n
-    @test isless(u_min, u_max)
+    @test myisless(u_min, u_max)
     @test length(g_min) == length(g_max) == m
     if m > 0
-        @test g_min <= g_max
+        @test myisless(g_min, g_max)
     end
 
     # Test API
@@ -62,8 +68,10 @@ function test_evaluator_callbacks(nlp, device, M; rtol=1e-6)
     end
     g = similar(u) ; fill!(g, 0)
     ExaPF.gradient!(nlp, g, u)
-    grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
-    @test isapprox(grad_fd, g, rtol=rtol)
+    grad_fd = FiniteDiff.finite_difference_jacobian(reduced_cost, u)
+    h_g = g |> Array
+    h_grad_fd = grad_fd[:] |> Array
+    @test isapprox(h_grad_fd, h_g, rtol=1e-5)
 
     # Constraint
     # 4/ Constraint
@@ -81,16 +89,18 @@ function test_evaluator_callbacks(nlp, device, M; rtol=1e-6)
             ExaPF.constraint!(nlp, cons, u_)
             return dot(v, cons)
         end
-        jv_fd = FiniteDiff.finite_difference_gradient(reduced_cons, u)
+        jv_fd = FiniteDiff.finite_difference_jacobian(reduced_cons, u)
+        h_jv = jv |> Array
+        h_jv_fd = jv_fd[:] |> Array
 
         # TODO: rtol=1e-6 breaks on case30. Investigate why.
-        @test isapprox(jv, jv_fd, rtol=1e-4)
+        @test isapprox(h_jv, h_jv_fd, rtol=1e-4)
 
         ## Evaluation of the Jacobian (only on CPU)
         if isa(device, CPU)
             J = ExaPF.jacobian(nlp, u)
             # Test transpose Jacobian vector product
-            @test isapprox(jv, J' * v)
+            @test isapprox(jv, J' * v, rtol=rtol)
             # Test Jacobian vector product
             ExaPF.jprod!(nlp, v, u, jv)
             @test isapprox(J * jv, v)
@@ -114,7 +124,8 @@ function test_evaluator_hessian(nlp, device, M; rtol=1e-6)
     # 1/ Hessian-vector product
     hv = similar(u) ; fill!(hv, 0)
     w = similar(u) ; fill!(w, 0)
-    w[1] = 1.0
+    h_w = zeros(n) ; h_w[1] = 1.0
+    copyto!(w, h_w)
     ExaPF.hessprod!(nlp, hv, u, w)
 
     # 2/ Full Hessian

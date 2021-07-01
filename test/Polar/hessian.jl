@@ -25,9 +25,10 @@ function test_hessian_with_matpower(polar, device, AT; atol=1e-6, rtol=1e-6)
         ExaPF.reactive_power_constraints,
     ]
         ncons = ExaPF.size_constraint(polar, constraints)
-        λ = rand(ncons) |> AT
+        hλ = rand(ncons)
+        λ = hλ |> AT
         # Evaluate Hessian-vector product (full ∇²g is a 3rd dimension tensor)
-        ∇²gλ = ExaPF.matpower_hessian(polar, constraints, cache, λ)
+        ∇²gλ = ExaPF.matpower_hessian(polar, constraints, cache, hλ)
         nx = size(∇²gλ.xx, 1)
         nu = size(∇²gλ.uu, 1)
 
