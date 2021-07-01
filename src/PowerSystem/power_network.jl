@@ -50,10 +50,10 @@ struct PowerNetwork <: AbstractPowerSystem
         LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
         # retrive required data
-        bus = data["bus"]
-        gen = data["gen"]
-        lines = data["branch"]
-        SBASE = data["baseMVA"][1]
+        bus = data["bus"]::Array{Float64, 2}
+        gen = data["gen"]::Array{Float64, 2}
+        lines = data["branch"]::Array{Float64, 2}
+        SBASE = data["baseMVA"][1]::Float64
         cost_coefficients = Base.get(data, "cost", nothing)
 
         # BUSES
@@ -265,8 +265,8 @@ function get_costs_coefficients(pf::PowerNetwork)
     gens = pf.generators
     baseMVA = pf.baseMVA
     bus = pf.buses
-    ngens = size(gens)[1]
-    nbus = size(bus)[1]
+    ngens = size(gens, 1)
+    nbus = size(bus, 1)
 
     # initialize cost
     # store coefficients in a Float64 array, with 4 columns:
@@ -295,7 +295,10 @@ function get_costs_coefficients(pf::PowerNetwork)
             c2 = 0.0
         end
 
-        coefficients[i, :] .= (bustype, c0, c1, c2)
+        coefficients[i, 1] = bustype
+        coefficients[i, 2] = c0
+        coefficients[i, 3] = c1
+        coefficients[i, 4] = c2
     end
     return coefficients
 end

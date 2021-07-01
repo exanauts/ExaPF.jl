@@ -99,11 +99,11 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(r
     if isa(X, State)
         j11 = imag(dSbus_dVa[gen2bus, [pv; pq]])
         j12 = imag(dSbus_dVm[gen2bus, pq])
-        return [j11 j12]
+        return [j11 j12]::SparseMatrixCSC{Float64, Int}
     elseif isa(X, Control)
         j11 = imag(dSbus_dVm[gen2bus, [ref; pv]])
         j12 = spzeros(length(gen2bus), length(pv))
-        return [j11 j12]
+        return [j11 j12]::SparseMatrixCSC{Float64, Int}
     end
 end
 

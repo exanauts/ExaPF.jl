@@ -47,14 +47,16 @@ function parse_matlab_string(data_string::String; extended = false)
                 if haskey(matrix_dict, "column_names")
                     column_names[matrix_dict["name"]] = matrix_dict["column_names"]
                 end
-                index = index + matrix_dict["line_count"] - 1
+                line_count = matrix_dict["line_count"]::Int
+                index = index + line_count - 1
             elseif occursin("{", line)
                 cell_dict = _parse_matlab_cells(data_lines, index)
                 matlab_dict[cell_dict["name"]] = cell_dict["data"]
                 if haskey(cell_dict, "column_names")
                     column_names[cell_dict["name"]] = cell_dict["column_names"]
                 end
-                index = index + cell_dict["line_count"] - 1
+                line_count = cell_dict["line_count"]::Int
+                index = index + line_count - 1
             else
                 name, value = _extract_matlab_assignment(line)
                 value = _type_value(value)
@@ -195,7 +197,7 @@ function _parse_matlab_data(lines, index, start_char, end_char)
         matrix[r] = [typed_columns[c][r] for c in 1:columns]
     end
 
-    matrix_dict = Dict("name" => matrix_name, "data" => matrix, "line_count" => line_count)
+    matrix_dict = Dict{String, Any}("name" => matrix_name, "data" => matrix, "line_count" => line_count)
 
     if index > 1 && occursin("%column_names%", lines[index - 1])
         column_names_string = lines[index - 1]

@@ -33,20 +33,24 @@ function mat_to_exapf(data_mat)
     data = Dict{String,Array}()
 
     # baseMVA
-    data["baseMVA"] = [data_mat["baseMVA"]]
+    data["baseMVA"] = Float64[data_mat["baseMVA"]]
+    matpower_buses    = data_mat["bus"]::Vector{Dict{String, Any}}
+    matpower_gens     = data_mat["gen"]::Vector{Dict{String, Any}}
+    matpower_branches = data_mat["branch"]::Vector{Dict{String, Any}}
+    matpower_costs    = data_mat["gencost"]::Vector{Dict{String, Any}}
 
     # buses
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
-    nbus = length(data_mat["bus"])
+    nbus = length(matpower_buses)
     bus_array = zeros(nbus, 13)
 
     # Keep the correspondence between Matpower's ID and ExaPF
     # contiguous indexing.
 
-    for (i, bus) in enumerate(data_mat["bus"])
-        busn = bus["bus_i"]
+    for (i, bus) in enumerate(matpower_buses)
+        busn = bus["bus_i"]::Int
         bus_array[i, BUS_I] = busn
         bus_array[i, BUS_TYPE] = bus["bus_type"]
         bus_array[i, PD] = bus["pd"]
@@ -68,10 +72,10 @@ function mat_to_exapf(data_mat)
     QC2MIN, QC2MAX, RAMP_AGC, RAMP_10, RAMP_30, RAMP_Q, APF, MU_PMAG, MU_PMIN, MU_QMAX,
     MU_QMIN = IndexSet.idx_gen()
 
-    ngen = length(data_mat["gen"])
+    ngen = length(matpower_gens)
     gen_array = zeros(ngen, 16)
 
-    for (i, gen) in enumerate(data_mat["gen"])
+    for (i, gen) in enumerate(matpower_gens)
         gen_array[i, GEN_BUS] = gen["gen_bus"]
         gen_array[i, PG] = gen["pg"]
         gen_array[i, QG] = gen["qg"]
@@ -94,10 +98,10 @@ function mat_to_exapf(data_mat)
     F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C, TAP, SHIFT, BR_STATUS,
     ANGMIN, ANGMAX, PF, QF, PT, QT, MU_SF, MU_ST, MU_ANGMIN, MU_ANGMAX = IndexSet.idx_branch()
 
-    nbranch = length(data_mat["branch"])
+    nbranch = length(matpower_branches)
     branch_array = zeros(nbranch, 13)
 
-    for (i, branch) in enumerate(data_mat["branch"])
+    for (i, branch) in enumerate(matpower_branches)
         branch_array[i, F_BUS] = branch["f_bus"]
         branch_array[i, T_BUS] = branch["t_bus"]
         branch_array[i, BR_R] = branch["br_r"]
@@ -118,9 +122,9 @@ function mat_to_exapf(data_mat)
     data["branch"] = branch_array
 
     MODEL, STARTUP, SHUTDOWN, NCOST, COST = IndexSet.idx_cost()
-    ncost = length(data_mat["gencost"])
+    ncost = length(matpower_costs)
     cost_array = zeros(ncost, 7)
-    for (i, cos) in enumerate(data_mat["gencost"])
+    for (i, cos) in enumerate(matpower_costs)
         cost_array[i, MODEL] = cos["model"]
         cost_array[i, STARTUP] = cos["startup"]
         cost_array[i, SHUTDOWN] = cos["shutdown"]
@@ -308,7 +312,7 @@ function _parse_matpower_string(data_string::String)
     end
 
     if haskey(matlab_data, "mpc.bus")
-        buses = []
+        buses = Dict{String, Any}[]
         for bus_row in matlab_data["mpc.bus"]
             bus_data = row_to_typed_dict(bus_row, _mp_bus_columns)
             bus_data["index"] = check_type(Int, bus_row[1])
@@ -321,7 +325,7 @@ function _parse_matpower_string(data_string::String)
     end
 
     if haskey(matlab_data, "mpc.gen")
-        gens = []
+        gens = Dict{String, Any}[]
         for (i, gen_row) in enumerate(matlab_data["mpc.gen"])
             gen_data = row_to_typed_dict(gen_row, _mp_gen_columns)
             gen_data["index"] = i
@@ -334,7 +338,7 @@ function _parse_matpower_string(data_string::String)
     end
 
     if haskey(matlab_data, "mpc.branch")
-        branches = []
+        branches = Dict{String, Any}[]
         for (i, branch_row) in enumerate(matlab_data["mpc.branch"])
             branch_data = row_to_typed_dict(branch_row, _mp_branch_columns)
             branch_data["index"] = i
@@ -347,7 +351,7 @@ function _parse_matpower_string(data_string::String)
     end
 
     if haskey(matlab_data, "mpc.dcline")
-        dclines = []
+        dclines = Dict{String, Any}[]
         for (i, dcline_row) in enumerate(matlab_data["mpc.dcline"])
             dcline_data = row_to_typed_dict(dcline_row, _mp_dcline_columns)
             dcline_data["index"] = i
@@ -358,7 +362,7 @@ function _parse_matpower_string(data_string::String)
     end
 
     if haskey(matlab_data, "mpc.storage")
-        storage = []
+        storage = Dict{String, Any}[]
         for (i, storage_row) in enumerate(matlab_data["mpc.storage"])
             storage_data = row_to_typed_dict(storage_row, _mp_storage_columns)
             storage_data["index"] = i
@@ -369,7 +373,7 @@ function _parse_matpower_string(data_string::String)
     end
 
     if haskey(matlab_data, "mpc.switch")
-        switch = []
+        switch = Dict{String, Any}[]
         for (i, switch_row) in enumerate(matlab_data["mpc.switch"])
             switch_data = row_to_typed_dict(switch_row, _mp_switch_columns)
             switch_data["index"] = i
@@ -380,7 +384,7 @@ function _parse_matpower_string(data_string::String)
     end
 
     if haskey(matlab_data, "mpc.bus_name")
-        bus_names = []
+        bus_names = Dict{String, Any}[]
         for (i, bus_name_row) in enumerate(matlab_data["mpc.bus_name"])
             bus_name_data = row_to_typed_dict(bus_name_row, _mp_bus_name_columns)
             bus_name_data["index"] = i
@@ -395,7 +399,7 @@ function _parse_matpower_string(data_string::String)
     end
 
     if haskey(matlab_data, "mpc.gencost")
-        gencost = []
+        gencost = Dict{String, Any}[]
         for (i, gencost_row) in enumerate(matlab_data["mpc.gencost"])
             gencost_data = _mp_cost_data(gencost_row)
             gencost_data["index"] = i
@@ -411,7 +415,7 @@ function _parse_matpower_string(data_string::String)
     end
 
     if haskey(matlab_data, "mpc.dclinecost")
-        dclinecosts = []
+        dclinecosts = Dict{String, Any}[]
         for (i, dclinecost_row) in enumerate(matlab_data["mpc.dclinecost"])
             dclinecost_data = _mp_cost_data(dclinecost_row)
             dclinecost_data["index"] = i
