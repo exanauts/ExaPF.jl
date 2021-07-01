@@ -101,13 +101,13 @@ function matpower_jacobian(polar::PolarForm, X::Union{State, Control}, ::typeof(
         j12 = real(dSbus_dVm[[pv; pq], pq])
         j21 = imag(dSbus_dVa[pq, [pv; pq]])
         j22 = imag(dSbus_dVm[pq, pq])
-        return [j11 j12; j21 j22]
+        return [j11 j12; j21 j22]::SparseMatrixCSC{Float64, Int}
     elseif isa(X, Control)
         j11 = real(dSbus_dVm[[pv; pq], [ref; pv]])
         j12 = sparse(I, npv + npq, npv)
         j21 = imag(dSbus_dVm[pq, [ref; pv]])
         j22 = spzeros(npq, npv)
-        return [j11 -j12; j21 j22]
+        return [j11 -j12; j21 j22]::SparseMatrixCSC{Float64, Int}
     end
 end
 

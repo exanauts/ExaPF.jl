@@ -46,23 +46,6 @@ struct PolarNetworkState{VI,VT} <: AbstractNetworkBuffer
     bus_gen::VI   # Generator-Bus incidence matrix
 end
 
-function PolarNetworkState{VT}(nbus::Int, ngen::Int, nstates::Int, bus_gen::VI) where {VI, VT}
-    # Bus variables
-    pnet = xzeros(VT, nbus)
-    qnet = xzeros(VT, nbus)
-    vmag = xzeros(VT, nbus)
-    vang = xzeros(VT, nbus)
-    # Generators variables
-    pg = xzeros(VT, ngen)
-    qg = xzeros(VT, ngen)
-    pd = xzeros(VT, nbus)
-    qd = xzeros(VT, nbus)
-    # Buffers
-    balance = xzeros(VT, nstates)
-    dx = xzeros(VT, nstates)
-    return PolarNetworkState{VI,VT}(vmag, vang, pnet, qnet, pg, qg, pd, qd, balance, dx, bus_gen)
-end
-
 setvalues!(buf::PolarNetworkState, ::PS.VoltageMagnitude, values) = copyto!(buf.vmag, values)
 setvalues!(buf::PolarNetworkState, ::PS.VoltageAngle, values) = copyto!(buf.vang, values)
 function setvalues!(buf::PolarNetworkState, ::PS.ActivePower, values)
@@ -120,7 +103,7 @@ struct NetworkTopology{VTI, VTD}
     sortperm::VTI # nnz
 end
 
-function NetworkTopology{VTI, VTD}(pf::PS.PowerNetwork) where {VTI, VTD}
+function NetworkTopology(pf::PS.PowerNetwork, ::Type{VTI}, ::Type{VTD}) where {VTI, VTD}
     Y = pf.Ybus
     ybus_re, ybus_im = Spmat{VTI, VTD}(Y)
     lines = pf.lines
