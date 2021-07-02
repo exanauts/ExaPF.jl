@@ -45,12 +45,24 @@ function test_polar_network_cache(polar, device, M)
 end
 
 function test_polar_api(polar, device, M)
+    pf = polar.network
     tolerance = 1e-8
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
+    # Test that values are matching
+    @test pf.vbus ≈ cache.vmag .* exp.(im .* cache.vang)
+    @test pf.sbus ≈ (cache.pnet .- cache.pload) .+ im .* (cache.qnet .- cache.qload)
     xₖ = ExaPF.initial(polar, State())
     # Init AD factory
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+
+    # Check that initial residual is correct
+    mis = pf.vbus .* conj.(pf.Ybus * pf.vbus) .- pf.sbus
+    f_mat = [real(mis[[pf.pv; pf.pq]]); imag(mis[pf.pq])];
+
+    cons = cache.balance
+    ExaPF.power_balance(polar, cons, cache)
+    @test cons ≈ f_mat
 
     # Test powerflow with cache signature
     conv = powerflow(polar, jx, cache, NewtonRaphson(tol=tolerance))
@@ -73,7 +85,6 @@ function test_polar_api(polar, device, M)
 
     # Test callbacks
     ## Power Balance
-    cons = cache.balance
     ExaPF.power_balance(polar, cons, cache)
     # As we run powerflow before, the balance should be below tolerance
     @test ExaPF.xnorm_inf(cons) < tolerance

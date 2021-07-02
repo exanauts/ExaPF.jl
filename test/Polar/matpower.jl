@@ -97,3 +97,40 @@ end
 
     @test isapprox(cache.vmag, vmag_matpower, rtol=1e-6)
 end
+
+@testset "Power flow 9 bus case (phase shift) (see Issue #184)" begin
+    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case9phaseshift.m")
+    pf = PS.PowerNetwork(datafile)
+
+    polar = PolarForm(pf, CPU())
+    # Load buffer
+    cache = ExaPF.get(polar, ExaPF.PhysicalState())
+    ExaPF.init_buffer!(polar, cache)
+    # Check buffer
+    @test pf.vbus ≈ cache.vmag .* exp.(im .* cache.vang)
+    @test pf.sbus ≈ (cache.pnet .- cache.pload) .+ im .* (cache.qnet .- cache.qload)
+    # Check initial residual
+    mis = pf.vbus .* conj.(pf.Ybus * pf.vbus) .- pf.sbus
+    f_mat = [real(mis[[pf.pv; pf.pq]]); imag(mis[pf.pq])];
+
+    ExaPF.power_balance(polar, cache.balance, cache)
+    @test cache.balance ≈ f_mat
+
+    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+    # solve power flow
+    convergence = ExaPF.powerflow(polar, jx, cache, NewtonRaphson())
+
+    @test convergence.n_iterations == 4
+    # Compare with MATPOWER's solution
+    vang_matpower = [
+        0.0, 0.172591688402360, 0.082724964598100, -0.040264015269618, -0.068037592808220,
+        0.034807882121366, 0.012281528715204, 0.068398625299755, -0.074633227364866,
+    ]
+    vmag_matpower = [
+       1.000000000000000, 1.000000000000000, 1.000000000000000, 0.987010583420980,
+       0.975589804364444, 1.003384229977194, 0.985648588730233, 0.996151111467108, 0.957437967505498,
+    ]
+
+    @test cache.vmag ≈ vmag_matpower
+    @test cache.vang ≈ vang_matpower
+end

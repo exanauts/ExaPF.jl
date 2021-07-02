@@ -5,7 +5,7 @@ is_constraint(::typeof(reactive_power_constraints)) = true
 # g = [qg_gen]
 function _reactive_power_constraints(
     qg, vmag, vang, pnet, qnet, qload,
-    ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, device
+    ybus_re, ybus_im, transperm, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, device
 )
     kernel! = reactive_power_kernel!(device)
     range_ = length(pv) + length(ref)
@@ -15,7 +15,7 @@ function _reactive_power_constraints(
         vmag, vang, pnet,
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, qload,
+        ybus_im.nzval, transperm, qload,
         ndrange=ndrange,
         dependencies=Event(device)
     )
@@ -36,9 +36,10 @@ function reactive_power_constraints(polar::PolarForm, cons, vmag, vang, pnet, qn
     ref, pv, pq = index_buses_device(polar)
     _, ref_to_gen, pv_to_gen = index_generators_device(polar)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
     _reactive_power_constraints(
         cons, vmag, vang, pnet, qnet, qd,
-        ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, polar.device
+        ybus_re, ybus_im, transperm, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, polar.device
     )
 end
 
