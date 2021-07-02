@@ -14,10 +14,11 @@ function active_power_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet
     kernel! = active_power_kernel!(polar.device)
     ref, _, _ = index_buses_device(polar)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
     ndrange = length(ref)
     ev = active_power_slack!(polar.device)(cons, vmag, vang, ref, pd,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
-        ndrange=ndrange,
+        transperm, ndrange=ndrange,
     )
     wait(ev)
 end
@@ -50,9 +51,10 @@ function adjoint!(
     ref, _, _ = index_buses_device(polar)
 
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
     ndrange = nref
     ev = adj_active_power_slack!(polar.device)(vm, va, ∂vm, ∂va, ∂pg, ref,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval, transperm,
         ndrange=ndrange,
     )
     wait(ev)
