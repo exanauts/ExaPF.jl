@@ -50,8 +50,8 @@ function test_polar_api(polar, device, M)
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
     # Test that values are matching
-    @test pf.vbus ≈ cache.vmag .* exp.(im .* cache.vang)
-    @test pf.sbus ≈ (cache.pnet .- cache.pload) .+ im .* (cache.qnet .- cache.qload)
+    @test myisapprox(pf.vbus, cache.vmag .* exp.(im .* cache.vang))
+    @test myisapprox(pf.sbus, (cache.pnet .- cache.pload) .+ im .* (cache.qnet .- cache.qload))
     xₖ = ExaPF.initial(polar, State())
     # Init AD factory
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
@@ -62,7 +62,7 @@ function test_polar_api(polar, device, M)
 
     cons = cache.balance
     ExaPF.power_balance(polar, cons, cache)
-    @test cons ≈ f_mat
+    @test myisapprox(cons, f_mat)
 
     # Test powerflow with cache signature
     conv = powerflow(polar, jx, cache, NewtonRaphson(tol=tolerance))
