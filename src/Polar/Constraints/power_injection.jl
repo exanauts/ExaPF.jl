@@ -4,7 +4,7 @@ size_constraint(polar::PolarForm, ::typeof(bus_power_injection)) = 2 * get(polar
 KA.@kernel function bus_power_injection_kernel!(
     inj, @Const(vmag), @Const(vang),
     @Const(colptr), @Const(rowval),
-    @Const(ybus_re_nzval), @Const(ybus_im_nzval), nbus,
+    @Const(ybus_re_nzval), @Const(ybus_im_nzval), @Const(transperm), nbus,
 )
     bus, j = @index(Global, NTuple)
 
@@ -13,8 +13,8 @@ KA.@kernel function bus_power_injection_kernel!(
         aij = vang[bus, j] - vang[to, j]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
-        coef_cos = vmag[bus, j]*vmag[to, j]*ybus_re_nzval[c]
-        coef_sin = vmag[bus, j]*vmag[to, j]*ybus_im_nzval[c]
+        coef_cos = vmag[bus, j]*vmag[to, j]*ybus_re_nzval[transperm[c]]
+        coef_sin = vmag[bus, j]*vmag[to, j]*ybus_im_nzval[transperm[c]]
         cos_val = cos(aij)
         sin_val = sin(aij)
 
@@ -28,7 +28,7 @@ KA.@kernel function adj_bus_power_injection_kernel!(
     edge_va_from, edge_va_to,
     @Const(adj_inj), @Const(vmag), @Const(vang),
     @Const(colptr), @Const(rowval),
-    @Const(ybus_re_nzval), @Const(ybus_im_nzval), nbus,
+    @Const(ybus_re_nzval), @Const(ybus_im_nzval), @Const(transperm), nbus,
 )
     bus, j = @index(Global, NTuple)
 
@@ -38,8 +38,8 @@ KA.@kernel function adj_bus_power_injection_kernel!(
         aij = vang[bus, j] - vang[to, j]
         v_fr = vmag[bus, j]
         v_to = vmag[to,  j]
-        y_re = ybus_re_nzval[c]
-        y_im = ybus_im_nzval[c]
+        y_re = ybus_re_nzval[transperm[c]]
+        y_im = ybus_im_nzval[transperm[c]]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
         coef_cos = v_fr*v_to*y_re
@@ -74,11 +74,12 @@ end
 function bus_power_injection(polar::PolarForm, cons, vmag, vang, pnet, qnet, pload, qload)
     nbus = get(polar, PS.NumberOfBuses())
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
     fill!(cons, 0)
     ndrange = (nbus, size(cons, 2))
     ev = bus_power_injection_kernel!(polar.device)(
         cons, vmag, vang,
-        ybus_re.colptr, ybus_re.rowval, ybus_re.nzval, ybus_im.nzval, nbus,
+        ybus_re.colptr, ybus_re.rowval, ybus_re.nzval, ybus_im.nzval, transperm, nbus,
         ndrange=ndrange, dependencies=Event(polar.device),
     )
     wait(ev)
@@ -101,6 +102,7 @@ function _adjoint_bus_power_injection!(
 )
     nbus = get(polar, PS.NumberOfBuses())
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
 
     fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
     fill!(pbm.intermediate.∂edge_vm_to , 0.0)
@@ -116,7 +118,7 @@ function _adjoint_bus_power_injection!(
         pbm.intermediate.∂edge_va_to,
         ∂cons,
         vmag, vang,
-        ybus_re.colptr, ybus_re.rowval, ybus_re.nzval, ybus_im.nzval, nbus,
+        ybus_re.colptr, ybus_re.rowval, ybus_re.nzval, ybus_im.nzval, transperm, nbus,
         ndrange=ndrange, dependencies=Event(polar.device),
     )
     wait(ev)
