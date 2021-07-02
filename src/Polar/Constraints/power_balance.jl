@@ -1,7 +1,7 @@
 is_constraint(::typeof(power_balance)) = true
 
 function _power_balance!(
-    F, vmag, vang, pnet, pload, qload, ybus_re, ybus_im, pv, pq, ref, nbus, device
+    F, vmag, vang, pnet, pload, qload, ybus_re, ybus_im, transposeperm, pv, pq, ref, nbus, device
 )
     npv = length(pv)
     npq = length(pq)
@@ -10,7 +10,7 @@ function _power_balance!(
     ev = kernel!(
         F, vmag, vang,
         ybus_re.colptr, ybus_re.rowval,
-        ybus_re.nzval, ybus_im.nzval,
+        ybus_re.nzval, ybus_im.nzval, transposeperm,
         pnet, pload, qload, pv, pq, nbus,
         ndrange=ndrange,
         dependencies=Event(device)
@@ -22,11 +22,12 @@ function power_balance(polar::PolarForm, cons, vmag, vang, pnet, qnet, pload, ql
     nbus = get(polar, PS.NumberOfBuses())
     ref, pv, pq = index_buses_device(polar)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transposeperm = polar.topology.sortperm
 
     fill!(cons, 0.0)
     _power_balance!(
         cons, vmag, vang, pnet, pload, qload,
-        ybus_re, ybus_im,
+        ybus_re, ybus_im, transposeperm,
         pv, pq, ref, nbus, polar.device
     )
 end

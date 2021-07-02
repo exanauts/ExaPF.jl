@@ -111,6 +111,7 @@ function mat_to_exapf(data_mat)
         branch_array[i, RATE_B] = branch["rate_b"]
         branch_array[i, RATE_C] = branch["rate_c"]
         branch_array[i, TAP] = branch["tap"]
+        branch_array[i, SHIFT] = branch["shift"]
         branch_array[i, BR_STATUS] = branch["br_status"]
         branch_array[i, ANGMIN] = branch["angmin"]
         branch_array[i, ANGMAX] = branch["angmax"]

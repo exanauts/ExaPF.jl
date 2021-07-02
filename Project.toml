@@ -5,6 +5,7 @@ version = "0.5.0"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+ExprTools = "e2ba6199-217a-4e67-a87a-7c52f15ade04"
 FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
@@ -20,6 +21,7 @@ TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [compat]
 CUDA = "~2.6, ~3.2"
+ExprTools = "= 0.1.3"
 FiniteDiff = "2.7"
 ForwardDiff = "0.10"
 KernelAbstractions = "0.6"
