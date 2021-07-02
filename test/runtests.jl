@@ -18,8 +18,8 @@ const CASES = ["case9.m", "case30.m"]
 
 ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
 if has_cuda_gpu()
-    push!(ARCHS, (CUDADevice(), CuArray, CuSparseMatrixCSR))
     include("cusolver.jl")
+    push!(ARCHS, CUDA_ARCH)
 end
 
 # Load test modules

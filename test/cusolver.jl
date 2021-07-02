@@ -7,6 +7,7 @@ import ExaPF: LinearSolvers
 import BlockPowerFlow: CUSOLVERRF
 
 const LS = LinearSolvers
+const CUDA_ARCH = (CUDADevice(), CuArray, CuSparseMatrixCSR)
 
 # Overload factorization routine to use cusolverRF
 LS.exa_factorize(J::CuSparseMatrixCSR) = CUSOLVERRF.CusolverRfLU(J)

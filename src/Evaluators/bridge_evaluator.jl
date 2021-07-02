@@ -116,8 +116,8 @@ function ojtprod!(nlp::BridgeDeviceEvaluator, jv, u, σ, v)
 end
 
 function hessprod!(nlp::BridgeDeviceEvaluator, hv, u, v)
-    copyto!(nlp.bridge.v, v)
-    hessprod!(nlp.inner, nlp.bridge.jv, nlp.bridge.u, nlp.bridge.v)
+    copyto!(nlp.bridge.g, v)
+    hessprod!(nlp.inner, nlp.bridge.jv, nlp.bridge.u, nlp.bridge.g)
     copyto!(hv, nlp.bridge.jv)
     return
 end
@@ -125,6 +125,15 @@ end
 function hessian!(nlp::BridgeDeviceEvaluator, H, u)
     hessian!(nlp.inner, nlp.bridge.H, nlp.bridge.u)
     copyto!(H, nlp.bridge.H)
+    return
+end
+
+function hessian_lagrangian_penalty_prod!(nlp::BridgeDeviceEvaluator, hv, u, y, σ, w, v)
+    copyto!(nlp.bridge.g, v)
+    copyto!(nlp.bridge.w, w)
+    copyto!(nlp.bridge.y, y)
+    hessian_lagrangian_penalty_prod!(nlp.inner, nlp.bridge.jv, nlp.bridge.u, nlp.bridge.y, σ, nlp.bridge.w, nlp.bridge.g)
+    copyto!(hv, nlp.bridge.jv)
     return
 end
 
