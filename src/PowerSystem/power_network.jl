@@ -36,6 +36,10 @@ struct PowerNetwork <: AbstractPowerSystem
     ref::Vector{Int64}
     pv::Vector{Int64}
     pq::Vector{Int64}
+    # Generators From/To Buses Indexes
+    gen2bus::Vector{Int64}
+    ref2gen::Vector{Int64}
+    pv2gen::Vector{Int64}
 
     sbus::Vector{Complex{Float64}}
     sload::Vector{Complex{Float64}}
@@ -116,9 +120,12 @@ struct PowerNetwork <: AbstractPowerSystem
         end
 
         sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
+        gen2bus = generators_to_buses(gen, bus_id_to_indexes)
+        pv2gen, ref2gen = buses_to_generators(gen2bus, pv, ref)
         Ybus = topology.ybus
 
-        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
+        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes,
+            ref, pv, pq, gen2bus, ref2gen, pv2gen, sbus, sload)
     end
 end
 
@@ -149,21 +156,14 @@ function get(pf::PowerNetwork, ::ReactivePower)
 end
 
 ## Indexing
-function get(pf::PowerNetwork, ::GeneratorIndexes)
-    GEN_BUS = IndexSet.idx_gen()[1]
-    gens = pf.generators
-    ngens = size(gens, 1)
-    # Create array on host memory
-    indexing = zeros(Int, ngens)
-    # Here, we keep the same ordering as specified in Matpower.
-    for i in 1:ngens
-        indexing[i] = pf.bus_to_indexes[gens[i, GEN_BUS]]
-    end
-    return indexing
-end
+get(pf::PowerNetwork, ::GeneratorIndexes) = pf.gen2bus
 get(pf::PowerNetwork, ::PVIndexes) = pf.pv
 get(pf::PowerNetwork, ::PQIndexes) = pf.pq
 get(pf::PowerNetwork, ::SlackIndexes) = pf.ref
+get(pf::PowerNetwork, ::AllBusesIndex) = (pf.ref, pf.pv, pf.pq)
+get(pf::PowerNetwork, ::SlackToGeneratorsIndex) = pf.ref2gen
+get(pf::PowerNetwork, ::PVToGeneratorsIndex) = pf.pv2gen
+get(pf::PowerNetwork, ::AllGeneratorsIndex) = (pf.gen2bus, pf.ref2gen, pf.pv2gen)
 
 has_inactive_generators(pf::PowerNetwork) = any(isequal(0), view(pf.generators, :, 8))
 active_generators(pf::PowerNetwork) = findall(isequal(1), view(pf.generators, :, 8))

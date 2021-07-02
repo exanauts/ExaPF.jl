@@ -125,6 +125,13 @@ struct BusAdmittanceMatrix <: AbstractNetworkAttribute end
 abstract type AbstractIndexing <: AbstractNetworkAttribute end
 
 """
+    AllBusesIndex <: AbstractIndexing
+
+Indexes of all the buses in a `AbstractPowerSystem`.
+"""
+struct AllBusesIndex <: AbstractIndexing end
+
+"""
     PVIndexes <: AbstractIndexing
 
 Indexes of the PV buses in a `AbstractPowerSystem`.
@@ -151,6 +158,10 @@ struct SlackIndexes <: AbstractIndexing end
 Indexes of the generators in a `AbstractPowerSystem`.
 """
 struct GeneratorIndexes <: AbstractIndexing end
+
+struct PVToGeneratorsIndex <: AbstractIndexing end
+struct SlackToGeneratorsIndex <: AbstractIndexing end
+struct AllGeneratorsIndex <: AbstractIndexing end
 
 """
     AbstractNetworkValues

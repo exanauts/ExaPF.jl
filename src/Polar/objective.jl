@@ -124,6 +124,7 @@ function adjoint!(
 
     ngen = get(polar, PS.NumberOfGenerators())
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
 
     fill!(∂vm, 0.0)
     fill!(∂va, 0.0)
@@ -136,6 +137,7 @@ function adjoint!(
         c0, c1, c2,
         index_pv, index_ref, pv2gen, ref2gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
+        transperm,
         ndrange=(ngen, size(∂vm, 2)),
         dependencies=Event(polar.device)
     )

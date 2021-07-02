@@ -91,9 +91,10 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(f
     nbus = get(polar, PS.NumberOfBuses())
     nlines = get(polar, PS.NumberOfLines())
     pf = polar.network
-    ref = pf.ref ; nref = length(ref)
-    pv  = pf.pv  ; npv  = length(pv)
-    pq  = pf.pq  ; npq  = length(pq)
+    ref, pv, pq = index_buses_host(polar)
+    nref = length(ref)
+    npv  = length(pv)
+    npq  = length(pq)
     lines = pf.lines
 
     dSl_dVm, dSl_dVa = PS.matpower_lineflow_power_jacobian(V, lines)

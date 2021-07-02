@@ -72,22 +72,8 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     idx_pv = PS.get(pf, PS.PVIndexes())
     idx_pq = PS.get(pf, PS.PQIndexes())
     # Build-up reverse index for performance
-    pv_to_gen = similar(idx_pv)
-    ref_to_gen = similar(idx_ref)
-    ## We assume here that the indexing of generators is the same
-    ## as in MATPOWER
-    for i in 1:ngens
-        bus = idx_gen[i]
-        i_pv = findfirst(isequal(bus), idx_pv)
-        if !isnothing(i_pv)
-            pv_to_gen[i_pv] = i
-        else
-            i_ref = findfirst(isequal(bus), idx_ref)
-            if !isnothing(i_ref)
-                ref_to_gen[i_ref] = i
-            end
-        end
-    end
+    pv_to_gen = PS.get(pf, PS.PVToGeneratorsIndex())
+    ref_to_gen = PS.get(pf, PS.SlackToGeneratorsIndex())
 
     gidx_gen = convert(IT, idx_gen)
     gidx_ref = convert(IT, idx_ref)
@@ -161,9 +147,13 @@ function get(polar::PolarForm, ::NumberOfControl)
     return nref + 2*npv
 end
 
-function get(polar::PolarForm, attr::PS.AbstractNetworkAttribute)
-    return get(polar.network, attr)
-end
+get(polar::PolarForm, attr::PS.AbstractNetworkAttribute) = get(polar.network, attr)
+
+index_buses_host(polar) = PS.get(polar.network, PS.AllBusesIndex())
+index_buses_device(polar) = index_buses(polar.indexing)
+
+index_generators_host(polar) = PS.get(polar.network, PS.AllGeneratorsIndex())
+index_generators_device(polar) = index_generators(polar.indexing)
 
 ## Bounds
 function bounds(polar::PolarForm{T, IT, VT, MT}, ::State) where {T, IT, VT, MT}
@@ -176,30 +166,18 @@ end
 
 # Initial position
 function initial(polar::PolarForm{T, IT, VT, MT}, X::Union{State,Control}) where {T, IT, VT, MT}
+    ref, pv, pq = index_buses_host(polar)
+    _, _, pv2gen = index_generators_host(polar)
     # Load data from PowerNetwork
-    vmag = abs.(polar.network.vbus) |> VT
-    vang = angle.(polar.network.vbus) |> VT
+    vmag = abs.(polar.network.vbus)
+    vang = angle.(polar.network.vbus)
     pg = get(polar.network, PS.ActivePower())
-
-    npv = get(polar, PS.NumberOfPVBuses())
-    npq = get(polar, PS.NumberOfPQBuses())
-    nref = get(polar, PS.NumberOfSlackBuses())
 
     if isa(X, State)
         # build vector x
-        dimension = get(polar, NumberOfState())
-        x = xzeros(VT, dimension)
-        x[1:npv] = vang[polar.network.pv]
-        x[npv+1:npv+npq] = vang[polar.network.pq]
-        x[npv+npq+1:end] = vmag[polar.network.pq]
-        return x
+        return [vang[pv] ; vang[pq] ; vmag[pq]] |> VT
     elseif isa(X, Control)
-        dimension = get(polar, NumberOfControl())
-        u = xzeros(VT, dimension)
-        u[1:nref] = vmag[polar.network.ref]
-        u[nref + 1:nref + npv] = vmag[polar.network.pv]
-        u[nref + npv + 1:nref + 2*npv] = pg[polar.indexing.index_pv_to_gen]
-        return u
+        return [vmag[ref] ; vmag[pv] ; pg[pv2gen]] |> VT
     end
 end
 
@@ -220,14 +198,15 @@ function get!(
     npv = get(polar, PS.NumberOfPVBuses())
     npq = get(polar, PS.NumberOfPQBuses())
     nref = get(polar, PS.NumberOfSlackBuses())
+    ref, pv, pq = index_buses_host(polar)
     # Copy values of vang and vmag into x
     # NB: this leads to 3 memory allocation on the GPU
     #     we use indexing on the CPU, as for some reason
     #     we get better performance than with the indexing on the GPU
     #     stored in the buffer polar.indexing.
-    x[1:npv] .= @view buffer.vang[polar.network.pv]
-    x[npv+1:npv+npq] .= @view buffer.vang[polar.network.pq]
-    x[npv+npq+1:npv+2*npq] .= @view buffer.vmag[polar.network.pq]
+    x[1:npv] .= @view buffer.vang[pv]
+    x[npv+1:npv+npq] .= @view buffer.vang[pq]
+    x[npv+npq+1:npv+2*npq] .= @view buffer.vmag[pq]
 end
 
 function get!(
@@ -239,11 +218,13 @@ function get!(
     npv = get(polar, PS.NumberOfPVBuses())
     npq = get(polar, PS.NumberOfPQBuses())
     nref = get(polar, PS.NumberOfSlackBuses())
+    ref, pv, pq = index_buses_host(polar)
+    _, _, pv2gen = index_generators_host(polar)
     # build vector u
     nᵤ = get(polar, NumberOfControl())
-    u[1:nref] .= @view buffer.vmag[polar.network.ref]
-    u[nref + 1:nref + npv] .= @view buffer.vmag[polar.network.pv]
-    u[nref + npv + 1:nref + 2*npv] .= @view buffer.pgen[polar.indexing.index_pv_to_gen]
+    u[1:nref] .= @view buffer.vmag[ref]
+    u[nref + 1:nref + npv] .= @view buffer.vmag[pv]
+    u[nref + npv + 1:nref + 2*npv] .= @view buffer.pgen[pv2gen]
     return u
 end
 

@@ -5,7 +5,7 @@ is_constraint(::typeof(reactive_power_constraints)) = true
 # g = [qg_gen]
 function _reactive_power_constraints(
     qg, vmag, vang, pnet, qnet, qload,
-    ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, device
+    ybus_re, ybus_im, transperm, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, device
 )
     kernel! = reactive_power_kernel!(device)
     range_ = length(pv) + length(ref)
@@ -15,7 +15,7 @@ function _reactive_power_constraints(
         vmag, vang, pnet,
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, qload,
+        ybus_im.nzval, transperm, qload,
         ndrange=ndrange,
         dependencies=Event(device)
     )
@@ -43,22 +43,20 @@ function reactive_power_constraints(polar::PolarForm, cons, buffer)
     )
     wait(ev)
     # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
-    copy!(cons, buffer.qgen)
+    copyto!(cons, buffer.qgen)
     return
 end
 
 # Function for AD with ForwardDiff
 function reactive_power_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet, pd, qd)
     nbus = length(vmag)
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    ref = polar.indexing.index_ref
-    pv_to_gen = polar.indexing.index_pv_to_gen
-    ref_to_gen = polar.indexing.index_ref_to_gen
+    ref, pv, pq = index_buses_device(polar)
+    _, ref_to_gen, pv_to_gen = index_generators_device(polar)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
     _reactive_power_constraints(
         cons, vmag, vang, pnet, qnet, qd,
-        ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, polar.device
+        ybus_re, ybus_im, transperm, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, polar.device
     )
 end
 
@@ -82,11 +80,8 @@ function adjoint!(
     pload, qload,
 ) where {F<:typeof(reactive_power_constraints), S, I}
     nbus = get(polar, PS.NumberOfBuses())
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    pv_to_gen = polar.indexing.index_pv_to_gen
-    ref_to_gen = polar.indexing.index_ref_to_gen
+    ref, pv, pq = index_buses_device(polar)
+    _, ref_to_gen, pv_to_gen = index_generators_device(polar)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
@@ -113,10 +108,8 @@ end
 function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(reactive_power_constraints), V)
     nbus = get(polar, PS.NumberOfBuses())
     pf = polar.network
-    ref = pf.ref
-    pv = pf.pv
-    pq = pf.pq
-    gen2bus = polar.indexing.index_generators
+    ref, pv, pq = index_buses_host(polar)
+    gen2bus, _, _ = index_generators_host(polar)
     Ybus = pf.Ybus
 
     dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
@@ -134,10 +127,8 @@ end
 
 function matpower_hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer, λ)
     nbus = get(polar, PS.NumberOfBuses())
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    gen2bus = polar.indexing.index_generators
+    ref, pv, pq = index_buses_host(polar)
+    gen2bus, _, _ = index_generators_host(polar)
     # Check consistency
     @assert length(λ) == length(gen2bus)
 
@@ -145,7 +136,7 @@ function matpower_hessian(polar::PolarForm, ::typeof(reactive_power_constraints)
     # Select only buses with generators
     λq[gen2bus] .= λ
 
-    V = buffer.vmag .* exp.(im .* buffer.vang) |> Array
+    V = voltage_host(buffer)
     hxx, hxu, huu = PS.reactive_power_hessian(V, polar.network.Ybus, λq, pv, pq, ref)
     return FullSpaceHessian(
         hxx, hxu, huu,
