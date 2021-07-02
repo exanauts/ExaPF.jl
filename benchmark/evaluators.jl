@@ -61,7 +61,6 @@ function run_reduced_evaluator(nlp, u; device=CPU())
     print("Hessian \t")
     H = similar(u, n, n)
     @btime ExaPF.hessian!($nlp, $H, $u)
-    @btime ExaPF.batch_hessian!($nlp, $H, $u)
     return
 end
 
