@@ -16,6 +16,18 @@ import ExaPF: PowerSystem, LinearSolvers
 const PS = PowerSystem
 const LS = LinearSolvers
 
+function myisless(a, b)
+    h_a = a |> Array
+    h_b = b |> Array
+    return h_a <= h_b
+end
+
+function myisapprox(a, b; options...)
+    h_a = a |> Array
+    h_b = b |> Array
+    return isapprox(h_a, h_b; options...)
+end
+
 include("powerflow.jl")
 include("api.jl")
 include("proxal_evaluator.jl")
@@ -50,7 +62,6 @@ function runtests(datafile, device, AT)
         ExaPF.ProxALEvaluator,
         ExaPF.SlackEvaluator,
         ExaPF.FeasibilityEvaluator,
-        ExaPF.BridgeDeviceEvaluator,
     ]
         nlp = Evaluator(datafile; device=device)
         test_evaluator_api(nlp, device, AT)

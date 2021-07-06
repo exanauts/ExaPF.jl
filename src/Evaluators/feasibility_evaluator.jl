@@ -31,6 +31,7 @@ constraints_type(::FeasibilityEvaluator) = :bound
 
 has_hessian(nlp::FeasibilityEvaluator) = has_hessian(nlp.inner)
 has_hessian_lagrangian(nlp::FeasibilityEvaluator) = has_hessian(nlp)
+backend(nlp::FeasibilityEvaluator) = backend(nlp.inner)
 
 # Getters
 get(nlp::FeasibilityEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)

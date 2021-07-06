@@ -4,6 +4,8 @@ function test_proxal_evaluator(nlp, device, MT)
     @testset "ProxALEvaluators ($time)" for time in [ExaPF.Origin, ExaPF.Normal, ExaPF.Final]
         # Build ProxAL evaluator
         prox = ExaPF.ProxALEvaluator(nlp, time)
+        # Wrapper for FiniteDiff
+        bgd = ExaPF.BridgeDeviceEvaluator(prox, ExaPF.CPU())
 
         n = ExaPF.n_variables(prox)
         w = ExaPF.initial(prox)
@@ -22,15 +24,15 @@ function test_proxal_evaluator(nlp, device, MT)
 
             # Test evaluation of gradient with Finite Differences
             function reduced_cost(w_)
-                ExaPF.update!(prox, w_)
-                return ExaPF.objective(prox, w_)
+                ExaPF.update!(bgd, w_)
+                return ExaPF.objective(bgd, w_)
             end
-            grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, w)
-            @test isapprox(grad_fd, g, rtol=1e-6)
+            grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, w |> Array)
+            @test myisapprox(grad_fd[:], g, rtol=1e-6)
 
             # Test gradient with non-trivial penalties
-            λf = 0.5 * rand(prox.ng)
-            λt = 1.5 * rand(prox.ng)
+            λf = 0.5 .* rand(prox.ng)
+            λt = 1.5 .* rand(prox.ng)
             pgf = rand(prox.ng)
             ExaPF.update_primal!(prox, ExaPF.Previous(), pgf)
             ExaPF.update_multipliers!(prox, ExaPF.Next(), λt)
@@ -39,12 +41,12 @@ function test_proxal_evaluator(nlp, device, MT)
             ExaPF.update!(prox, w)
             fill!(g, 0)
             ExaPF.gradient!(prox, g, w)
-            grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, w)
-            @test isapprox(grad_fd, g, rtol=1e-6)
+            grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, w |> Array)
+            @test myisapprox(grad_fd[:], g, rtol=1e-6)
 
             hv = similar(w) ; fill!(hv, 0)
             tgt = similar(w) ; fill!(tgt, 0)
-            tgt[1] = 1.0
+            tgt[1:1] .= 1.0
             ExaPF.hessprod!(prox, hv, w, tgt)
             H = ExaPF.hessian(prox, w)
 
