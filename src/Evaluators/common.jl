@@ -59,7 +59,7 @@ macro define_hessian(function_name, target_function, args...)
             @inbounds for i in 1:n
                 hv = @view hess[:, i]
                 fill!(v, 0)
-                v[i] = 1.0
+                v[i:i] .= 1.0
                 $target_function(nlp, hv, $(map(esc, argstup)...), v)
             end
         end

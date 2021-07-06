@@ -100,15 +100,23 @@ function _copy_csc!(J_dest, J_src, shift)
     end
 end
 
-function _transfer_sparse!(J_dest::SparseMatrixCSC, J_src::SparseMatrixCSC, shift)
+function _transfer_sparse!(J_dest::SparseMatrixCSC, J_src::SparseMatrixCSC, shift, device)
     _copy_csc!(J_dest, J_src, shift)
 end
 
-function _transfer_sparse!(J_dest::CUSPARSE.CuSparseMatrixCSR, J_src::CUSPARSE.CuSparseMatrixCSR, shift)
-    nnz_start = J_dest.rowPtr[shift+1]
+@kernel function _copy_sparse_matric_csr!(Jdest, Jsrc, rowptr, shift, nnz_)
+    i = @index(Global, Linear)
+    nnz_start = rowptr[shift+1] - 1
+    # Jnnz = @view J_dest.nzVal[nnz_start:nnz_start+nnz_-1]
+    Jdest[i+nnz_start] = Jsrc[i]
+end
+
+function _transfer_sparse!(J_dest::CUSPARSE.CuSparseMatrixCSR, J_src::CUSPARSE.CuSparseMatrixCSR, shift, device)
     nnz_ = nnz(J_src)
-    Jnnz = @view J_dest.nzVal[nnz_start:nnz_start+nnz_-1]
-    Jnnz .= J_src.nzVal
+    _copy_sparse_matric_csr!(device)(
+        J_dest.nzVal, J_src.nzVal, J_dest.rowPtr, shift, nnz_,
+        ndrange=nnz_,
+    )
 end
 
 

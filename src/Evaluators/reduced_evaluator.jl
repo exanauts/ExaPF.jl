@@ -161,6 +161,7 @@ function ReducedSpaceEvaluator(datafile::String; device=KA.CPU(), options...)
 end
 
 array_type(nlp::ReducedSpaceEvaluator) = array_type(nlp.model)
+backend(nlp::ReducedSpaceEvaluator) = nlp.model
 
 n_variables(nlp::ReducedSpaceEvaluator) = length(nlp.u_min)
 n_constraints(nlp::ReducedSpaceEvaluator) = length(nlp.g_min)
@@ -477,7 +478,7 @@ function hessprod!(nlp::ReducedSpaceEvaluator, hessvec, u, w)
 
     # Init adjoint
     fill!(y, 0.0)
-    y[end] = 1.0       # / objective
+    y[end:end] .= 1.0       # / objective
     y[1:nx] .-= nlp.λ  # / power balance
 
     # STEP 2: AutoDiff
@@ -530,7 +531,7 @@ function hessian_lagrangian_penalty_prod!(
     ## OBJECTIVE HESSIAN
     fill!(μ, 0.0)
     μ[1:nx] .-= nlp.λ  # / power balance
-    μ[end] = σ         # / objective
+    μ[end:end] .= σ         # / objective
     # / constraints
     shift_m = nx
     shift_y = size_constraint(nlp.model, voltage_magnitude_constraints)
@@ -615,11 +616,13 @@ macro define_batch_hessian(function_name, target_function, args...)
         function $(esc(fname_dispatch))(nlp::ReducedSpaceEvaluator, hesslag::HessianLagrangian, dest, $(map(esc, argstup)...))
             @assert has_hessian(nlp)
             n = n_variables(nlp)
+            v_cpu = zeros(n)
             v = similar(x)
             @inbounds for i in 1:n
                 hv = @view dest[:, i]
-                fill!(v, 0)
-                v[i] = 1.0
+                fill!(v_cpu, 0)
+                v_cpu[i] = 1.0
+                copyto!(v, v_cpu)
                 $target_function(nlp, hv, $(map(esc, argstup)...), v)
             end
         end

@@ -109,6 +109,7 @@ n_constraints(nlp::ProxALEvaluator) = n_constraints(nlp.inner)
 
 constraints_type(::ProxALEvaluator) = :inequality
 has_hessian(::ProxALEvaluator) = true
+backend(nlp::ProxALEvaluator) = backend(nlp.inner)
 
 # Getters
 get(nlp::ProxALEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)

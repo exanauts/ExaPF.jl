@@ -96,6 +96,7 @@ function AugLagEvaluator(
 end
 
 has_hessian(nlp::AugLagEvaluator) = has_hessian(nlp.inner)
+backend(nlp::AugLagEvaluator) = backend(nlp.inner)
 
 # Default fallback
 function _update_internal!(ag::AugLagEvaluator, ::CONSTRAINTS_TYPE)

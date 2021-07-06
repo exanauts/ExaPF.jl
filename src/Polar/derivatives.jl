@@ -411,9 +411,9 @@ function update_full_jacobian!(
         Jx = AutoDiff.jacobian!(polar, ad.x, buffer)::SpMT
         Ju = AutoDiff.jacobian!(polar, ad.u, buffer)::Union{Nothing, SpMT}
         # Copy back results
-        _transfer_sparse!(cons_jac.Jx, Jx, shift)
+        _transfer_sparse!(cons_jac.Jx, Jx, shift, polar.device)
         if !isnothing(Ju)
-            _transfer_sparse!(cons_jac.Ju, Ju, shift)
+            _transfer_sparse!(cons_jac.Ju, Ju, shift, polar.device)
         end
 
         shift += size(Jx, 1)

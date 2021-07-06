@@ -5,6 +5,7 @@ function test_auglag_evaluator(nlp, device, MT)
     @testset "Scaling $scaling" for scaling in [true, false]
         ExaPF.reset!(nlp)
         pen = ExaPF.AugLagEvaluator(nlp, u0; scale=scaling)
+        bgd = ExaPF.BridgeDeviceEvaluator(pen, CPU())
         u = w♭
         # Update nlp to stay on manifold
         ExaPF.update!(pen, u)
@@ -31,18 +32,16 @@ function test_auglag_evaluator(nlp, device, MT)
         g = ExaPF.gradient(pen, u)
         # Compare with finite differences
         function reduced_cost(u_)
-            ExaPF.update!(pen, u_)
-            return ExaPF.objective(pen, u_)
+            ExaPF.update!(bgd, u_)
+            return ExaPF.objective(bgd, u_)
         end
-        grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
-        h_grad_fd = grad_fd[:] |> Array
-        h_g = g |> Array
-        @test isapprox(h_grad_fd, h_g, rtol=1e-5)
+        grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u |> Array)
+        @test myisapprox(grad_fd, g, rtol=1e-5)
 
         # Test Hessian only on ReducedSpaceEvaluator and SlackEvaluator
         if (
            isa(nlp, ExaPF.ReducedSpaceEvaluator) ||
-           (isa(nlp, ExaPF.SlackEvaluator) && isa(device, CPU)) # Currently not supported because of Jacobian!
+           isa(nlp, ExaPF.SlackEvaluator)
         )
             n = length(u)
             ExaPF.update!(pen, u)

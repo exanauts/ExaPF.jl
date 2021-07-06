@@ -53,8 +53,8 @@ function SlackEvaluator(nlp::AbstractNLPEvaluator)
     nv, ns = n_variables(nlp), n_constraints(nlp)
     s_min, s_max = bounds(nlp, Constraints())
     if has_hessian(nlp)
-        H = zeros(nv, nv)
-        J = zeros(ns, nv)
+        H = similar(s_min, nv, nv)
+        J = similar(s_min, ns, nv)
     else
         H = nothing
         J = nothing
@@ -74,6 +74,7 @@ n_constraints(nlp::SlackEvaluator) = n_constraints(nlp.inner)
 
 constraints_type(::SlackEvaluator) = :equality
 has_hessian(nlp::SlackEvaluator) = has_hessian(nlp.inner)
+backend(nlp::SlackEvaluator) = backend(nlp.inner)
 
 # Getters
 get(nlp::SlackEvaluator, attr::AbstractNLPAttribute) = get(nlp.inner, attr)
@@ -157,9 +158,9 @@ function jacobian!(nlp::SlackEvaluator, jac, w)
     Jᵤ = @view jac[:, 1:nlp.nv]
     jacobian!(nlp.inner, Jᵤ, u)
     # w.r.t. s
-    for i in 1:nlp.ns
-        jac[i, i + nlp.nv] = -1.0
-    end
+    Jₛ = @view jac[:, nlp.nv+1:end]
+    ind = diagind(Jₛ) # extract diagonal
+    Jₛ[ind] .= -1.0
 end
 
 function ojtprod!(nlp::SlackEvaluator, jv, w, σ, v)
@@ -245,9 +246,8 @@ function hessian_lagrangian_penalty!(
         mul!(Hᵤᵥ, Jᵤ', -D)
         mul!(Hᵥᵤ, - D, Jᵤ)
         fill!(Hᵥᵥ, 0)
-        @inbounds for i in 1:nlp.ns
-            Hᵥᵥ[i, i] = w[i]
-        end
+        ind = diagind(Hᵥᵥ) # extract coefficients on the diagonal
+        Hᵥᵥ[ind] .= w
     else
         fill!(Hᵤᵥ, 0)
         fill!(Hᵥᵤ, 0)
@@ -270,7 +270,7 @@ end
 # Utils function
 function primal_infeasibility!(nlp::SlackEvaluator, cons, u)
     constraint!(nlp, cons, u) # Evaluate constraints
-    return norm(cons, Inf)
+    return xnorm_inf(cons)
 end
 function primal_infeasibility(nlp::SlackEvaluator, u)
     cons = similar(nlp.s_min) ; fill!(cons, 0)

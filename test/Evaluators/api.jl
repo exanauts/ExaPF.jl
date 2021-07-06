@@ -1,8 +1,3 @@
-function myisless(a, b)
-    h_a = a |> Array
-    h_b = b |> Array
-    return h_a <= h_b
-end
 
 function test_evaluator_api(nlp, device, M)
     # Test printing
@@ -45,6 +40,10 @@ function test_evaluator_api(nlp, device, M)
 end
 
 function test_evaluator_callbacks(nlp, device, M; rtol=1e-6)
+    # Wrap Evaluator to evaluate FiniteDiff on the CPU
+    # (finite_difference_gradient does not support `allowscalar(false)`)
+    bdg = ExaPF.BridgeDeviceEvaluator(nlp, ExaPF.CPU())
+
     n = ExaPF.n_variables(nlp)
     m = ExaPF.n_constraints(nlp)
     u = ExaPF.initial(nlp)
@@ -63,15 +62,14 @@ function test_evaluator_callbacks(nlp, device, M; rtol=1e-6)
 
     # 3/ gradient! function
     function reduced_cost(u_)
-        ExaPF.update!(nlp, u_)
-        return ExaPF.objective(nlp, u_)
+        ExaPF.update!(bdg, u_)
+        return ExaPF.objective(bdg, u_)
     end
     g = similar(u) ; fill!(g, 0)
     ExaPF.gradient!(nlp, g, u)
-    grad_fd = FiniteDiff.finite_difference_jacobian(reduced_cost, u)
-    h_g = g |> Array
-    h_grad_fd = grad_fd[:] |> Array
-    @test isapprox(h_grad_fd, h_g, rtol=1e-5)
+    u0 = u |> Array
+    grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u0)
+    @test myisapprox(grad_fd[:], g, rtol=1e-5)
 
     # Constraint
     # 4/ Constraint
@@ -83,20 +81,20 @@ function test_evaluator_callbacks(nlp, device, M; rtol=1e-6)
         ## Evaluation of the transpose-Jacobian product
         jv = similar(u_min) ; fill!(jv, 0.0)
         v = similar(g_min) ; fill!(v, 1.0)
+        h_v = v |> Array
+        h_cons = cons |> Array
         ExaPF.jtprod!(nlp, jv, u, v)
         function reduced_cons(u_)
-            ExaPF.update!(nlp, u_)
-            ExaPF.constraint!(nlp, cons, u_)
-            return dot(v, cons)
+            ExaPF.update!(bdg, u_)
+            ExaPF.constraint!(bdg, h_cons, u_)
+            return dot(h_v, h_cons)
         end
-        jv_fd = FiniteDiff.finite_difference_jacobian(reduced_cons, u)
-        h_jv = jv |> Array
-        h_jv_fd = jv_fd[:] |> Array
+        jv_fd = FiniteDiff.finite_difference_gradient(reduced_cons, u0)
 
         # TODO: rtol=1e-6 breaks on case30. Investigate why.
-        @test isapprox(h_jv, h_jv_fd, rtol=1e-4)
+        @test myisapprox(jv, jv_fd[:], rtol=1e-5)
 
-        ## Evaluation of the Jacobian (only on CPU)
+        ## Evaluation of the Jacobian
         J = ExaPF.jacobian(nlp, u)
         # Test transpose Jacobian vector product
         @test isapprox(jv, J' * v, rtol=rtol)

@@ -33,11 +33,15 @@ struct BridgeDeviceEvaluator{Evaluator, VT, MT, DVT, DMT} <: AbstractNLPEvaluato
     bridge::BridgeDeviceArrays{DVT, DMT}
 end
 function BridgeDeviceEvaluator(nlp::AbstractNLPEvaluator, device)
+    if isa(nlp, BridgeDeviceEvaluator)
+        error("BridgeDeviceEvaluator cannot wrap another BridgeDeviceEvaluator.")
+    end
     n, m = n_variables(nlp), n_constraints(nlp)
     # Deporting device
     VT = Array{Float64, 1}
     MT = Array{Float64, 2}
-    if isa(nlp.model.device, CPU)
+    model = backend(nlp)
+    if isa(model.device, CPU)
         VTD = Array{Float64, 1}
         MTD = Array{Float64, 2}
     else
