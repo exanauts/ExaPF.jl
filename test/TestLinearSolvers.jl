@@ -30,7 +30,8 @@ function test_custom_bicgstab(device, AT, SMT)
     nblocks = 2
     precond = LS.BlockJacobiPreconditioner(A, nblocks, device)
     LS.update(precond, A, device)
-    n_iters = LS.ldiv!(LS.BICGSTAB(A, precond), x, A, b)
+    linear_solver = LS.BICGSTAB(A; P=precond)
+    n_iters = LS.ldiv!(linear_solver, x, A, b)
     r = b - A * x
     resid = norm(r) / norm(b)
     @test(resid ≤ 1e-6)
@@ -48,10 +49,10 @@ function test_all_linear_solvers(device, AT, SMT)
     x = similar(b); r = similar(b)
     # Init preconditioner
     nblocks = 2
-    precond = LS.BlockJacobiPreconditioner(A, nblocks, device)
+    precond = LS.BlockJacobiPreconditioner(A; nblocks=nblocks)
     LS.update(precond, A, device)
-    @testset "Linear solver $linear_solver" for linear_solver in ExaPF.list_solvers(device)
-        algo = linear_solver(A, precond)
+    @testset "Linear solver $LinearSolver" for LinearSolver in ExaPF.list_solvers(device)
+        algo = LinearSolver(A; P=precond)
         fill!(x, 0.0)
         n_iters = LS.ldiv!(algo, x, A, b)
         @test n_iters <= m

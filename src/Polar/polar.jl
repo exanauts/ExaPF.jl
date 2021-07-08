@@ -273,17 +273,6 @@ function powerflow_jacobian(polar)
     return matpower_jacobian(polar, State(), power_balance, v0)
 end
 
-function build_preconditioner(polar::PolarForm; nblocks=-1)
-    jac = jacobian_sparsity(polar, power_balance, State())
-    n = size(jac, 1)
-    npartitions = if nblocks > 0
-        nblocks
-    else
-        div(n, 32)
-    end
-    return LinearSolvers.BlockJacobiPreconditioner(jac, npartitions, polar.device)
-end
-
 function Base.show(io::IO, polar::PolarForm)
     # Network characteristics
     nbus = PS.get(polar.network, PS.NumberOfBuses())
