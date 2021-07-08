@@ -42,15 +42,16 @@ function run_benchmark(datafile, device, linsolver)
     polar = PolarForm(pf, device)
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+    J = jx.J
     npartitions = ceil(Int64,(size(jx.J,1)/64))
     if npartitions < 2
         npartitions = 2
     end
-    precond = ExaPF.LinearSolvers.BlockJacobiPreconditioner(jx.J, npartitions, device)
+    precond = ExaPF.LinearSolvers.BlockJacobiPreconditioner(J, npartitions, device)
     # Retrieve initial state of network
     u0 = ExaPF.initial(polar, Control())
 
-    algo = linsolver(precond)
+    algo = linsolver(J; P=precond)
     powerflow_solver = NewtonRaphson(tol=ntol)
     nlp = ExaPF.ReducedSpaceEvaluator(polar;
                                       powerflow_solver=powerflow_solver)
