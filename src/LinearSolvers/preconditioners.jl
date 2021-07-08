@@ -141,6 +141,17 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
     end
 end
 
+function BlockJacobiPreconditioner(J::AbstractSparseMatrix; nblocks=-1)
+    device = isa(J, CUSPARSE.CuSparseMatrixCSR) ? GPU() : CPU()
+    n = size(J, 1)
+    npartitions = if nblocks > 0
+        nblocks
+    else
+        div(n, 32)
+    end
+    return BlockJacobiPreconditioner(J, npartitions, device)
+end
+
 """
     build_adjmatrix
 

@@ -11,7 +11,7 @@ function test_powerflow_evaluator(nlp, device, AT)
 
     @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
         (LinSolver == LS.DirectSolver) && continue
-        algo = LinSolver(J, precond)
+        algo = LinSolver(J; P=precond)
         nlp.linear_solver = algo
         convergence = ExaPF.update!(nlp, uk)
         @test convergence.has_converged

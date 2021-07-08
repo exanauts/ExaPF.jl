@@ -99,8 +99,7 @@ exa_factorize(J::AbstractSparseMatrix) = nothing
 exa_factorize(J::SparseMatrixCSC{T, Int}) where T = lu(J)
 exa_factorize(J::Adjoint{T, SparseMatrixCSC{T, Int}}) where T = lu(J.parent)'
 
-DirectSolver(J) = DirectSolver(exa_factorize(J))
-DirectSolver(precond::AbstractPreconditioner) = DirectSolver(nothing)
+DirectSolver(J; options...) = DirectSolver(exa_factorize(J))
 DirectSolver() = DirectSolver(nothing)
 
 # Reuse factorization in update
@@ -171,7 +170,12 @@ struct BICGSTAB <: AbstractIterativeLinearSolver
     tol::Float64
     verbose::Bool
 end
-BICGSTAB(J::AbstractSparseMatrix, precond; maxiter=2_000, tol=1e-8, verbose=false) = BICGSTAB(precond, maxiter, tol, verbose)
+function BICGSTAB(J::AbstractSparseMatrix;
+    P=BlockJacobiPreconditioner(J), maxiter=2_000, tol=1e-8, verbose=false
+)
+    return BICGSTAB(P, maxiter, tol, verbose)
+end
+
 function ldiv!(solver::BICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -197,7 +201,12 @@ struct EigenBICGSTAB <: AbstractIterativeLinearSolver
     tol::Float64
     verbose::Bool
 end
-EigenBICGSTAB(J::AbstractSparseMatrix, precond; maxiter=2_000, tol=1e-8, verbose=false) = EigenBICGSTAB(precond, maxiter, tol, verbose)
+function EigenBICGSTAB(J::AbstractSparseMatrix;
+    P=BlockJacobiPreconditioner(J), maxiter=2_000, tol=1e-8, verbose=false
+)
+    return EigenBICGSTAB(P, maxiter, tol, verbose)
+end
+
 function ldiv!(solver::EigenBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -218,12 +227,15 @@ struct DQGMRES <: AbstractIterativeLinearSolver
     memory::Int
     verbose::Bool
 end
-function DQGMRES(J::AbstractSparseMatrix, precond; memory=4, verbose=false)
+function DQGMRES(J::AbstractSparseMatrix;
+    P=BlockJacobiPreconditioner(J), memory=4, verbose=false
+)
     n, m = size(J)
     S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuVector{Float64} : Vector{Float64}
     solver = Krylov.DqgmresSolver(n, m, memory, S)
-    return DQGMRES(solver, precond, memory, verbose)
+    return DQGMRES(solver, P, memory, verbose)
 end
+
 function ldiv!(solver::DQGMRES,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
@@ -246,12 +258,15 @@ struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
     atol::Float64
     rtol::Float64
 end
-function KrylovBICGSTAB(J::AbstractSparseMatrix, precond; verbose=0, rtol=1e-10, atol=1e-10)
+function KrylovBICGSTAB(J::AbstractSparseMatrix;
+    P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10
+)
     n, m = size(J)
     S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuVector{Float64} : Vector{Float64}
     solver = Krylov.BicgstabSolver(n, m, S)
-    return KrylovBICGSTAB(solver, precond, verbose, atol, rtol)
+    return KrylovBICGSTAB(solver, P, verbose, atol, rtol)
 end
+
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
