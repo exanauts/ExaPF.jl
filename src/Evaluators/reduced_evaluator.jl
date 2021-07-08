@@ -169,6 +169,9 @@ constraints_type(::ReducedSpaceEvaluator) = :inequality
 has_hessian(nlp::ReducedSpaceEvaluator) = nlp.has_hessian
 number_batches_hessian(nlp::ReducedSpaceEvaluator) = nlp.has_hessian ? n_batches(nlp.hesslag) : 0
 
+adjoint_jacobian(nlp::ReducedSpaceEvaluator, ::State) = nlp.state_jacobian.x.J
+adjoint_jacobian(nlp::ReducedSpaceEvaluator, ::Control) = nlp.state_jacobian.u.J
+
 # Getters
 get(nlp::ReducedSpaceEvaluator, ::Constraints) = nlp.constraints
 function get(nlp::ReducedSpaceEvaluator, ::State)

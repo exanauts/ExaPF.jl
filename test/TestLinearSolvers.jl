@@ -49,7 +49,7 @@ function test_all_linear_solvers(device, AT, SMT)
     x = similar(b); r = similar(b)
     # Init preconditioner
     nblocks = 2
-    precond = LS.BlockJacobiPreconditioner(A; nblocks=nblocks)
+    precond = LS.BlockJacobiPreconditioner(A; nblocks=nblocks, device=device)
     LS.update(precond, A, device)
     @testset "Linear solver $LinearSolver" for LinearSolver in ExaPF.list_solvers(device)
         algo = LinearSolver(A; P=precond)
