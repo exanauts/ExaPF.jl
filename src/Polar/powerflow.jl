@@ -61,9 +61,9 @@ function powerflow(
     end
 
     linsol_iters = Int[]
-    Vapv = view(Va, pv)
-    Vapq = view(Va, pq)
-    Vmpq = view(Vm, pq)
+    Vapv = nccopy(Va, pv, polar.device)
+    Vapq = nccopy(Va, pq, polar.device)
+    Vmpq = nccopy(Vm, pq, polar.device)
     dx12 = view(dx, j5:j6) # Vmqp
     dx34 = view(dx, j3:j4) # Vapq
     dx56 = view(dx, j1:j2) # Vapv
@@ -96,6 +96,10 @@ function powerflow(
                 # Va[pq] .= Va[pq] .+ dx[j3:j4]
                 Vapq .= Vapq .- dx34
             end
+            # Update views
+            nccopy!(Va, pv, Vapv, polar.device)
+            nccopy!(Va, pq, Vapq, polar.device)
+            nccopy!(Vm, pq, Vmpq, polar.device)
         end
 
         fill!(F, zero(T))

@@ -55,6 +55,7 @@ function batch_buffer(polar::PolarForm{T, VI, VT, MT}, nbatch::Int) where {T, VI
         MT(undef, nstates, nbatch),
         MT(undef, nstates, nbatch),
         gen2bus,
+        polar.device
     )
 
     # Init

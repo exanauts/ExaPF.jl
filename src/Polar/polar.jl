@@ -201,7 +201,7 @@ function get(form::PolarForm{T, VI, VT, MT}, ::PhysicalState) where {T, VI, VT, 
     # Buffers
     balance = zeros(n_state) |> VT
     dx = zeros(n_state) |> VT
-    return PolarNetworkState(pnet, qnet, vmag, vang, pgen, qgen, pload, qload, balance, dx, gen2bus)
+    return PolarNetworkState(pnet, qnet, vmag, vang, pgen, qgen, pload, qload, balance, dx, gen2bus, form.device)
 end
 
 function get!(
@@ -262,8 +262,8 @@ function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState)
 
     fill!(buffer.pnet, 0.0)
     fill!(buffer.qnet, 0.0)
-    copyto!(view(buffer.pnet, form.indexing.index_generators), pg)
-    copyto!(view(buffer.qnet, form.indexing.index_generators), qg)
+    nccopy!(buffer.pnet, form.indexing.index_generators, VT(pg), form.device)
+    nccopy!(buffer.qnet, form.indexing.index_generators, VT(qg), form.device)
     return
 end
 

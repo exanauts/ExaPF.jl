@@ -57,7 +57,7 @@ function test_all_linear_solvers(device, AT, SMT)
         algo = LinearSolver(A; P=precond)
         fill!(x, 0.0)
         n_iters = LS.ldiv!(algo, x, A, b)
-        if backend == ROCBackend() && linear_solver == ExaPF.KrylovBICGSTAB
+        if backend == ROCBackend() && LinearSolver == ExaPF.KrylovBICGSTAB
             @test_skip n_iters <= m
         else
             @test n_iters <= m

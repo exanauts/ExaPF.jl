@@ -36,12 +36,25 @@ end
 # norm
 xnorm(x::AbstractVector) = norm(x, 2)
 xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)
-xnorm(x::AMDGPU.ROCVector) = 0.0
+function xnorm(x::AMDGPU.ROCVector)
+    x = convert(Vector, x)
+    return norm(x, 2)
+end
 
 # Array initialization
 xzeros(S, n) = fill!(S(undef, n), zero(eltype(S)))
 xones(S, n) = fill!(S(undef, n), one(eltype(S)))
 
 xnorm_inf(a) = maximum(abs.(a))
-export getbackend, HostBackend, CUDABackend, ROCBackend, OneAPIBackend
+
+function xnorm_inf(x::AMDGPU.ROCVector)
+    x = convert(Vector, x)
+    return maximum(abs.(x))
+end
+
+function skip_roc(device::KA.Device)
+    return getbackend(device) != ROCBackend()
+end
+
+export skip_roc, getbackend, HostBackend, CUDABackend, ROCBackend, OneAPIBackend
 

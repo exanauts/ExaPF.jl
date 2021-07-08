@@ -44,18 +44,17 @@ struct PolarNetworkState{VI,VT} <: AbstractNetworkBuffer
     balance::VT
     dx::VT
     bus_gen::VI   # Generator-Bus incidence matrix
+    device::KA.Device
 end
 
 setvalues!(buf::PolarNetworkState, ::PS.VoltageMagnitude, values) = copyto!(buf.vmag, values)
 setvalues!(buf::PolarNetworkState, ::PS.VoltageAngle, values) = copyto!(buf.vang, values)
 function setvalues!(buf::PolarNetworkState, ::PS.ActivePower, values)
-    pgenbus = view(buf.pnet, buf.bus_gen)
-    pgenbus .= values
+    nccopy!(buf.pnet, buf.bus_gen, values, buf.device)
     copyto!(buf.pgen, values)
 end
 function setvalues!(buf::PolarNetworkState, ::PS.ReactivePower, values)
-    qgenbus = view(buf.qnet, buf.bus_gen)
-    qgenbus .= values
+    nccopy!(buf.qnet, buf.bus_gen, values, buf.device)
     copyto!(buf.qgen, values)
 end
 function setvalues!(buf::PolarNetworkState, ::PS.ActiveLoad, values)
@@ -78,7 +77,17 @@ function Base.iszero(buf::PolarNetworkState)
         iszero(buf.dx)
 end
 
-voltage(buf::PolarNetworkState) = buf.vmag .* exp.(im .* buf.vang)
+# FIXME: This broadcast expression breaks on AMDGPU.jl
+function voltage(buf::PolarNetworkState)
+    if getbackend(buf.device) == ROCBackend()
+        vmag = buf.vmag |> Array
+        vang = buf.vang |> Array
+        return vmag .* exp.(im .* vang) 
+
+    else
+        return buf.vmag .* exp.(im .* buf.vang)
+    end
+end
 voltage_host(buf::PolarNetworkState) = voltage(buf) |> Array
 
 "Store topology of the network on target device."

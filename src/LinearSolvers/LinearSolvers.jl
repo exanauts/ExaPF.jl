@@ -7,6 +7,7 @@ using SparseArrays
 import Base: show
 
 using CUDA
+using AMDGPU
 using KernelAbstractions
 import CUDA.CUBLAS
 import CUDA.CUSOLVER
@@ -98,6 +99,7 @@ struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: Abstrac
 end
 
 exa_factorize(J::AbstractSparseMatrix) = nothing
+exa_factorize(J::AMDGPU.ROCMatrix) = nothing
 exa_factorize(J::SparseMatrixCSC{T, Int}) where T = lu(J)
 exa_factorize(J::Adjoint{T, SparseMatrixCSC{T, Int}}) where T = lu(J.parent)'
 
@@ -151,6 +153,13 @@ function ldiv!(::DirectSolver{Nothing},
     y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSC, x::CUDA.CuVector,
 )
     csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
+    return 0
+end
+function ldiv!(::DirectSolver{Nothing},
+    y::AMDGPU.ROCVector, J::AMDGPU.ROCMatrix, x::AMDGPU.ROCVector,
+)
+    # FIXME: This should use the LAPACK interface or rocALUTION
+    y .= J\x
     return 0
 end
 get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
@@ -303,5 +312,5 @@ list_solvers(::CUDABackend) = [DirectSolver, BICGSTAB, DQGMRES, EigenBICGSTAB, K
 
 List all linear solvers available solving the power flow on an NVIDIA GPU.
 """
-list_solvers(::ROCBackend) = [EigenBICGSTAB, KrylovBICGSTAB]
+list_solvers(::ROCBackend) = [DirectSolver]
 end

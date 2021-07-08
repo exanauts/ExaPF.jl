@@ -6,6 +6,8 @@ Preconditioners for the iterative solvers mostly focused on GPUs
 """
 abstract type AbstractPreconditioner end
 
+struct NoPreconditioner <: AbstractPreconditioner end
+
 """
     BlockJacobiPreconditioner
 
@@ -152,6 +154,7 @@ function BlockJacobiPreconditioner(J::SparseMatrixCSC; nblocks=-1, device=CPU())
     return BlockJacobiPreconditioner(J, npartitions, device)
 end
 BlockJacobiPreconditioner(J::CUSPARSE.CuSparseMatrixCSR; options...) = BlockJacobiPreconditioner(SparseMatrixCSC(J); options...)
+BlockJacobiPreconditioner(J::AMDGPU.ROCMatrix; options...) = NoPreconditioner()
 
 """
     build_adjmatrix
@@ -315,13 +318,8 @@ end
 This is a workaround for AMD GPUs since we don't have a sparse matrix structure yet.
 
 """
-function update(p, J::SparseMatrixCSC, device::KA.GPU)
-    # Disable preconditioner for ROCm
-    p.P .= 0.0   
-    for i in 1:size(p.P,1)
-        p.P[i,i] = J[i,i]
-    end
-    return p.P
+function update(p::NoPreconditioner, J::ROCMatrix, device::KA.GPU)
+    return ROCMatrix(I, size(J,1), size(J,2))
 end
 
 function update(p, J::Transpose{T, SparseMatrixCSC{T, I}}) where {T, I}
