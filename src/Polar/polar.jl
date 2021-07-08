@@ -44,16 +44,17 @@ include("objective.jl")
 include("batch.jl")
 
 function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
+    backend = getbackend(device)
     if isa(device, KA.CPU)
         IT = Vector{Int}
         VT = Vector{Float64}
         M = SparseMatrixCSC
         AT = Array
     elseif isa(device, KA.GPU)
-        IT = CUDA.CuArray{Int64, 1, CUDA.Mem.DeviceBuffer}
-        VT = CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
-        M = CUSPARSE.CuSparseMatrixCSR
-        AT = CUDA.CuArray
+        IT = vector_type(backend){Int64}
+        VT = vector_type(backend){Float64}
+        M = sparse_matrix_type(backend)
+        AT = array_type(backend)
     end
 
     nbus = PS.get(pf, PS.NumberOfBuses())
@@ -198,7 +199,7 @@ function get(form::PolarForm{T, VI, VT, MT}, ::PhysicalState) where {T, VI, VT, 
     # Buffers
     balance = zeros(n_state) |> VT
     dx = zeros(n_state) |> VT
-    return PolarNetworkState(pnet, qnet, vmag, vang, pgen, qgen, pload, qload, balance, dx, gen2bus)
+    return PolarNetworkState(pnet, qnet, vmag, vang, pgen, qgen, pload, qload, balance, dx, gen2bus, form.device)
 end
 
 function get!(
@@ -259,8 +260,8 @@ function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState)
 
     fill!(buffer.pnet, 0.0)
     fill!(buffer.qnet, 0.0)
-    copyto!(view(buffer.pnet, form.indexing.index_generators), pg)
-    copyto!(view(buffer.qnet, form.indexing.index_generators), qg)
+    nccopy!(buffer.pnet, form.indexing.index_generators, VT(pg), form.device)
+    nccopy!(buffer.qnet, form.indexing.index_generators, VT(qg), form.device)
     return
 end
 

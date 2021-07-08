@@ -50,8 +50,15 @@ function test_polar_api(polar, device, M)
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
     # Test that values are matching
-    @test myisapprox(pf.vbus, cache.vmag .* exp.(im .* cache.vang))
-    @test myisapprox(pf.sbus, (cache.pnet .- cache.pload) .+ im .* (cache.qnet .- cache.qload))
+    # FIXME: These broadcast expressions break on AMDGPU.jl
+    vmag = cache.vmag |> Array
+    vang = cache.vang |> Array
+    pnet = cache.pnet |> Array
+    qnet = cache.qnet |> Array
+    pload = cache.pload |> Array
+    qload = cache.qload |> Array
+    @test myisapprox(pf.vbus, vmag .* exp.(im .* vang))
+    @test myisapprox(pf.sbus, (pnet .- pload) .+ im .* (qnet .- qload))
     xₖ = ExaPF.initial(polar, State())
     # Init AD factory
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
@@ -62,7 +69,7 @@ function test_polar_api(polar, device, M)
 
     cons = cache.balance
     ExaPF.power_balance(polar, cons, cache)
-    @test myisapprox(cons, f_mat)
+    @test myisapprox(cons |> Array, f_mat)
 
     # Test powerflow with cache signature
     conv = powerflow(polar, jx, cache, NewtonRaphson(tol=tolerance))
@@ -144,7 +151,7 @@ function test_polar_powerflow(polar, device, M)
     # Init buffer
     buffer = get(polar, ExaPF.PhysicalState())
 
-    @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
+    @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(getbackend(device))
         algo = LinSolver(J_gpu; P=precond)
         ExaPF.init_buffer!(polar, buffer)
         convergence = ExaPF.powerflow(polar, jx, buffer, pf_solver; linear_solver=algo)

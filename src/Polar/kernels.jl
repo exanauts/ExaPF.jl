@@ -753,3 +753,75 @@ function adj_branch_flow!(
     )
     wait(ev)
 end
+
+KA.@kernel function nccopy_kernel!(
+        dest, didx::AbstractVector{Int64},
+        src, sidx::AbstractVector{Int64},
+    )
+    I = @index(Global)
+
+    dest[didx[I]] = src[sidx[I]]
+end
+
+function nccopy!(
+        dest, didx::AbstractVector{Int64},
+        src, sidx::AbstractVector{Int64},
+        device::KA.Device
+    )
+
+    n = length(didx)
+    @assert n == length(sidx)
+    ev = nccopy_kernel!(device)(dest, didx, src, sidx, ndrange = n, dependencies=Event(device))
+    wait(ev)
+end
+
+KA.@kernel function nccopy_kernel!(
+        dest,
+        src, sidx::AbstractVector{Int64}
+    )
+    I = @index(Global)
+
+    dest[I] = src[sidx[I]]
+end
+
+function nccopy!(
+        dest,
+        src, sidx::AbstractVector{Int64},
+        device::KA.Device
+    )
+    n = length(dest)
+    @assert n == length(sidx)
+    ev = nccopy_kernel!(device)(dest, src, sidx, ndrange = n, dependencies=Event(device))
+    wait(ev)
+end
+
+KA.@kernel function nccopy_kernel!(
+        dest, didx::AbstractVector{Int64},
+        src
+    )
+    I = @index(Global)
+
+    dest[didx[I]] = src[I]
+end
+
+function nccopy!(
+        dest, didx::AbstractVector{Int64},
+        src,
+        device::KA.Device
+    )
+    n = length(src)
+    @assert n == length(didx)
+    ev = nccopy_kernel!(device)(dest, didx, src, ndrange = n, dependencies=Event(device))
+    wait(ev)
+end
+
+function nccopy(
+        src, sidx::AbstractVector{Int64},
+        device::KA.Device
+    )
+    n = length(sidx)
+    dest = typeof(src)(undef, n)
+    ev = nccopy_kernel!(device)(dest, src, sidx, ndrange = n, dependencies=Event(device))
+    wait(ev)
+    return dest
+end

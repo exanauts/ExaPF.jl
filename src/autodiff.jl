@@ -9,7 +9,7 @@ import ForwardDiff
 import SparseDiffTools
 using KernelAbstractions
 
-using ..ExaPF: State, Control
+using ..ExaPF: Spmat, BatchCuSparseMatrixCSR, xzeros, State, Control, getbackend, HostBackend, CUDABackend, ROCBackend, OneAPIBackend
 
 import Base: show
 
@@ -233,18 +233,26 @@ end
 
 
 # Uncompress kernels
-@kernel function uncompress_kernel_gpu!(@Const(J_rowPtr), @Const(J_colVal), J_nzVal, @Const(compressedJ), @Const(coloring))
+@kernel function uncompress_kernel_csr!(@Const(J_rowPtr), @Const(J_colVal), J_nzVal, @Const(compressedJ), @Const(coloring))
     i = @index(Global, Linear)
     @inbounds for j in J_rowPtr[i]:J_rowPtr[i+1]-1
         @inbounds J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
     end
 end
 
-@kernel function uncompress_kernel_cpu!(J_colptr, J_rowval, J_nzval, compressedJ, coloring)
+@kernel function uncompress_kernel_csc!(J_colptr, J_rowval, J_nzval, compressedJ, coloring)
     # CSC is column oriented: nmap is equal to number of columns
     i = @index(Global, Linear)
     @inbounds for j in J_colptr[i]:J_colptr[i+1]-1
         @inbounds J_nzval[j] = compressedJ[coloring[i], J_rowval[j]]
+    end
+end
+
+@kernel function uncompress_kernel_dense!(J, compressedJ, coloring)
+    i = @index(Global, Linear)
+    ncol = size(J,2)
+    @inbounds for j in 1:ncol
+        @inbounds J[j,i] = compressedJ[coloring[i], j]
     end
 end
 
@@ -255,12 +263,17 @@ Uncompress the compressed Jacobian matrix from `compressedJ`
 to sparse CSC (on the CPU) or CSR (on the GPU).
 """
 function uncompress_kernel!(J, compressedJ, coloring, device)
-    if isa(device, CPU)
-        kernel! = uncompress_kernel_cpu!(device)
+    if getbackend(device) == HostBackend()
+        kernel! = uncompress_kernel_csc!(device)
         ev = kernel!(J.colptr, J.rowval, J.nzval, compressedJ, coloring, ndrange=size(J,2), dependencies=Event(device))
-    elseif isa(device, GPU)
-        kernel! = uncompress_kernel_gpu!(device)
+    elseif getbackend(device) == CUDABackend()
+        kernel! = uncompress_kernel_csr!(device)
         ev = kernel!(J.rowPtr, J.colVal, J.nzVal, compressedJ, coloring, ndrange=size(J,1), dependencies=Event(device))
+    elseif getbackend(device) == ROCBackend()
+        # FIXME: Works with dense Jacobian for now
+        J .= 0.0
+        kernel! = uncompress_kernel_dense!(device)
+        ev = kernel!(J, compressedJ, coloring, ndrange=size(J,1), dependencies=Event(device))
     else
         error("Unknown device $device")
     end

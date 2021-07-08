@@ -6,6 +6,8 @@ Preconditioners for the iterative solvers mostly focused on GPUs
 """
 abstract type AbstractPreconditioner end
 
+struct NoPreconditioner <: AbstractPreconditioner end
+
 """
     BlockJacobiPreconditioner
 
@@ -42,6 +44,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
     P::SMT
     id::Union{GMT,MT}
     function BlockJacobiPreconditioner(J, npart, device=CPU()) where {}
+        backend = getbackend(device)
         if isa(device, CPU)
             AT  = Array{Float64,3}
             GAT = Nothing
@@ -54,14 +57,14 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             SMT = SparseMatrixCSC{Float64,Int64}
         elseif isa(device, GPU)
             AT  = Array{Float64,3}
-            GAT = CuArray{Float64, 3, CUDA.Mem.DeviceBuffer}
+            GAT = array_type(backend){Float64,3}
             VI  = Vector{Int64}
-            GVI = CuArray{Int64, 1, CUDA.Mem.DeviceBuffer}
+            GVI = vector_type(backend){Int64}
             MT  = Matrix{Float64}
-            GMT = CuArray{Float64, 2, CUDA.Mem.DeviceBuffer}
+            GMT = matrix_type(backend){Float64}
             MI  = Matrix{Int64}
-            GMI = CuArray{Int64, 2, CUDA.Mem.DeviceBuffer}
-            SMT = CUDA.CUSPARSE.CuSparseMatrixCSR{Float64}
+            GMI = matrix_type(backend){Int64}
+            SMT = sparse_matrix_type(backend){Float64}
             J = SparseMatrixCSC(J)
         else
             error("Unknown device type")
@@ -126,8 +129,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             cubpartitions = GMI(bpartitions)
             culpartitions = GVI(lpartitions)
             cublocks = GAT(blocks)
-            cumap = CUDA.cu(map)
-            cupart = CUDA.cu(part)
+            cumap = GVI(map)
+            cupart = GVI(part)
             P = SMT(P)
         else
             cublocks = nothing
@@ -151,6 +154,7 @@ function BlockJacobiPreconditioner(J::SparseMatrixCSC; nblocks=-1, device=CPU())
     return BlockJacobiPreconditioner(J, npartitions, device)
 end
 BlockJacobiPreconditioner(J::CUSPARSE.CuSparseMatrixCSR; options...) = BlockJacobiPreconditioner(SparseMatrixCSC(J); options...)
+BlockJacobiPreconditioner(J::AMDGPU.ROCMatrix; options...) = NoPreconditioner()
 
 """
     build_adjmatrix
@@ -292,20 +296,32 @@ end
 end
 
 """
-    function update(J::SparseMatrixCSC, p)
+    function update(J::SparseMatrixCSC, p, device::KA.CPU)
 
 Update the preconditioner `p` from the sparse Jacobian `J` in CSC format for the CPU
 
 Note that this implements the same algorithm as for the GPU and becomes very slow on CPU with growing number of blocks.
 
 """
-function update(p, J::SparseMatrixCSC, device)
+function update(p, J::SparseMatrixCSC, device::KA.CPU)
     kernel! = update_cpu_kernel!(device)
     p.P.nzval .= 0.0
     ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks, dependencies=Event(device))
     wait(ev)
     return p.P
 end
+
+
+"""
+    function update(J::SparseMatrixCSC, p, device::KA.GPU)
+
+This is a workaround for AMD GPUs since we don't have a sparse matrix structure yet.
+
+"""
+function update(p::NoPreconditioner, J::ROCMatrix, device::KA.GPU)
+    return ROCMatrix(I, size(J,1), size(J,2))
+end
+
 function update(p, J::Transpose{T, SparseMatrixCSC{T, I}}) where {T, I}
     ix, jx, zx = findnz(J.parent)
     update(p, sparse(jx, ix, zx))

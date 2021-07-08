@@ -53,14 +53,18 @@ function test_constraints_jacobian(polar, device, MT)
             return c
         end
         x = [cache.vang[pv]; cache.vang[pq]; cache.vmag[pq]]
-        Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x) |> Array
+        if skip_roc(device)
+            Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x) |> Array
+        end
         Jx = xjacobianAD.J |> SparseMatrixCSC |> Array
         ## JACOBIAN VECTOR PRODUCT
         ExaPF.jacobian_transpose_product!(polar, pbm, cache, tgt)
         ∂cons = pbm.stack
 
         @test size(J) == (m, length(x))
-        @test isapprox(Jd, Jx, rtol=1e-5)
+        if skip_roc(device)
+            @test isapprox(Jd, Jx, rtol=1e-5)
+        end
         @test isapprox(Jmat_x, Jx, rtol=1e-4)
         @test isapprox(∂cons.∂x, xjacobianAD.J' * tgt, rtol=1e-6)
 
@@ -69,6 +73,7 @@ function test_constraints_jacobian(polar, device, MT)
         Jmat_u = ExaPF.matpower_jacobian(polar, Control(), cons, V)
         Jacobian = ExaPF.is_linear(polar, cons) ? ExaPF.AutoDiff.ConstantJacobian : ExaPF.AutoDiff.Jacobian
         ujacobianAD = Jacobian(polar, cons, Control())
+        ujacobianAD = ExaPF.AutoDiff.Jacobian(polar, cons, Control())
         # Evaluate Jacobian with AD
         J = AutoDiff.jacobian!(polar, ujacobianAD, cache)
 
@@ -82,11 +87,15 @@ function test_constraints_jacobian(polar, device, MT)
             return c
         end
         u = [cache.vmag[ref]; cache.vmag[pv]; cache.pnet[pv]]
-        Jd = FiniteDiff.finite_difference_jacobian(jac_fd_u, u) |> Array
+        if skip_roc(device)
+            Jd = FiniteDiff.finite_difference_jacobian(jac_fd_u, u) |> Array
+        end
         if !isnothing(ujacobianAD.J)
             Ju = ujacobianAD.J |> SparseMatrixCSC |> Array
             @test size(J) == (m, length(u))
-            @test isapprox(Jd, Ju, rtol=1e-5)
+            if skip_roc(device)
+                @test isapprox(Jd, Ju, rtol=1e-5)
+            end
             @test isapprox(Jmat_u, Ju, rtol=1e-6)
             @test isapprox(∂cons.∂u, ujacobianAD.J' * tgt, rtol=1e-6)
         end
@@ -132,11 +141,15 @@ function test_constraints_adjoint(polar, device, MT)
             return dot(c, tgt)
         end
         vv = [cache.vmag; cache.vang]
-        vv_fd = FiniteDiff.finite_difference_jacobian(test_fd, vv)
+        if skip_roc(device)
+            vv_fd = FiniteDiff.finite_difference_jacobian(test_fd, vv)
+        end
         # Loosen the tolerance to 1e-5 there (finite_difference_jacobian
         # is less accurate than finite_difference_gradient)
-        @test myisapprox(vv_fd[1:nbus], pbm.stack.∂vm, rtol=1e-5)
-        @test myisapprox(vv_fd[1+nbus:2*nbus], pbm.stack.∂va, rtol=1e-5)
+        if skip_roc(device)
+            @test myisapprox(vv_fd[1:nbus], pbm.stack.∂vm, rtol=1e-5)
+            @test myisapprox(vv_fd[1+nbus:2*nbus], pbm.stack.∂va, rtol=1e-5)
+        end
     end
 end
 

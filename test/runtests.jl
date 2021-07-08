@@ -3,8 +3,10 @@ using Random
 using LinearAlgebra
 using SparseArrays
 
+using AMDGPU
 using CUDA
 using KernelAbstractions
+using CUDAKernels
 
 using FiniteDiff
 
@@ -24,6 +26,7 @@ if has_cuda_gpu()
     CUDA_ARCH = (CUDADevice(), CuArray, CuSparseMatrixCSR)
     push!(ARCHS, CUDA_ARCH)
 end
+AMDGPU.hsa_configured && push!(ARCHS, (ROCDevice(), ROCArray, ROCMatrix))
 
 # Load test modules
 @isdefined(TestLinearSolvers)    || include("TestLinearSolvers.jl")
@@ -64,17 +67,17 @@ init_time = time()
     end
     println()
 
-    @testset "Test Documentation" begin
-        include("quickstart.jl")
-    end
+    # @testset "Test Documentation" begin
+    #     include("quickstart.jl")
+    # end
 
-    @testset "Test Benchmark script" begin
-        empty!(ARGS)
-        push!(ARGS, "KrylovBICGSTAB")
-        push!(ARGS, "CPU")
-        push!(ARGS, "case300.m")
-        include(joinpath(BENCHMARK_DIR, "benchmarks.jl"))
-    end
+    # @testset "Test Benchmark script" begin
+    #     empty!(ARGS)
+    #     push!(ARGS, "KrylovBICGSTAB")
+    #     push!(ARGS, "CPU")
+    #     push!(ARGS, "case300.m")
+    #     include(joinpath(BENCHMARK_DIR, "benchmarks.jl"))
+    # end
 end
 println("TOTAL RUNNING TIME: $(round(time() - init_time; digits=1)) seconds.")
 

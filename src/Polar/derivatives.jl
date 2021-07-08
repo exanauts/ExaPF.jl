@@ -32,7 +32,12 @@ function AutoDiff.Jacobian(
     J = jacobian_sparsity(polar, func, variable)
 
     # Coloring
-    coloring = AutoDiff.SparseDiffTools.matrix_colors(J)
+    # FIXME: Coloring is disabled on AMDGPU.jl as it a dense Jacobian
+    if getbackend(polar.device) == ROCBackend()
+        coloring = collect(1:size(J,1))
+    else
+        coloring = AutoDiff.SparseDiffTools.matrix_colors(J)
+    end
     ncolor = size(unique(coloring),1)
 
     # TODO: clean
@@ -54,8 +59,8 @@ function AutoDiff.Jacobian(
     compressedJ = MT(zeros(Float64, ncolor, m))
 
     # Views
-    varx = view(x, map)
-    t1svarx = view(t1sx, map)
+    varx = nccopy(x, map, polar.device)
+    t1svarx = nccopy(t1sx, map, polar.device)
 
     return AutoDiff.Jacobian{typeof(func), VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx), typeof(variable)}(
         func, J, compressedJ, coloring,
@@ -84,8 +89,11 @@ function AutoDiff.jacobian!(
     copyto!(jac.x, nbus+1, buffer.vang, 1, nbus)
     jac.t1sx .= jac.x
     jac.t1sF .= 0.0
+    nccopy!(jac.varx, jac.x, jac.map, polar.device)
+    nccopy!(jac.t1svarx, jac.t1sx, jac.map, polar.device)
 
     AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx, polar.device)
+    nccopy!(jac.t1sx, jac.map, jac.t1svarx, polar.device)
 
     jac.func(
         polar,
@@ -113,8 +121,11 @@ function AutoDiff.jacobian!(
     copyto!(jac.x, nbus+1, buffer.pnet, 1, nbus)
     jac.t1sx .= jac.x
     jac.t1sF .= 0.0
+    nccopy!(jac.varx, jac.x, jac.map, polar.device)
+    nccopy!(jac.t1svarx, jac.t1sx, jac.map, polar.device)
 
     AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx, polar.device)
+    nccopy!(jac.t1sx, jac.map, jac.t1svarx, polar.device)
 
     jac.func(
         polar,
@@ -139,7 +150,7 @@ function AutoDiff.ConstantJacobian(polar::PolarForm, func::Function, variable::U
     if isa(polar.device, CPU)
         SMT = SparseMatrixCSC{Float64,Int}
     elseif isa(polar.device, GPU)
-        SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
+        SMT = sparse_matrix_type(getbackend(polar.device)){Float64}
     end
 
     nbus = get(polar, PS.NumberOfBuses())
@@ -169,7 +180,7 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func; tape=nothing) w
     if isa(polar.device, CPU)
         A = Vector
     elseif isa(polar.device, GPU)
-        A = CUDA.CuVector
+        A = vector_type(getbackend(polar.device))
     end
 
     pf = polar.network
@@ -366,7 +377,7 @@ function ConstraintsJacobianStorage(polar::PolarForm{T, VI, VT, MT}, constraints
     if isa(polar.device, CPU)
         SpMT = SparseMatrixCSC{Float64, Int}
     elseif isa(polar.device, GPU)
-        SpMT = CUSPARSE.CuSparseMatrixCSR{Float64}
+        SpMT = sparse_matrix_type(getbackend(polar.device)){Float64}
     end
 
     SparseCPU = SparseMatrixCSC{Float64, Int}

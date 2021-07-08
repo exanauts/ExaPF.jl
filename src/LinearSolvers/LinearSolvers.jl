@@ -7,6 +7,7 @@ using SparseArrays
 import Base: show
 
 using CUDA
+using AMDGPU
 using KernelAbstractions
 import CUDA.CUBLAS
 import CUDA.CUSOLVER
@@ -15,7 +16,9 @@ import Krylov
 import LightGraphs
 import Metis
 
-import ..ExaPF: xnorm, csclsvqr!
+import ..ExaPF: xnorm, csclsvqr!, getbackend
+import ..ExaPF: array_type, vector_type, matrix_type, sparse_matrix_type, xzeros, xones
+import ..ExaPF: HostBackend, CUDABackend, ROCBackend, OneAPIBackend
 
 const KA = KernelAbstractions
 
@@ -96,6 +99,7 @@ struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: Abstrac
 end
 
 exa_factorize(J::AbstractSparseMatrix) = nothing
+exa_factorize(J::AMDGPU.ROCMatrix) = nothing
 exa_factorize(J::SparseMatrixCSC{T, Int}) where T = lu(J)
 exa_factorize(J::Adjoint{T, SparseMatrixCSC{T, Int}}) where T = lu(J.parent)'
 
@@ -153,6 +157,13 @@ function ldiv!(::DirectSolver{Nothing},
     y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSC, x::CUDA.CuVector,
 )
     csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
+    return 0
+end
+function ldiv!(::DirectSolver{Nothing},
+    y::AMDGPU.ROCVector, J::AMDGPU.ROCMatrix, x::AMDGPU.ROCVector,
+)
+    # FIXME: This should use the LAPACK interface or rocALUTION
+    y .= J\x
     return 0
 end
 get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
@@ -241,7 +252,7 @@ function DQGMRES(J::AbstractSparseMatrix;
     P=BlockJacobiPreconditioner(J), memory=4, verbose=false
 )
     n, m = size(J)
-    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1, CUDA.Mem.DeviceBuffer} : Vector{Float64}
+    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1} : Vector{Float64}
     solver = Krylov.DqgmresSolver(n, m, memory, S)
     return DQGMRES(solver, P, memory, verbose)
 end
@@ -275,7 +286,7 @@ function KrylovBICGSTAB(J::AbstractSparseMatrix;
     P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10
 )
     n, m = size(J)
-    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1, CUDA.Mem.DeviceBuffer} : Vector{Float64}
+    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1} : Vector{Float64}
     solver = Krylov.BicgstabSolver(n, m, S)
     return KrylovBICGSTAB(solver, P, verbose, atol, rtol)
 end
@@ -295,16 +306,23 @@ function ldiv!(solver::KrylovBICGSTAB,
 end
 
 """
-    list_solvers(::KA.CPU)
+    list_solvers(::HostBackend)
 
-List all linear solvers available solving the power flow on the CPU.
+List all linear solvers available solving the power flow on the host.
 """
-list_solvers(::KA.CPU) = [DirectSolver, DQGMRES, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB]
+list_solvers(::HostBackend) = [DirectSolver, DQGMRES, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB]
 
 """
-    list_solvers(::KA.GPU)
+    list_solvers(::CUDABackend)
 
 List all linear solvers available solving the power flow on an NVIDIA GPU.
 """
-list_solvers(::KA.GPU) = [DirectSolver, BICGSTAB, DQGMRES, EigenBICGSTAB, KrylovBICGSTAB]
+list_solvers(::CUDABackend) = [DirectSolver, BICGSTAB, DQGMRES, EigenBICGSTAB, KrylovBICGSTAB]
+
+"""
+    list_solvers(::ROCBackend)
+
+List all linear solvers available solving the power flow on an NVIDIA GPU.
+"""
+list_solvers(::ROCBackend) = [DirectSolver]
 end

@@ -10,6 +10,8 @@ import CUDA.CUBLAS
 import CUDA.CUSPARSE
 import CUDA.CUSOLVER
 
+import AMDGPU
+
 import ForwardDiff
 using KernelAbstractions
 const KA = KernelAbstractions
@@ -24,7 +26,7 @@ const VERBOSE_LEVEL_NONE = 0
 const TIMER = TimerOutput()
 
 include("utils.jl")
-include("architectures.jl")
+include("backends.jl")
 
 # Templates
 include("models.jl")
