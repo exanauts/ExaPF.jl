@@ -291,7 +291,7 @@ end
 
 function batch_init_seed_hessian!(dest, tmp, v::CUDA.CuMatrix, nmap, device)
     ndrange = (nmap, size(dest, 2))
-    ev = _gpu_init_seed_hessian!(device)(dest, v, ndrange=ndrange, workgroupsize=256)
+    ev = _gpu_init_seed_hessian!(device)(dest, v, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
     wait(ev)
 end
 
