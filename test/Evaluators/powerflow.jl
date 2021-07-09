@@ -10,7 +10,7 @@ function test_powerflow_evaluator(nlp, device, AT)
     # Retrieve initial state of network
     uk = ExaPF.initial(nlp)
 
-    @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
+    @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(getbackend(device))
         algo = LinSolver(J; P=precond)
         nlp.linear_solver = algo
         convergence = ExaPF.update!(nlp, uk)
