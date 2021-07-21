@@ -141,14 +141,11 @@ function cost_penalty_ramping_constraints(
     return sum(costs)
 end
 
-function adjoint!(
+function adjoint_penalty_ramping_constraints!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory{F, S, I},
-    pg, ∂cost,
-    vm, ∂vm,
-    va, ∂va,
-    pinj, ∂pinj,
-    pload, qload,
+    buffer,
+    s, t, σ, τ, λf, λt, ρf, ρt, p1, p2, p3,
 ) where {F<:typeof(cost_penalty_ramping_constraints), S, I}
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     nref = PS.get(polar.network, PS.NumberOfSlackBuses())
@@ -162,29 +159,33 @@ function adjoint!(
     c1 = @view coefs[:, 3]
     c2 = @view coefs[:, 4]
 
+    ∂vm = pbm.stack.∂vm
+    ∂va = pbm.stack.∂va
+    ∂pinj = pbm.stack.∂pinj
+    fill!(∂vm, 0.0)
+    fill!(∂va, 0.0)
+    fill!(∂pinj, 0.0)
+
     ngen = get(polar, PS.NumberOfGenerators())
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
     transperm = polar.topology.sortperm
 
-    fill!(∂vm, 0.0)
-    fill!(∂va, 0.0)
-    fill!(∂pinj, 0.0)
     ev = adj_cost_ramping_kernel!(polar.device)(
-        ∂cost,
-        vm, ∂vm,
-        va, ∂va,
-        pinj, ∂pinj, pload, pbm.intermediate.s,
+        1.0,
+        buffer.vmag, ∂vm,
+        buffer.vang, ∂va,
+        buffer.pnet, ∂pinj, buffer.pload, s,
         c0, c1, c2,
-        pbm.intermediate.σ,
-        pbm.intermediate.t,
-        pbm.intermediate.τ,
-        pbm.intermediate.λf,
-        pbm.intermediate.λt,
-        pbm.intermediate.ρf,
-        pbm.intermediate.ρt,
-        pbm.intermediate.p1,
-        pbm.intermediate.p2,
-        pbm.intermediate.p3,
+        σ,
+        t,
+        τ,
+        λf,
+        λt,
+        ρf,
+        ρt,
+        p1,
+        p2,
+        p3,
         index_pv, index_ref, pv2gen, ref2gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval, ybus_im.nzval,
         transperm,
@@ -192,6 +193,12 @@ function adjoint!(
         dependencies=Event(polar.device)
     )
     wait(ev)
+
+    adj_x = pbm.stack.∇fₓ
+    adj_u = pbm.stack.∇fᵤ
+    fill!(adj_x, 0.0)
+    fill!(adj_u, 0.0)
+    adjoint_transfer!(polar, adj_u, adj_x, ∂vm, ∂va, ∂pinj)
     return
 end
 

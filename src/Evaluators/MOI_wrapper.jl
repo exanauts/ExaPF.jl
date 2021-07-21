@@ -67,9 +67,9 @@ function MOI.eval_constraint(ev::MOIEvaluator, cons, x)
 end
 
 function MOI.eval_constraint_jacobian(ev::MOIEvaluator, jac, x)
+    _update!(ev, x)
     n = length(x)
     m = n_constraints(ev.nlp)
-    _update!(ev, x)
     fill!(jac, 0)
     J = reshape(jac, m, n)
     jacobian!(ev.nlp, J, x)
