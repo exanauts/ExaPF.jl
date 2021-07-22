@@ -25,7 +25,6 @@ end
 # Load test modules
 @isdefined(TestLinearSolvers)    || include("TestLinearSolvers.jl")
 @isdefined(TestPolarFormulation) || include("Polar/TestPolarForm.jl")
-@isdefined(TestEvaluators)       || include("Evaluators/TestEvaluators.jl")
 
 init_time = time()
 @testset "Test ExaPF" begin
@@ -59,24 +58,8 @@ init_time = time()
             TestPolarFormulation.runtests(datafile, device, AT)
         end
         println("Took $(round(time() - tic; digits=1)) seconds.")
-
-        println("Test Evaluators ...")
-        tic = time()
-        @testset "ExaPF.Evaluator $(case)" for case in CASES
-            datafile = joinpath(INSTANCES_DIR, case)
-            TestEvaluators.runtests(datafile, device, AT)
-        end
-        println("Took $(round(time() - tic; digits=1)) seconds.")
     end
     println()
-
-    @testset "Test reduced gradient algorithms" begin
-        @info "Test reduced gradient algorithm ..."
-        tic = time()
-        include("Evaluators/test_rgm.jl")
-        include("Evaluators/MOI_wrapper.jl")
-        println("Took $(round(time() - tic; digits=1)) seconds.\n")
-    end
 
     @testset "Test Documentation" begin
         include("quickstart.jl")

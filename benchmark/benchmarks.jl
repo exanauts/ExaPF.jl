@@ -53,15 +53,18 @@ function run_benchmark(datafile, device, linsolver)
 
     algo = linsolver(J; P=precond)
     powerflow_solver = NewtonRaphson(tol=ntol)
-    nlp = ExaPF.ReducedSpaceEvaluator(polar;
-                                      powerflow_solver=powerflow_solver)
-    nlp.linear_solver = algo
-    convergence = ExaPF.update!(nlp, u0)
-    ExaPF.reset!(nlp)
-    convergence = ExaPF.update!(nlp, u0)
-    ExaPF.reset!(nlp)
+
+    # Init variables
+    buffer = get(polar, ExaPF.PhysicalState())
+    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+
+    # Warmstart
+    ExaPF.init_buffer!(polar, buffer)
+    ExaPF.powerflow(polar, jx, buffer, powerflow_solver; linear_solver=algo)
+
     TimerOutputs.reset_timer!(ExaPF.TIMER)
-    convergence = ExaPF.update!(nlp, u0)
+    ExaPF.init_buffer!(polar, buffer)
+    convergence = ExaPF.powerflow(polar, jx, buffer, powerflow_solver; linear_solver=algo)
 
     # Make sure we are converged
     @assert(convergence.has_converged)
