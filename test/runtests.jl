@@ -18,7 +18,9 @@ const CASES = ["case9.m", "case30.m"]
 
 ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
 if has_cuda_gpu()
-    include("cusolver.jl")
+    using CUDAKernels
+    using CUDA.CUSPARSE
+    CUDA_ARCH = (CUDADevice(), CuArray, CuSparseMatrixCSR)
     push!(ARCHS, CUDA_ARCH)
 end
 
