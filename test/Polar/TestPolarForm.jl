@@ -12,9 +12,10 @@ using Random
 using SparseArrays
 
 using ExaPF
-import ExaPF: PowerSystem, AutoDiff
+import ExaPF: PowerSystem, AutoDiff, LinearSolvers
 
 const PS = PowerSystem
+const LS = LinearSolvers
 
 include("api.jl")
 include("autodiff.jl")

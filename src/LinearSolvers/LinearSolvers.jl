@@ -122,6 +122,10 @@ function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray,
     LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
     return 0
 end
+function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, J::SparseMatrixCSC, x::Array)
+    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
+    return 0
+end
 
 function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector)
     F = lu(J)
@@ -152,6 +156,12 @@ function ldiv!(::DirectSolver{Nothing},
     return 0
 end
 get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
+
+function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector)
+    Jt = get_transpose(s, J)
+    csclsvqr!(Jt, x, y, 1e-8, one(Cint), 'O')
+    return 0
+end
 
 function update_preconditioner!(solver::AbstractIterativeLinearSolver, J, device)
     update(solver.precond, J, device)

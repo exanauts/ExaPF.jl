@@ -132,8 +132,6 @@ end
 # Convenient constructor
 PolarForm(datafile::String, device) = PolarForm(PS.PowerNetwork(datafile), device)
 
-array_type(polar::PolarForm) = array_type(polar.device)
-
 # Getters
 function get(polar::PolarForm, ::NumberOfState)
     npv = PS.get(polar.network, PS.NumberOfPVBuses())
@@ -271,6 +269,12 @@ function powerflow_jacobian(polar)
     nbus = get(polar, PS.NumberOfBuses())
     v0 = polar.network.vbus .+ 0.01 .* rand(ComplexF64, nbus)
     return matpower_jacobian(polar, State(), power_balance, v0)
+end
+
+function powerflow_jacobian_device(polar)
+    SpMT = default_sparse_matrix(polar.device)
+    J = powerflow_jacobian(polar)
+    return J |> SpMT
 end
 
 function Base.show(io::IO, polar::PolarForm)

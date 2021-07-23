@@ -1,6 +1,6 @@
 # ExaPF
 
-[![][docs-latest-img]][docs-latest-url] ![CI](https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master) 
+[![][docs-latest-img]][docs-latest-url] ![CI](https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master)
 
 [docs-latest-img]: https://img.shields.io/badge/docs-latest-blue.svg
 [docs-latest-url]: https://exanauts.github.io/ExaPF.jl/
@@ -47,49 +47,6 @@ Iteration 2. Residual norm: 0.00441074.
 Iteration 3. Residual norm: 2.81269e-06.
 Iteration 4. Residual norm: 3.9111e-12.
 ExaPF.ConvergenceStatus(true, 4, 3.911102241031109e-12, 0)
-```
-
-### How to solve the optimal power flow in the reduced space?
-
-ExaPF implements a wrapper to [MathOptInterface](https://github.com/jump-dev/MathOptInterface.jl)
-that allows to solve the optimal power flow problem directly in the reduced space
-induced by the power flow equations:
-
-```julia
-julia> case = "case57.m"
-# Instantiate a ReducedSpaceEvaluator object
-julia> nlp = ExaPF.ReducedSpaceEvaluator(datafile)
-# MOI optimizer
-julia> optimizer = Ipopt.Optimizer()
-# Use LBFGS algorithm, as reduced Hessian is not available by default!
-julia> MOI.set(optimizer, MOI.RawParameter("hessian_approximation"), "limited-memory")
-julia> MOI.set(optimizer, MOI.RawParameter("tol"), 1e-4)
-julia> solution = ExaPF.optimize!(optimizer, nlp)
-Total number of variables............................:       10
-                     variables with only lower bounds:        0
-                variables with lower and upper bounds:       10
-                     variables with only upper bounds:        0
-Total number of equality constraints.................:        0
-Total number of inequality constraints...............:       58
-        inequality constraints with only lower bounds:        0
-   inequality constraints with lower and upper bounds:       58
-        inequality constraints with only upper bounds:        0
-
-
-Number of Iterations....: 9
-
-                                   (scaled)                 (unscaled)
-Objective...............:   1.9630480251946040e+03    3.7589338203438238e+04
-Dual infeasibility......:   2.5545890554923290e-05    4.8916435433709606e-04
-Constraint violation....:   4.7695181137896725e-13    4.7695181137896725e-13
-Complementarity.........:   1.0270912626531211e-11    1.9667211572084318e-10
-Overall NLP error.......:   2.5545890554923290e-05    4.8916435433709606e-04
-
-[...]
-Total CPU secs in IPOPT (w/o function evaluations)   =      0.049
-Total CPU secs in NLP function evaluations           =      0.023
-
-EXIT: Optimal Solution Found.
 ```
 
 ## Development
