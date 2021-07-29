@@ -137,13 +137,15 @@ function test_polar_powerflow(polar, device, M)
     # Build preconditioner
     precond = LS.BlockJacobiPreconditioner(J, npartitions, device)
 
+    J_gpu = ExaPF.powerflow_jacobian_device(polar)
+
     # Init AD
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
     # Init buffer
     buffer = get(polar, ExaPF.PhysicalState())
 
     @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
-        algo = LinSolver(J; P=precond)
+        algo = LinSolver(J_gpu; P=precond)
         ExaPF.init_buffer!(polar, buffer)
         convergence = ExaPF.powerflow(polar, jx, buffer, pf_solver; linear_solver=algo)
         @test convergence.has_converged

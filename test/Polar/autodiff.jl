@@ -83,11 +83,13 @@ function test_constraints_jacobian(polar, device, MT)
         end
         u = [cache.vmag[ref]; cache.vmag[pv]; cache.pnet[pv]]
         Jd = FiniteDiff.finite_difference_jacobian(jac_fd_u, u) |> Array
-        Ju = ujacobianAD.J |> SparseMatrixCSC |> Array
-        @test size(J) == (m, length(u))
-        @test isapprox(Jd, Ju, rtol=1e-5)
-        @test isapprox(Jmat_u, Ju, rtol=1e-6)
-        @test isapprox(∂cons.∂u, ujacobianAD.J' * tgt, rtol=1e-6)
+        if !isnothing(ujacobianAD.J)
+            Ju = ujacobianAD.J |> SparseMatrixCSC |> Array
+            @test size(J) == (m, length(u))
+            @test isapprox(Jd, Ju, rtol=1e-5)
+            @test isapprox(Jmat_u, Ju, rtol=1e-6)
+            @test isapprox(∂cons.∂u, ujacobianAD.J' * tgt, rtol=1e-6)
+        end
     end
 end
 
