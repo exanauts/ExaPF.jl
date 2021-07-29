@@ -126,25 +126,14 @@ function BatchJacobian(
 ) where {T, VI, VT, MT}
     @assert is_constraint(func)
     device = polar.device
-
-    if isa(device, CPU)
-        SMT = SparseMatrixCSC{Float64,Int}
-        A = Array
-    elseif isa(device, GPU)
-        SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
-        A = CUDA.CuArray
-    end
+    (SMT, A) = get_batch_jacobian_types(device)
 
     # Tensor type
     TT = A{T, 3}
 
     pf = polar.network
     nbus = PS.get(pf, PS.NumberOfBuses())
-    if isa(variable, State)
-        map = VI(polar.mapx)
-    elseif isa(variable, Control)
-        map = VI(polar.mapu)
-    end
+    map = get_map(polar, variable) |> VI
 
     nmap = length(map)
 
@@ -180,56 +169,66 @@ function BatchJacobian(
     varx = view(x, map, :)
     t1svarx = view(t1sx, map, :)
 
-    return AutoDiff.Jacobian{typeof(func), VI, MT, TT, typeof(Js), typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
-        func, variable, Js, compressedJ, coloring,
+    return AutoDiff.Jacobian{typeof(func), VI, MT, TT, typeof(Js), typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx), typeof(variable)}(
+        func, Js, compressedJ, coloring,
         gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
     )
 end
 
-function batch_jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
+function batch_jacobian!(polar::PolarForm,
+    jac::AutoDiff.Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD, State},
+    buffer
+) where {Func, VI, VT, MT, SMT, VP, VD, SubT, SubD}
     device = polar.device
     nbus = get(polar, PS.NumberOfBuses())
-    type = jac.var
     nbatch = size(jac.x, 2)
-    if isa(type, State)
-        for i in 1:nbatch
-            f = (i-1) * nbus
-            copyto!(jac.x, 1 + 2 * f, buffer.vmag, 1 + f, nbus)
-            copyto!(jac.x, nbus + 2 * f + 1, buffer.vang, 1 + f, nbus)
-        end
-        jac.t1sx .= jac.x
-        jac.t1sF .= 0.0
-    elseif isa(type, Control)
-        copyto!(jac.x, 1, buffer.vmag, 1, nbus)
-        copyto!(jac.x, nbus+1, buffer.pnet, 1, nbus)
-        jac.t1sx .= jac.x
-        jac.t1sF .= 0.0
+    for i in 1:nbatch
+        f = (i-1) * nbus
+        copyto!(jac.x, 1 + 2 * f, buffer.vmag, 1 + f, nbus)
+        copyto!(jac.x, nbus + 2 * f + 1, buffer.vang, 1 + f, nbus)
     end
+    jac.t1sx .= jac.x
+    jac.t1sF .= 0.0
 
     AutoDiff.batch_seed_jacobian!(jac.t1sseeds, jac.varx, jac.t1svarx, device)
 
-    if isa(type, State)
-        jac.func(
-            polar,
-            jac.t1sF,
-            view(jac.t1sx, 1:nbus, :),
-            view(jac.t1sx, nbus+1:2*nbus, :),
-            buffer.pnet, buffer.qnet,
-            buffer.pload, buffer.qload,
-        )
-    elseif isa(type, Control)
-        jac.func(
-            polar,
-            jac.t1sF,
-            view(jac.t1sx, 1:nbus, :),
-            buffer.vang,
-            view(jac.t1sx, nbus+1:2*nbus, :), buffer.qnet,
-            buffer.pload, buffer.qload,
-        )
-    end
+    jac.func(
+        polar,
+        jac.t1sF,
+        view(jac.t1sx, 1:nbus, :),
+        view(jac.t1sx, nbus+1:2*nbus, :),
+        buffer.pnet, buffer.qnet,
+        buffer.pload, buffer.qload,
+    )
 
     AutoDiff.batch_partials_jacobian!(jac.compressedJ, jac.t1sF, device)
     AutoDiff.batch_uncompress!(jac.J, jac.compressedJ, jac.coloring, device)
     return jac.J
 end
 
+function batch_jacobian!(polar::PolarForm,
+    jac::AutoDiff.Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD, Control},
+    buffer
+) where {Func, VI, VT, MT, SMT, VP, VD, SubT, SubD}
+    device = polar.device
+    nbus = get(polar, PS.NumberOfBuses())
+    copyto!(jac.x, 1, buffer.vmag, 1, nbus)
+    copyto!(jac.x, nbus+1, buffer.pnet, 1, nbus)
+    jac.t1sx .= jac.x
+    jac.t1sF .= 0.0
+
+    AutoDiff.batch_seed_jacobian!(jac.t1sseeds, jac.varx, jac.t1svarx, device)
+
+    jac.func(
+        polar,
+        jac.t1sF,
+        view(jac.t1sx, 1:nbus, :),
+        buffer.vang,
+        view(jac.t1sx, nbus+1:2*nbus, :), buffer.qnet,
+        buffer.pload, buffer.qload,
+    )
+
+    AutoDiff.batch_partials_jacobian!(jac.compressedJ, jac.t1sF, device)
+    AutoDiff.batch_uncompress!(jac.J, jac.compressedJ, jac.coloring, device)
+    return jac.J
+end
