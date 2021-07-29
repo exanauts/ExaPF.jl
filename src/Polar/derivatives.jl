@@ -1,3 +1,5 @@
+get_map(polar,::State) = polar.mapx
+get_map(polar,::Control) = polar.mapu
 
 """
     AutoDiff.Jacobian(polar, func::Function, variable::AbstractVariable)
@@ -18,22 +20,11 @@ function AutoDiff.Jacobian(
     polar::PolarForm{T, VI, VT, MT}, func, variable,
 ) where {T, VI, VT, MT}
     @assert is_constraint(func)
-
-    if isa(polar.device, CPU)
-        SMT = SparseMatrixCSC{Float64,Int}
-        A = Vector
-    elseif isa(polar.device, GPU)
-        SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
-        A = CUDA.CuVector
-    end
+    (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
     nbus = PS.get(pf, PS.NumberOfBuses())
-    if isa(variable, State)
-        map = VI(polar.mapx)
-    elseif isa(variable, Control)
-        map = VI(polar.mapu)
-    end
+    map = VI(get_map(polar, variable))
 
     nmap = length(map)
 
@@ -66,8 +57,8 @@ function AutoDiff.Jacobian(
     varx = view(x, map)
     t1svarx = view(t1sx, map)
 
-    return AutoDiff.Jacobian{typeof(func), VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
-        func, variable, J, compressedJ, coloring,
+    return AutoDiff.Jacobian{typeof(func), VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx), typeof(variable)}(
+        func, J, compressedJ, coloring,
         gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
     )
 end
@@ -83,46 +74,58 @@ No allocations are taking place in this function.
 * `buffer::PolarNetworkState`: store current values for network's variables.
 
 """
-function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
+function AutoDiff.jacobian!(
+    polar::PolarForm,
+    jac::AutoDiff.Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD, State},
+    buffer
+) where {Func, VI, VT, MT, SMT, VP, VD, SubT, SubD}
     nbus = get(polar, PS.NumberOfBuses())
-    type = jac.var
-    if isa(type, State)
-        copyto!(jac.x, 1, buffer.vmag, 1, nbus)
-        copyto!(jac.x, nbus+1, buffer.vang, 1, nbus)
-        jac.t1sx .= jac.x
-        jac.t1sF .= 0.0
-    elseif isa(type, Control)
-        copyto!(jac.x, 1, buffer.vmag, 1, nbus)
-        copyto!(jac.x, nbus+1, buffer.pnet, 1, nbus)
-        jac.t1sx .= jac.x
-        jac.t1sF .= 0.0
-    end
+    copyto!(jac.x, 1, buffer.vmag, 1, nbus)
+    copyto!(jac.x, nbus+1, buffer.vang, 1, nbus)
+    jac.t1sx .= jac.x
+    jac.t1sF .= 0.0
 
     AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx, polar.device)
 
-    if isa(type, State)
-        jac.func(
-            polar,
-            jac.t1sF,
-            view(jac.t1sx, 1:nbus),
-            view(jac.t1sx, nbus+1:2*nbus),
-            buffer.pnet,
-            buffer.qnet,
-            buffer.pload,
-            buffer.qload,
-        )
-    elseif isa(type, Control)
-        jac.func(
-            polar,
-            jac.t1sF,
-            view(jac.t1sx, 1:nbus),
-            buffer.vang,
-            view(jac.t1sx, nbus+1:2*nbus),
-            buffer.qnet,
-            buffer.pload,
-            buffer.qload,
-        )
-    end
+    jac.func(
+        polar,
+        jac.t1sF,
+        view(jac.t1sx, 1:nbus),
+        view(jac.t1sx, nbus+1:2*nbus),
+        buffer.pnet,
+        buffer.qnet,
+        buffer.pload,
+        buffer.qload,
+    )
+
+    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, polar.device)
+    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, polar.device)
+    return jac.J
+end
+
+function AutoDiff.jacobian!(
+    polar::PolarForm,
+    jac::AutoDiff.Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD, Control},
+    buffer
+) where {Func, VI, VT, MT, SMT, VP, VD, SubT, SubD}
+    nbus = get(polar, PS.NumberOfBuses())
+    copyto!(jac.x, 1, buffer.vmag, 1, nbus)
+    copyto!(jac.x, nbus+1, buffer.pnet, 1, nbus)
+    jac.t1sx .= jac.x
+    jac.t1sF .= 0.0
+
+    AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx, polar.device)
+
+    jac.func(
+        polar,
+        jac.t1sF,
+        view(jac.t1sx, 1:nbus),
+        buffer.vang,
+        view(jac.t1sx, nbus+1:2*nbus),
+        buffer.qnet,
+        buffer.pload,
+        buffer.qload,
+    )
 
     AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, polar.device)
     AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, polar.device)
