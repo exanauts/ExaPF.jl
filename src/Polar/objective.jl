@@ -12,7 +12,7 @@ end
 @inline quadratic_cost(pg, c0, c1, c2) = c0 + c1 * pg + c2 * pg^2
 @inline adj_quadratic_cost(pg, c0, c1, c2) = c1 + 2.0 * c2 * pg
 
-KA.@kernel function ccost_production_kernel!(
+KA.@kernel function cost_production_kernel!(
     costs, pg, @Const(vmag), @Const(vang), pnet, @Const(pload),
     @Const(c0), @Const(c1), @Const(c2),
     @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
@@ -40,7 +40,7 @@ KA.@kernel function ccost_production_kernel!(
     costs[i_gen, j] = quadratic_cost(pg[i_gen, j], c0[i_gen], c1[i_gen], c2[i_gen])
 end
 
-KA.@kernel function aadj_cost_production_kernel!(
+KA.@kernel function adj_cost_production_kernel!(
     adj_costs,
     @Const(vmag), adj_vmag, @Const(vang), adj_vang, @Const(pnet), adj_pnet, @Const(pload),
     @Const(c0), @Const(c1), @Const(c2),
@@ -90,7 +90,7 @@ function cost_production(polar::PolarForm, buffer::PolarNetworkState)
     c2 = @view coefs[:, 4]
     costs = similar(buffer.pgen)
 
-    ev = ccost_production_kernel!(polar.device)(
+    ev = cost_production_kernel!(polar.device)(
         costs, buffer.pgen,
         buffer.vmag, buffer.vang, buffer.pnet, buffer.pload,
         c0, c1, c2,
@@ -132,7 +132,7 @@ function adjoint!(
     fill!(∂vm, 0.0)
     fill!(∂va, 0.0)
     fill!(∂pnet, 0.0)
-    ev = aadj_cost_production_kernel!(polar.device)(
+    ev = adj_cost_production_kernel!(polar.device)(
         ∂cost,
         vm, ∂vm,
         va, ∂va,

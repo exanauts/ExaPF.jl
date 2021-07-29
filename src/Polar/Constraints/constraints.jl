@@ -27,10 +27,10 @@ function _get_intermediate_stack(
     # Return a NamedTuple storing all the intermediate states
     if nbatch == 1
         return (
-            ∂edge_vm_fr = xzeros(VT, nnz),
-            ∂edge_va_fr = xzeros(VT, nnz),
-            ∂edge_vm_to = xzeros(VT, nnz),
-            ∂edge_va_to = xzeros(VT, nnz),
+            ∂edge_vm_fr = VT(undef, nnz),
+            ∂edge_va_fr = VT(undef, nnz),
+            ∂edge_vm_to = VT(undef, nnz),
+            ∂edge_va_to = VT(undef, nnz),
         )
     else
         return (
@@ -56,8 +56,7 @@ end
 function adjoint!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory,
-    ∂cons, cons,
-    buffer,
+    ∂cons, cons, buffer,
 )
     stack = pbm.stack
     reset!(stack)
@@ -117,15 +116,6 @@ function _build_jacobian(polar::PolarForm, cons::Function, X::Union{State, Contr
     else
         return AutoDiff.Jacobian(polar, cons, X)
     end
-end
-
-_build_hessian(polar::PolarForm, cons::Function) = AutoDiff.Hessian(polar, cons)
-# Hessian of voltage magnitude is constant
-function _build_hessian(polar::PolarForm{T, VI, VT, MT}, cons::typeof(voltage_magnitude_constraints)) where {T, VI, VT, MT}
-    nx, nu = get(polar, NumberOfState()), get(polar, NumberOfControl())
-    hv = VT(undef, nx + nu)
-    fill!(hv, zero(T))
-    return AutoDiff.ConstantHessian(hv)
 end
 
 function FullSpaceJacobian(

@@ -49,7 +49,7 @@ end
 
 function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(power_balance)) where {T, IT, VT, MT}
     m = size_constraint(polar, power_balance)
-    return xzeros(VT, m) , xzeros(VT, m)
+    return (fill!(VT(undef, m), zero(T)) , fill!(VT(undef, m), zero(T)))
 end
 
 # Adjoint

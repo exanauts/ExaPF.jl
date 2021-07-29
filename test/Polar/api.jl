@@ -75,6 +75,10 @@ function test_polar_api(polar, device, M)
     u_min, u_max = ExaPF.bounds(polar, Control())
     x_min, x_max = ExaPF.bounds(polar, State())
 
+    # Get current control
+    u = similar(u_min)
+    ExaPF.get!(polar, Control(), u, cache)
+
     h_u_min, h_u_max = u_min |> Array, u_max |> Array
     h_x_min, h_x_max = x_min |> Array, x_max |> Array
     @test isless(h_u_min, h_u_max)
@@ -95,6 +99,10 @@ end
 function test_polar_constraints(polar, device, M)
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
     ExaPF.init_buffer!(polar, cache)
+    # Test that default function is not flagged as a constraint
+    foo(x) = 2*x
+    @test !ExaPF.is_constraint(foo)
+
     ## Inequality constraint
     @testset "Function $cons_function" for cons_function in [
         ExaPF.voltage_magnitude_constraints,
@@ -103,6 +111,7 @@ function test_polar_constraints(polar, device, M)
         ExaPF.flow_constraints,
         ExaPF.power_balance,
     ]
+        @test ExaPF.is_constraint(cons_function)
         m = ExaPF.size_constraint(polar, cons_function)
         @test isa(m, Int)
         g = M{Float64, 1}(undef, m) # TODO: this signature is not great

@@ -95,6 +95,9 @@ function test_powernetwork_api(datafile)
     data = PS.import_dataset(datafile)
     pf = PS.PowerNetwork(data)
 
+    # Test printing
+    println(devnull, pf)
+
     for Attr in [
         PS.NumberOfBuses,
         PS.NumberOfPVBuses,
@@ -156,6 +159,24 @@ function test_powernetwork_contingencies(datafile)
     @test pf_original.Ybus != pf_removed.Ybus
 end
 
+function test_multiple_generators(datafile)
+    pf = PS.PowerNetwork(datafile; multi_generators=:aggregate)
+    n_gen = PS.get(pf, PS.NumberOfGenerators())
+    n_pv = PS.get(pf, PS.NumberOfPVBuses())
+    n_ref = PS.get(pf, PS.NumberOfSlackBuses())
+    @test n_gen == n_pv + n_ref
+
+    pf = PS.PowerNetwork(datafile; multi_generators=:keep)
+    n_gen = PS.get(pf, PS.NumberOfGenerators())
+    n_pv = PS.get(pf, PS.NumberOfPVBuses())
+    n_ref = PS.get(pf, PS.NumberOfSlackBuses())
+    @test n_gen >= n_pv + n_ref
+
+    bus2gen = PS.get_bus_generators(pf.buses, pf.generators, pf.bus_to_indexes)
+    @test isa(bus2gen, Dict)
+    @test length(bus2gen) == n_pv + n_ref
+end
+
 @testset "PowerNetwork object" begin
     psse_datafile = "case14.raw"
     matpower_datafile = "case9.m"
@@ -171,6 +192,10 @@ end
         test_powernetwork_parser(datafile)
         test_powernetwork_api(datafile)
     end
+
+    # Test multiple generators
+    datafile = joinpath(dirname(@__FILE__), "..", "data", multi_generators_file)
+    test_multiple_generators(datafile)
 
     # Test API with "case9.m"
     datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)

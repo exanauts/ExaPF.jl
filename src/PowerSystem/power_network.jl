@@ -171,10 +171,10 @@ inactive_generators(pf::PowerNetwork) = findall(isequal(0), view(pf.generators, 
 
 # Pretty printing
 function Base.show(io::IO, pf::PowerNetwork)
-    println("PowerNetwork object with:")
-    @printf("    Buses: %d (Slack: %d. PV: %d. PQ: %d)\n", pf.nbus, length(pf.ref),
+    println(io, "PowerNetwork object with:")
+    @printf(io, "    Buses: %d (Slack: %d. PV: %d. PQ: %d)\n", pf.nbus, length(pf.ref),
             length(pf.pv), length(pf.pq))
-    println("    Generators: ", pf.ngen, ".")
+    println(io, "    Generators: ", pf.ngen, ".")
 end
 
 # Some utils function

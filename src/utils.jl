@@ -52,10 +52,6 @@ mutable struct Spmat{VTI<:AbstractVector, VTF<:AbstractVector}
         matimag = new(VTI(mat.colptr), VTI(mat.rowval), VTF(imag.(mat.nzval)))
         return matreal, matimag
     end
-    # copy constructor
-    function Spmat{VTI, VTF}(mat) where {VTI, VTF}
-        return new(VTI(mat.colptr), VTI(mat.rowval), VTF(mat.nzval))
-    end
 end
 
 mutable struct BatchCuSparseMatrixCSR{Tv} <: CUSPARSE.AbstractCuSparseMatrix{Tv}
@@ -117,12 +113,6 @@ function _transfer_sparse!(J_dest::CUSPARSE.CuSparseMatrixCSR, J_src::CUSPARSE.C
         J_dest.nzVal, J_src.nzVal, J_dest.rowPtr, shift, nnz_,
         ndrange=nnz_,
     )
-end
-
-
-# projection operator
-function project!(w::VT, u::VT, u♭::VT, u♯::VT) where VT<:AbstractArray
-    w .= max.(min.(u, u♯), u♭)
 end
 
 # Utils function to solve transposed linear system  A' x = y
