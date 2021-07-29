@@ -160,8 +160,8 @@ function test_full_space_jacobian(polar, device, MT)
     jac = ExaPF.ConstraintsJacobianStorage(polar, constraints)
     # Update State and Control Jacobians
     ExaPF.update_full_jacobian!(polar, jac, buffer)
-    Jx = jac.Jx |> Array
-    Ju = jac.Ju |> Array
+    Jx = jac.Jx |> SparseMatrixCSC |> Array
+    Ju = jac.Ju |> SparseMatrixCSC |> Array
 
     function jac_fd_x(x)
         buffer.vang[pv] .= x[1:npv]
