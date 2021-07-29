@@ -9,7 +9,7 @@ import ForwardDiff
 import SparseDiffTools
 using KernelAbstractions
 
-using ..ExaPF: Spmat, BatchCuSparseMatrixCSR, xzeros, State, Control
+using ..ExaPF: State, Control
 
 import Base: show
 
@@ -134,10 +134,6 @@ struct Hessian{Func, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, Buff} <: AbstractH
     varx::T9
     t1svarx::T10
     buffer::Buff
-end
-
-struct ConstantHessian{VT} <: AbstractHessian
-    hv::VT
 end
 
 # Cache for adjoint

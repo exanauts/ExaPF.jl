@@ -45,14 +45,18 @@ function runtests(datafile, device, AT)
         test_polar_network_cache(polar, device, AT)
         test_polar_api(polar, device, AT)
         test_polar_constraints(polar, device, AT)
+        test_polar_powerflow(polar, device, AT)
     end
 
     @testset "PolarForm AutoDiff" begin
         test_constraints_jacobian(polar, device, AT)
         test_constraints_adjoint(polar, device, AT)
+        test_full_space_jacobian(polar, device, AT)
     end
 
     @testset "PolarForm Gradient" begin
+        test_objective_adjoint(polar, device, AT)
+        test_objective_with_ramping_adjoint(polar, device, AT)
         test_reduced_gradient(polar, device, AT)
         test_line_flow_gradient(polar, device, AT)
     end

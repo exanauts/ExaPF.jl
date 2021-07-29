@@ -269,13 +269,6 @@ function AutoDiff.adj_hessian_prod!(
     return nothing
 end
 
-function AutoDiff.adj_hessian_prod!(
-    polar, H::AutoDiff.ConstantHessian, hv, buffer, λ, v,
-)
-    copyto!(hv, H.hv)
-    return nothing
-end
-
 # Adjoint's structure
 """
     AdjointStackObjective{VT}
@@ -297,14 +290,14 @@ end
 function AdjointStackObjective(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     nbus = get(polar, PS.NumberOfBuses())
     return AdjointStackObjective{VT}(
-        xzeros(VT, get(polar, NumberOfState())),
-        xzeros(VT, get(polar, NumberOfControl())),
-        xzeros(VT, get(polar, PS.NumberOfGenerators())),
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, get(polar, NumberOfState())),
-        xzeros(VT, get(polar, NumberOfControl())),
+        fill!(VT(undef, get(polar, NumberOfState())), zero(T)),
+        fill!(VT(undef, get(polar, NumberOfControl())), zero(T)),
+        fill!(VT(undef, get(polar, PS.NumberOfGenerators())), zero(T)),
+        fill!(VT(undef, nbus), zero(T)),
+        fill!(VT(undef, nbus), zero(T)),
+        fill!(VT(undef, nbus), zero(T)),
+        fill!(VT(undef, get(polar, NumberOfState())), zero(T)),
+        fill!(VT(undef, get(polar, NumberOfControl())), zero(T)),
     )
 end
 
@@ -320,12 +313,12 @@ end
 
 function AdjointPolar{VT}(nx::Int, nu::Int, nbus::Int) where {VT}
     return AdjointPolar{VT}(
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, nx),
-        xzeros(VT, nu),
+        VT(undef, nbus),
+        VT(undef, nbus),
+        VT(undef, nbus),
+        VT(undef, nbus),
+        VT(undef, nx),
+        VT(undef, nu),
     )
 end
 
