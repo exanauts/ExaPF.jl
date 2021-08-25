@@ -55,14 +55,14 @@ mutable struct Spmat{VTI<:AbstractVector, VTF<:AbstractVector}
 end
 
 mutable struct BatchCuSparseMatrixCSR{Tv} <: CUSPARSE.AbstractCuSparseMatrix{Tv}
-    rowPtr::CUDA.CuVector{Cint}
-    colVal::CUDA.CuVector{Cint}
-    nzVal::CUDA.CuMatrix{Tv}
+    rowPtr::CUDA.CuArray{Cint, 1, CUDA.Mem.DeviceBuffer}
+    colVal::CUDA.CuArray{Cint, 1, CUDA.Mem.DeviceBuffer}
+    nzVal::CUDA.CuArray{Tv, 2, CUDA.Mem.DeviceBuffer}
     dims::NTuple{2,Int}
     nnz::Cint
     nbatch::Int
 
-    function BatchCuSparseMatrixCSR{Tv}(rowPtr::CUDA.CuVector{<:Integer}, colVal::CUDA.CuVector{<:Integer},
+    function BatchCuSparseMatrixCSR{Tv}(rowPtr::CUDA.CuArray{<:Integer, 1, CUDA.Mem.DeviceBuffer}, colVal::CUDA.CuArray{<:Integer, 1, CUDA.Mem.DeviceBuffer},
                                    nzVal::CUDA.CuMatrix, dims::NTuple{2,<:Integer}, nnzJ::Int, nbatch::Int) where Tv
         new(rowPtr, colVal, nzVal, dims, nnzJ, nbatch)
     end
@@ -119,8 +119,8 @@ end
 # Source code taken from:
 # https://github.com/JuliaGPU/CUDA.jl/blob/master/lib/cusolver/wrappers.jl#L78L111
 function csclsvqr!(A::CUSPARSE.CuSparseMatrixCSC{Float64},
-                    b::CUDA.CuVector{Float64},
-                    x::CUDA.CuVector{Float64},
+                    b::CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer},
+                    x::CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer},
                     tol::Float64,
                     reorder::Cint,
                     inda::Char)

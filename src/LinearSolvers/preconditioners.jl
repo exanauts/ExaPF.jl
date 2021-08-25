@@ -54,13 +54,13 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             SMT = SparseMatrixCSC{Float64,Int64}
         elseif isa(device, GPU)
             AT  = Array{Float64,3}
-            GAT = CuArray{Float64,3}
+            GAT = CuArray{Float64, 3, CUDA.Mem.DeviceBuffer}
             VI  = Vector{Int64}
-            GVI = CuVector{Int64}
+            GVI = CuArray{Int64, 1, CUDA.Mem.DeviceBuffer}
             MT  = Matrix{Float64}
-            GMT = CuMatrix{Float64}
+            GMT = CuArray{Float64, 2, CUDA.Mem.DeviceBuffer}
             MI  = Matrix{Int64}
-            GMI = CuMatrix{Int64}
+            GMI = CuArray{Int64, 2, CUDA.Mem.DeviceBuffer}
             SMT = CUDA.CUSPARSE.CuSparseMatrixCSR{Float64}
             J = SparseMatrixCSC(J)
         else

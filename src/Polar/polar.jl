@@ -50,8 +50,8 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
         M = SparseMatrixCSC
         AT = Array
     elseif isa(device, KA.GPU)
-        IT = CUDA.CuVector{Int64}
-        VT = CUDA.CuVector{Float64}
+        IT = CUDA.CuArray{Int64, 1, CUDA.Mem.DeviceBuffer}
+        VT = CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
         M = CUSPARSE.CuSparseMatrixCSR
         AT = CUDA.CuArray
     end
