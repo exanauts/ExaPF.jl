@@ -241,7 +241,7 @@ function DQGMRES(J::AbstractSparseMatrix;
     P=BlockJacobiPreconditioner(J), memory=4, verbose=false
 )
     n, m = size(J)
-    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuVector{Float64} : Vector{Float64}
+    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1, CUDA.Mem.DeviceBuffer} : Vector{Float64}
     solver = Krylov.DqgmresSolver(n, m, memory, S)
     return DQGMRES(solver, P, memory, verbose)
 end
@@ -274,7 +274,7 @@ function KrylovBICGSTAB(J::AbstractSparseMatrix;
     P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10
 )
     n, m = size(J)
-    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuVector{Float64} : Vector{Float64}
+    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1, CUDA.Mem.DeviceBuffer} : Vector{Float64}
     solver = Krylov.BicgstabSolver(n, m, S)
     return KrylovBICGSTAB(solver, P, verbose, atol, rtol)
 end
