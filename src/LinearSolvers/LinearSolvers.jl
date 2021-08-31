@@ -91,45 +91,30 @@ Solve linear system ``A x = y`` with direct linear algebra.
 * On CUDA GPU, `DirectSolver` redirects the resolution to the method `CUSOLVER.csrlsvqr`
 
 """
-struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: AbstractLinearSolver
+struct DirectSolver{Fac} <: AbstractLinearSolver
     factorization::Fac
 end
 
-exa_factorize(J::AbstractSparseMatrix) = nothing
-exa_factorize(J::SparseMatrixCSC{T, Int}) where T = lu(J)
-exa_factorize(J::Adjoint{T, SparseMatrixCSC{T, Int}}) where T = lu(J.parent)'
-
-DirectSolver(J; options...) = DirectSolver(exa_factorize(J))
-DirectSolver() = DirectSolver(nothing)
+DirectSolver(J::SparseMatrixCSC{T, Int}) where T = DirectSolver(lu(J))
 
 # Reuse factorization in update
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
+function ldiv!(s::DirectSolver, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
     lu!(s.factorization, J) # Update factorization inplace
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
+function rdiv!(s::DirectSolver, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
+    lu!(s.factorization, J) # Update factorization inplace
+    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
+    return 0
+end
 # Solve system Ax = y
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
+function ldiv!(s::DirectSolver, y::AbstractArray, x::AbstractArray)
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray)
+function ldiv!(s::DirectSolver, y::AbstractArray)
     LinearAlgebra.ldiv!(s.factorization, y) # Forward-backward solve
-    return 0
-end
-# Solve system A'x = y
-function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
-    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
-    return 0
-end
-function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, J::SparseMatrixCSC, x::Array)
-    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
-    return 0
-end
-
-function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector)
-    F = lu(J)
-    LinearAlgebra.ldiv!(y, F, x)
     return 0
 end
 
@@ -143,25 +128,7 @@ function batch_ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, Y, Js::Vect
     end
 end
 
-function ldiv!(::DirectSolver{Nothing},
-    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector,
-)
-    CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
-    return 0
-end
-function ldiv!(::DirectSolver{Nothing},
-    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSC, x::CUDA.CuVector,
-)
-    csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
-    return 0
-end
 get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
-
-function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector)
-    Jt = get_transpose(s, J)
-    csclsvqr!(Jt, x, y, 1e-8, one(Cint), 'O')
-    return 0
-end
 
 function update_preconditioner!(solver::AbstractIterativeLinearSolver, J, device)
     update(solver.precond, J, device)
