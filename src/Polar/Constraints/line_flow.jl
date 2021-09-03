@@ -35,6 +35,10 @@ function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
     ∂edge_vm_to = similar(cons_grad, nlines)
     ∂edge_va_fr = similar(cons_grad, nlines)
     ∂edge_va_to = similar(cons_grad, nlines)
+    fill!(∂edge_vm_fr, 0)
+    fill!(∂edge_vm_to, 0)
+    fill!(∂edge_va_fr, 0)
+    fill!(∂edge_va_to, 0)
     adj_branch_flow!(weights, buffer.vmag, adj_vmag,
             buffer.vang, adj_vang,
             ∂edge_vm_fr, ∂edge_vm_to,

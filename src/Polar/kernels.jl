@@ -649,6 +649,8 @@ KA.@kernel function adj_branch_flow_edge_kernel!(
     Δθ = vang[fr_bus, j] - vang[to_bus, j]
     cosθ = cos(Δθ)
     sinθ = sin(Δθ)
+    dcosθ = -sinθ
+    dsinθ = cosθ
 
     # branch apparent power limits - from bus
     yff_abs = yff_re[ℓ]^2 + yff_im[ℓ]^2
@@ -698,8 +700,8 @@ KA.@kernel function adj_branch_flow_edge_kernel!(
     adj_cosθ += 2.0 * vmag[to_bus, j] * vmag[fr_bus, j]^3 *   yre_fr  * adj_from_flow
     adj_sinθ += 2.0 * vmag[to_bus, j] * vmag[fr_bus, j]^3 * (-yim_fr) * adj_from_flow
 
-    adj_Δθ =   cosθ * adj_sinθ
-    adj_Δθ -=  sinθ * adj_cosθ
+    adj_Δθ =   dsinθ * adj_sinθ
+    adj_Δθ +=  dcosθ * adj_cosθ
     adj_va_from_lines[ℓ, j] += adj_Δθ
     adj_va_to_lines[ℓ, j] -= adj_Δθ
 end

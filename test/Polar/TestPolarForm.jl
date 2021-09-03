@@ -4,6 +4,7 @@ module TestPolarFormulation
 
 using Test
 
+using CUDA
 using FiniteDiff
 using ForwardDiff
 using KernelAbstractions
