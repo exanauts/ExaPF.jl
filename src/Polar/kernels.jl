@@ -725,31 +725,3 @@ KA.@kernel function adj_branch_flow_node_kernel!(
     end
 end
 
-function adj_branch_flow!(
-        adj_slines, vmag, adj_vm, vang, adj_va,
-        adj_vm_from_lines, adj_va_from_lines, adj_vm_to_lines, adj_va_to_lines,
-        yff_re, yft_re, ytf_re, ytt_re,
-        yff_im, yft_im, ytf_im, ytt_im,
-        f, t, nlines, device
-    )
-    nvbus = length(vang)
-    kernel_edge! = adj_branch_flow_edge_kernel!(device)
-    kernel_node! = adj_branch_flow_node_kernel!(device)
-
-    ev = kernel_edge!(
-            adj_slines, vmag, adj_vm, vang, adj_va,
-            adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-            yff_re, yft_re, ytf_re, ytt_re,
-            yff_im, yft_im, ytf_im, ytt_im,
-            f, t, nlines, ndrange = (nlines, size(adj_slines, 2)),
-            dependencies=Event(device)
-    )
-    wait(ev)
-    ev = kernel_node!(
-            vmag, adj_vm, vang, adj_va,
-            adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-            f, t, nlines, ndrange = (nvbus, size(adj_slines, 2)),
-            dependencies=Event(device)
-    )
-    wait(ev)
-end

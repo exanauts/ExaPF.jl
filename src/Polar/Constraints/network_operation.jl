@@ -126,8 +126,8 @@ function network_operations(polar::PolarForm, cons::AbstractVector, buffer::Pola
 end
 
 function AutoDiff.TapeMemory(
-    polar::PolarForm, func::typeof(network_operations), VT; with_stack=true, nbatch=1,
-)
+    polar::PolarForm, func::F, VT; with_stack=true, nbatch=1,
+) where {F<:Union{typeof(network_operations), typeof(network_line_operations)}}
     nnz = length(polar.topology.ybus_im.nzval)
     nx = get(polar, NumberOfState())
     nbus = get(polar, PS.NumberOfBuses())
@@ -150,7 +150,7 @@ function AutoDiff.TapeMemory(
         )
     end
     return AutoDiff.TapeMemory(
-        network_operations,
+        func,
         (with_stack) ? AdjointPolar(polar) : nothing,
         intermediate,
     )
@@ -189,7 +189,7 @@ KA.@kernel function _adjoint_bus_operation_kernel!(
             c0 = coefs[i_gen, 2]
             c1 = coefs[i_gen, 3]
             c2 = coefs[i_gen, 4]
-            adj_pnet[bus, j] = adj_op[end] * adj_quadratic_cost(pg, c0, c1, c2)
+            adj_pnet[bus, j] = adj_op[2*nbus+1] * adj_quadratic_cost(pg, c0, c1, c2)
             # Active injection
             adj_inj[bus, j] = adj_op[i_]  # wrt P
             # Reactive injection
@@ -208,7 +208,7 @@ KA.@kernel function _adjoint_bus_operation_kernel!(
             c0 = coefs[i_gen, 2]
             c1 = coefs[i_gen, 3]
             c2 = coefs[i_gen, 4]
-            adj_pg = adj_op[end] * adj_quadratic_cost(pg, c0, c1, c2)
+            adj_pg = adj_op[2*nbus+1] * adj_quadratic_cost(pg, c0, c1, c2)
             adj_pnet[bus, j] = adj_pg
 
             shift = npv + 2 * npq
@@ -269,3 +269,43 @@ function adjoint!(
     return
 end
 
+# Meta
+
+is_constraint(::typeof(network_line_operations)) = true
+function size_constraint(polar::PolarForm, ::typeof(network_line_operations))
+    return 2 * get(polar, PS.NumberOfBuses()) + 2*get(polar, PS.NumberOfLines()) + 1
+end
+
+
+function adjoint!(
+    polar::PolarForm,
+    pbm::AutoDiff.TapeMemory{F, S, I},
+    cons, ∂cons,
+    vm, ∂vm,
+    va, ∂va,
+    pnet, ∂pnet,
+    pload, qload,
+) where {F<:typeof(network_line_operations), S, I}
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    nlines = PS.get(polar.network, PS.NumberOfLines())
+    pv = polar.indexing.index_pv
+    ref = polar.indexing.index_ref
+    pv2gen = polar.indexing.index_pv_to_gen
+    ref2gen = polar.indexing.index_ref_to_gen
+
+    # Intermediate state
+    ∂inj = pbm.intermediate.∂inj
+
+    fill!(∂vm, 0.0)
+    fill!(∂va, 0.0)
+    fill!(∂pnet, 0.0)
+
+    # Seed adjoint of injection
+    _adjoint_network_operations(polar, ∂inj, ∂pnet, ∂cons, vm, va, pnet, pload)
+    # Backpropagate through the power injection to get ∂vm and ∂va
+    _adjoint_bus_power_injection!(polar, pbm, ∂inj, vm, ∂vm, va, ∂va)
+    # Add contribution of line flow constraints
+    ∂flow = view(∂cons, 2*nbus+2:2*nbus+1+2*nlines)
+    _adjoint_line_flow!(polar, pbm, ∂flow, vm, ∂vm, va, ∂va)
+    return
+end

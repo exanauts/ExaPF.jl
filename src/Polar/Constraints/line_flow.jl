@@ -59,6 +59,45 @@ function bounds(polar::PolarForm{T, IT, VT, MT}, ::typeof(flow_constraints)) whe
     return convert(VT, [f_min; f_min]), convert(VT, [f_max; f_max])
 end
 
+function _adjoint_line_flow!(
+    polar::PolarForm,
+    pbm::AutoDiff.TapeMemory,
+    ∂cons, vmag, ∂vmag, vang, ∂vang,
+)
+    nlines = PS.get(polar.network, PS.NumberOfLines())
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    nbatch  = size(∂vmag, 2)
+    top = polar.topology
+
+    fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
+    fill!(pbm.intermediate.∂edge_vm_to , 0.0)
+    fill!(pbm.intermediate.∂edge_va_fr , 0.0)
+    fill!(pbm.intermediate.∂edge_va_to , 0.0)
+
+    ev = adj_branch_flow_edge_kernel!(polar.device)(
+        ∂cons, vmag, ∂vmag, vang, ∂vang,
+        pbm.intermediate.∂edge_va_to,
+        pbm.intermediate.∂edge_va_fr,
+        pbm.intermediate.∂edge_vm_to,
+        pbm.intermediate.∂edge_vm_fr,
+        top.yff_re, top.yft_re, top.ytf_re, top.ytt_re,
+        top.yff_im, top.yft_im, top.ytf_im, top.ytt_im,
+        top.f_buses, top.t_buses, nlines,
+        ndrange=(nlines, nbatch), dependencies=Event(polar.device)
+    )
+    wait(ev)
+    ev = adj_branch_flow_node_kernel!(polar.device)(
+        vmag, ∂vmag, vang, ∂vang,
+        pbm.intermediate.∂edge_va_to,
+        pbm.intermediate.∂edge_va_fr,
+        pbm.intermediate.∂edge_vm_to,
+        pbm.intermediate.∂edge_vm_fr,
+        top.f_buses, top.t_buses, nlines,
+        ndrange=(nbus, nbatch), dependencies=Event(polar.device)
+    )
+    wait(ev)
+end
+
 function adjoint!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory{F, S, I},
@@ -68,27 +107,7 @@ function adjoint!(
     pnet, ∂pnet,
     pload, qload,
 ) where {F<:typeof(flow_constraints), S, I}
-    nlines = PS.get(polar.network, PS.NumberOfLines())
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    top = polar.topology
-
-    fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
-    fill!(pbm.intermediate.∂edge_vm_to , 0.0)
-    fill!(pbm.intermediate.∂edge_va_fr , 0.0)
-    fill!(pbm.intermediate.∂edge_va_to , 0.0)
-
-    adj_branch_flow!(
-        ∂cons,
-        vmag, ∂vmag,
-        vang, ∂vang,
-        pbm.intermediate.∂edge_vm_fr,
-        pbm.intermediate.∂edge_vm_to,
-        pbm.intermediate.∂edge_va_fr,
-        pbm.intermediate.∂edge_va_to,
-        top.yff_re, top.yft_re, top.ytf_re, top.ytt_re,
-        top.yff_im, top.yft_im, top.ytf_im, top.ytt_im,
-        top.f_buses, top.t_buses, nlines, polar.device
-    )
+    _adjoint_line_flow!(polar, pbm, ∂cons, vmag, ∂vmag, vang, ∂vang)
 end
 
 function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(flow_constraints), V)

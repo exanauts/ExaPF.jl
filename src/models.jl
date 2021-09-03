@@ -194,6 +194,8 @@ function cost_penalty_ramping_constraints end
 
 function network_operations end
 
+function network_line_operations end
+
 # Generic constraints
 
 """
