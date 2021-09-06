@@ -85,16 +85,20 @@ function test_line_flow_gradient(polar, device, MT)
         ExaPF.flow_constraints(polar, g, adcache)
         return sum(g)
     end
-    # adgradg = ForwardDiff.gradient(sum_constraints,x)
+    adgradg = []
+    CUDA.@allowscalar adgradg = ForwardDiff.gradient(sum_constraints,x)
     fdgradg = FiniteDiff.finite_difference_jacobian(sum_constraints,x)
     ## We pick sum() as the reduction function. This could be a mask function for active set or some log(x) for lumping.
     m_flows = ExaPF.size_constraint(polar, ExaPF.flow_constraints)
     weights = ones(m_flows) |> MT
     gradg = similar(u, 2 * nbus)
     ExaPF.flow_constraints_grad!(polar, gradg, cache, weights)
-    # @test isapprox(adgradg, fdgradg)
-    # TODO: The gradient is slightly off with the handwritten adjoint
-    @test_broken isapprox(gradg, fdgradg[:])
+    adgradg = adgradg |> Array ; gradg = gradg |> Array ; fdgradg = fdgradg |> Array
+    # Both tests fail with rtoldefault(...) = 1e-8
+    # The handwritten adjoint agrees with AutoDiff for rtol>=1e-7
+    @test isapprox(adgradg, gradg, rtol=1e-7)
+    # The finite difference gradient disagrees with AutoDiff for rtol>=1e-7
+    @test isapprox(gradg, fdgradg[:], rtol=1e-5)
 end
 
 function test_objective_adjoint(polar, device, MT)
