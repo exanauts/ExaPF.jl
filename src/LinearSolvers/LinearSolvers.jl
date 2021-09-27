@@ -251,9 +251,10 @@ function ldiv!(solver::DQGMRES,
 )
     P = solver.precond.P
     CUDA.allowscalar() do
-        global (y[:], status) = Krylov.dqgmres!(solver.inner, J, x; N=P)
+        Krylov.dqgmres!(solver.inner, J, x; N=P)
     end
-    return length(status.residuals)
+    copyto!(y, solver.inner.x)
+    return length(solver.inner.stats.residuals)
 end
 
 """
@@ -283,13 +284,14 @@ function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     CUDA.allowscalar() do
-        global (y[:], status) = Krylov.bicgstab!(solver.inner, J, x;
+        Krylov.bicgstab!(solver.inner, J, x;
                                         N=solver.precond.P,
                                         atol=solver.atol,
                                         rtol=solver.rtol,
                                         verbose=solver.verbose)
     end
-    return length(status.residuals)
+    copyto!(y, solver.inner.x)
+    return length(solver.inner.stats.residuals)
 end
 
 """
