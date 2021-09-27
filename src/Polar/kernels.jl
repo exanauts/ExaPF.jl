@@ -678,7 +678,7 @@ KA.@kernel function adj_branch_flow_edge_kernel!(
     # )
     # slines[ℓ + nlines] = to_flow
 
-    adj_to_flow = adj_slines[ℓ + nlines, j]
+    adj_to_flow = adj_slines[ℓ + nlines]
     adj_vm_to_lines[ℓ, j] += (2.0 * vmag[to_bus, j] * ytf_abs * vmag[fr_bus, j]^2
                       + 4.0 * vmag[to_bus, j]^3 * ytt_abs
                       + 6.0 * vmag[fr_bus, j] * vmag[to_bus, j]^2 * (yre_to * cosθ - yim_to * sinθ)
@@ -689,7 +689,7 @@ KA.@kernel function adj_branch_flow_edge_kernel!(
     adj_cosθ = 2.0 * vmag[to_bus, j]^3 * vmag[fr_bus, j] *   yre_to  * adj_to_flow
     adj_sinθ = 2.0 * vmag[to_bus, j]^3 * vmag[fr_bus, j] * (-yim_to) * adj_to_flow
 
-    adj_from_flow = adj_slines[ℓ, j]
+    adj_from_flow = adj_slines[ℓ]
     adj_vm_from_lines[ℓ, j] += (4.0 * yff_abs * vmag[fr_bus, j]^3
                       + 2.0 * vmag[to_bus, j]^2 * vmag[fr_bus, j] * yft_abs
                       + 6.0 * vmag[fr_bus, j]^2 * vmag[to_bus, j] * (yre_fr * cosθ - yim_fr * sinθ)
