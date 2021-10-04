@@ -2,7 +2,7 @@
 function powerflow(
     polar::PolarForm,
     algo::AbstractNonLinearSolver;
-    linear_solver=DirectSolver(),
+    linear_solver=DirectSolver(default_jacobian(polar)),
 )
     buffer = get(polar, PhysicalState())
     init_buffer!(polar, buffer)
@@ -15,7 +15,7 @@ function powerflow(
     jacobian::AutoDiff.Jacobian,
     buffer::PolarNetworkState{IT,VT},
     algo::NewtonRaphson;
-    linear_solver=DirectSolver(),
+    linear_solver=DirectSolver(jacobian.J),
 ) where {T, IT, VT, MT}
     # Retrieve parameter and initial voltage guess
     Vm, Va = buffer.vmag, buffer.vang

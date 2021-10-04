@@ -118,20 +118,25 @@ The algorithm solves at each step the linear equation:
 Hence, the algorithm requires the following elements:
 
 - an initial position $x_0$
-- a function to solve efficiently the linear system $(\nabla_x g_k) x_{k+1} = g(x_k, u)$
 - a function to evaluate the Jacobian $\nabla_x g_k$
+- a function to solve efficiently the linear system $(\nabla_x g_k) x_{k+1} = g(x_k, u)$
 
-that translate to the Julia code:
+We instantiate the initial position inside `physical_state`:
 ```julia
 physical_state = get(polar, ExaPF.PhysicalState())
 ExaPF.init_buffer!(polar, physical_state) # populate values inside buffer
-linear_solver = LS.DirectSolver()
 ```
 
-We build a Jacobian object storing all structures needed by
+Then, we build a Jacobian object storing all structures needed by
 the AutoDiff backend:
 ```julia
-julia> jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+```
+
+We associate a linear solver to the Jacobian of the network:
+```julia
+linear_solver = LS.DirectSolver(jx.J)
+
 ```
 
 Let's explain further these three objects.
@@ -192,7 +197,7 @@ We could load the other structures directly on the GPU with:
 physical_state_gpu = get(polar, ExaPF.PhysicalState())
 ExaPF.init_buffer!(polar_gpu, physical_state_gpu) # populate values inside buffer
 jx_gpu = AutoDiff.Jacobian(polar_gpu, ExaPF.power_balance, State())
-linear_solver = DirectSolver()
+linear_solver = DirectSolver(jx_gpu.J)
 ```
 Then, solving the powerflow equations on the GPU is straightforward
 ```julia

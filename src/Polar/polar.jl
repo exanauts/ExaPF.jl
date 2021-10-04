@@ -276,6 +276,7 @@ function powerflow_jacobian_device(polar)
     J = powerflow_jacobian(polar)
     return J |> SpMT
 end
+default_jacobian(polar::PolarForm) = powerflow_jacobian_device(polar)
 
 function Base.show(io::IO, polar::PolarForm)
     # Network characteristics

@@ -95,26 +95,26 @@ struct DirectSolver{Fac} <: AbstractLinearSolver
     factorization::Fac
 end
 
-DirectSolver(J::SparseMatrixCSC{T, Int}) where T = DirectSolver(lu(J))
+DirectSolver(J::SparseMatrixCSC{T, Int}; options...) where T = DirectSolver(lu(J))
 
 # Reuse factorization in update
 function ldiv!(s::DirectSolver, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
     lu!(s.factorization, J) # Update factorization inplace
-    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+    LinearAlgebra.ldiv!(y, s.factorization, x)
     return 0
 end
 function rdiv!(s::DirectSolver, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
     lu!(s.factorization, J) # Update factorization inplace
-    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
+    LinearAlgebra.ldiv!(y, s.factorization', x)
     return 0
 end
 # Solve system Ax = y
 function ldiv!(s::DirectSolver, y::AbstractArray, x::AbstractArray)
-    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+    LinearAlgebra.ldiv!(y, s.factorization, x)
     return 0
 end
 function ldiv!(s::DirectSolver, y::AbstractArray)
-    LinearAlgebra.ldiv!(s.factorization, y) # Forward-backward solve
+    LinearAlgebra.ldiv!(s.factorization, y)
     return 0
 end
 

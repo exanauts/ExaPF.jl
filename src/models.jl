@@ -171,7 +171,7 @@ from the object `form`.
 
 ## Optional arguments
 
-* `linear_solver::AbstractLinearSolver` (default `DirectSolver()`): solver to solve the linear systems ``J x = y`` arising at each iteration of the Newton-Raphson algorithm.
+* `linear_solver::AbstractLinearSolver` (default `DirectSolver`): solver to solve the linear systems ``J x = y`` arising at each iteration of the Newton-Raphson algorithm.
 
 """
 function powerflow end

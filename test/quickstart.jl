@@ -37,7 +37,7 @@ const LS = ExaPF.LinearSolvers
     ExaPF.init_buffer!(polar, physical_state)
     jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
 
-    linear_solver = LS.DirectSolver()
+    linear_solver = LS.DirectSolver(jx.J)
     convergence = ExaPF.powerflow(
         polar, jx, physical_state, pf_algo;
         linear_solver=linear_solver
@@ -73,7 +73,7 @@ const LS = ExaPF.LinearSolvers
         jx_gpu = AutoDiff.Jacobian(polar_gpu, ExaPF.power_balance, State())
         physical_state_gpu = get(polar_gpu, ExaPF.PhysicalState())
         ExaPF.init_buffer!(polar_gpu, physical_state_gpu)
-        linear_solver = LS.DirectSolver()
+        linear_solver = LS.DirectSolver(jx_gpu.J)
         convergence = ExaPF.powerflow(
             polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
             linear_solver=linear_solver

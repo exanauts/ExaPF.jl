@@ -39,14 +39,22 @@ function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
     fill!(∂edge_vm_to, 0)
     fill!(∂edge_va_fr, 0)
     fill!(∂edge_va_to, 0)
-    adj_branch_flow!(weights, buffer.vmag, adj_vmag,
-            buffer.vang, adj_vang,
-            ∂edge_vm_fr, ∂edge_vm_to,
-            ∂edge_va_fr, ∂edge_va_to,
-            PT.yff_re, PT.yft_re, PT.ytf_re, PT.ytt_re,
-            PT.yff_im, PT.yft_im, PT.ytf_im, PT.ytt_im,
-            PT.f_buses, PT.t_buses, nlines, polar.device
+    ev = adj_branch_flow_edge_kernel!(polar.device)(
+        weights, buffer.vmag, adj_vmag, buffer.vang, adj_vang,
+        ∂edge_va_to, ∂edge_va_fr, ∂edge_vm_to, ∂edge_vm_fr,
+        PT.yff_re, PT.yft_re, PT.ytf_re, PT.ytt_re,
+        PT.yff_im, PT.yft_im, PT.ytf_im, PT.ytt_im,
+        PT.f_buses, PT.t_buses, nlines,
+        ndrange=(nlines, 1), dependencies=Event(polar.device)
     )
+    wait(ev)
+    ev = adj_branch_flow_node_kernel!(polar.device)(
+        buffer.vmag, adj_vmag, buffer.vang, adj_vang,
+        ∂edge_va_to, ∂edge_va_fr, ∂edge_vm_to, ∂edge_vm_fr,
+        PT.f_buses, PT.t_buses, nlines,
+        ndrange=(nbus, 1), dependencies=Event(polar.device)
+    )
+    wait(ev)
     return cons_grad
 end
 
