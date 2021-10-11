@@ -54,7 +54,7 @@ mutable struct Spmat{VTI<:AbstractVector, VTF<:AbstractVector}
     end
 end
 
-mutable struct BatchCuSparseMatrixCSR{Tv} <: CUSPARSE.AbstractCuSparseMatrix{Tv}
+mutable struct BatchCuSparseMatrixCSR{Tv}
     rowPtr::CUDA.CuArray{Cint, 1, CUDA.Mem.DeviceBuffer}
     colVal::CUDA.CuArray{Cint, 1, CUDA.Mem.DeviceBuffer}
     nzVal::CUDA.CuArray{Tv, 2, CUDA.Mem.DeviceBuffer}
@@ -69,6 +69,7 @@ mutable struct BatchCuSparseMatrixCSR{Tv} <: CUSPARSE.AbstractCuSparseMatrix{Tv}
 end
 
 Base.size(J::BatchCuSparseMatrixCSR) = J.dims
+Base.size(J::BatchCuSparseMatrixCSR, dim::Int) = J.dims[dim]
 function BatchCuSparseMatrixCSR(J::SparseMatrixCSC{Tv, Int}, nbatch) where Tv
     dims = size(J)
     nnzJ = nnz(J)
