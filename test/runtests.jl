@@ -9,10 +9,11 @@ using KernelAbstractions
 using FiniteDiff
 
 using ExaPF
+using LazyArtifacts
 
 Random.seed!(2713)
 
-const INSTANCES_DIR = joinpath(dirname(@__FILE__), "..", "data")
+const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 const BENCHMARK_DIR = joinpath(dirname(@__FILE__), "..", "benchmark")
 const CASES = ["case9.m", "case30.m"]
 
@@ -72,7 +73,7 @@ init_time = time()
         empty!(ARGS)
         push!(ARGS, "KrylovBICGSTAB")
         push!(ARGS, "CPU")
-        push!(ARGS, "case300.m")
+        push!(ARGS, joinpath(INSTANCES_DIR, "case300.m"))
         include(joinpath(BENCHMARK_DIR, "benchmarks.jl"))
     end
 end

@@ -6,9 +6,10 @@ using ExaPF
 import ExaPF: PowerSystem, AutoDiff
 
 const PS = PowerSystem
+const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
 @testset "Power flow 9 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case9.m")
+    datafile = joinpath(INSTANCES_DIR, "case9.m")
     pf = PS.PowerNetwork(datafile)
 
     # test impedance matrix entries
@@ -44,7 +45,7 @@ const PS = PowerSystem
 end
 
 @testset "Power flow 14 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case14.m")
+    datafile = joinpath(INSTANCES_DIR, "case14.m")
     polar = PolarForm(datafile, CPU())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
@@ -63,7 +64,7 @@ end
 end
 
 @testset "Power flow 30 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case30.m")
+    datafile = joinpath(INSTANCES_DIR, "case30.m")
     polar = PolarForm(datafile, CPU())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
@@ -81,7 +82,7 @@ end
 end
 
 @testset "Power flow 300 bus case" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case300.m")
+    datafile = joinpath(INSTANCES_DIR, "case300.m")
     polar = PolarForm(datafile, CPU())
 
     cache = ExaPF.get(polar, ExaPF.PhysicalState())
@@ -99,7 +100,7 @@ end
 end
 
 @testset "Power flow 9 bus case (phase shift) (see Issue #184)" begin
-    datafile = joinpath(dirname(@__FILE__), "..", "..", "data", "case9phaseshift.m")
+    datafile = joinpath(INSTANCES_DIR, "case9phaseshift.m")
     pf = PS.PowerNetwork(datafile)
 
     polar = PolarForm(pf, CPU())

@@ -7,11 +7,12 @@ import ExaPF: PowerSystem
 import ExaPF.PowerSystem: ParsePSSE
 
 const PS = PowerSystem
+const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
 @testset "Powerflow residuals and Jacobian" begin
     local_case = "case14.raw"
     # read data
-    datafile = joinpath(dirname(@__FILE__), "..", "data", local_case)
+    datafile = joinpath(INSTANCES_DIR, local_case)
     data_raw = ParsePSSE.parse_raw(datafile)
     data = ParsePSSE.raw_to_exapf(data_raw)
 
@@ -188,17 +189,17 @@ end
         matpower_datafile,
         multi_generators_file,
     ]
-        datafile = joinpath(dirname(@__FILE__), "..", "data", name)
+        datafile = joinpath(INSTANCES_DIR, name)
         test_powernetwork_parser(datafile)
         test_powernetwork_api(datafile)
     end
 
     # Test multiple generators
-    datafile = joinpath(dirname(@__FILE__), "..", "data", multi_generators_file)
+    datafile = joinpath(INSTANCES_DIR, multi_generators_file)
     test_multiple_generators(datafile)
 
     # Test API with "case9.m"
-    datafile = joinpath(dirname(@__FILE__), "..", "data", matpower_datafile)
+    datafile = joinpath(INSTANCES_DIR, matpower_datafile)
     test_powernetwork_contingencies(datafile)
 end
 
