@@ -12,6 +12,8 @@ on:
 
 jobs:
   test-github-cpuonly:
+    env:
+      JULIA_AMDGPU_DISABLE_ARTIFACTS: 1
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -32,6 +34,8 @@ jobs:
       CUDA_VISIBLE_DEVICES: 1
       JULIA_DEPOT_PATH: /scratch/github-actions
       JULIA_CUDA_USE_BINARYBUILDER: true
+      JULIA_AMDGPU_DISABLE_ARTIFACTS: 1
+
     runs-on: self-hosted
     strategy:
       matrix:
