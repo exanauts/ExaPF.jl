@@ -46,11 +46,13 @@ two buses $i$ and $j$, $y_{ij} = g_{ij} + ib_{ij}$.
 Currently we can create a PowerNetwork object by parsing a MATPOWER data file.
 
 ```julia-repl
-julia> ps = PowerSystem.PowerNetwork("data/case9.m")
+julia> datafile = joinpath(artifact"ExaData", "ExaData", "case9.raw")
+julia> ps = PowerSystem.PowerNetwork(datafile)
 ```
-Apart of MATPOWER data file, PSSE data file are also supported:
+Apart of MATPOWER data file, PSSE data file are also supported (also contained in the `ExaData` artifact)
 ```julia-repl
-julia> ps = PowerSystem.PowerNetwork("data/case14.raw")
+julia> datafile = joinpath(artifact"ExaData", "ExaData", "case14.raw")
+julia> ps = PowerSystem.PowerNetwork(datafile)
 ```
 
 If we print the object, we will obtain bus information, initial voltage, and power that we read from the data file.
