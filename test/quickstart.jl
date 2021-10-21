@@ -6,13 +6,14 @@ using ExaPF
 import ExaPF: AutoDiff
 const PS = ExaPF.PowerSystem
 const LS = ExaPF.LinearSolvers
+const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
 # Test quickstart guide in docs/src/quickstart.md
 # If one test is broken, please update the documentation.
 
 @testset "Documentation: quickstart" begin
     pglib_instance = "case1354.m"
-    datafile = joinpath(dirname(@__FILE__), "..", "data", pglib_instance)
+    datafile = joinpath(INSTANCES_DIR, pglib_instance)
 
     # Short version
     polar = ExaPF.PolarForm(datafile, CPU())

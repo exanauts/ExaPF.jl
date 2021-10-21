@@ -21,14 +21,15 @@ const LS = ExaPF.LinearSolvers
 
 ## Short version
 
-Imagine you want to load an instance from the [`pglib-opf`](https://github.com/power-grid-lib/pglib-opf)
-benchmark, stored in the current folder:
+ExaPF loads instances from the [`pglib-opf`](https://github.com/power-grid-lib/pglib-opf)
+benchmark, that may optionally be downloaded. Alternatively, ExaPF contains an artifact defined in `Artifacts.toml`
+that is built from the [`ExaData`](https://github.com/exanauts/ExaData) repository containing Exascale Computing Project relevant test cases.
 ```julia
-pglib_instance = "data/case1354.m"
+datafile = joinpath(artifact"ExaData", "ExaData", "case1354.m")
 ```
 The powerflow equations can be solved in three lines of code, as
 ```julia
-polar = ExaPF.PolarForm(pglib_instance, CPU())
+polar = ExaPF.PolarForm(datafile, CPU())
 pf_algo = NewtonRaphson(; verbose=0, tol=1e-10)
 convergence = ExaPF.powerflow(polar, pf_algo)
 Iteration 0. Residual norm: 26.6667.
@@ -56,7 +57,8 @@ the powerflow equations.
 ### How to load a MATPOWER instance as a PowerNetwork object?
 We start by importing a MATPOWER instance to a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object:
 ```julia
-pf = PS.PowerNetwork(pglib_instance)
+datafile = joinpath(artifact"ExaData", "ExaData", "case9.m")
+pf = PS.PowerNetwork(datafile)
 ```
 The different fields of the object `pf` specify the characteristics
 of the network. For instance, we could retrieve the number of buses
