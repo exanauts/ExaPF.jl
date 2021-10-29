@@ -29,10 +29,26 @@ function _get_intermediate_stack(
     else
         length(polar.topology.ybus_im.nzval)
     end
+    nl = nlines
+    nb = PS.get(polar.network, PS.NumberOfBuses())
+
+    # TODO: URGENT This part is very dirty
+    if isa(func, typeof(network_basis))
+        Cf = sparse(polar.network.lines.from_buses, 1:nl, ones(nl), nb, nl)
+        Ct = sparse(polar.network.lines.to_buses, 1:nl, ones(nl), nb, nl)
+        if isa(polar.device, GPU)
+            Cf = CUSPARSE.CuSparseMatrixCSR(Cf)
+            Ct = CUSPARSE.CuSparseMatrixCSR(Ct)
+        end
+    else
+        Cf = nothing
+        Ct = nothing
+    end
 
     # Return a NamedTuple storing all the intermediate states
     if nbatch == 1
         return (
+            Cf=Cf, Ct=Ct,
             ∂edge_vm_fr = VT(undef, nnz),
             ∂edge_va_fr = VT(undef, nnz),
             ∂edge_vm_to = VT(undef, nnz),
