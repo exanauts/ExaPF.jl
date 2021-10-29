@@ -15,7 +15,7 @@ function test_constraints_jacobian(polar, device, MT)
     println(devnull, jx)
 
     # Solve power flow
-    conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
+    conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-14); linear_solver=LS.DirectSolver(jx.J))
     # Get solution in complex form.
     V = ExaPF.voltage_host(cache)
 
@@ -27,6 +27,7 @@ function test_constraints_jacobian(polar, device, MT)
         ExaPF.reactive_power_constraints,
         ExaPF.flow_constraints,
         ExaPF.bus_power_injection,
+        ExaPF.network_basis,
     ]
         m = ExaPF.size_constraint(polar, cons)
         # Allocation
@@ -41,7 +42,6 @@ function test_constraints_jacobian(polar, device, MT)
         J = AutoDiff.jacobian!(polar, xjacobianAD, cache)
         # Matpower Jacobian
         Jmat_x = ExaPF.matpower_jacobian(polar, State(), cons, V)
-        # Evaluate Jacobian transpose vector product
 
         # Compare with FiniteDiff
         function jac_fd_x(x)
@@ -60,8 +60,8 @@ function test_constraints_jacobian(polar, device, MT)
         ∂cons = pbm.stack
 
         @test size(J) == (m, length(x))
-        @test isapprox(Jd, Jx, rtol=1e-5)
-        @test isapprox(Jmat_x, Jx, rtol=1e-4)
+        @test isapprox(Jd, Jx, rtol=1e-6)
+        @test isapprox(Jmat_x, Jx, rtol=1e-6)
         @test isapprox(∂cons.∂x, xjacobianAD.J' * tgt, rtol=1e-6)
 
         ## CONTROL JACOBIAN
@@ -86,7 +86,7 @@ function test_constraints_jacobian(polar, device, MT)
         if !isnothing(ujacobianAD.J)
             Ju = ujacobianAD.J |> SparseMatrixCSC |> Array
             @test size(J) == (m, length(u))
-            @test isapprox(Jd, Ju, rtol=1e-5)
+            @test isapprox(Jd, Ju, rtol=1e-6)
             @test isapprox(Jmat_u, Ju, rtol=1e-6)
             @test isapprox(∂cons.∂u, ujacobianAD.J' * tgt, rtol=1e-6)
         end

@@ -753,3 +753,54 @@ function adj_branch_flow!(
     )
     wait(ev)
 end
+
+KA.@kernel function basis_kernel!(
+    cons, @Const(vmag), @Const(vang), @Const(f), @Const(t), nlines, nbus,
+)
+    i, j = @index(Global, NTuple)
+
+    if i <= nlines
+        ℓ = i
+        fr_bus = f[ℓ]
+        to_bus = t[ℓ]
+        Δθ = vang[fr_bus, j] - vang[to_bus, j]
+        cosθ = cos(Δθ)
+        sinθ = sin(Δθ)
+        cons[ℓ,        j] = vmag[fr_bus, j] * vmag[to_bus, j] * cosθ
+        cons[ℓ+nlines, j] = vmag[fr_bus, j] * vmag[to_bus, j] * sinθ
+    else i <= nlines + nbus
+        b = i - nlines
+        cons[b+2*nlines, j] = vmag[b, j] * vmag[b, j]
+    end
+end
+
+KA.@kernel function adj_basis_kernel!(
+    ∂cons, adj_vmag, adj_vmag_fr, adj_vmag_to,
+    adj_vang_fr, adj_vang_to,
+    @Const(vmag), @Const(vang), @Const(f), @Const(t), nlines, nbus,
+)
+    i, j = @index(Global, NTuple)
+
+    if i <= nlines
+        ℓ = i
+        fr_bus = f[ℓ]
+        to_bus = t[ℓ]
+        Δθ = vang[fr_bus, j] - vang[to_bus, j]
+        cosθ = cos(Δθ)
+        sinθ = sin(Δθ)
+
+        adj_vang_fr[i]  = -vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
+        adj_vang_fr[i] +=  vmag[fr_bus, j] * vmag[to_bus, j] * cosθ * ∂cons[ℓ+nlines, j]
+        adj_vang_to[i]  =  vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
+        adj_vang_to[i] -=  vmag[fr_bus, j] * vmag[to_bus, j] * cosθ * ∂cons[ℓ+nlines, j]
+
+        adj_vmag_fr[i] =  vmag[to_bus, j] * cosθ * ∂cons[ℓ, j]
+        adj_vmag_fr[i] += vmag[to_bus, j] * sinθ * ∂cons[ℓ+nlines, j]
+
+        adj_vmag_to[i] =  vmag[fr_bus, j] * cosθ * ∂cons[ℓ, j]
+        adj_vmag_to[i] += vmag[fr_bus, j] * sinθ * ∂cons[ℓ+nlines, j]
+    else i <= nlines + nbus
+        b = i - nlines
+        adj_vmag[b, j] = 2.0 * vmag[b, j] * ∂cons[b+2*nlines, j]
+    end
+end

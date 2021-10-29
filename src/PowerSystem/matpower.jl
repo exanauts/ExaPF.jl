@@ -78,6 +78,30 @@ function matpower_lineflow_power_jacobian(V, branches::Branches)
     return dH_dVm, dH_dVa
 end
 
+function _matpower_basis_jacobian(V, branches::Branches)
+    nb = size(V, 1)
+    f = branches.from_buses
+    t = branches.to_buses
+    nl = length(f)
+    # Connection matrices
+    Cf = sparse(1:nl, f, ones(nl), nl, nb)
+    Ct = sparse(1:nl, t, ones(nl), nl, nb)
+
+    Vf = Cf * V
+    Vt = Ct * V
+
+    Ev = sparse(1:nb, 1:nb, V./abs.(V), nb, nb)
+    diagV = sparse(1:nb, 1:nb, V, nb, nb)
+    diagVf = sparse(1:nl, 1:nl, Vf, nl, nl)
+    diagVt = sparse(1:nl, 1:nl, Vt, nl, nl)
+
+    dS_dVm = diagVf * Ct * conj(Ev) + conj(diagVt) * Cf * Ev
+    dS_dVa = im * (-diagVf * Ct * conj(diagV) + conj(diagVt) * Cf * diagV)
+
+    return (dS_dVm, dS_dVa)
+end
+
+
 # Hessian vector-product H*λ, H = Jₓₓ (from Matpower)
 # Suppose ordering is correct
 function _matpower_hessian(V, Ybus, λ)
