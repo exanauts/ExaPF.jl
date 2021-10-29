@@ -6,6 +6,7 @@ using SparseArrays
 using CUDA
 using KernelAbstractions
 
+using ForwardDiff
 using FiniteDiff
 
 using ExaPF
@@ -19,11 +20,7 @@ const CASES = ["case9.m", "case30.m"]
 
 ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
 if has_cuda_gpu()
-    using CUDAKernels
-    using CUDA.CUSPARSE
-    ExaPF.default_sparse_matrix(::CUDADevice) = CuSparseMatrixCSR
-    CUDA_ARCH = (CUDADevice(), CuArray, CuSparseMatrixCSR)
-    push!(ARCHS, CUDA_ARCH)
+    include("gpu.jl")
 end
 
 # Load test modules
@@ -65,9 +62,7 @@ init_time = time()
     end
     println()
 
-    @testset "Test Documentation" begin
-        include("quickstart.jl")
-    end
+    include("quickstart.jl")
 
     @testset "Test Benchmark script" begin
         empty!(ARGS)
