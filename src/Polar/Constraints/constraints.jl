@@ -14,16 +14,22 @@ include("reactive_power.jl")
 include("line_flow.jl")
 include("ramping_rate.jl")
 include("network_operation.jl")
+include("basis.jl")
 
 # By default, function does not have any intermediate state
 _get_intermediate_stack(polar::PolarForm, func::Function, VT, nbatch) = nothing
 
 function _get_intermediate_stack(
     polar::PolarForm, func::F, VT, nbatch
-) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance), typeof(bus_power_injection)}}
+) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance), typeof(bus_power_injection), typeof(network_basis)}}
     nlines = PS.get(polar.network, PS.NumberOfLines())
     # Take care that flow_constraints needs a buffer with a different size
-    nnz = isa(func, typeof(flow_constraints)) ? nlines : length(polar.topology.ybus_im.nzval)
+    nnz = if isa(func, typeof(flow_constraints))  || isa(func, typeof(network_basis))
+        nlines
+    else
+        length(polar.topology.ybus_im.nzval)
+    end
+
     # Return a NamedTuple storing all the intermediate states
     if nbatch == 1
         return (
