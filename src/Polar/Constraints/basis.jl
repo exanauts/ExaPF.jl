@@ -13,7 +13,7 @@ function _network_basis(polar::PolarForm, cons, vmag, vang)
     ev = basis_kernel!(polar.device)(
         cons, vmag, vang,
         polar.topology.f_buses, polar.topology.t_buses, nlines, nbus,
-        ndrange=(nlines+nbus, size(cons, 2)),
+        ndrange=(2 * nlines+nbus, size(cons, 2)),
         dependencies=Event(polar.device)
     )
     wait(ev)
@@ -46,7 +46,6 @@ function adjoint!(
     fill!(pbm.intermediate.∂edge_vm_to , 0.0)
     fill!(pbm.intermediate.∂edge_va_fr , 0.0)
     fill!(pbm.intermediate.∂edge_va_to , 0.0)
-
     ndrange = (nl+nb, size(∂cons, 2))
     ev = adj_basis_kernel!(polar.device)(
         ∂cons,
@@ -60,8 +59,8 @@ function adjoint!(
     )
     wait(ev)
 
-    Cf = sparse(f, 1:nl, ones(nl), nb, nl)       # connection matrix for line & from buses
-    Ct = sparse(t, 1:nl, ones(nl), nb, nl)       # connection matrix for line & to buses
+    Cf = pbm.intermediate.Cf
+    Ct = pbm.intermediate.Ct
     mul!(∂vmag, Cf, pbm.intermediate.∂edge_vm_fr, 1.0, 1.0)
     mul!(∂vmag, Ct, pbm.intermediate.∂edge_vm_to, 1.0, 1.0)
     mul!(∂vang, Cf, pbm.intermediate.∂edge_va_fr, 1.0, 1.0)
