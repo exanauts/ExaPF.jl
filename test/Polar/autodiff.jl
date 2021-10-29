@@ -27,6 +27,7 @@ function test_constraints_jacobian(polar, device, MT)
         ExaPF.reactive_power_constraints,
         ExaPF.flow_constraints,
         ExaPF.bus_power_injection,
+        ExaPF.network_basis,
     ]
         m = ExaPF.size_constraint(polar, cons)
         # Allocation
@@ -117,6 +118,7 @@ function test_constraints_adjoint(polar, device, MT)
         ExaPF.flow_constraints,
         ExaPF.bus_power_injection,
         ExaPF.network_operations,
+        ExaPF.network_basis,
     ]
         m = ExaPF.size_constraint(polar, cons)
         pbm = AutoDiff.TapeMemory(polar, cons, typeof(u))

@@ -39,13 +39,16 @@ function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
     fill!(∂edge_vm_to, 0)
     fill!(∂edge_va_fr, 0)
     fill!(∂edge_va_to, 0)
+    SMT, _ = get_jacobian_types(polar.device)
+    Cf = sparse(polar.network.lines.from_buses, 1:nlines, ones(nlines), nbus, nlines) |> SMT
+    Ct = sparse(polar.network.lines.to_buses, 1:nlines, ones(nlines), nbus, nlines) |> SMT
     adj_branch_flow!(weights, buffer.vmag, adj_vmag,
             buffer.vang, adj_vang,
             ∂edge_vm_fr, ∂edge_vm_to,
             ∂edge_va_fr, ∂edge_va_to,
             PT.yff_re, PT.yft_re, PT.ytf_re, PT.ytt_re,
             PT.yff_im, PT.yft_im, PT.ytf_im, PT.ytt_im,
-            PT.f_buses, PT.t_buses, nlines, polar.device
+            PT.f_buses, PT.t_buses, Cf, Ct, nlines, polar.device
     )
     return cons_grad
 end
@@ -87,7 +90,10 @@ function adjoint!(
         pbm.intermediate.∂edge_va_to,
         top.yff_re, top.yft_re, top.ytf_re, top.ytt_re,
         top.yff_im, top.yft_im, top.ytf_im, top.ytt_im,
-        top.f_buses, top.t_buses, nlines, polar.device
+        top.f_buses, top.t_buses,
+        pbm.intermediate.Cf,
+        pbm.intermediate.Ct,
+        nlines, polar.device
     )
 end
 

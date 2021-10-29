@@ -706,37 +706,16 @@ KA.@kernel function adj_branch_flow_edge_kernel!(
     adj_va_to_lines[ℓ, j] -= adj_Δθ
 end
 
-KA.@kernel function adj_branch_flow_node_kernel!(
-    @Const(vmag), adj_vm, @Const(vang), adj_va,
-    @Const(adj_va_to_lines), @Const(adj_va_from_lines),
-    @Const(adj_vm_to_lines), @Const(adj_vm_from_lines),
-    @Const(f), @Const(t), nlines
-)
-    i, j = @index(Global, NTuple)
-    @inbounds for ℓ in 1:nlines
-        if f[ℓ] == i
-            adj_vm[i, j] += adj_vm_from_lines[ℓ, j]
-            adj_va[i, j] += adj_va_from_lines[ℓ, j]
-        end
-        if t[ℓ] == i
-            adj_vm[i, j] += adj_vm_to_lines[ℓ, j]
-            adj_va[i, j] += adj_va_to_lines[ℓ, j]
-        end
-    end
-end
-
 function adj_branch_flow!(
         adj_slines, vmag, adj_vm, vang, adj_va,
         adj_vm_from_lines, adj_va_from_lines, adj_vm_to_lines, adj_va_to_lines,
         yff_re, yft_re, ytf_re, ytt_re,
         yff_im, yft_im, ytf_im, ytt_im,
-        f, t, nlines, device
+        f, t, Cf, Ct, nlines, device
     )
     nvbus = length(vang)
-    kernel_edge! = adj_branch_flow_edge_kernel!(device)
-    kernel_node! = adj_branch_flow_node_kernel!(device)
 
-    ev = kernel_edge!(
+    ev = adj_branch_flow_edge_kernel!(device)(
             adj_slines, vmag, adj_vm, vang, adj_va,
             adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
             yff_re, yft_re, ytf_re, ytt_re,
@@ -745,11 +724,72 @@ function adj_branch_flow!(
             dependencies=Event(device)
     )
     wait(ev)
-    ev = kernel_node!(
-            vmag, adj_vm, vang, adj_va,
-            adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-            f, t, nlines, ndrange = (nvbus, size(adj_slines, 2)),
-            dependencies=Event(device)
-    )
-    wait(ev)
+
+    # Aggregate the adjoints on the nodes using the bus-node adjacency matrices.
+    # mul! should be overloaded on the GPU to work with dual numbers
+    # (needed to evaluate the Hessian using forward over reverse)
+    mul!(adj_vm, Cf, adj_vm_from_lines, 1.0, 1.0)
+    mul!(adj_vm, Ct, adj_vm_to_lines, 1.0, 1.0)
+    mul!(adj_va, Cf, adj_va_from_lines, 1.0, 1.0)
+    mul!(adj_va, Ct, adj_va_to_lines, 1.0, 1.0)
+end
+
+KA.@kernel function basis_kernel!(
+    cons, @Const(vmag), @Const(vang), @Const(f), @Const(t), nlines, nbus,
+)
+    i, j = @index(Global, NTuple)
+
+    @inbounds begin
+        if i <= nlines
+            ℓ = i
+            fr_bus = f[ℓ]
+            to_bus = t[ℓ]
+            Δθ = vang[fr_bus, j] - vang[to_bus, j]
+            cosθ = cos(Δθ)
+            cons[i, j] = vmag[fr_bus, j] * vmag[to_bus, j] * cosθ
+        elseif i <= 2 * nlines
+            ℓ = i - nlines
+            fr_bus = f[ℓ]
+            to_bus = t[ℓ]
+            Δθ = vang[fr_bus, j] - vang[to_bus, j]
+            sinθ = sin(Δθ)
+            cons[i, j] = vmag[fr_bus, j] * vmag[to_bus, j] * sinθ
+        elseif i <= 2 * nlines + nbus
+            b = i - 2 * nlines
+            cons[i, j] = vmag[b, j] * vmag[b, j]
+        end
+    end
+end
+
+KA.@kernel function adj_basis_kernel!(
+    ∂cons, adj_vmag, adj_vmag_fr, adj_vmag_to,
+    adj_vang_fr, adj_vang_to,
+    @Const(vmag), @Const(vang), @Const(f), @Const(t), nlines, nbus,
+)
+    i, j = @index(Global, NTuple)
+
+    @inbounds begin
+        if i <= nlines
+            ℓ = i
+            fr_bus = f[ℓ]
+            to_bus = t[ℓ]
+            Δθ = vang[fr_bus, j] - vang[to_bus, j]
+            cosθ = cos(Δθ)
+            sinθ = sin(Δθ)
+
+            adj_vang_fr[i]  = -vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
+            adj_vang_fr[i] +=  vmag[fr_bus, j] * vmag[to_bus, j] * cosθ * ∂cons[ℓ+nlines, j]
+            adj_vang_to[i]  =  vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
+            adj_vang_to[i] -=  vmag[fr_bus, j] * vmag[to_bus, j] * cosθ * ∂cons[ℓ+nlines, j]
+
+            adj_vmag_fr[i] =  vmag[to_bus, j] * cosθ * ∂cons[ℓ, j]
+            adj_vmag_fr[i] += vmag[to_bus, j] * sinθ * ∂cons[ℓ+nlines, j]
+
+            adj_vmag_to[i] =  vmag[fr_bus, j] * cosθ * ∂cons[ℓ, j]
+            adj_vmag_to[i] += vmag[fr_bus, j] * sinθ * ∂cons[ℓ+nlines, j]
+        else i <= nlines + nbus
+            b = i - nlines
+            adj_vmag[b, j] = 2.0 * vmag[b, j] * ∂cons[b+2*nlines, j]
+        end
+    end
 end

@@ -14,19 +14,35 @@ include("reactive_power.jl")
 include("line_flow.jl")
 include("ramping_rate.jl")
 include("network_operation.jl")
+include("basis.jl")
 
 # By default, function does not have any intermediate state
 _get_intermediate_stack(polar::PolarForm, func::Function, VT, nbatch) = nothing
 
 function _get_intermediate_stack(
     polar::PolarForm, func::F, VT, nbatch
-) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance), typeof(bus_power_injection)}}
+) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance), typeof(bus_power_injection), typeof(network_basis)}}
     nlines = PS.get(polar.network, PS.NumberOfLines())
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
     # Take care that flow_constraints needs a buffer with a different size
-    nnz = isa(func, typeof(flow_constraints)) ? nlines : length(polar.topology.ybus_im.nzval)
+    nnz = if isa(func, typeof(flow_constraints))  || isa(func, typeof(network_basis))
+        nlines
+    else
+        length(polar.topology.ybus_im.nzval)
+    end
+
+    Cf = nothing
+    Ct = nothing
+    if isa(func, typeof(network_basis)) || isa(func, typeof(flow_constraints))
+        SMT, _ = get_jacobian_types(polar.device)
+        Cf = sparse(polar.network.lines.from_buses, 1:nlines, ones(nlines), nbus, nlines) |> SMT
+        Ct = sparse(polar.network.lines.to_buses, 1:nlines, ones(nlines), nbus, nlines) |> SMT
+    end
+
     # Return a NamedTuple storing all the intermediate states
     if nbatch == 1
         return (
+            Cf=Cf, Ct=Ct,
             ∂edge_vm_fr = VT(undef, nnz),
             ∂edge_va_fr = VT(undef, nnz),
             ∂edge_vm_to = VT(undef, nnz),
@@ -34,6 +50,7 @@ function _get_intermediate_stack(
         )
     else
         return (
+            Cf=Cf, Ct=Ct,
             ∂edge_vm_fr = VT(undef, nnz, nbatch),
             ∂edge_va_fr = VT(undef, nnz, nbatch),
             ∂edge_vm_to = VT(undef, nnz, nbatch),
