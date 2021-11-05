@@ -1,6 +1,28 @@
 ExaPF release notes
 ==================
 
+Version 0.6.0 (TBD)
+-------------------
+
+- New features
+  * ExaPF now supports multiple generators per bus [experimental]
+  * ExaPF now implements a batch power flow solver [experimental]
+  * Add new functions `network_operation` and `power_injection`
+  * Tests directory has been updated, and all tests are now implemented inside dedicated modules (#156).
+  This allows to test directly any MATPOWER instance, simply as
+  ```julia
+  TestPolarFormulation(datafile, CPU(), Array)
+  ```
+  * Add benchmark script for power flow solver
+- API changes
+  * All `AbstractNLPEvaluator` structures have been moved to [ExaOpt](https://github.com/exanauts/ExaPF-Opt) (#191)
+- Bug Fixes & Improvements
+  * ExaPF now supports `CUDA.jl 3.*`
+  * `IterativeSolvers.jl` has been removed from the deps
+  * Names have been homogenized in `PolarNetworkState`.
+  * Fix power flow solver when phase shift is activated (#183)
+  * ExaPF now supports `CUDA.allowscalar(false)` (#181)
+
 Version 0.5.0 (April 14, 2021)
 ------------------------------
 
