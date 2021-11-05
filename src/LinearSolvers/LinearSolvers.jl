@@ -61,7 +61,7 @@ get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 
 Solve the linear system ``A x = y`` using the algorithm
 specified in `solver`. If `A` is not specified, the function
-will used directly the factorization stored inplace.
+will used directly the factorization stored inside `solver`.
 
 """
 function ldiv! end
@@ -77,7 +77,7 @@ function ldiv! end
 
 Solve the linear system ``A^⊤ x = y`` using the algorithm
 specified in `solver`. If `A` is not specified, the function
-will used directly the factorization stored inplace.
+will used directly the factorization stored inside `solver`.
 
 """
 function rdiv! end
@@ -231,6 +231,13 @@ function ldiv!(solver::EigenBICGSTAB,
     return n_iters
 end
 
+"""
+    DQGMRES <: AbstractIterativeLinearSolver
+    DQGMRES(precond; verbose=false, memory=4)
+
+Wrap `Krylov.jl`'s DQGMRES algorithm to solve iteratively the linear system
+``A x = y``.
+"""
 struct DQGMRES <: AbstractIterativeLinearSolver
     inner::Krylov.DqgmresSolver
     precond::AbstractPreconditioner

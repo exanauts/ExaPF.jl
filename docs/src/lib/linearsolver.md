@@ -14,7 +14,7 @@ ldiv!
 
 ## Direct solvers
 
-`ExaPF` wraps UMFPACK (shipped with Julia) on the CPU,
+`ExaPF` wraps UMFPACK (shipped with `SuiteSparse.jl`) on the CPU,
 and CUSPARSE on CUDA device.
 
 ```@docs
@@ -25,6 +25,7 @@ DirectSolver
 
 ```@docs
 KrylovBICGSTAB
+DQGMRES
 BICGSTAB
 EigenBICGSTAB
 ```
@@ -37,7 +38,7 @@ bicgstab
 
 ```
 
-Available linear solvers could be queried with
+Available linear solvers can be queried with
 ```@docs
 list_solvers
 

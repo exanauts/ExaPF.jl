@@ -15,13 +15,13 @@ Newton-Raphson implementation. All of these steps allow us to run the main
 computational loop entirely on the GPU with no transfer from host to device.
 
 We leverage the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl) to make ExaPF portable across GPU architectures.
-[autodiff](man/autodiff.md) and [linear solver](man/linearsolver.md) illustrate
+[Autodiff](man/autodiff.md) and [Linear solver](man/linearsolver.md) illustrate
 the design overview of [`ExaPF.jl`](https://github.com/exanauts/ExaPF.jl) targeted for GPUs.
 
 The user API is separated into two layers:
 
-1. First layer: Physical layer, specify the power network topology in [powersystem](man/powersystem.md). The first layer provides the physical properties at the electrical engineering level.
-2. Second layer: Mathematical layer, using a [polar formulation](lib/formulations.md) to model the equations of the network.
+1. First layer: Physical layer, specify the power network topology in [PowerSystem](man/powersystem.md). The first layer provides the physical properties at the electrical engineering level.
+2. Second layer: Mathematical layer, using a [Polar Formulation](lib/formulations.md) to model the equations of the network.
 
 
 ## Table of contents

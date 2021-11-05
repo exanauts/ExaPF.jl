@@ -3,7 +3,7 @@
 This page introduces the first steps to set up `ExaPF.jl`.
 We show how to load a power network instance and how to solve
 the power flow equations both on the CPU and on the GPU.
-The full script is implemented in [test/quickstart.jl](https://github.com/exanauts/ExaPF.jl/tree/master/test/quickstart.jl)
+The full script is implemented in [test/quickstart.jl](https://github.com/exanauts/ExaPF.jl/tree/master/test/quickstart.jl).
 
 We start by importing CUDA and KernelAbstractions:
 ```julia
@@ -22,7 +22,7 @@ const LS = ExaPF.LinearSolvers
 ## Short version
 
 ExaPF loads instances from the [`pglib-opf`](https://github.com/power-grid-lib/pglib-opf)
-benchmark, that may optionally be downloaded. Alternatively, ExaPF contains an artifact defined in `Artifacts.toml`
+benchmark. ExaPF contains an artifact defined in `Artifacts.toml`
 that is built from the [`ExaData`](https://github.com/exanauts/ExaData) repository containing Exascale Computing Project relevant test cases.
 ```julia
 datafile = joinpath(artifact"ExaData", "ExaData", "case1354.m")
@@ -32,6 +32,9 @@ The powerflow equations can be solved in three lines of code, as
 polar = ExaPF.PolarForm(datafile, CPU())
 pf_algo = NewtonRaphson(; verbose=0, tol=1e-10)
 convergence = ExaPF.powerflow(polar, pf_algo)
+```
+giving the output
+```
 Iteration 0. Residual norm: 26.6667.
 Iteration 1. Residual norm: 15.0321.
 Iteration 2. Residual norm: 0.588264.
@@ -61,7 +64,7 @@ datafile = joinpath(artifact"ExaData", "ExaData", "case9.m")
 pf = PS.PowerNetwork(datafile)
 ```
 The different fields of the object `pf` specify the characteristics
-of the network. For instance, we could retrieve the number of buses
+of the network. For instance, we can retrieve the number of buses
 or get the indexing of the PV buses with
 ```julia
 nbus = PS.get(pf, PS.NumberOfBuses())
@@ -70,7 +73,7 @@ pv_indexes = PS.get(pf, PS.PVIndexes())
 
 However, a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object stores only the **physical** attributes
 of the network, independently of the mathematical formulations
-we could use to model the network. To choose a particular formulation,
+we can use to model the network. To choose a particular formulation,
 we need to pass the object `pf` to an [`ExaPF.AbstractFormulation`](@ref) layer.
 Currently, the only layer implemented is the polar formulation,
 with the [`ExaPF.PolarForm`](@ref) structure. In the future, other formulations
@@ -162,7 +165,7 @@ The Newton-Raphson algorithm is specified as:
 pf_algo = NewtonRaphson(; verbose=1, tol=1e-10)
 ```
 
-Then, we could solve the powerflow equations simply with
+Then, we can solve the powerflow equations simply with
 ```julia
 convergence = ExaPF.powerflow(polar, jx, physical_state, pf_algo;
                               linear_solver=linear_solver)
@@ -180,7 +183,7 @@ avoid any unnecessary memory allocations.
 
 ### How to deport the computation on the GPU?
 
-Now, how could we deport the resolution on the GPU?
+Now, how can we deport the resolution on the GPU?
 The procedure looks exactly the same. It suffices to initiate
 a new [`ExaPF.PolarForm`](@ref) object, but on the GPU:
 ```julia
@@ -189,7 +192,7 @@ polar_gpu = ExaPF.PolarForm(pf, CUDADevice())
 ```
 `polar_gpu` will load all the structures it needs on the GPU, to
 avoid unnecessary movements between the host and the device.
-We could load the other structures directly on the GPU with:
+We can load the other structures directly on the GPU with:
 ```julia
 physical_state_gpu = get(polar, ExaPF.PhysicalState())
 ExaPF.init_buffer!(polar_gpu, physical_state_gpu) # populate values inside buffer
@@ -228,7 +231,7 @@ for GPU usage. To build an instance with 8 blocks, just write
 npartitions = 8
 precond = LS.BlockJacobiPreconditioner(jac, npartitions, CUDADevice())
 ```
-You could define an iterative solver preconditioned with `precond` simply as:
+You can define an iterative solver preconditioned with `precond` simply as:
 ```julia
 linear_solver = ExaPF.KrylovBICGSTAB(precond)
 
@@ -241,7 +244,7 @@ linear_solver.atol # 1e-10
 ```
 
 We need to update accordingly the tolerance of the Newton-Raphson algorithm,
-as it could not be lower than the tolerance of the iterative solver.
+as it can not be below the tolerance of the iterative solver.
 ```julia
 pf_algo = NewtonRaphson(; verbose=1, tol=1e-7)
 ```

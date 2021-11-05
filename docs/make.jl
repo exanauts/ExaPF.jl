@@ -21,10 +21,10 @@ makedocs(
         "Quick start" => "quickstart.md",
         "Manual" => [
             "AutoDiff" => "man/autodiff.md",
-            "Benchmark" => "man/benchmark.md",
             "Linear Solver" => "man/linearsolver.md",
             "PowerSystem" => "man/powersystem.md",
             "Formulations" => "man/formulations.md",
+            "Benchmark" => "man/benchmark.md",
         ],
         "Library" => [
             "AutoDiff" => "lib/autodiff.md",

@@ -21,7 +21,6 @@ Our package supports the following linear solvers:
 
 * [`cuSOLVER`](https://docs.nvidia.com/cuda/cusolver/index.html) with `csrlsvqr` (GPU),
 * [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) with `dqgmres` and `bicgstab` (CPU/GPU),
-* [`IterativeSolvers.jl`](https://github.com/JuliaMath/IterativeSolvers.jl) with `bicgstab` (CPU),
 * UMFPACK through the default Julia `\` operator (CPU),
 * generic BiCGSTAB implementation [^Vorst1992] \(CPU/GPU\),
 * or any linear solver wrapped in `LinearAlgebra`.
