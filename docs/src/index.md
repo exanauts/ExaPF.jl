@@ -1,19 +1,9 @@
 # ExaPF
 
 [`ExaPF.jl`](https://github.com/exanauts/ExaPF.jl) is a
-package to solve the power flow problem on upcoming exascale architectures.
-On these architectures the computational performance can only be achieved through graphics processing units (GPUs) as these systems lack substantial computational performance through classical CPUs.
-[`ExaPF.jl`](https://github.com/exanauts/ExaPF.jl) aims to
-provide the sensitivity information required for a reduced space optimization
-method, and enabling the computation of the optimal power flow problem (OPF)
-fully on GPUs. Reduced space methods enforce the constraints, represented here by
-the power flow's (PF) system of nonlinear equations, separately at each
-iteration of the optimization in the reduced space.
-This includes the computation of second-order derivatives using automatic
-differentiation, an iterative linear solver with a preconditioner, and a
-Newton-Raphson implementation. All of these steps allow us to run the main
-computational loop entirely on the GPU with no transfer from host to device.
-
+package to solve the power flow problem on upcoming exascale architectures by solving a system of nonlinear equations and provide derivative information used for example in a reduced space optimization method.
+Targeting exascale architectures implies a focus on graphics processing units (GPUs) as these systems lack substantial computational performance through classical CPUs.
+In addition to providing first-order derivatives `ExaPF.jl` includes the computation of second-order derivatives using automatic differentiation. All main computational steps, including the linear solver, are executed entirely on the GPU.
 We leverage the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl) to make ExaPF portable across GPU architectures.
 [Autodiff](man/autodiff.md) and [Linear solver](man/linearsolver.md) illustrate
 the design overview of [`ExaPF.jl`](https://github.com/exanauts/ExaPF.jl) targeted for GPUs.

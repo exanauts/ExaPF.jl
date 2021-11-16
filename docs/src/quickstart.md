@@ -9,6 +9,7 @@ We start by importing CUDA and KernelAbstractions:
 ```julia
 using CUDA
 using KernelAbstractions
+using CUDAKernels
 ```
 
 Then, we load ExaPF and its submodules with
@@ -25,12 +26,13 @@ ExaPF loads instances from the [`pglib-opf`](https://github.com/power-grid-lib/p
 benchmark. ExaPF contains an artifact defined in `Artifacts.toml`
 that is built from the [`ExaData`](https://github.com/exanauts/ExaData) repository containing Exascale Computing Project relevant test cases.
 ```julia
+using LazyArtifacts
 datafile = joinpath(artifact"ExaData", "ExaData", "case1354.m")
 ```
 The powerflow equations can be solved in three lines of code, as
 ```julia
 polar = ExaPF.PolarForm(datafile, CPU())
-pf_algo = NewtonRaphson(; verbose=0, tol=1e-10)
+pf_algo = NewtonRaphson(; verbose=1, tol=1e-10)
 convergence = ExaPF.powerflow(polar, pf_algo)
 ```
 giving the output
@@ -194,10 +196,10 @@ polar_gpu = ExaPF.PolarForm(pf, CUDADevice())
 avoid unnecessary movements between the host and the device.
 We can load the other structures directly on the GPU with:
 ```julia
-physical_state_gpu = get(polar, ExaPF.PhysicalState())
+physical_state_gpu = get(polar_gpu, ExaPF.PhysicalState())
 ExaPF.init_buffer!(polar_gpu, physical_state_gpu) # populate values inside buffer
 jx_gpu = AutoDiff.Jacobian(polar_gpu, ExaPF.power_balance, State())
-linear_solver = DirectSolver()
+linear_solver = LS.DirectSolver()
 ```
 Then, solving the powerflow equations on the GPU is straightforward
 ```julia
@@ -229,19 +231,16 @@ a preconditioner.
 for GPU usage. To build an instance with 8 blocks, just write
 ```julia
 npartitions = 8
-precond = LS.BlockJacobiPreconditioner(jac, npartitions, CUDADevice())
+jac_gpu = jx_gpu.J
+precond = LS.BlockJacobiPreconditioner(jac_gpu, npartitions, CUDADevice())
 ```
 You can define an iterative solver preconditioned with `precond` simply as:
 ```julia
-linear_solver = ExaPF.KrylovBICGSTAB(precond)
+linear_solver = ExaPF.KrylovBICGSTAB(jac_gpu; P=precond)
 
 ```
 (this will use the BICGSTAB algorithm implemented in
 [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl/)).
-By default, the tolerance of BICGSTAB is set to `1e-10`:
-```julia
-linear_solver.atol # 1e-10
-```
 
 We need to update accordingly the tolerance of the Newton-Raphson algorithm,
 as it can not be below the tolerance of the iterative solver.
