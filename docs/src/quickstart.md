@@ -6,14 +6,14 @@ the power flow equations both on the CPU and on the GPU.
 The full script is implemented in [test/quickstart.jl](https://github.com/exanauts/ExaPF.jl/tree/master/test/quickstart.jl).
 
 We start by importing CUDA and KernelAbstractions:
-```julia
+```@julia
 using CUDA
 using KernelAbstractions
 using CUDAKernels
 ```
 
 Then, we load ExaPF and its submodules with
-```julia
+```@julia
 using ExaPF
 import ExaPF: AutoDiff
 const PS = ExaPF.PowerSystem
@@ -24,25 +24,30 @@ const LS = ExaPF.LinearSolvers
 
 ExaPF loads instances from the [`pglib-opf`](https://github.com/power-grid-lib/pglib-opf)
 benchmark. ExaPF contains an artifact defined in `Artifacts.toml`
-that is built from the [`ExaData`](https://github.com/exanauts/ExaData) repository containing Exascale Computing Project relevant test cases.
+that is built from the [`ExaData`](https://github.com/exanauts/ExaData) repository containing Exascale Computing Project relevant test cases. You may set a data file using
 ```julia
-using LazyArtifacts
 datafile = joinpath(artifact"ExaData", "ExaData", "case1354.m")
 ```
+
+```@setup quickstart
+using LazyArtifacts
+using ExaPF
+using CUDA
+using KernelAbstractions
+using CUDAKernels
+using ExaPF
+import ExaPF: AutoDiff
+const PS = ExaPF.PowerSystem
+const LS = ExaPF.LinearSolvers
+artifact_toml = joinpath(@__DIR__, "..", "..", "Artifacts.toml")
+exadata_hash = artifact_hash("ExaData", artifact_toml)
+datafile = joinpath(artifact_path(exadata_hash), "ExaData", "case1354.m")
+```
 The powerflow equations can be solved in three lines of code, as
-```julia
+```@repl quickstart
 polar = ExaPF.PolarForm(datafile, CPU())
 pf_algo = NewtonRaphson(; verbose=1, tol=1e-10)
 convergence = ExaPF.powerflow(polar, pf_algo)
-```
-giving the output
-```
-Iteration 0. Residual norm: 26.6667.
-Iteration 1. Residual norm: 15.0321.
-Iteration 2. Residual norm: 0.588264.
-Iteration 3. Residual norm: 0.00488507.
-Iteration 4. Residual norm: 1.39924e-06.
-Iteration 5. Residual norm: 7.37136e-12.
 ```
 
 Implicitly, ExaPF has just proceed to the following operations:
@@ -61,14 +66,13 @@ the powerflow equations.
 
 ### How to load a MATPOWER instance as a PowerNetwork object?
 We start by importing a MATPOWER instance to a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object:
-```julia
-datafile = joinpath(artifact"ExaData", "ExaData", "case9.m")
+```@repl quickstart
 pf = PS.PowerNetwork(datafile)
 ```
 The different fields of the object `pf` specify the characteristics
 of the network. For instance, we can retrieve the number of buses
 or get the indexing of the PV buses with
-```julia
+```@repl quickstart
 nbus = PS.get(pf, PS.NumberOfBuses())
 pv_indexes = PS.get(pf, PS.PVIndexes())
 ```
@@ -108,9 +112,8 @@ a Newton-Raphson algorithm that allows to solve the powerflow equations
 in a few lines of code.
 We first instantiate a `PolarForm` object to adopt a polar formulation
 as a model:
-```julia
+```@repl quickstart
 polar = ExaPF.PolarForm(pf, CPU())
-
 ```
 Note that the constructor [`ExaPF.PolarForm`](@ref) takes as input a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object
 and a `KernelAbstractions.jl` device (here set to `CPU()` by default). We
@@ -129,16 +132,16 @@ Hence, the algorithm requires the following elements:
 - a function to evaluate the Jacobian $\nabla_x g_k$
 
 that translate to the Julia code:
-```julia
-physical_state = get(polar, ExaPF.PhysicalState())
-ExaPF.init_buffer!(polar, physical_state) # populate values inside buffer
-linear_solver = LS.DirectSolver()
+```@repl quickstart
+physical_state = get(polar, ExaPF.PhysicalState());
+ExaPF.init_buffer!(polar, physical_state); # populate values inside buffer
+linear_solver = LS.DirectSolver();
 ```
 
 We build a Jacobian object storing all structures needed by
 the AutoDiff backend:
-```julia
-julia> jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+```@repl quickstart
+jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
 ```
 
 Let's explain further these three objects.
@@ -153,8 +156,8 @@ Let's explain further these three objects.
 
 In the AutoDiff Jacobian `jx`, the evaluation of the Jacobian ``J``
 is stored in `jx.J`:
-```julia
-jac = jx.J
+```@repl quickstart
+jac = jx.J;
 ```
 This matrix is at the basis of the powerflow algorithm. At each
 iteration, the AutoDiff backend updates the values in the Jacobian `jx`,
@@ -163,20 +166,14 @@ then we take the updated matrix `jx.J` to evaluate the
 The procedure is implemented in the `powerflow` function, which
 uses a Newton-Raphson algorithm to solve the powerflow equations.
 The Newton-Raphson algorithm is specified as:
-```julia
+```@repl quickstart
 pf_algo = NewtonRaphson(; verbose=1, tol=1e-10)
 ```
 
 Then, we can solve the powerflow equations simply with
-```julia
+```@repl quickstart
 convergence = ExaPF.powerflow(polar, jx, physical_state, pf_algo;
                               linear_solver=linear_solver)
-Iteration 0. Residual norm: 26.6667.
-Iteration 1. Residual norm: 15.0321.
-Iteration 2. Residual norm: 0.588264.
-Iteration 3. Residual norm: 0.00488507.
-Iteration 4. Residual norm: 1.39924e-06.
-Iteration 5. Residual norm: 7.37136e-12.
 ```
 Here, the algorithm solves the powerflow equations in 5 iterations.
 The algorithm modifies the values of `physical_state` inplace, to
@@ -188,32 +185,23 @@ avoid any unnecessary memory allocations.
 Now, how can we deport the resolution on the GPU?
 The procedure looks exactly the same. It suffices to initiate
 a new [`ExaPF.PolarForm`](@ref) object, but on the GPU:
-```julia
+```@repl quickstart
 polar_gpu = ExaPF.PolarForm(pf, CUDADevice())
 
 ```
 `polar_gpu` will load all the structures it needs on the GPU, to
 avoid unnecessary movements between the host and the device.
 We can load the other structures directly on the GPU with:
-```julia
-physical_state_gpu = get(polar_gpu, ExaPF.PhysicalState())
-ExaPF.init_buffer!(polar_gpu, physical_state_gpu) # populate values inside buffer
-jx_gpu = AutoDiff.Jacobian(polar_gpu, ExaPF.power_balance, State())
-linear_solver = LS.DirectSolver()
+```@repl quickstart
+physical_state_gpu = get(polar_gpu, ExaPF.PhysicalState());
+ExaPF.init_buffer!(polar_gpu, physical_state_gpu); # populate values inside buffer
+jx_gpu = AutoDiff.Jacobian(polar_gpu, ExaPF.power_balance, State());
+linear_solver = LS.DirectSolver();
 ```
 Then, solving the powerflow equations on the GPU is straightforward
-```julia
+```@repl quickstart
 convergence = ExaPF.powerflow(polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
                               linear_solver=linear_solver)
-```
-yielding the output
-```
-Iteration 0. Residual norm: 26.6667.
-Iteration 1. Residual norm: 15.0321.
-Iteration 2. Residual norm: 0.588264.
-Iteration 3. Residual norm: 0.00488507.
-Iteration 4. Residual norm: 1.39924e-06.
-Iteration 5. Residual norm: 7.94916e-12.
 ```
 
 Note that we get the same convergence pattern as on the CPU.
@@ -229,14 +217,14 @@ The performance of iterative solvers is usually improved if we use
 a preconditioner.
 `ExaPF.jl` implements a block-Jacobi preconditioner, tailored
 for GPU usage. To build an instance with 8 blocks, just write
-```julia
-npartitions = 8
-jac_gpu = jx_gpu.J
-precond = LS.BlockJacobiPreconditioner(jac_gpu, npartitions, CUDADevice())
+```@repl quickstart
+npartitions = 8;
+jac_gpu = jx_gpu.J;
+precond = LS.BlockJacobiPreconditioner(jac_gpu, npartitions, CUDADevice());
 ```
 You can define an iterative solver preconditioned with `precond` simply as:
-```julia
-linear_solver = ExaPF.KrylovBICGSTAB(jac_gpu; P=precond)
+```@repl quickstart
+linear_solver = ExaPF.KrylovBICGSTAB(jac_gpu; P=precond);
 
 ```
 (this will use the BICGSTAB algorithm implemented in
@@ -244,23 +232,13 @@ linear_solver = ExaPF.KrylovBICGSTAB(jac_gpu; P=precond)
 
 We need to update accordingly the tolerance of the Newton-Raphson algorithm,
 as it can not be below the tolerance of the iterative solver.
-```julia
+```@repl quickstart
 pf_algo = NewtonRaphson(; verbose=1, tol=1e-7)
 ```
 
-Calling
-```julia
+Solving the same problem with a different linear solver requires resetting the initial value and the saved solution.
+```@repl quickstart
+ExaPF.init_buffer!(polar_gpu, physical_state_gpu)
 convergence = ExaPF.powerflow(polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
                               linear_solver=linear_solver)
 ```
-yields
-```
-Iteration 0. Residual norm: 26.6667.
-Iteration 1. Residual norm: 15.0321.
-Iteration 2. Residual norm: 0.588264.
-Iteration 3. Residual norm: 0.00488507.
-Iteration 4. Residual norm: 1.39925e-06.
-Iteration 5. Residual norm: 1.81445e-09.
-
-```
-
