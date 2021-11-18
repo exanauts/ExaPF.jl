@@ -7,36 +7,48 @@ is_linear(polar::PolarForm, ::Function) = false
 
 
 include("power_balance.jl")
+include("power_injection.jl")
 include("voltage_magnitude.jl")
 include("active_power.jl")
 include("reactive_power.jl")
 include("line_flow.jl")
+include("ramping_rate.jl")
+include("network_operation.jl")
 
 # By default, function does not have any intermediate state
-_get_intermediate_stack(polar::PolarForm, func::Function, VT) = nothing
+_get_intermediate_stack(polar::PolarForm, func::Function, VT, nbatch) = nothing
 
 function _get_intermediate_stack(
-    polar::PolarForm, func::F, VT
-) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance)}}
+    polar::PolarForm, func::F, VT, nbatch
+) where {F <: Union{typeof(reactive_power_constraints), typeof(flow_constraints), typeof(power_balance), typeof(bus_power_injection)}}
     nlines = PS.get(polar.network, PS.NumberOfLines())
     # Take care that flow_constraints needs a buffer with a different size
     nnz = isa(func, typeof(flow_constraints)) ? nlines : length(polar.topology.ybus_im.nzval)
     # Return a NamedTuple storing all the intermediate states
-    return (
-        ∂edge_vm_fr = xzeros(VT, nnz),
-        ∂edge_va_fr = xzeros(VT, nnz),
-        ∂edge_vm_to = xzeros(VT, nnz),
-        ∂edge_va_to = xzeros(VT, nnz),
-    )
+    if nbatch == 1
+        return (
+            ∂edge_vm_fr = VT(undef, nnz),
+            ∂edge_va_fr = VT(undef, nnz),
+            ∂edge_vm_to = VT(undef, nnz),
+            ∂edge_va_to = VT(undef, nnz),
+        )
+    else
+        return (
+            ∂edge_vm_fr = VT(undef, nnz, nbatch),
+            ∂edge_va_fr = VT(undef, nnz, nbatch),
+            ∂edge_vm_to = VT(undef, nnz, nbatch),
+            ∂edge_va_to = VT(undef, nnz, nbatch),
+        )
+    end
 end
 
 # Generic functions
 function AutoDiff.TapeMemory(
-    polar::PolarForm, func::Function, VT; with_stack=true,
+    polar::PolarForm, func::Function, VT; with_stack=true, nbatch=1,
 )
     @assert is_constraint(func)
     stack = (with_stack) ? AdjointPolar(polar) : nothing
-    intermediate = _get_intermediate_stack(polar, func, VT)
+    intermediate = _get_intermediate_stack(polar, func, VT, nbatch)
     return AutoDiff.TapeMemory(func, stack, intermediate)
 end
 
@@ -44,8 +56,7 @@ end
 function adjoint!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory,
-    ∂cons, cons,
-    buffer,
+    ∂cons, cons, buffer,
 )
     stack = pbm.stack
     reset!(stack)
@@ -54,7 +65,8 @@ function adjoint!(
         cons, ∂cons,
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
-        buffer.pinj, stack.∂pinj,
+        buffer.pnet, stack.∂pinj,
+        buffer.pload, buffer.qload,
     )
 end
 
@@ -65,7 +77,6 @@ function jacobian_transpose_product!(
     buffer::PolarNetworkState,
     v::AbstractVector,
 )
-    # Adjoint w.r.t. vm, va, pinj, qinj
     stack = pbm.stack
     reset!(stack)
     cons = buffer.balance ; fill!(cons, 0.0) # TODO
@@ -74,7 +85,8 @@ function jacobian_transpose_product!(
         cons, v,
         buffer.vmag, stack.∂vm,
         buffer.vang, stack.∂va,
-        buffer.pinj, stack.∂pinj,
+        buffer.pnet, stack.∂pinj,
+        buffer.pload, buffer.qload,
     )
     adjoint_transfer!(
         polar,
@@ -93,7 +105,7 @@ function jacobian_sparsity(polar::PolarForm, func::Function, xx::AbstractVariabl
 end
 
 function matpower_jacobian(polar::PolarForm, func::Function, X::AbstractVariable, buffer::PolarNetworkState)
-    V = buffer.vmag .* exp.(im .* buffer.vang)
+    V = voltage_host(buffer)
     return matpower_jacobian(polar, X, func, V)
 end
 
@@ -105,8 +117,6 @@ function _build_jacobian(polar::PolarForm, cons::Function, X::Union{State, Contr
         return AutoDiff.Jacobian(polar, cons, X)
     end
 end
-
-_build_hessian(polar::PolarForm, cons::Function) = AutoDiff.Hessian(polar, cons)
 
 function FullSpaceJacobian(
     polar::PolarForm{T, VI, VT, MT},

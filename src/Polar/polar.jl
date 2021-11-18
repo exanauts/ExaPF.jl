@@ -25,9 +25,6 @@ struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
     u_max::VT
     # costs
     costs_coefficients::MT
-    # Constant loads
-    active_load::VT
-    reactive_load::VT
     # Indexing of the PV, PQ and slack buses
     indexing::IndexingCache{IT}
     # struct
@@ -44,6 +41,7 @@ include("derivatives.jl")
 include("Constraints/constraints.jl")
 include("powerflow.jl")
 include("objective.jl")
+include("batch.jl")
 
 function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     if isa(device, KA.CPU)
@@ -51,9 +49,9 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
         VT = Vector{Float64}
         M = SparseMatrixCSC
         AT = Array
-    elseif isa(device, KA.CUDADevice)
-        IT = CUDA.CuVector{Int64}
-        VT = CUDA.CuVector{Float64}
+    elseif isa(device, KA.GPU)
+        IT = CUDA.CuArray{Int64, 1, CUDA.Mem.DeviceBuffer}
+        VT = CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
         M = CUSPARSE.CuSparseMatrixCSR
         AT = CUDA.CuArray
     end
@@ -64,12 +62,9 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     nref = PS.get(pf, PS.NumberOfSlackBuses())
     ngens = PS.get(pf, PS.NumberOfGenerators())
 
-    topology = NetworkTopology{IT, VT}(pf)
+    topology = NetworkTopology(pf, IT, VT)
     # Get coefficients penalizing the generation of the generators
     coefs = convert(AT{Float64, 2}, PS.get_costs_coefficients(pf))
-    # Move load to the target device
-    pload = convert(VT, PS.get(pf, PS.ActiveLoad()))
-    qload = convert(VT, PS.get(pf, PS.ReactiveLoad()))
 
     # Move the indexing to the target device
     idx_gen = PS.get(pf, PS.GeneratorIndexes())
@@ -77,22 +72,8 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     idx_pv = PS.get(pf, PS.PVIndexes())
     idx_pq = PS.get(pf, PS.PQIndexes())
     # Build-up reverse index for performance
-    pv_to_gen = similar(idx_pv)
-    ref_to_gen = similar(idx_ref)
-    ## We assume here that the indexing of generators is the same
-    ## as in MATPOWER
-    for i in 1:ngens
-        bus = idx_gen[i]
-        i_pv = findfirst(isequal(bus), idx_pv)
-        if !isnothing(i_pv)
-            pv_to_gen[i_pv] = i
-        else
-            i_ref = findfirst(isequal(bus), idx_ref)
-            if !isnothing(i_ref)
-                ref_to_gen[i_ref] = i
-            end
-        end
-    end
+    pv_to_gen = PS.get(pf, PS.PVToGeneratorsIndex())
+    ref_to_gen = PS.get(pf, PS.SlackToGeneratorsIndex())
 
     gidx_gen = convert(IT, idx_gen)
     gidx_ref = convert(IT, idx_ref)
@@ -141,7 +122,7 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
     return PolarForm{Float64, IT, VT, AT{Float64,  2}}(
         pf, device,
         x_min, x_max, u_min, u_max,
-        coefs, pload, qload,
+        coefs,
         indexing,
         topology,
         statemap, controlmap,
@@ -150,8 +131,6 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.Device)
 end
 # Convenient constructor
 PolarForm(datafile::String, device) = PolarForm(PS.PowerNetwork(datafile), device)
-
-array_type(polar::PolarForm) = array_type(polar.device)
 
 # Getters
 function get(polar::PolarForm, ::NumberOfState)
@@ -166,19 +145,13 @@ function get(polar::PolarForm, ::NumberOfControl)
     return nref + 2*npv
 end
 
-function get(polar::PolarForm, attr::PS.AbstractNetworkAttribute)
-    return get(polar.network, attr)
-end
+get(polar::PolarForm, attr::PS.AbstractNetworkAttribute) = get(polar.network, attr)
 
-# Setters
-function setvalues!(polar::PolarForm, ::PS.ActiveLoad, values)
-    @assert length(polar.active_load) == length(values)
-    copyto!(polar.active_load, values)
-end
-function setvalues!(polar::PolarForm, ::PS.ReactiveLoad, values)
-    @assert length(polar.reactive_load) == length(values)
-    copyto!(polar.reactive_load, values)
-end
+index_buses_host(polar) = PS.get(polar.network, PS.AllBusesIndex())
+index_buses_device(polar) = index_buses(polar.indexing)
+
+index_generators_host(polar) = PS.get(polar.network, PS.AllGeneratorsIndex())
+index_generators_device(polar) = index_generators(polar.indexing)
 
 ## Bounds
 function bounds(polar::PolarForm{T, IT, VT, MT}, ::State) where {T, IT, VT, MT}
@@ -191,42 +164,41 @@ end
 
 # Initial position
 function initial(polar::PolarForm{T, IT, VT, MT}, X::Union{State,Control}) where {T, IT, VT, MT}
+    ref, pv, pq = index_buses_host(polar)
+    _, _, pv2gen = index_generators_host(polar)
     # Load data from PowerNetwork
-    pbus = real.(polar.network.sbus) |> VT
-    qbus = imag.(polar.network.sbus) |> VT
-    vmag = abs.(polar.network.vbus) |> VT
-    vang = angle.(polar.network.vbus) |> VT
-
-    npv = get(polar, PS.NumberOfPVBuses())
-    npq = get(polar, PS.NumberOfPQBuses())
-    nref = get(polar, PS.NumberOfSlackBuses())
+    vmag = abs.(polar.network.vbus)
+    vang = angle.(polar.network.vbus)
+    pg = get(polar.network, PS.ActivePower())
 
     if isa(X, State)
         # build vector x
-        dimension = get(polar, NumberOfState())
-        x = xzeros(VT, dimension)
-        x[1:npv] = vang[polar.network.pv]
-        x[npv+1:npv+npq] = vang[polar.network.pq]
-        x[npv+npq+1:end] = vmag[polar.network.pq]
-        return x
+        return [vang[pv] ; vang[pq] ; vmag[pq]] |> VT
     elseif isa(X, Control)
-        dimension = get(polar, NumberOfControl())
-        u = xzeros(VT, dimension)
-        u[1:nref] = vmag[polar.network.ref]
-        # u is equal to active power of generator (Pᵍ)
-        # As P = Pᵍ - Pˡ , we get
-        u[nref + 1:nref + npv] = vmag[polar.network.pv]
-        u[nref + npv + 1:nref + 2*npv] = pbus[polar.network.pv] + polar.active_load[polar.network.pv]
-        return u
+        return [vmag[ref] ; vmag[pv] ; pg[pv2gen]] |> VT
     end
 end
 
-function get(form::PolarForm{T, IT, VT, MT}, ::PhysicalState) where {T, IT, VT, MT}
+function get(form::PolarForm{T, VI, VT, MT}, ::PhysicalState) where {T, VI, VT, MT}
     nbus = PS.get(form.network, PS.NumberOfBuses())
     ngen = PS.get(form.network, PS.NumberOfGenerators())
     n_state = get(form, NumberOfState())
     gen2bus = form.indexing.index_generators
-    return PolarNetworkState{VT}(nbus, ngen, n_state, gen2bus)
+    # Bus variables
+    pnet = zeros(nbus) |> VT
+    qnet = zeros(nbus) |> VT
+    vmag = zeros(nbus) |> VT
+    vang = zeros(nbus) |> VT
+    # Generators variables
+    pgen = zeros(ngen) |> VT
+    qgen = zeros(ngen) |> VT
+    # Loads
+    pload = zeros(nbus) |> VT
+    qload = zeros(nbus) |> VT
+    # Buffers
+    balance = zeros(n_state) |> VT
+    dx = zeros(n_state) |> VT
+    return PolarNetworkState(pnet, qnet, vmag, vang, pgen, qgen, pload, qload, balance, dx, gen2bus)
 end
 
 function get!(
@@ -238,14 +210,15 @@ function get!(
     npv = get(polar, PS.NumberOfPVBuses())
     npq = get(polar, PS.NumberOfPQBuses())
     nref = get(polar, PS.NumberOfSlackBuses())
+    ref, pv, pq = index_buses_host(polar)
     # Copy values of vang and vmag into x
     # NB: this leads to 3 memory allocation on the GPU
     #     we use indexing on the CPU, as for some reason
     #     we get better performance than with the indexing on the GPU
     #     stored in the buffer polar.indexing.
-    x[1:npv] .= @view buffer.vang[polar.network.pv]
-    x[npv+1:npv+npq] .= @view buffer.vang[polar.network.pq]
-    x[npv+npq+1:npv+2*npq] .= @view buffer.vmag[polar.network.pq]
+    x[1:npv] .= @view buffer.vang[pv]
+    x[npv+1:npv+npq] .= @view buffer.vang[pq]
+    x[npv+npq+1:npv+2*npq] .= @view buffer.vmag[pq]
 end
 
 function get!(
@@ -257,52 +230,51 @@ function get!(
     npv = get(polar, PS.NumberOfPVBuses())
     npq = get(polar, PS.NumberOfPQBuses())
     nref = get(polar, PS.NumberOfSlackBuses())
+    ref, pv, pq = index_buses_host(polar)
+    _, _, pv2gen = index_generators_host(polar)
     # build vector u
     nᵤ = get(polar, NumberOfControl())
-    u[1:nref] .= @view buffer.vmag[polar.network.ref]
-    u[nref + 1:nref + npv] .= @view buffer.vmag[polar.network.pv]
-    u[nref + npv + 1:nref + 2*npv] .= @view buffer.pg[polar.indexing.index_pv_to_gen]
+    u[1:nref] .= @view buffer.vmag[ref]
+    u[nref + 1:nref + npv] .= @view buffer.vmag[pv]
+    u[nref + npv + 1:nref + 2*npv] .= @view buffer.pgen[pv2gen]
     return u
 end
 
 function init_buffer!(form::PolarForm{T, IT, VT, MT}, buffer::PolarNetworkState) where {T, IT, VT, MT}
     # FIXME: add proper getters in PowerSystem
-    pbus = real.(form.network.sbus)
-    qbus = imag.(form.network.sbus)
     vmag = abs.(form.network.vbus)
     vang = angle.(form.network.vbus)
+    pd = PS.get(form.network, PS.ActiveLoad())
+    qd = PS.get(form.network, PS.ReactiveLoad())
 
     pg = get(form.network, PS.ActivePower())
     qg = get(form.network, PS.ReactivePower())
 
     copyto!(buffer.vmag, vmag)
     copyto!(buffer.vang, vang)
-    copyto!(buffer.pg, pg)
-    copyto!(buffer.qg, qg)
-    copyto!(buffer.pinj, pbus)
-    copyto!(buffer.qinj, qbus)
+    copyto!(buffer.pgen, pg)
+    copyto!(buffer.qgen, qg)
+    copyto!(buffer.pload, pd)
+    copyto!(buffer.qload, qd)
+
+    fill!(buffer.pnet, 0.0)
+    fill!(buffer.qnet, 0.0)
+    copyto!(view(buffer.pnet, form.indexing.index_generators), pg)
+    copyto!(view(buffer.qnet, form.indexing.index_generators), qg)
+    return
 end
 
-function direct_linear_solver(polar::PolarForm)
-    is_cpu = isa(polar.device, KA.CPU)
-    if is_cpu
-        jac = jacobian_sparsity(polar, power_balance, State())
-        return LinearSolvers.DirectSolver(jac)
-    else
-        # Factorization is not yet supported on the GPU
-        return LinearSolvers.DirectSolver(nothing)
-    end
+# Power flow linear solvers
+function powerflow_jacobian(polar)
+    nbus = get(polar, PS.NumberOfBuses())
+    v0 = polar.network.vbus .+ 0.01 .* rand(ComplexF64, nbus)
+    return matpower_jacobian(polar, State(), power_balance, v0)
 end
 
-function build_preconditioner(polar::PolarForm; nblocks=-1)
-    jac = jacobian_sparsity(polar, power_balance, State())
-    n = size(jac, 1)
-    npartitions = if nblocks > 0
-        nblocks
-    else
-        div(n, 32)
-    end
-    return LinearSolvers.BlockJacobiPreconditioner(jac, npartitions, polar.device)
+function powerflow_jacobian_device(polar)
+    SpMT = default_sparse_matrix(polar.device)
+    J = powerflow_jacobian(polar)
+    return J |> SpMT
 end
 
 function Base.show(io::IO, polar::PolarForm)

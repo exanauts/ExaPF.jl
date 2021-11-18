@@ -36,30 +36,62 @@ struct PowerNetwork <: AbstractPowerSystem
     ref::Vector{Int64}
     pv::Vector{Int64}
     pq::Vector{Int64}
+    # Generators From/To Buses Indexes
+    gen2bus::Vector{Int64}
+    ref2gen::Vector{Int64}
+    pv2gen::Vector{Int64}
 
     sbus::Vector{Complex{Float64}}
     sload::Vector{Complex{Float64}}
 
-    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
+    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[], multi_generators=:aggregate)
         # Parsed data indexes
         BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
         LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
         # retrive required data
-        bus = data["bus"]
-        gen = data["gen"]
-        lines = data["branch"]
-        SBASE = data["baseMVA"][1]
-        costs = Base.get(data, "cost", nothing)
+        bus = data["bus"]::Array{Float64, 2}
+        gen = data["gen"]::Array{Float64, 2}
+        lines = data["branch"]::Array{Float64, 2}
+        SBASE = data["baseMVA"][1]::Float64
+        cost_coefficients = Base.get(data, "cost", nothing)
 
-        bus_id_to_indexes = get_bus_id_to_indexes(data["bus"])
+        # BUSES
+        bus_id_to_indexes = get_bus_id_to_indexes(bus)
 
+        # GENERATORS
+        if has_multiple_generators(gen) && multi_generators == :aggregate
+            gen, σg = merge_multi_generators(gen)
+            if !isnothing(cost_coefficients)
+                cost_coefficients = merge_cost_coefficients(cost_coefficients, gen, σg)
+            end
+        end
+
+        # LINES
         # Remove specified lines
         lines = get_active_branches(lines, remove_lines)
 
         # size of the system
         nbus = size(bus, 1)
         ngen = size(gen, 1)
+
+        # COSTS
+        if isnothing(cost_coefficients)
+            @warn("[PS] Cost function not specified in dataset. Fallback to default coefficients.")
+            # if not specified, costs is set by default to a # quadratic polynomial
+            costs = zeros(ngen, 7)
+            costs[:, 1] .= 2.0 # polynomial model
+            costs[:, 2] .= 0.0 # no start-up cost
+            costs[:, 3] .= 0.0 # no shutdown cost
+            costs[:, 4] .= 3.0 # quadratic polynomial
+            costs[:, 5] .= 0.0 # c₁
+            costs[:, 6] .= 1.0 # c₂
+            costs[:, 7] .= 0.0 # c₃
+        else
+            costs = cost_coefficients
+        end
+        # Check consistency of cost coefficients
+        @assert size(costs, 1) == size(gen, 1)
 
         # obtain V0 from raw data
         vbus = zeros(Complex{Float64}, nbus)
@@ -76,18 +108,30 @@ struct PowerNetwork <: AbstractPowerSystem
         )
 
         # bus type indexing
-        ref, pv, pq, bustype = bustypeindex(bus, gen, bus_id_to_indexes)
+        ref, pv, pq, bustype, inactive_generators = bustypeindex(bus, gen, bus_id_to_indexes)
+        # check consistency
+        ref_id = bus[ref, 1]
+        @assert bus[ref, 2] == [REF_BUS_TYPE]
+        if !(ref_id[1] in gen[:, 1])
+            error("[PS] No generator attached to slack node.")
+        end
+        if !isempty(inactive_generators)
+            println("[PS] Found $(length(inactive_generators)) inactive generators.")
+        end
 
         sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
+        gen2bus = generators_to_buses(gen, bus_id_to_indexes)
+        pv2gen, ref2gen = buses_to_generators(gen2bus, pv, ref)
         Ybus = topology.ybus
 
-        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes, ref, pv, pq, sbus, sload)
+        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes,
+            ref, pv, pq, gen2bus, ref2gen, pv2gen, sbus, sload)
     end
 end
 
-function PowerNetwork(datafile::String)
+function PowerNetwork(datafile::String; options...)
     data = import_dataset(datafile)
-    return PowerNetwork(data)
+    return PowerNetwork(data; options...)
 end
 
 # Getters
@@ -112,43 +156,25 @@ function get(pf::PowerNetwork, ::ReactivePower)
 end
 
 ## Indexing
-function get(pf::PowerNetwork, ::GeneratorIndexes)
-    GEN_BUS = IndexSet.idx_gen()[1]
-    gens = pf.generators
-    ngens = size(gens, 1)
-    # Create array on host memory
-    indexing = zeros(Int, ngens)
-    # Here, we keep the same ordering as specified in Matpower.
-    for i in 1:ngens
-        indexing[i] = pf.bus_to_indexes[gens[i, GEN_BUS]]
-    end
-    return indexing
-end
+get(pf::PowerNetwork, ::GeneratorIndexes) = pf.gen2bus
 get(pf::PowerNetwork, ::PVIndexes) = pf.pv
 get(pf::PowerNetwork, ::PQIndexes) = pf.pq
 get(pf::PowerNetwork, ::SlackIndexes) = pf.ref
+get(pf::PowerNetwork, ::AllBusesIndex) = (pf.ref, pf.pv, pf.pq)
+get(pf::PowerNetwork, ::SlackToGeneratorsIndex) = pf.ref2gen
+get(pf::PowerNetwork, ::PVToGeneratorsIndex) = pf.pv2gen
+get(pf::PowerNetwork, ::AllGeneratorsIndex) = (pf.gen2bus, pf.ref2gen, pf.pv2gen)
 
+has_inactive_generators(pf::PowerNetwork) = any(isequal(0), view(pf.generators, :, 8))
+active_generators(pf::PowerNetwork) = findall(isequal(1), view(pf.generators, :, 8))
+inactive_generators(pf::PowerNetwork) = findall(isequal(0), view(pf.generators, :, 8))
 
 # Pretty printing
 function Base.show(io::IO, pf::PowerNetwork)
-    println("Power Network characteristics:")
-    @printf("\tBuses: %d. Slack: %d. PV: %d. PQ: %d\n", pf.nbus, length(pf.ref),
+    println(io, "PowerNetwork object with:")
+    @printf(io, "    Buses: %d (Slack: %d. PV: %d. PQ: %d)\n", pf.nbus, length(pf.ref),
             length(pf.pv), length(pf.pq))
-    println("\tGenerators: ", pf.ngen, ".")
-    # Print system status
-    @printf("\t==============================================\n")
-    @printf("\tBUS \t TYPE \t VMAG \t VANG \t P \t Q\n")
-    @printf("\t==============================================\n")
-
-    for i=1:pf.nbus
-        type = pf.bustype[i]
-        vmag = abs(pf.vbus[i])
-        vang = angle(pf.vbus[i])*(180.0/pi)
-        pinj = real(pf.sbus[i])
-        qinj = imag(pf.sbus[i])
-        @printf("\t%d \t  %d \t %1.3f\t%3.2f\t%3.3f\t%3.3f\n", i,
-                type, vmag, vang, pinj, qinj)
-    end
+    println(io, "    Generators: ", pf.ngen, ".")
 end
 
 # Some utils function
@@ -173,6 +199,12 @@ function bounds(pf::PowerNetwork, ::Generators, ::ActivePower)
 
     p_min = convert.(Float64, gens[:, PMIN] / baseMVA)
     p_max = convert.(Float64, gens[:, PMAX] / baseMVA)
+    if has_inactive_generators(pf)
+        inactive_gens = inactive_generators(pf)
+        # Set lower and upper bounds to 0 for inactive generators
+        p_min[inactive_gens] .= 0.0
+        p_max[inactive_gens] .= 0.0
+    end
     return p_min, p_max
 end
 
@@ -186,6 +218,12 @@ function bounds(pf::PowerNetwork, ::Generators, ::ReactivePower)
 
     q_min = convert.(Float64, gens[:, QMIN] / baseMVA)
     q_max = convert.(Float64, gens[:, QMAX] / baseMVA)
+    if has_inactive_generators(pf)
+        inactive_gens = inactive_generators(pf)
+        # Set lower and upper bounds to 0 for inactive generators
+        q_min[inactive_gens] .= 0.0
+        q_max[inactive_gens] .= 0.0
+    end
     return q_min, q_max
 end
 
@@ -227,8 +265,8 @@ function get_costs_coefficients(pf::PowerNetwork)
     gens = pf.generators
     baseMVA = pf.baseMVA
     bus = pf.buses
-    ngens = size(gens)[1]
-    nbus = size(bus)[1]
+    ngens = size(gens, 1)
+    nbus = size(bus, 1)
 
     # initialize cost
     # store coefficients in a Float64 array, with 4 columns:
@@ -237,26 +275,30 @@ function get_costs_coefficients(pf::PowerNetwork)
     # - 3rd column: coefficient c1
     # - 4th column: coefficient c2
     coefficients = zeros(ngens, 4)
-    # If cost is not specified, we return the array coefficients as is
-    if isnothing(pf.costs)
-        @warn("PowerSystem: cost is not specified in PowerNetwork dataset")
-        return coefficients
-    end
 
     cost_data = pf.costs
     # iterate generators and check if pv or ref.
     for i = 1:ngens
         # only 2nd degree polynomial implemented for now.
         @assert cost_data[i, MODEL] == 2
-        @assert cost_data[i, NCOST] == 3
         genbus = b2i[gens[i, GEN_BUS]]
         bustype = bus[genbus, BUS_TYPE]
 
         # polynomial coefficients
-        c0 = cost_data[i, COST+2]
-        c1 = cost_data[i, COST+1] * baseMVA
-        c2 = cost_data[i, COST] * baseMVA^2
-        coefficients[i, :] .= (bustype, c0, c1, c2)
+        if cost_data[i, NCOST] == 3       # quadratic model
+            c0 = cost_data[i, COST+2]
+            c1 = cost_data[i, COST+1] * baseMVA
+            c2 = cost_data[i, COST] * baseMVA^2
+        elseif cost_data[i, NCOST] == 2   # linear model
+            c0 = cost_data[i, COST+1]
+            c1 = cost_data[i, COST] * baseMVA
+            c2 = 0.0
+        end
+
+        coefficients[i, 1] = bustype
+        coefficients[i, 2] = c0
+        coefficients[i, 3] = c1
+        coefficients[i, 4] = c2
     end
     return coefficients
 end

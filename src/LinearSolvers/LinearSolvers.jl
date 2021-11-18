@@ -11,7 +11,6 @@ using KernelAbstractions
 import CUDA.CUBLAS
 import CUDA.CUSOLVER
 import CUDA.CUSPARSE
-import IterativeSolvers
 import Krylov
 import LightGraphs
 import Metis
@@ -44,8 +43,7 @@ abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
 """
     list_solvers(::KernelAbstractions.Device)
 
-List linear solvers available on current device. Currently,
-only `CPU()` and `CUDADevice()` are supported.
+List linear solvers available on current device.
 
 """
 function list_solvers end
@@ -63,7 +61,7 @@ get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 
 Solve the linear system ``A x = y`` using the algorithm
 specified in `solver`. If `A` is not specified, the function
-will used directly the factorization stored inplace.
+will used directly the factorization stored inside `solver`.
 
 """
 function ldiv! end
@@ -79,7 +77,7 @@ function ldiv! end
 
 Solve the linear system ``A^⊤ x = y`` using the algorithm
 specified in `solver`. If `A` is not specified, the function
-will used directly the factorization stored inplace.
+will used directly the factorization stored inside `solver`.
 
 """
 function rdiv! end
@@ -97,9 +95,12 @@ struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: Abstrac
     factorization::Fac
 end
 
-DirectSolver(J::SparseMatrixCSC) = DirectSolver(lu(J))
+exa_factorize(J::AbstractSparseMatrix) = nothing
+exa_factorize(J::SparseMatrixCSC{T, Int}) where T = lu(J)
+exa_factorize(J::Adjoint{T, SparseMatrixCSC{T, Int}}) where T = lu(J.parent)'
+
+DirectSolver(J; options...) = DirectSolver(exa_factorize(J))
 DirectSolver() = DirectSolver(nothing)
-DirectSolver(precond::AbstractPreconditioner) = DirectSolver(nothing)
 
 # Reuse factorization in update
 function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
@@ -112,15 +113,34 @@ function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray,
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray)
+    LinearAlgebra.ldiv!(s.factorization, y) # Forward-backward solve
+    return 0
+end
 # Solve system A'x = y
-function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, x::Array)
+function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
+    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
+    return 0
+end
+function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, J::SparseMatrixCSC, x::Array)
     LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
     return 0
 end
 
 function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector)
-    y .= J \ x
+    F = lu(J)
+    LinearAlgebra.ldiv!(y, F, x)
     return 0
+end
+
+function batch_ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, Y, Js::Vector{SparseMatrixCSC{Float64, Int}}, X)
+    nbatch = length(Js)
+    for i in 1:nbatch
+        lu!(s.factorization, Js[i])
+        y = view(Y, :, i)
+        x = view(X, :, i)
+        LinearAlgebra.ldiv!(y, s.factorization, x)
+    end
 end
 
 function ldiv!(::DirectSolver{Nothing},
@@ -137,8 +157,14 @@ function ldiv!(::DirectSolver{Nothing},
 end
 get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
 
-function update!(solver::AbstractIterativeLinearSolver, J)
-    update(J, solver.precond)
+function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector)
+    Jt = get_transpose(s, J)
+    csclsvqr!(Jt, x, y, 1e-8, one(Cint), 'O')
+    return 0
+end
+
+function update_preconditioner!(solver::AbstractIterativeLinearSolver, J, device)
+    update(solver.precond, J, device)
 end
 
 """
@@ -154,14 +180,18 @@ struct BICGSTAB <: AbstractIterativeLinearSolver
     tol::Float64
     verbose::Bool
 end
-BICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = BICGSTAB(precond, maxiter, tol, verbose)
+function BICGSTAB(J::AbstractSparseMatrix;
+    P=BlockJacobiPreconditioner(J), maxiter=2_000, tol=1e-8, verbose=false
+)
+    return BICGSTAB(P, maxiter, tol, verbose)
+end
+
 function ldiv!(solver::BICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-
     y[:], n_iters, status = bicgstab(J, x, P, y; maxiter=solver.maxiter,
-                                        verbose=solver.verbose, tol=solver.tol)
+                                     verbose=solver.verbose, tol=solver.tol)
     if status != Converged
         @warn("BICGSTAB failed to converge. Final status is $(status)")
     end
@@ -181,14 +211,19 @@ struct EigenBICGSTAB <: AbstractIterativeLinearSolver
     tol::Float64
     verbose::Bool
 end
-EigenBICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false) = EigenBICGSTAB(precond, maxiter, tol, verbose)
+function EigenBICGSTAB(J::AbstractSparseMatrix;
+    P=BlockJacobiPreconditioner(J), maxiter=2_000, tol=1e-8, verbose=false
+)
+    return EigenBICGSTAB(P, maxiter, tol, verbose)
+end
+
 function ldiv!(solver::EigenBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
 
     y[:], n_iters, status = bicgstab_eigen(J, x, P, y; maxiter=solver.maxiter,
-                                            verbose=solver.verbose, tol=solver.tol)
+                                           verbose=solver.verbose, tol=solver.tol)
     if status != Converged
         error("EigenBICGSTAB failed to converge. Final status is $(status)")
     end
@@ -196,45 +231,37 @@ function ldiv!(solver::EigenBICGSTAB,
     return n_iters
 end
 
-struct RefBICGSTAB <: AbstractIterativeLinearSolver
-    precond::AbstractPreconditioner
-    verbose::Bool
-end
-RefBICGSTAB(precond; verbose=true) = RefBICGSTAB(precond, verbose)
-function ldiv!(solver::RefBICGSTAB,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
-)
-    P = solver.precond.P
-    y[:], history = IterativeSolvers.bicgstabl(P*J, P*x, log=solver.verbose)
-    return history.iters
-end
+"""
+    DQGMRES <: AbstractIterativeLinearSolver
+    DQGMRES(precond; verbose=false, memory=4)
 
-struct RefGMRES <: AbstractIterativeLinearSolver
-    precond::AbstractPreconditioner
-    restart::Int
-    verbose::Bool
-end
-RefGMRES(precond; restart=4, verbose=true) = RefGMRES(precond, restart, verbose)
-function ldiv!(solver::RefGMRES,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
-)
-    P = solver.precond.P
-    y[:], history = IterativeSolvers.gmres(P*J, P*x, restart=solver.restart, log=solver.verbose)
-    return history.iters
-end
-
+Wrap `Krylov.jl`'s DQGMRES algorithm to solve iteratively the linear system
+``A x = y``.
+"""
 struct DQGMRES <: AbstractIterativeLinearSolver
+    inner::Krylov.DqgmresSolver
     precond::AbstractPreconditioner
     memory::Int
     verbose::Bool
 end
-DQGMRES(precond; memory=4, verbose=false) = DQGMRES(precond, memory, verbose)
+function DQGMRES(J::AbstractSparseMatrix;
+    P=BlockJacobiPreconditioner(J), memory=4, verbose=false
+)
+    n, m = size(J)
+    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1, CUDA.Mem.DeviceBuffer} : Vector{Float64}
+    solver = Krylov.DqgmresSolver(n, m, memory, S)
+    return DQGMRES(solver, P, memory, verbose)
+end
+
 function ldiv!(solver::DQGMRES,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     P = solver.precond.P
-    (y[:], status) = Krylov.dqgmres(J, x, N=P, memory=solver.memory)
-    return length(status.residuals)
+    CUDA.allowscalar() do
+        Krylov.dqgmres!(solver.inner, J, x; N=P)
+    end
+    copyto!(y, solver.inner.x)
+    return length(solver.inner.stats.residuals)
 end
 
 """
@@ -245,21 +272,33 @@ Wrap `Krylov.jl`'s BICGSTAB algorithm to solve iteratively the linear system
 ``A x = y``.
 """
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
+    inner::Krylov.BicgstabSolver
     precond::AbstractPreconditioner
     verbose::Int
     atol::Float64
     rtol::Float64
 end
-KrylovBICGSTAB(precond; verbose=0, rtol=1e-10, atol=1e-10) = KrylovBICGSTAB(precond, verbose, atol, rtol)
+function KrylovBICGSTAB(J::AbstractSparseMatrix;
+    P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10
+)
+    n, m = size(J)
+    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1, CUDA.Mem.DeviceBuffer} : Vector{Float64}
+    solver = Krylov.BicgstabSolver(n, m, S)
+    return KrylovBICGSTAB(solver, P, verbose, atol, rtol)
+end
+
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
-    P = solver.precond.P
-    (y[:], status) = Krylov.bicgstab(J, x, N=P,
-                                     atol=solver.atol,
-                                     rtol=solver.rtol,
-                                     verbose=solver.verbose)
-    return length(status.residuals)
+    CUDA.allowscalar() do
+        Krylov.bicgstab!(solver.inner, J, x;
+                                        N=solver.precond.P,
+                                        atol=solver.atol,
+                                        rtol=solver.rtol,
+                                        verbose=solver.verbose)
+    end
+    copyto!(y, solver.inner.x)
+    return length(solver.inner.stats.residuals)
 end
 
 """
@@ -267,13 +306,12 @@ end
 
 List all linear solvers available solving the power flow on the CPU.
 """
-list_solvers(::KA.CPU) = [RefBICGSTAB, RefGMRES, DQGMRES, BICGSTAB, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
+list_solvers(::KA.CPU) = [DirectSolver, DQGMRES, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB]
 
 """
-    list_solvers(::KA.CUDADevice)
+    list_solvers(::KA.GPU)
 
 List all linear solvers available solving the power flow on an NVIDIA GPU.
 """
-list_solvers(::KA.CUDADevice) = [BICGSTAB, DQGMRES, EigenBICGSTAB, DirectSolver, KrylovBICGSTAB]
-
+list_solvers(::KA.GPU) = [DirectSolver, BICGSTAB, DQGMRES, EigenBICGSTAB, KrylovBICGSTAB]
 end

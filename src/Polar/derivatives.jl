@@ -1,3 +1,5 @@
+get_map(polar,::State) = polar.mapx
+get_map(polar,::Control) = polar.mapu
 
 """
     AutoDiff.Jacobian(polar, func::Function, variable::AbstractVariable)
@@ -18,22 +20,11 @@ function AutoDiff.Jacobian(
     polar::PolarForm{T, VI, VT, MT}, func, variable,
 ) where {T, VI, VT, MT}
     @assert is_constraint(func)
-
-    if isa(polar.device, CPU)
-        SMT = SparseMatrixCSC{Float64,Int}
-        A = Vector
-    elseif isa(polar.device, CUDADevice)
-        SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
-        A = CUDA.CuVector
-    end
+    (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
     nbus = PS.get(pf, PS.NumberOfBuses())
-    if isa(variable, State)
-        map = VI(polar.mapx)
-    elseif isa(variable, Control)
-        map = VI(polar.mapu)
-    end
+    map = VI(get_map(polar, variable))
 
     nmap = length(map)
 
@@ -66,8 +57,8 @@ function AutoDiff.Jacobian(
     varx = view(x, map)
     t1svarx = view(t1sx, map)
 
-    return AutoDiff.Jacobian{typeof(func), VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx)}(
-        func, variable, J, compressedJ, coloring,
+    return AutoDiff.Jacobian{typeof(func), VI, VT, MT, SMT, typeof(gput1sseeds), typeof(t1sx), typeof(varx), typeof(t1svarx), typeof(variable)}(
+        func, J, compressedJ, coloring,
         gput1sseeds, t1sF, x, t1sx, map, varx, t1svarx
     )
 end
@@ -83,45 +74,61 @@ No allocations are taking place in this function.
 * `buffer::PolarNetworkState`: store current values for network's variables.
 
 """
-function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.Jacobian, buffer)
+function AutoDiff.jacobian!(
+    polar::PolarForm,
+    jac::AutoDiff.Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD, State},
+    buffer
+) where {Func, VI, VT, MT, SMT, VP, VD, SubT, SubD}
     nbus = get(polar, PS.NumberOfBuses())
-    type = jac.var
-    if isa(type, State)
-        copyto!(jac.x, 1, buffer.vmag, 1, nbus)
-        copyto!(jac.x, nbus+1, buffer.vang, 1, nbus)
-        jac.t1sx .= jac.x
-        jac.t1sF .= 0.0
-    elseif isa(type, Control)
-        copyto!(jac.x, 1, buffer.vmag, 1, nbus)
-        copyto!(jac.x, nbus+1, buffer.pinj, 1, nbus)
-        jac.t1sx .= jac.x
-        jac.t1sF .= 0.0
-    end
+    copyto!(jac.x, 1, buffer.vmag, 1, nbus)
+    copyto!(jac.x, nbus+1, buffer.vang, 1, nbus)
+    jac.t1sx .= jac.x
+    jac.t1sF .= 0.0
 
-    AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx)
+    AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx, polar.device)
 
-    if isa(type, State)
-        jac.func(
-            polar,
-            jac.t1sF,
-            view(jac.t1sx, 1:nbus),
-            view(jac.t1sx, nbus+1:2*nbus),
-            buffer.pinj,
-            buffer.qinj,
-        )
-    elseif isa(type, Control)
-        jac.func(
-            polar,
-            jac.t1sF,
-            view(jac.t1sx, 1:nbus),
-            buffer.vang,
-            view(jac.t1sx, nbus+1:2*nbus),
-            buffer.qinj,
-        )
-    end
+    jac.func(
+        polar,
+        jac.t1sF,
+        view(jac.t1sx, 1:nbus),
+        view(jac.t1sx, nbus+1:2*nbus),
+        buffer.pnet,
+        buffer.qnet,
+        buffer.pload,
+        buffer.qload,
+    )
 
-    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF)
-    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring)
+    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, polar.device)
+    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, polar.device)
+    return jac.J
+end
+
+function AutoDiff.jacobian!(
+    polar::PolarForm,
+    jac::AutoDiff.Jacobian{Func, VI, VT, MT, SMT, VP, VD, SubT, SubD, Control},
+    buffer
+) where {Func, VI, VT, MT, SMT, VP, VD, SubT, SubD}
+    nbus = get(polar, PS.NumberOfBuses())
+    copyto!(jac.x, 1, buffer.vmag, 1, nbus)
+    copyto!(jac.x, nbus+1, buffer.pnet, 1, nbus)
+    jac.t1sx .= jac.x
+    jac.t1sF .= 0.0
+
+    AutoDiff.seed!(jac.t1sseeds, jac.varx, jac.t1svarx, polar.device)
+
+    jac.func(
+        polar,
+        jac.t1sF,
+        view(jac.t1sx, 1:nbus),
+        buffer.vang,
+        view(jac.t1sx, nbus+1:2*nbus),
+        buffer.qnet,
+        buffer.pload,
+        buffer.qload,
+    )
+
+    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, polar.device)
+    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, polar.device)
     return jac.J
 end
 
@@ -131,7 +138,7 @@ function AutoDiff.ConstantJacobian(polar::PolarForm, func::Function, variable::U
 
     if isa(polar.device, CPU)
         SMT = SparseMatrixCSC{Float64,Int}
-    elseif isa(polar.device, CUDADevice)
+    elseif isa(polar.device, GPU)
         SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
     end
 
@@ -142,7 +149,7 @@ function AutoDiff.ConstantJacobian(polar::PolarForm, func::Function, variable::U
     # Evaluate Jacobian with MATPOWER
     J = matpower_jacobian(polar, variable, func, V)
     # Move Jacobian to the GPU
-    if isa(polar.device, CUDADevice) && iszero(J)
+    if isa(polar.device, GPU) && iszero(J)
         # CUSPARSE does not support zero matrix. Return nothing instead.
         J = nothing
     else
@@ -156,12 +163,12 @@ function AutoDiff.jacobian!(polar::PolarForm, jac::AutoDiff.ConstantJacobian, bu
 end
 
 
-function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
+function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func; tape=nothing) where {T, VI, VT, MT}
     @assert is_constraint(func)
 
     if isa(polar.device, CPU)
         A = Vector
-    elseif isa(polar.device, CUDADevice)
+    elseif isa(polar.device, GPU)
         A = CUDA.CuVector
     end
 
@@ -186,8 +193,12 @@ function AutoDiff.Hessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, V
     VD = typeof(t1sx)
     adj_t1sx = similar(t1sx)
     adj_t1sF = similar(t1sF)
-    buffer = AutoDiff.TapeMemory(polar, func, VD; with_stack=false)
-    return AutoDiff.Hessian{typeof(func), VI, VT, VHP, VP, VD, typeof(varx), typeof(t1svarx), typeof(buffer)}(
+    if isnothing(tape)
+        buffer = AutoDiff.TapeMemory(polar, func, VD; with_stack=false)
+    else
+        buffer = tape
+    end
+    return AutoDiff.Hessian(
         func, host_t1sseeds, t1sseeds, x, t1sF, adj_t1sF, t1sx, adj_t1sx, map, varx, t1svarx, buffer,
     )
 end
@@ -207,6 +218,20 @@ function _init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
     return
 end
 
+function update_hessian!(polar::PolarForm, H::AutoDiff.Hessian, buffer)
+    nbatch = size(H.t1sx, 2)
+    nbus = get(polar, PS.NumberOfBuses())
+
+    # Move data
+    copyto!(H.x,        1, buffer.vmag, 1, nbus)
+    copyto!(H.x,   nbus+1, buffer.vang, 1, nbus)
+    copyto!(H.x, 2*nbus+1, buffer.pnet, 1, nbus)
+    @inbounds for i in 1:nbatch
+        H.t1sx[:, i] .= H.x
+    end
+    return
+end
+
 # λ' * H * v
 function AutoDiff.adj_hessian_prod!(
     polar, H::AutoDiff.Hessian, hv, buffer, λ, v,
@@ -222,31 +247,30 @@ function AutoDiff.adj_hessian_prod!(
     # Move data
     copyto!(x, 1, buffer.vmag, 1, nbus)
     copyto!(x, nbus+1, buffer.vang, 1, nbus)
-    copyto!(x, 2*nbus+1, buffer.pinj, 1, nbus)
+    copyto!(x, 2*nbus+1, buffer.pnet, 1, nbus)
     # Init dual variables
     t1sx .= H.x
     adj_t1sx .= 0.0
-    t1sF .= 0.0
     adj_t1sF .= λ
     # Seeding
     nmap = length(H.map)
 
     # Init seed
     _init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
-    AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx)
+    AutoDiff.seed!(H.t1sseeds, H.varx, H.t1svarx, polar.device)
 
     adjoint!(
         polar, H.buffer,
         t1sF, adj_t1sF,
         view(t1sx, 1:nbus), view(adj_t1sx, 1:nbus),                   # vmag
         view(t1sx, nbus+1:2*nbus), view(adj_t1sx, nbus+1:2*nbus),     # vang
-        view(t1sx, 2*nbus+1:3*nbus), view(adj_t1sx, 2*nbus+1:3*nbus), # pinj
+        view(t1sx, 2*nbus+1:3*nbus), view(adj_t1sx, 2*nbus+1:3*nbus), # pnet
+        buffer.pload, buffer.qload,
     )
 
-    AutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map)
+    AutoDiff.getpartials_kernel!(hv, adj_t1sx, H.map, polar.device)
     return nothing
 end
-
 
 # Adjoint's structure
 """
@@ -269,14 +293,14 @@ end
 function AdjointStackObjective(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     nbus = get(polar, PS.NumberOfBuses())
     return AdjointStackObjective{VT}(
-        xzeros(VT, get(polar, NumberOfState())),
-        xzeros(VT, get(polar, NumberOfControl())),
-        xzeros(VT, get(polar, PS.NumberOfGenerators())),
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, get(polar, NumberOfState())),
-        xzeros(VT, get(polar, NumberOfControl())),
+        fill!(VT(undef, get(polar, NumberOfState())), zero(T)),
+        fill!(VT(undef, get(polar, NumberOfControl())), zero(T)),
+        fill!(VT(undef, get(polar, PS.NumberOfGenerators())), zero(T)),
+        fill!(VT(undef, nbus), zero(T)),
+        fill!(VT(undef, nbus), zero(T)),
+        fill!(VT(undef, nbus), zero(T)),
+        fill!(VT(undef, get(polar, NumberOfState())), zero(T)),
+        fill!(VT(undef, get(polar, NumberOfControl())), zero(T)),
     )
 end
 
@@ -292,12 +316,12 @@ end
 
 function AdjointPolar{VT}(nx::Int, nu::Int, nbus::Int) where {VT}
     return AdjointPolar{VT}(
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, nbus),
-        xzeros(VT, nx),
-        xzeros(VT, nu),
+        VT(undef, nbus),
+        VT(undef, nbus),
+        VT(undef, nbus),
+        VT(undef, nbus),
+        VT(undef, nx),
+        VT(undef, nu),
     )
 end
 
@@ -329,6 +353,9 @@ struct FullSpaceHessian{SpMT}
     uu::SpMT
 end
 
+#=
+    JACOBIAN
+=#
 struct ConstraintsJacobianStorage{SpMT}
     Jx::SpMT
     Ju::SpMT
@@ -338,7 +365,7 @@ end
 function ConstraintsJacobianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Function}) where {T, VI, VT, MT}
     if isa(polar.device, CPU)
         SpMT = SparseMatrixCSC{Float64, Int}
-    elseif isa(polar.device, CUDADevice)
+    elseif isa(polar.device, GPU)
         SpMT = CUSPARSE.CuSparseMatrixCSR{Float64}
     end
 
@@ -380,44 +407,12 @@ function update_full_jacobian!(
         Jx = AutoDiff.jacobian!(polar, ad.x, buffer)::SpMT
         Ju = AutoDiff.jacobian!(polar, ad.u, buffer)::Union{Nothing, SpMT}
         # Copy back results
-        _transfer_sparse!(cons_jac.Jx, Jx, shift)
+        _transfer_sparse!(cons_jac.Jx, Jx, shift, polar.device)
         if !isnothing(Ju)
-            _transfer_sparse!(cons_jac.Ju, Ju, shift)
+            _transfer_sparse!(cons_jac.Ju, Ju, shift, polar.device)
         end
 
         shift += size(Jx, 1)
     end
     return
 end
-
-struct HessianStorage{VT,Hess1,Hess2}
-    state::Hess1
-    obj::Hess2
-    constraints::Vector{AutoDiff.Hessian}
-    # Adjoints
-    z::VT
-    ψ::VT
-    tmp_tgt::VT
-    tmp_hv::VT
-end
-
-function HessianStorage(polar::PolarForm{T, VI, VT, MT}, constraints::Vector{Function}) where {T, VI, VT, MT}
-    nx = get(polar, NumberOfState())
-    nu = get(polar, NumberOfControl())
-
-    Hstate = AutoDiff.Hessian(polar, power_balance)
-    Hobj = AutoDiff.Hessian(polar, active_power_generation)
-    Hcons = AutoDiff.Hessian[]
-    for cons in constraints
-        push!(Hcons, _build_hessian(polar, cons))
-    end
-
-    z = xzeros(VT, nx)
-    ψ = xzeros(VT, nx)
-
-    tgt = xzeros(VT, nx+nu)
-    hv = xzeros(VT, nx+nu)
-
-    return HessianStorage{VT, typeof(Hstate), typeof(Hobj)}(Hstate, Hobj, Hcons, z, ψ, tgt, hv)
-end
-

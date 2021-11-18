@@ -4,49 +4,60 @@ is_constraint(::typeof(reactive_power_constraints)) = true
 # Here, the power constraints are ordered as:
 # g = [qg_gen]
 function _reactive_power_constraints(
-    qg, v_m, v_a, pinj, qinj, qload,
-    ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus
+    qg, vmag, vang, pnet, qnet, qload,
+    ybus_re, ybus_im, transperm, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, device
 )
-    if isa(qg, Array)
-        device = KA.CPU()
-        kernel! = reactive_power_kernel!(KA.CPU())
-    else
-        device = KA.CUDADevice()
-        kernel! = reactive_power_kernel!(KA.CUDADevice())
-    end
+    kernel! = reactive_power_kernel!(device)
     range_ = length(pv) + length(ref)
+    ndrange = (length(pv) + length(ref), size(qg, 2))
     ev = kernel!(
         qg,
-        v_m, v_a, pinj,
+        vmag, vang, pnet,
         pv, ref, pv_to_gen, ref_to_gen,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, qload,
-        ndrange=range_,
+        ybus_im.nzval, transperm, qload,
+        ndrange=ndrange,
         dependencies=Event(device)
     )
     wait(ev)
 end
 
 function reactive_power_constraints(polar::PolarForm, cons, buffer)
-    # Refresh reactive power generation in buffer
-    update!(polar, PS.Generators(), PS.ReactivePower(), buffer)
-    # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
-    copy!(cons, buffer.qg)
-    return
-end
-
-# Function for AD with ForwardDiff
-function reactive_power_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
-    nbus = length(vm)
+    kernel! = reactive_power_kernel!(polar.device)
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
     pv_to_gen = polar.indexing.index_pv_to_gen
     ref_to_gen = polar.indexing.index_ref_to_gen
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
+
+    ndrange = (length(pv) + length(ref), size(buffer.qgen, 2))
+    ev = kernel!(
+        buffer.qgen,
+        buffer.vmag, buffer.vang, buffer.pnet,
+        pv, ref, pv_to_gen, ref_to_gen,
+        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
+        ybus_im.nzval, transperm, buffer.qload,
+        ndrange=ndrange,
+        dependencies=Event(polar.device)
+    )
+    wait(ev)
+    # Constraint on Q_ref (generator) (Q_inj = Q_g - Q_load)
+    copyto!(cons, buffer.qgen)
+    return
+end
+
+# Function for AD with ForwardDiff
+function reactive_power_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet, pd, qd)
+    nbus = length(vmag)
+    ref, pv, pq = index_buses_device(polar)
+    _, ref_to_gen, pv_to_gen = index_generators_device(polar)
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    transperm = polar.topology.sortperm
     _reactive_power_constraints(
-        cons, vm, va, pbus, qbus, polar.reactive_load,
-        ybus_re, ybus_im, pv, pq, ref, pv_to_gen, ref_to_gen, nbus
+        cons, vmag, vang, pnet, qnet, qd,
+        ybus_re, ybus_im, transperm, pv, pq, ref, pv_to_gen, ref_to_gen, nbus, polar.device
     )
 end
 
@@ -64,16 +75,14 @@ function adjoint!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory{F, S, I},
     cons, ∂cons,
-    vm, ∂vm,
-    va, ∂va,
-    pinj, ∂pinj,
+    vmag, ∂vmag,
+    vang, ∂vang,
+    pnet, ∂pnet,
+    pload, qload,
 ) where {F<:typeof(reactive_power_constraints), S, I}
     nbus = get(polar, PS.NumberOfBuses())
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    pv_to_gen = polar.indexing.index_pv_to_gen
-    ref_to_gen = polar.indexing.index_ref_to_gen
+    ref, pv, pq = index_buses_device(polar)
+    _, ref_to_gen, pv_to_gen = index_generators_device(polar)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
     fill!(pbm.intermediate.∂edge_vm_fr , 0.0)
@@ -83,26 +92,25 @@ function adjoint!(
 
     adj_reactive_power!(
         cons, ∂cons,
-        vm, ∂vm,
-        va, ∂va,
+        vmag, ∂vmag,
+        vang, ∂vang,
         ybus_re, ybus_im, polar.topology.sortperm,
-        pinj, ∂pinj,
+        pnet, ∂pnet,
         pbm.intermediate.∂edge_vm_fr,
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,
         pbm.intermediate.∂edge_va_to,
-        polar.reactive_load,
+        qload,
         pv, pq, ref, pv_to_gen, ref_to_gen, nbus,
+        polar.device
     )
 end
 
 function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(reactive_power_constraints), V)
     nbus = get(polar, PS.NumberOfBuses())
     pf = polar.network
-    ref = pf.ref
-    pv = pf.pv
-    pq = pf.pq
-    gen2bus = polar.indexing.index_generators
+    ref, pv, pq = index_buses_host(polar)
+    gen2bus, _, _ = index_generators_host(polar)
     Ybus = pf.Ybus
 
     dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
@@ -110,20 +118,18 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(r
     if isa(X, State)
         j11 = imag(dSbus_dVa[gen2bus, [pv; pq]])
         j12 = imag(dSbus_dVm[gen2bus, pq])
-        return [j11 j12]
+        return [j11 j12]::SparseMatrixCSC{Float64, Int}
     elseif isa(X, Control)
         j11 = imag(dSbus_dVm[gen2bus, [ref; pv]])
         j12 = spzeros(length(gen2bus), length(pv))
-        return [j11 j12]
+        return [j11 j12]::SparseMatrixCSC{Float64, Int}
     end
 end
 
 function matpower_hessian(polar::PolarForm, ::typeof(reactive_power_constraints), buffer, λ)
     nbus = get(polar, PS.NumberOfBuses())
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    gen2bus = polar.indexing.index_generators
+    ref, pv, pq = index_buses_host(polar)
+    gen2bus, _, _ = index_generators_host(polar)
     # Check consistency
     @assert length(λ) == length(gen2bus)
 
@@ -131,7 +137,7 @@ function matpower_hessian(polar::PolarForm, ::typeof(reactive_power_constraints)
     # Select only buses with generators
     λq[gen2bus] .= λ
 
-    V = buffer.vmag .* exp.(im .* buffer.vang)
+    V = voltage_host(buffer)
     hxx, hxu, huu = PS.reactive_power_hessian(V, polar.network.Ybus, λq, pv, pq, ref)
     return FullSpaceHessian(
         hxx, hxu, huu,

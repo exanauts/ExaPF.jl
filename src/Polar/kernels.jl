@@ -3,87 +3,56 @@ import KernelAbstractions: @index
 # Implement kernels for polar formulation
 
 """
-    function residual_kernel!(F, vm, va,
+    function residual_kernel!(F, vmag, vang,
                               colptr, rowval,
                               ybus_re_nzval, ybus_im_nzval,
-                              pinj, qload, pv, pq, nbus)
+                              pnet, qload, pv, pq, nbus)
 
 The residual CPU/GPU kernel of the powerflow residual.
 """
 KA.@kernel function residual_kernel!(
-    F, vm, va,
-    colptr, rowval,
-    ybus_re_nzval, ybus_im_nzval,
-    pinj, qload, pv, pq, nbus
+    F, @Const(vmag), @Const(vang),
+    @Const(colptr), @Const(rowval),
+    @Const(ybus_re_nzval), @Const(ybus_im_nzval), @Const(transperm),
+    @Const(pnet), @Const(pload), @Const(qload), @Const(pv), @Const(pq), nbus
 )
 
     npv = size(pv, 1)
     npq = size(pq, 1)
 
-    i = @index(Global, Linear)
+    i, j = @index(Global, NTuple)
     # REAL PV: 1:npv
     # REAL PQ: (npv+1:npv+npq)
     # IMAG PQ: (npv+npq+1:npv+2npq)
     fr = (i <= npv) ? pv[i] : pq[i - npv]
-    F[i] -= pinj[fr]
+    F[i, j] = -(pnet[fr, j] - pload[fr, j])
     if i > npv
-        F[i + npq] -= qload[fr]
+        F[i + npq, j] = qload[fr, j]
     end
     @inbounds for c in colptr[fr]:colptr[fr+1]-1
         to = rowval[c]
-        aij = va[fr] - va[to]
+        aij = vang[fr, j] - vang[to, j]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
-        coef_cos = vm[fr]*vm[to]*ybus_re_nzval[c]
-        coef_sin = vm[fr]*vm[to]*ybus_im_nzval[c]
+        coef_cos = vmag[fr, j]*vmag[to, j]*ybus_re_nzval[transperm[c]]
+        coef_sin = vmag[fr, j]*vmag[to, j]*ybus_im_nzval[transperm[c]]
         cos_val = cos(aij)
         sin_val = sin(aij)
-        F[i] += coef_cos * cos_val + coef_sin * sin_val
+        F[i, j] += coef_cos * cos_val + coef_sin * sin_val
         if i > npv
-            F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
+            F[npq + i, j] += coef_cos * sin_val - coef_sin * cos_val
         end
     end
 end
 
 """
-    function residual_polar!(F, vm, va, pinj, qload,
-                         ybus_re, ybus_im,
-                         pv, pq, ref, nbus)
-
-The wrapper for the powerflow residual calling the CPU and GPU kernels.
-"""
-function residual_polar!(
-    F, vm, va, pinj, qload,
-    ybus_re, ybus_im, pv, pq, ref, nbus
-)
-    npv = length(pv)
-    npq = length(pq)
-    if isa(F, Array)
-        device = KA.CPU()
-        kernel! = residual_kernel!(device)
-    else
-        device = KA.CUDADevice()
-        kernel! = residual_kernel!(device)
-    end
-    ev = kernel!(
-        F, vm, va,
-        ybus_re.colptr, ybus_re.rowval,
-        ybus_re.nzval, ybus_im.nzval,
-        pinj, qload, pv, pq, nbus,
-        ndrange=npv+npq,
-        dependencies=Event(device)
-    )
-    wait(ev)
-end
-
-"""
     function adj_residual_edge_kernel!(
-        F, adj_F, vm, adj_vm, va, adj_va,
+        F, adj_F, vmag, adj_vm, vang, adj_va,
         colptr, rowval,
         ybus_re_nzval, ybus_im_nzval,
         edge_vm_from, edge_vm_to,
         edge_va_from, edge_va_to,
-        pinj, adj_pinj, qinj, pv, pq
+        pnet, adj_pnet, qnet, pv, pq
     )
 
 This kernel computes the adjoint of the voltage magnitude `adj_vm`
@@ -92,40 +61,43 @@ and `adj_va` with respect to the residual `F` and the adjoint `adj_F`.
 To avoid a race condition, each thread sums its contribution on the edge of the network graph.
 """
 KA.@kernel function adj_residual_edge_kernel!(
-    F, adj_F, vm, adj_vm, va, adj_va,
-    colptr, rowval,
-    ybus_re_nzval, ybus_im_nzval,
+    F, @Const(adj_F), @Const(vmag), adj_vm, vang, adj_va,
+    @Const(colptr), @Const(rowval),
+    @Const(ybus_re_nzval), @Const(ybus_im_nzval), @Const(transperm),
     edge_vm_from, edge_vm_to,
     edge_va_from, edge_va_to,
-    pinj, adj_pinj, qinj, pv, pq
+    @Const(pnet), adj_pnet, @Const(pload), @Const(qload), @Const(pv), @Const(pq)
 )
 
     npv = size(pv, 1)
     npq = size(pq, 1)
 
-    i = @index(Global, Linear)
+    i, j = @index(Global, NTuple)
     # REAL PV: 1:npv
     # REAL PQ: (npv+1:npv+npq)
     # IMAG PQ: (npv+npq+1:npv+2npq)
     fr = (i <= npv) ? pv[i] : pq[i - npv]
-    F[i] -= pinj[fr]
+    F[i, j] = -(pnet[fr] - pload[fr])
     if i > npv
-        F[i + npq] -= qinj[fr]
+        F[i + npq, j] = qload[fr]
     end
     @inbounds for c in colptr[fr]:colptr[fr+1]-1
         # Forward loop
         to = rowval[c]
-        aij = va[fr] - va[to]
+        aij = vang[fr, j] - vang[to, j]
+
+        yre = ybus_re_nzval[transperm[c]]
+        yim = ybus_im_nzval[transperm[c]]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
-        coef_cos = vm[fr]*vm[to]*ybus_re_nzval[c]
-        coef_sin = vm[fr]*vm[to]*ybus_im_nzval[c]
+        coef_cos = vmag[fr, j]*vmag[to, j]*yre
+        coef_sin = vmag[fr, j]*vmag[to, j]*yim
 
         cos_val = cos(aij)
         sin_val = sin(aij)
-        F[i] += coef_cos * cos_val + coef_sin * sin_val
+        F[i, j] += coef_cos * cos_val + coef_sin * sin_val
         if i > npv
-            F[npq + i] += coef_cos * sin_val - coef_sin * cos_val
+            F[npq + i, j] += coef_cos * sin_val - coef_sin * cos_val
         end
 
         adj_coef_cos =  cos_val  * adj_F[i]
@@ -143,23 +115,23 @@ KA.@kernel function adj_residual_edge_kernel!(
         adj_aij =   cos_val*adj_sin_val
         adj_aij += -sin_val*adj_cos_val
 
-        edge_vm_from[c] += vm[to]*ybus_im_nzval[c]*adj_coef_sin
-        edge_vm_to[c]   += vm[fr]*ybus_im_nzval[c]*adj_coef_sin
-        edge_vm_from[c] += vm[to]*ybus_re_nzval[c]*adj_coef_cos
-        edge_vm_to[c]   += vm[fr]*ybus_re_nzval[c]*adj_coef_cos
+        edge_vm_from[c, j] += vmag[to, j]*yim*adj_coef_sin
+        edge_vm_to[c, j]   += vmag[fr, j]*yim*adj_coef_sin
+        edge_vm_from[c, j] += vmag[to, j]*yre*adj_coef_cos
+        edge_vm_to[c, j]   += vmag[fr, j]*yre*adj_coef_cos
 
-        edge_va_from[c] += adj_aij
-        edge_va_to[c]   -= adj_aij
+        edge_va_from[c, j] += adj_aij
+        edge_va_to[c, j]   -= adj_aij
     end
-    # qinj is not active
+    # qnet is not active
     # if i > npv
-    #     adj_qinj[fr] -= adj_F[i + npq]
+    #     adj_qnet[fr] -= adj_F[i + npq]
     # end
-    adj_pinj[fr] -= adj_F[i]
+    adj_pnet[fr, j] -= adj_F[i]
 end
 
 """
-    function cpu_adj_node_kernel!(F, adj_F, vm, adj_vm, va, adj_va,
+    function cpu_adj_node_kernel!(F, adj_F, vmag, adj_vm, vang, adj_va,
                                   colptr, rowval,
                                   edge_vm_from, edge_vm_to,
                                   edge_va_from, edge_va_to
@@ -174,12 +146,12 @@ function cpu_adj_node_kernel!(
     edge_vm_from, edge_vm_to,
     edge_va_from, edge_va_to, dest,
 )
-    for i in 1:length(adj_vm)
+    for i in 1:size(adj_vm, 1), j in 1:size(adj_vm, 2)
         @inbounds for c in colptr[i]:colptr[i+1]-1
-            adj_vm[i] += edge_vm_from[c]
-            adj_vm[i] += edge_vm_to[dest[c]]
-            adj_va[i] += edge_va_from[c]
-            adj_va[i] += edge_va_to[dest[c]]
+            adj_vm[i, j] += edge_vm_from[c, j]
+            adj_vm[i, j] += edge_vm_to[dest[c], j]
+            adj_va[i, j] += edge_va_from[c, j]
+            adj_va[i, j] += edge_va_to[dest[c], j]
         end
     end
 end
@@ -200,25 +172,25 @@ in vector `perm`.
 """
 KA.@kernel function gpu_adj_node_kernel!(
     adj_vm, adj_va,
-    colptr, rowval,
-    edge_vm_from, edge_vm_to,
-    edge_va_from, edge_va_to, dest
+    @Const(colptr), @Const(rowval),
+    @Const(edge_vm_from), @Const(edge_vm_to),
+    @Const(edge_va_from), @Const(edge_va_to), @Const(dest)
 )
-    i = @index(Global, Linear)
+    i, j = @index(Global, NTuple)
     @inbounds for c in colptr[i]:colptr[i+1]-1
         to = dest[c]
-        adj_vm[i] += edge_vm_from[c]
-        adj_vm[i] += edge_vm_to[to]
-        adj_va[i] += edge_va_from[c]
-        adj_va[i] += edge_va_to[to]
+        adj_vm[i, j] += edge_vm_from[c, j]
+        adj_vm[i, j] += edge_vm_to[to, j]
+        adj_va[i, j] += edge_va_from[c, j]
+        adj_va[i, j] += edge_va_to[to, j]
     end
 end
 
 """
     function adj_residual_polar!(
-        F, adj_F, vm, adj_vm, va, adj_va,
+        F, adj_F, vmag, adj_vm, vang, adj_va,
         ybus_re, ybus_im,
-        pinj, adj_pinj, qinj,
+        pnet, adj_pnet, qnet,
         edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
         pv, pq, nbus
     ) where {T}
@@ -228,32 +200,27 @@ the voltage magnitude `adj_vm` and `adj_va` with respect to the residual `F`
 and the adjoint `adj_F`.
 """
 function adj_residual_polar!(
-    F, adj_F, vm, adj_vm, va, adj_va,
+    F, adj_F, vmag, adj_vm, vang, adj_va,
     ybus_re, ybus_im, transpose_perm,
-    pinj, adj_pinj, qinj,
+    pnet, adj_pnet, pload, qload,
     edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
-    pv, pq, nbus
-) where {T}
-    if isa(F, CUDA.CuVector)
-        device = KA.CUDADevice()
-    else
-        device = KA.CPU()
-    end
+    pv, pq, nbus, device
+)
     npv = length(pv)
     npq = length(pq)
-    nvbus = length(vm)
+    nvbus = size(vmag, 1)
     nnz = length(ybus_re.nzval)
     colptr = ybus_re.colptr
     rowval = ybus_re.rowval
 
     kernel_edge! = adj_residual_edge_kernel!(device)
-    ev = kernel_edge!(F, adj_F, vm, adj_vm, va, adj_va,
+    ev = kernel_edge!(F, adj_F, vmag, adj_vm, vang, adj_va,
                  ybus_re.colptr, ybus_re.rowval,
-                 ybus_re.nzval, ybus_im.nzval,
+                 ybus_re.nzval, ybus_im.nzval, transpose_perm,
                  edge_vm_from, edge_vm_to,
                  edge_va_from, edge_va_to,
-                 pinj, adj_pinj, qinj, pv, pq,
-                 ndrange=npv+npq,
+                 pnet, adj_pnet, pload, qload, pv, pq,
+                 ndrange=(npv+npq, size(F, 2)),
                  dependencies = Event(device)
     )
     wait(ev)
@@ -273,17 +240,67 @@ function adj_residual_polar!(
             ybus_re.colptr, ybus_re.rowval,
             edge_vm_from, edge_vm_to,
             edge_va_from, edge_va_to, transpose_perm,
-            ndrange=nvbus,
+            ndrange=(nvbus, size(adj_vm, 2)),
             dependencies = Event(device)
         )
         wait(ev)
     end
 end
 
-KA.@kernel function transfer_kernel!(
-    vmag, vang, pinj, qinj, u, pv, pq, ref, pload, qload
+@inline function bus_injection(
+    bus, j, vmag, vang, ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm,
 )
-    i = @index(Global, Linear)
+    inj = 0.0
+    @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
+        to = ybus_re_rowval[c]
+        aij = vang[bus, j] - vang[to, j]
+        coef_cos = vmag[bus, j]*vmag[to, j]*ybus_re_nzval[transperm[c]]
+        coef_sin = vmag[bus, j]*vmag[to, j]*ybus_im_nzval[transperm[c]]
+        cos_val = cos(aij)
+        sin_val = sin(aij)
+        inj += coef_cos * cos_val + coef_sin * sin_val
+    end
+    return inj
+end
+
+@inline function adjoint_bus_injection!(
+    fr, j, adj_inj, adj_vmag, adj_vang, vmag, vang,
+    ybus_re_colptr, ybus_re_rowval, ybus_re_nzval, ybus_im_nzval, transperm,
+)
+    @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
+        to = ybus_re_rowval[c]
+        aij = vang[fr, j] - vang[to, j]
+        # f_re = a * cos + b * sin
+        # f_im = a * sin - b * cos
+        yre = ybus_re_nzval[transperm[c]]
+        yim = ybus_im_nzval[transperm[c]]
+        coef_cos = vmag[fr, j]*vmag[to, j]*yre
+        coef_sin = vmag[fr, j]*vmag[to, j]*yim
+        cosθ = cos(aij)
+        sinθ = sin(aij)
+
+        adj_coef_cos = cosθ  * adj_inj
+        adj_cos_val  = coef_cos * adj_inj
+        adj_coef_sin = sinθ  * adj_inj
+        adj_sin_val  = coef_sin * adj_inj
+
+        adj_aij =   cosθ * adj_sin_val
+        adj_aij -=  sinθ * adj_cos_val
+
+        adj_vmag[fr, j] += vmag[to, j] * yre * adj_coef_cos
+        adj_vmag[to, j] += vmag[fr, j] * yre * adj_coef_cos
+        adj_vmag[fr, j] += vmag[to, j] * yim * adj_coef_sin
+        adj_vmag[to, j] += vmag[fr, j] * yim * adj_coef_sin
+
+        adj_vang[fr, j] += adj_aij
+        adj_vang[to, j] -= adj_aij
+    end
+end
+
+KA.@kernel function transfer_kernel!(
+    vmag, vang, pnet, qnet, @Const(u), @Const(pv), @Const(pq), @Const(ref), @Const(pload), @Const(qload)
+)
+    i, j = @index(Global, NTuple)
     npv = length(pv)
     npq = length(pq)
     nref = length(ref)
@@ -291,14 +308,13 @@ KA.@kernel function transfer_kernel!(
     # PV bus
     if i <= npv
         bus = pv[i]
-        vmag[bus] = u[nref + i]
-        # P = Pg - Pd
-        pinj[bus] = u[nref + npv + i] - pload[bus]
+        vmag[bus, j] = u[nref + i, j]
+        pnet[bus, j] = u[nref + npv + i, j]
     # REF bus
     else
         i_ref = i - npv
         bus = ref[i_ref]
-        vmag[bus] = u[i_ref]
+        vmag[bus, j] = u[i_ref, j]
     end
 end
 
@@ -310,21 +326,22 @@ function transfer!(polar::PolarForm, buffer::PolarNetworkState, u)
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+    ndrange = (length(pv)+length(ref), size(u, 2))
     ev = kernel!(
-        buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj,
+        buffer.vmag, buffer.vang, buffer.pnet, buffer.qnet,
         u,
         pv, pq, ref,
-        polar.active_load, polar.reactive_load,
-        ndrange=(length(pv)+length(ref)),
+        buffer.pload, buffer.qload,
+        ndrange=ndrange,
         dependencies = Event(polar.device)
     )
     wait(ev)
 end
 
 KA.@kernel function adj_transfer_kernel!(
-    adj_u, adj_x, adj_vmag, adj_vang, adj_pinj, pv, pq, ref,
+    adj_u, adj_x, @Const(adj_vmag), @Const(adj_vang), @Const(adj_pnet), @Const(pv), @Const(pq), @Const(ref),
 )
-    i = @index(Global, Linear)
+    i, j = @index(Global, NTuple)
     npv = length(pv)
     npq = length(pq)
     nref = length(ref)
@@ -332,47 +349,20 @@ KA.@kernel function adj_transfer_kernel!(
     # PQ buses
     if i <= npq
         bus = pq[i]
-        adj_x[npv+i] =  adj_vang[bus]
-        adj_x[npv+npq+i] = adj_vmag[bus]
+        adj_x[npv+i, j] =  adj_vang[bus, j]
+        adj_x[npv+npq+i, j] = adj_vmag[bus, j]
     # PV buses
     elseif i <= npq + npv
         i_ = i - npq
         bus = pv[i_]
-        adj_u[nref + i_] = adj_vmag[bus]
-        adj_u[nref + npv + i_] += adj_pinj[bus]
-        adj_x[i_] = adj_vang[bus]
+        adj_u[nref + i_, j] = adj_vmag[bus, j]
+        adj_u[nref + npv + i_, j] = adj_pnet[bus, j]
+        adj_x[i_, j] = adj_vang[bus, j]
     # SLACK buses
     elseif i <= npq + npv + nref
         i_ = i - npq - npv
         bus = ref[i_]
-        adj_u[i_] = adj_vmag[bus]
-    end
-end
-
-function _cpu_adj_transfer!(
-    adj_u, adj_x, adj_vmag, adj_vang, adj_pinj, pv, pq, ref,
-)
-    npv = length(pv)
-    npq = length(pq)
-    nref = length(ref)
-
-    # PQ buses
-    @inbounds for i in 1:npq
-        bus = pq[i]
-        adj_x[npv+i] =  adj_vang[bus]
-        adj_x[npv+npq+i] = adj_vmag[bus]
-    end
-    # PV buses
-    @inbounds for i_ in 1:npv
-        bus = pv[i_]
-        adj_u[nref + i_] = adj_vmag[bus]
-        adj_u[nref + npv + i_] += adj_pinj[bus]
-        adj_x[i_] = adj_vang[bus]
-    end
-    # SLACK buses
-    @inbounds for i_ in 1:nref
-        bus = ref[i_]
-        adj_u[i_] = adj_vmag[bus]
+        adj_u[i_, j] = adj_vmag[bus, j]
     end
 end
 
@@ -380,146 +370,80 @@ end
 function adjoint_transfer!(
     polar::PolarForm,
     ∂u, ∂x,
-    ∂vm, ∂va, ∂pinj,
+    ∂vmag, ∂vang, ∂pnet,
 )
     nbus = get(polar, PS.NumberOfBuses())
     pv = polar.indexing.index_pv
     pq = polar.indexing.index_pq
     ref = polar.indexing.index_ref
-    # The adjoint of transfer is performance critical code.
-    # To avoid KernelAbstractions's overhead on the CPU, we
-    # don't use a kernel and use _cpu_adj_transfer instead.
-    if isa(polar.device, CPU)
-        _cpu_adj_transfer!(
-            ∂u, ∂x, ∂vm, ∂va, ∂pinj, pv, pq, ref
-        )
-    else
-        ev = adj_transfer_kernel!(polar.device)(
-            ∂u, ∂x,
-            ∂vm, ∂va, ∂pinj,
-            pv, pq, ref;
-            ndrange=nbus,
-            dependencies=Event(polar.device)
-        )
-        wait(ev)
-    end
-end
-
-KA.@kernel function active_power_kernel!(
-    pg, vmag, vang, pinj,
-    pv, ref, pv_to_gen, ref_to_gen,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-    ybus_im_nzval, pload
-)
-    i = @index(Global, Linear)
-    npv = length(pv)
-    nref = length(ref)
-    # Evaluate active power at PV nodes
-    if i <= npv
-        bus = pv[i]
-        i_gen = pv_to_gen[i]
-        pg[i_gen] = pinj[bus] + pload[bus]
-    # Evaluate active power at slack nodes
-    elseif i <= npv + nref
-        i_ = i - npv
-        bus = ref[i_]
-        i_gen = ref_to_gen[i_]
-        inj = 0
-        @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
-            to = ybus_re_rowval[c]
-            aij = vang[bus] - vang[to]
-            # f_re = a * cos + b * sin
-            # f_im = a * sin - b * cos
-            coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-            coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
-            cos_val = cos(aij)
-            sin_val = sin(aij)
-            inj += coef_cos * cos_val + coef_sin * sin_val
-        end
-        pg[i_gen] = inj + pload[bus]
-    end
-end
-
-# Refresh active power (needed to evaluate objective)
-function update!(polar::PolarForm, ::PS.Generators, ::PS.ActivePower, buffer::PolarNetworkState)
-    kernel! = active_power_kernel!(polar.device)
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    ref = polar.indexing.index_ref
-    pv_to_gen = polar.indexing.index_pv_to_gen
-    ref_to_gen = polar.indexing.index_ref_to_gen
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-
-    range_ = length(pv) + length(ref)
-
-    ev = kernel!(
-        buffer.pg,
-        buffer.vmag, buffer.vang, buffer.pinj,
-        pv, ref, pv_to_gen, ref_to_gen,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, polar.active_load,
-        ndrange=range_,
+    ev = adj_transfer_kernel!(polar.device)(
+        ∂u, ∂x,
+        ∂vmag, ∂vang, ∂pnet,
+        pv, pq, ref;
+        ndrange=(nbus, size(∂u, 2)),
         dependencies=Event(polar.device)
     )
     wait(ev)
 end
 
-KA.@kernel function adj_active_power_kernel!(
-    adj_pg,
-    vmag, adj_vmag, vang, adj_vang, adj_pinj,
-    pv, ref, pv_to_gen, ref_to_gen,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval, ybus_im_nzval,
+KA.@kernel function active_power_slack!(
+    cons, vmag, vang, ref, pd,
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
+    @Const(transperm),
 )
     i = @index(Global, Linear)
-    npv = length(pv)
-    nref = length(ref)
-    if i <= npv
-        bus = pv[i]
-        i_gen = pv_to_gen[i]
-        adj_pinj[bus] = adj_pg[i_gen]
-    # Evaluate active power at slack nodes
-    elseif i <= npv + nref
-        i_ = i - npv
-        fr = ref[i_]
-        i_gen = ref_to_gen[i_]
+    bus = ref[i]
+    inj = 0.0
+    @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
+        to = ybus_re_rowval[c]
+        aij = vang[bus] - vang[to]
+        # f_re = a * cos + b * sin
+        # f_im = a * sin - b * cos
+        coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[transperm[c]]
+        coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[transperm[c]]
+        cos_val = cos(aij)
+        sin_val = sin(aij)
+        inj += coef_cos * cos_val + coef_sin * sin_val
+    end
+    cons[i] = inj + pd[bus]
+end
 
-        adj_inj = adj_pg[i_gen]
-        @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
-            to = ybus_re_rowval[c]
-            aij = vang[fr] - vang[to]
-            # f_re = a * cos + b * sin
-            # f_im = a * sin - b * cos
-            coef_cos = vmag[fr]*vmag[to]*ybus_re_nzval[c]
-            coef_sin = vmag[fr]*vmag[to]*ybus_im_nzval[c]
-            cosθ = cos(aij)
-            sinθ = sin(aij)
+KA.@kernel function adj_active_power_slack!(
+    v_m, v_a, adj_v_m, adj_v_a, adj_P, ref,
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
+    @Const(transperm),
+)
+    i = @index(Global, Linear)
+    fr = ref[i]
+    @inbounds for c in ybus_re_colptr[fr]:ybus_re_colptr[fr+1]-1
+        to = ybus_re_rowval[c]
+        aij = v_a[fr] - v_a[to]
+        cosθ = cos(aij)
+        sinθ = sin(aij)
 
-            adj_coef_cos = cosθ  * adj_inj
-            adj_cos_val  = coef_cos * adj_inj
-            adj_coef_sin = sinθ  * adj_inj
-            adj_sin_val  = coef_sin * adj_inj
+        yre = ybus_re_nzval[transperm[c]]
+        yim = ybus_im_nzval[transperm[c]]
 
-            adj_aij =   cosθ * adj_sin_val
-            adj_aij -=  sinθ * adj_cos_val
+        cθ = yre*cosθ
+        sθ = yim*sinθ
+        adj_v_m[fr] += v_m[to] * (cθ + sθ) * adj_P[i]
+        adj_v_m[to] += v_m[fr] * (cθ + sθ) * adj_P[i]
 
-            adj_vmag[fr] += vmag[to] * ybus_re_nzval[c] * adj_coef_cos
-            adj_vmag[to] += vmag[fr] * ybus_re_nzval[c] * adj_coef_cos
-            adj_vmag[fr] += vmag[to] * ybus_im_nzval[c] * adj_coef_sin
-            adj_vmag[to] += vmag[fr] * ybus_im_nzval[c] * adj_coef_sin
-
-            adj_vang[fr] += adj_aij
-            adj_vang[to] -= adj_aij
-        end
+        adj_aij = -(v_m[fr]*v_m[to]*(yre*sinθ))
+        adj_aij += v_m[fr]*v_m[to]*(yim*cosθ)
+        adj_aij *= adj_P[i]
+        adj_v_a[to] += -adj_aij
+        adj_v_a[fr] += adj_aij
     end
 end
 
 KA.@kernel function reactive_power_kernel!(
-    qg, vmag, vang, pinj,
-    pv, ref, pv_to_gen, ref_to_gen,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-    ybus_im_nzval, qload
+    qg, @Const(vmag), @Const(vang), @Const(pnet),
+    @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
+    @Const(ybus_im_nzval), @Const(transperm), @Const(qload)
 )
-    i = @index(Global, Linear)
+    i, j = @index(Global, NTuple)
     npv = length(pv)
     nref = length(ref)
     # Evaluate reactive power at PV nodes
@@ -535,51 +459,29 @@ KA.@kernel function reactive_power_kernel!(
     inj = 0.0
     @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
         to = ybus_re_rowval[c]
-        aij = vang[bus] - vang[to]
+        aij = vang[bus, j] - vang[to, j]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
-        coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-        coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
+        coef_cos = vmag[bus, j]*vmag[to, j]*ybus_re_nzval[transperm[c]]
+        coef_sin = vmag[bus, j]*vmag[to, j]*ybus_im_nzval[transperm[c]]
         cos_val = cos(aij)
         sin_val = sin(aij)
         inj += coef_cos * sin_val - coef_sin * cos_val
     end
-    qg[i_gen] = inj + qload[bus]
-end
-
-function update!(polar::PolarForm, ::PS.Generators, ::PS.ReactivePower, buffer::PolarNetworkState)
-    kernel! = reactive_power_kernel!(polar.device)
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    ref = polar.indexing.index_ref
-    pv_to_gen = polar.indexing.index_pv_to_gen
-    ref_to_gen = polar.indexing.index_ref_to_gen
-    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
-
-    range_ = length(pv) + length(ref)
-    ev = kernel!(
-        buffer.qg,
-        buffer.vmag, buffer.vang, buffer.pinj,
-        pv, ref, pv_to_gen, ref_to_gen,
-        ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, polar.reactive_load,
-        ndrange=range_,
-        dependencies=Event(polar.device)
-    )
-    wait(ev)
+    qg[i_gen, j] = inj + qload[bus]
 end
 
 KA.@kernel function adj_reactive_power_edge_kernel!(
     qg, adj_qg,
-    vmag, adj_vmag, vang, adj_vang,
-    pinj, adj_pinj,
-    pv, ref, pv_to_gen, ref_to_gen,
+    @Const(vmag), adj_vmag, @Const(vang), adj_vang,
+    @Const(pnet), adj_pnet,
+    @Const(pv), @Const(ref), @Const(pv_to_gen), @Const(ref_to_gen),
     edge_vmag_bus, edge_vmag_to,
     edge_vang_bus, edge_vang_to,
-    ybus_re_nzval, ybus_re_colptr, ybus_re_rowval,
-    ybus_im_nzval, qload
+    @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval),
+    @Const(ybus_im_nzval), @Const(transperm), @Const(qload)
 )
-    i = @index(Global, Linear)
+    i, j = @index(Global, NTuple)
     npv = length(pv)
     nref = length(ref)
     # Evaluate reactive power at PV nodes
@@ -595,26 +497,28 @@ KA.@kernel function adj_reactive_power_edge_kernel!(
     inj = 0.0
     @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
         to = ybus_re_rowval[c]
-        aij = vang[bus] - vang[to]
+        aij = vang[bus, j] - vang[to, j]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
-        coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-        coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
+        coef_cos = vmag[bus, j]*vmag[to, j]*ybus_re_nzval[transperm[c]]
+        coef_sin = vmag[bus, j]*vmag[to, j]*ybus_im_nzval[transperm[c]]
         cos_val = cos(aij)
         sin_val = sin(aij)
         inj += coef_cos * sin_val - coef_sin * cos_val
     end
-    qg[i_gen] = inj + qload[bus]
+    qg[i_gen, j] = inj + qload[bus]
 
     # Reverse run
-    adj_inj = adj_qg[i_gen]
+    adj_inj = adj_qg[i_gen, j]
     @inbounds for c in ybus_re_colptr[bus]:ybus_re_colptr[bus+1]-1
         to = ybus_re_rowval[c]
-        aij = vang[bus] - vang[to]
+        aij = vang[bus, j] - vang[to, j]
         # f_re = a * cos + b * sin
         # f_im = a * sin - b * cos
-        coef_cos = vmag[bus]*vmag[to]*ybus_re_nzval[c]
-        coef_sin = vmag[bus]*vmag[to]*ybus_im_nzval[c]
+        yre = ybus_re_nzval[transperm[c]]
+        yim = ybus_im_nzval[transperm[c]]
+        coef_cos = vmag[bus, j]*vmag[to, j]*yre
+        coef_sin = vmag[bus, j]*vmag[to, j]*yim
         cos_val = cos(aij)
         sin_val = sin(aij)
 
@@ -626,32 +530,27 @@ KA.@kernel function adj_reactive_power_edge_kernel!(
         adj_aij =   coef_cos * cos_val * adj_inj
         adj_aij +=  coef_sin * sin_val * adj_inj
 
-        edge_vmag_bus[c] += vmag[to] *ybus_re_nzval[c]*adj_coef_cos
-        edge_vmag_to[c]  += vmag[bus]*ybus_re_nzval[c]*adj_coef_cos
-        edge_vmag_bus[c] += vmag[to] *ybus_im_nzval[c]*adj_coef_sin
-        edge_vmag_to[c]  += vmag[bus]*ybus_im_nzval[c]*adj_coef_sin
+        edge_vmag_bus[c, j] += vmag[to, j] *yre*adj_coef_cos
+        edge_vmag_to[c, j]  += vmag[bus, j]*yre*adj_coef_cos
+        edge_vmag_bus[c, j] += vmag[to, j] *yim*adj_coef_sin
+        edge_vmag_to[c, j]  += vmag[bus, j]*yim*adj_coef_sin
 
-        edge_vang_bus[c] += adj_aij
-        edge_vang_to[c]  -= adj_aij
+        edge_vang_bus[c, j] += adj_aij
+        edge_vang_to[c, j]  -= adj_aij
     end
 end
 
 function adj_reactive_power!(
-    F, adj_F, vm, adj_vm, va, adj_va,
+    F, adj_F, vmag, adj_vm, vang, adj_va,
     ybus_re, ybus_im, transpose_perm,
-    pinj, adj_pinj,
+    pnet, adj_pnet,
     edge_vm_from, edge_vm_to, edge_va_from, edge_va_to,
     reactive_load,
-    pv, pq, ref, pv_to_gen, ref_to_gen, nbus
-) where {T}
-    if isa(F, CUDA.CuVector)
-        device = KA.CUDADevice()
-    else
-        device = KA.CPU()
-    end
+    pv, pq, ref, pv_to_gen, ref_to_gen, nbus, device
+)
     npv = length(pv)
     npq = length(pq)
-    nvbus = length(vm)
+    nvbus = length(vmag)
     nnz = length(ybus_re.nzval)
 
     colptr = ybus_re.colptr
@@ -659,19 +558,19 @@ function adj_reactive_power!(
 
     kernel_edge! = adj_reactive_power_edge_kernel!(device)
 
-    range_ = length(pv) + length(ref)
+    ndrange = (length(pv) + length(ref), size(adj_F, 2))
 
     ev = kernel_edge!(
         F, adj_F,
-        vm, adj_vm,
-        va, adj_va,
-        pinj, adj_pinj,
+        vmag, adj_vm,
+        vang, adj_va,
+        pnet, adj_pnet,
         pv, ref, pv_to_gen, ref_to_gen,
         edge_vm_from, edge_vm_to,
         edge_va_from, edge_va_to,
         ybus_re.nzval, ybus_re.colptr, ybus_re.rowval,
-        ybus_im.nzval, reactive_load,
-        ndrange=range_,
+        ybus_im.nzval, transpose_perm, reactive_load,
+        ndrange=ndrange,
         dependencies=Event(device)
     )
     wait(ev)
@@ -689,7 +588,7 @@ function adj_reactive_power!(
             ybus_re.colptr, ybus_re.rowval,
             edge_vm_from, edge_vm_to,
             edge_va_from, edge_va_to, transpose_perm,
-            ndrange=nvbus,
+            ndrange=(nvbus, size(adj_vm, 2)),
             dependencies=Event(device)
         )
         wait(ev)
@@ -698,16 +597,16 @@ function adj_reactive_power!(
 end
 
 KA.@kernel function branch_flow_kernel!(
-        slines, vmag, vang,
-        yff_re, yft_re, ytf_re, ytt_re,
-        yff_im, yft_im, ytf_im, ytt_im,
-        f, t, nlines,
-   )
-    ℓ = @index(Global, Linear)
+    slines, @Const(vmag), @Const(vang),
+    @Const(yff_re), @Const(yft_re), @Const(ytf_re), @Const(ytt_re),
+    @Const(yff_im), @Const(yft_im), @Const(ytf_im), @Const(ytt_im),
+    @Const(f), @Const(t), nlines,
+)
+    ℓ, j = @index(Global, NTuple)
     fr_bus = f[ℓ]
     to_bus = t[ℓ]
 
-    Δθ = vang[fr_bus] - vang[to_bus]
+    Δθ = vang[fr_bus, j] - vang[to_bus, j]
     cosθ = cos(Δθ)
     sinθ = sin(Δθ)
 
@@ -717,11 +616,11 @@ KA.@kernel function branch_flow_kernel!(
     yre_fr =   yff_re[ℓ] * yft_re[ℓ] + yff_im[ℓ] * yft_im[ℓ]
     yim_fr = - yff_re[ℓ] * yft_im[ℓ] + yff_im[ℓ] * yft_re[ℓ]
 
-    fr_flow = vmag[fr_bus]^2 * (
-        yff_abs * vmag[fr_bus]^2 + yft_abs * vmag[to_bus]^2 +
-        2.0 * vmag[fr_bus] * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
+    fr_flow = vmag[fr_bus, j]^2 * (
+        yff_abs * vmag[fr_bus, j]^2 + yft_abs * vmag[to_bus, j]^2 +
+        2.0 * vmag[fr_bus, j] * vmag[to_bus, j] * (yre_fr * cosθ - yim_fr * sinθ)
     )
-    slines[ℓ] = fr_flow
+    slines[ℓ, j] = fr_flow
 
     # branch apparent power limits - to bus
     ytf_abs = ytf_re[ℓ]^2 + ytf_im[ℓ]^2
@@ -729,27 +628,29 @@ KA.@kernel function branch_flow_kernel!(
     yre_to =   ytf_re[ℓ] * ytt_re[ℓ] + ytf_im[ℓ] * ytt_im[ℓ]
     yim_to = - ytf_re[ℓ] * ytt_im[ℓ] + ytf_im[ℓ] * ytt_re[ℓ]
 
-    to_flow = vmag[to_bus]^2 * (
-        ytf_abs * vmag[fr_bus]^2 + ytt_abs * vmag[to_bus]^2 +
-        2.0 * vmag[fr_bus] * vmag[to_bus] * (yre_to * cosθ - yim_to * sinθ)
+    to_flow = vmag[to_bus, j]^2 * (
+        ytf_abs * vmag[fr_bus, j]^2 + ytt_abs * vmag[to_bus, j]^2 +
+        2.0 * vmag[fr_bus, j] * vmag[to_bus, j] * (yre_to * cosθ - yim_to * sinθ)
     )
-    slines[ℓ + nlines] = to_flow
+    slines[ℓ + nlines, j] = to_flow
 end
 
 KA.@kernel function adj_branch_flow_edge_kernel!(
-        adj_slines, vmag, adj_vmag, vang, adj_vang,
-        adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-        yff_re, yft_re, ytf_re, ytt_re,
-        yff_im, yft_im, ytf_im, ytt_im,
-        f, t, nlines,
-   )
-    ℓ = @index(Global, Linear)
+    @Const(adj_slines), @Const(vmag), @Const(adj_vmag), @Const(vang), @Const(adj_vang),
+    adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
+    @Const(yff_re), @Const(yft_re), @Const(ytf_re), @Const(ytt_re),
+    @Const(yff_im), @Const(yft_im), @Const(ytf_im), @Const(ytt_im),
+    @Const(f), @Const(t), nlines,
+)
+    ℓ, j = @index(Global, NTuple)
     fr_bus = f[ℓ]
     to_bus = t[ℓ]
 
-    Δθ = vang[fr_bus] - vang[to_bus]
+    Δθ = vang[fr_bus, j] - vang[to_bus, j]
     cosθ = cos(Δθ)
     sinθ = sin(Δθ)
+    dcosθ = -sinθ
+    dsinθ = cosθ
 
     # branch apparent power limits - from bus
     yff_abs = yff_re[ℓ]^2 + yff_im[ℓ]^2
@@ -777,77 +678,78 @@ KA.@kernel function adj_branch_flow_edge_kernel!(
     # )
     # slines[ℓ + nlines] = to_flow
 
-    adj_to_flow = adj_slines[ℓ + nlines]
-    adj_vm_to_lines[ℓ] += (2.0 * vmag[to_bus] * ytf_abs * vmag[fr_bus]^2
-                      + 4.0 * vmag[to_bus]^3 * ytt_abs
-                      + 6.0 * vmag[fr_bus] * vmag[to_bus]^2 * (yre_to * cosθ - yim_to * sinθ)
+    adj_to_flow = adj_slines[ℓ + nlines, j]
+    adj_vm_to_lines[ℓ, j] += (2.0 * vmag[to_bus, j] * ytf_abs * vmag[fr_bus, j]^2
+                      + 4.0 * vmag[to_bus, j]^3 * ytt_abs
+                      + 6.0 * vmag[fr_bus, j] * vmag[to_bus, j]^2 * (yre_to * cosθ - yim_to * sinθ)
                        ) * adj_to_flow
-    adj_vm_from_lines[ℓ] += (2.0 * vmag[to_bus]^2 * vmag[fr_bus] * ytf_abs
-                      + 2.0 * vmag[to_bus]^3 * (yre_to * cosθ - yim_to * sinθ)
+    adj_vm_from_lines[ℓ, j] += (2.0 * vmag[to_bus, j]^2 * vmag[fr_bus, j] * ytf_abs
+                      + 2.0 * vmag[to_bus, j]^3 * (yre_to * cosθ - yim_to * sinθ)
                         ) * adj_to_flow
-    adj_cosθ = 2.0 * vmag[to_bus]^3 * vmag[fr_bus] *   yre_to  * adj_to_flow
-    adj_sinθ = 2.0 * vmag[to_bus]^3 * vmag[fr_bus] * (-yim_to) * adj_to_flow
+    adj_cosθ = 2.0 * vmag[to_bus, j]^3 * vmag[fr_bus, j] *   yre_to  * adj_to_flow
+    adj_sinθ = 2.0 * vmag[to_bus, j]^3 * vmag[fr_bus, j] * (-yim_to) * adj_to_flow
 
-    adj_from_flow = adj_slines[ℓ]
-    adj_vm_from_lines[ℓ] += (4.0 * yff_abs * vmag[fr_bus]^3
-                      + 2.0 * vmag[to_bus]^2 * vmag[fr_bus] * yft_abs
-                      + 6.0 * vmag[fr_bus]^2 * vmag[to_bus] * (yre_fr * cosθ - yim_fr * sinθ)
+    adj_from_flow = adj_slines[ℓ, j]
+    adj_vm_from_lines[ℓ, j] += (4.0 * yff_abs * vmag[fr_bus, j]^3
+                      + 2.0 * vmag[to_bus, j]^2 * vmag[fr_bus, j] * yft_abs
+                      + 6.0 * vmag[fr_bus, j]^2 * vmag[to_bus, j] * (yre_fr * cosθ - yim_fr * sinθ)
                        ) * adj_from_flow
-    adj_vm_to_lines[ℓ] += (2.0 * yft_abs * vmag[fr_bus]^2 * vmag[to_bus]
-                       + 2.0 * vmag[fr_bus]^3 * (yre_fr * cosθ - yim_fr * sinθ)
+    adj_vm_to_lines[ℓ, j] += (2.0 * yft_abs * vmag[fr_bus, j]^2 * vmag[to_bus, j]
+                       + 2.0 * vmag[fr_bus, j]^3 * (yre_fr * cosθ - yim_fr * sinθ)
                         ) * adj_from_flow
-    adj_cosθ += 2.0 * vmag[to_bus] * vmag[fr_bus]^3 *   yre_fr  * adj_from_flow
-    adj_sinθ += 2.0 * vmag[to_bus] * vmag[fr_bus]^3 * (-yim_fr) * adj_from_flow
+    adj_cosθ += 2.0 * vmag[to_bus, j] * vmag[fr_bus, j]^3 *   yre_fr  * adj_from_flow
+    adj_sinθ += 2.0 * vmag[to_bus, j] * vmag[fr_bus, j]^3 * (-yim_fr) * adj_from_flow
 
-    adj_Δθ =   cosθ * adj_sinθ
-    adj_Δθ -=  sinθ * adj_cosθ
-    adj_va_from_lines[ℓ] += adj_Δθ
-    adj_va_to_lines[ℓ] -= adj_Δθ
+    adj_Δθ =   dsinθ * adj_sinθ
+    adj_Δθ +=  dcosθ * adj_cosθ
+    adj_va_from_lines[ℓ, j] += adj_Δθ
+    adj_va_to_lines[ℓ, j] -= adj_Δθ
 end
 
-KA.@kernel function adj_branch_flow_node_kernel!(vm, adj_vm, va, adj_va,
-        adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-        f, t, nlines
+KA.@kernel function adj_branch_flow_node_kernel!(
+    @Const(vmag), adj_vm, @Const(vang), adj_va,
+    @Const(adj_va_to_lines), @Const(adj_va_from_lines),
+    @Const(adj_vm_to_lines), @Const(adj_vm_from_lines),
+    @Const(f), @Const(t), nlines
 )
-    i = @index(Global, Linear)
+    i, j = @index(Global, NTuple)
     @inbounds for ℓ in 1:nlines
         if f[ℓ] == i
-            adj_vm[i] += adj_vm_from_lines[ℓ]
-            adj_va[i] += adj_va_from_lines[ℓ]
+            adj_vm[i, j] += adj_vm_from_lines[ℓ, j]
+            adj_va[i, j] += adj_va_from_lines[ℓ, j]
         end
         if t[ℓ] == i
-            adj_vm[i] += adj_vm_to_lines[ℓ]
-            adj_va[i] += adj_va_to_lines[ℓ]
+            adj_vm[i, j] += adj_vm_to_lines[ℓ, j]
+            adj_va[i, j] += adj_va_to_lines[ℓ, j]
         end
     end
 end
 
 function adj_branch_flow!(
-        adj_slines, vm, adj_vm, va, adj_va,
+        adj_slines, vmag, adj_vm, vang, adj_va,
         adj_vm_from_lines, adj_va_from_lines, adj_vm_to_lines, adj_va_to_lines,
         yff_re, yft_re, ytf_re, ytt_re,
         yff_im, yft_im, ytf_im, ytt_im,
         f, t, nlines, device
     )
-    nvbus = length(va)
+    nvbus = length(vang)
     kernel_edge! = adj_branch_flow_edge_kernel!(device)
     kernel_node! = adj_branch_flow_node_kernel!(device)
 
     ev = kernel_edge!(
-            adj_slines, vm, adj_vm, va, adj_va,
+            adj_slines, vmag, adj_vm, vang, adj_va,
             adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
             yff_re, yft_re, ytf_re, ytt_re,
             yff_im, yft_im, ytf_im, ytt_im,
-            f, t, nlines, ndrange = nlines,
+            f, t, nlines, ndrange = (nlines, size(adj_slines, 2)),
             dependencies=Event(device)
     )
     wait(ev)
     ev = kernel_node!(
-            vm, adj_vm, va, adj_va,
+            vmag, adj_vm, vang, adj_va,
             adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-            f, t, nlines, ndrange = nvbus,
+            f, t, nlines, ndrange = (nvbus, size(adj_slines, 2)),
             dependencies=Event(device)
     )
     wait(ev)
 end
-

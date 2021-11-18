@@ -18,7 +18,7 @@ function powerflow(
     linear_solver=DirectSolver(),
 ) where {T, IT, VT, MT}
     # Retrieve parameter and initial voltage guess
-    Vm, Va, pbus, qbus = buffer.vmag, buffer.vang, buffer.pinj, buffer.qinj
+    Vm, Va = buffer.vmag, buffer.vang
 
     nbus = PS.get(polar.network, PS.NumberOfBuses())
     ngen = PS.get(polar.network, PS.NumberOfGenerators())
@@ -28,9 +28,7 @@ function powerflow(
     nvbus = length(polar.network.vbus)
     ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
 
-    ref = polar.indexing.index_ref
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
+    ref, pv, pq = index_buses_device(polar)
 
     # iteration variables
     iter = 0
@@ -54,7 +52,7 @@ function powerflow(
     power_balance(polar, F, buffer)
 
     # check for convergence
-    normF = norm(F, Inf)
+    normF = xnorm(F)
     if algo.verbose >= VERBOSE_LEVEL_LOW
         @printf("Iteration %d. Residual norm: %g.\n", iter, normF)
     end
@@ -80,9 +78,9 @@ function powerflow(
 
         # Find descent direction
         if isa(linear_solver, LinearSolvers.AbstractIterativeLinearSolver)
-            @timeit TIMER "Preconditioner" LinearSolvers.update!(linear_solver, J)
+            @timeit TIMER "Preconditioner" LS.update_preconditioner!(linear_solver, J, polar.device)
         end
-        @timeit TIMER "Linear Solver" n_iters = LinearSolvers.ldiv!(linear_solver, dx, J, F)
+        @timeit TIMER "Linear Solver" n_iters = LS.ldiv!(linear_solver, dx, J, F)
         push!(linsol_iters, n_iters)
 
         # update voltage
@@ -129,5 +127,89 @@ function powerflow(
         println("")
     end
     return ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
+end
+
+function batch_powerflow(
+    polar::PolarForm{T, IT, VT, MT},
+    jacobian::AutoDiff.Jacobian,
+    buffer::PolarNetworkState{IT,MT},
+    algo::NewtonRaphson,
+    linear_solver::LS.DirectSolver;
+) where {T, IT, VT, MT}
+    # Retrieve parameter and initial voltage guess
+    Vm, Va = buffer.vmag, buffer.vang
+    nbatch = size(Vm, 2)
+
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    n_states = get(polar, NumberOfState())
+    nvbus = length(polar.network.vbus)
+    ybus_re, ybus_im = get(polar.topology, PS.BusAdmittanceMatrix())
+
+    ref, pv, pq = index_buses_device(polar)
+
+    # iteration variables
+    iter = 0
+    converged = false
+
+    # indices
+    j1 = 1
+    j2 = npv
+    j3 = j2 + 1
+    j4 = j2 + npq
+    j5 = j4 + 1
+    j6 = j4 + npq
+
+    # form residual function directly on target device
+    F = buffer.balance
+    dx = buffer.dx
+    fill!(F, zero(T))
+    fill!(dx, zero(T))
+
+    # Evaluate residual function
+    power_balance(polar, F, buffer)
+
+    # check for convergence
+    normF = Float64[xnorm(view(F, :, i)) for i in 1:nbatch]
+    if algo.verbose >= VERBOSE_LEVEL_LOW
+        @printf("Iteration %d. Residual norm: %g.\n", iter, sum(normF))
+    end
+    if all(normF .< algo.tol)
+        converged = true
+    end
+
+    Vapv = view(Va, pv, :)
+    Vapq = view(Va, pq, :)
+    Vmpq = view(Vm, pq, :)
+    dx12 = view(dx, j5:j6, :) # Vmqp
+    dx34 = view(dx, j3:j4, :) # Vapq
+    dx56 = view(dx, j1:j2, :) # Vapv
+
+    while ((!converged) && (iter < algo.maxiter))
+        iter += 1
+
+        J = batch_jacobian!(polar, jacobian, buffer)
+        LS.batch_ldiv!(linear_solver, dx, J, F)
+        # x+ = x - J \ F
+        Vapv .= Vapv .- dx56
+        Vmpq .= Vmpq .- dx12
+        Vapq .= Vapq .- dx34
+
+        fill!(F, zero(T))
+        power_balance(polar, F, buffer)
+
+        normF = Float64[xnorm(view(F, :, i)) for i in 1:nbatch]
+
+        if algo.verbose >= VERBOSE_LEVEL_LOW
+            @printf("Iteration %d. Residual norm: %g.\n", iter, sum(normF))
+        end
+
+        if all(normF .< algo.tol)
+            converged = true
+        end
+    end
+    return ConvergenceStatus(converged, iter, sum(normF), 0)
 end
 

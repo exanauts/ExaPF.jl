@@ -6,13 +6,14 @@ using ExaPF
 import ExaPF: AutoDiff
 const PS = ExaPF.PowerSystem
 const LS = ExaPF.LinearSolvers
+const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
 # Test quickstart guide in docs/src/quickstart.md
 # If one test is broken, please update the documentation.
 
 @testset "Documentation: quickstart" begin
     pglib_instance = "case1354.m"
-    datafile = joinpath(dirname(@__FILE__), "..", "data", pglib_instance)
+    datafile = joinpath(INSTANCES_DIR, pglib_instance)
 
     # Short version
     polar = ExaPF.PolarForm(datafile, CPU())
@@ -52,7 +53,7 @@ const LS = ExaPF.LinearSolvers
     npartitions = 8
     jac = jx.J
     precond = LS.BlockJacobiPreconditioner(jac, npartitions, CPU())
-    iterative_linear_solver = ExaPF.KrylovBICGSTAB(precond)
+    iterative_linear_solver = ExaPF.KrylovBICGSTAB(jac; P=precond)
     @test isa(iterative_linear_solver, LS.AbstractIterativeLinearSolver)
     # Test default tolerance
     @test iterative_linear_solver.atol == 1e-10
@@ -84,13 +85,13 @@ const LS = ExaPF.LinearSolvers
         @test convergence.norm_residuals <= pf_algo.tol
 
         npartitions = 8
-        jac = jx.J # we need to take the Jacobian on the CPU for partitioning!
+        jac = jx_gpu.J # we need to take the Jacobian on the CPU for partitioning!
         precond = LS.BlockJacobiPreconditioner(jac, npartitions, CUDADevice())
 
         # Reinit buffer
         ExaPF.init_buffer!(polar_gpu, physical_state_gpu)
 
-        linear_solver = ExaPF.KrylovBICGSTAB(precond)
+        linear_solver = ExaPF.KrylovBICGSTAB(jac; P=precond)
         pf_algo = NewtonRaphson(; verbose=0, tol=1e-7)
         convergence = ExaPF.powerflow(
             polar_gpu, jx_gpu, physical_state_gpu, pf_algo;

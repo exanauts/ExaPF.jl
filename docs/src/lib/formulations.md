@@ -29,6 +29,8 @@ active_power_constraints
 reactive_power_constraints
 flow_constraints
 power_balance
+bus_power_injection
+network_operations
 
 ```
 

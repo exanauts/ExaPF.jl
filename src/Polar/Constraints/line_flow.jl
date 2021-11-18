@@ -8,7 +8,7 @@ function _flow_constraints(polar::PolarForm, cons, vmag, vang)
         polar.topology.yff_re, polar.topology.yft_re, polar.topology.ytf_re, polar.topology.ytt_re,
         polar.topology.yff_im, polar.topology.yft_im, polar.topology.ytf_im, polar.topology.ytt_im,
         polar.topology.f_buses, polar.topology.t_buses, nlines,
-        ndrange=nlines,
+        ndrange=(nlines, size(cons, 2)),
         dependencies=Event(polar.device)
     )
     wait(ev)
@@ -20,8 +20,8 @@ function flow_constraints(polar::PolarForm, cons, buffer::PolarNetworkState)
 end
 
 # Specialized function for AD with ForwardDiff
-function flow_constraints(polar::PolarForm, cons, vm, va, pbus, qbus)
-    _flow_constraints(polar, cons, vm, va)
+function flow_constraints(polar::PolarForm, cons, vmag, vang, pnet, qnet, pload, qload)
+    _flow_constraints(polar, cons, vmag, vang)
 end
 
 function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
@@ -35,6 +35,10 @@ function flow_constraints_grad!(polar::PolarForm, cons_grad, buffer, weights)
     ∂edge_vm_to = similar(cons_grad, nlines)
     ∂edge_va_fr = similar(cons_grad, nlines)
     ∂edge_va_to = similar(cons_grad, nlines)
+    fill!(∂edge_vm_fr, 0)
+    fill!(∂edge_vm_to, 0)
+    fill!(∂edge_va_fr, 0)
+    fill!(∂edge_va_to, 0)
     adj_branch_flow!(weights, buffer.vmag, adj_vmag,
             buffer.vang, adj_vang,
             ∂edge_vm_fr, ∂edge_vm_to,
@@ -59,9 +63,10 @@ function adjoint!(
     polar::PolarForm,
     pbm::AutoDiff.TapeMemory{F, S, I},
     cons, ∂cons,
-    vm, ∂vm,
-    va, ∂va,
-    pinj, ∂pinj,
+    vmag, ∂vmag,
+    vang, ∂vang,
+    pnet, ∂pnet,
+    pload, qload,
 ) where {F<:typeof(flow_constraints), S, I}
     nlines = PS.get(polar.network, PS.NumberOfLines())
     nbus = PS.get(polar.network, PS.NumberOfBuses())
@@ -74,8 +79,8 @@ function adjoint!(
 
     adj_branch_flow!(
         ∂cons,
-        vm, ∂vm,
-        va, ∂va,
+        vmag, ∂vmag,
+        vang, ∂vang,
         pbm.intermediate.∂edge_vm_fr,
         pbm.intermediate.∂edge_vm_to,
         pbm.intermediate.∂edge_va_fr,
@@ -90,9 +95,10 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(f
     nbus = get(polar, PS.NumberOfBuses())
     nlines = get(polar, PS.NumberOfLines())
     pf = polar.network
-    ref = pf.ref ; nref = length(ref)
-    pv  = pf.pv  ; npv  = length(pv)
-    pq  = pf.pq  ; npq  = length(pq)
+    ref, pv, pq = index_buses_host(polar)
+    nref = length(ref)
+    npv  = length(pv)
+    npq  = length(pq)
     lines = pf.lines
 
     dSl_dVm, dSl_dVa = PS.matpower_lineflow_power_jacobian(V, lines)
@@ -100,11 +106,11 @@ function matpower_jacobian(polar::PolarForm, X::Union{State,Control}, ::typeof(f
     if isa(X, State)
         j11 = dSl_dVa[:, [pv; pq]]
         j12 = dSl_dVm[:, pq]
-        return [j11 j12]
+        return [j11 j12]::SparseMatrixCSC{Float64, Int}
     elseif isa(X, Control)
         j11 = dSl_dVm[:, [ref; pv]]
         j12 = spzeros(2 * nlines, npv)
-        return [j11 j12]
+        return [j11 j12]::SparseMatrixCSC{Float64, Int}
     end
 end
 

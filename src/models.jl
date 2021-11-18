@@ -184,6 +184,15 @@ Get operational cost.
 """
 function cost_production end
 
+"""
+    cost_penalty_ramping_constraints(form::AbstractFormulation, buffer::AbstractNetworkBuffer, params...)::Float64
+
+Get operational cost, including a quadratic penalty penalizing the ramping
+constraints w.r.t. a given reference.
+"""
+function cost_penalty_ramping_constraints end
+
+
 # Generic constraints
 
 """
@@ -215,15 +224,6 @@ The result is stored inplace, inside the vector `cons`.
 function active_power_constraints end
 
 """
-    active_power_generation(form::AbstractFormulation, pg::AbstractVector, buffer::AbstractNetworkBuffer)
-
-Evaluate the **active power production** of all generators.
-Used to evaluate the operational cost.
-The result is stored inplace, inside the vector `pg`.
-"""
-function active_power_generation end
-
-"""
     reactive_power_constraints(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
 
 Evaluate the constraints on the **reactive power production** at the generators:
@@ -245,23 +245,62 @@ function flow_constraints end
 @doc raw"""
     power_balance(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
 
-Evaluate the power balance in the network:
+Evaluate a subset of the power injection in the network.
+The function `power_balance` corresponds to the function
 ```math
-g(x, u) = 0 ,
+g(x, u) = 0 .
 ```
-corresponding to the balance equations
+introduced in the documentation.
+
+In detail, the function encodes the active balance equations at
+PV and PQ nodes, and the reactive balance equations at PQ nodes:
 ```math
 \begin{aligned}
     p_i &= v_i \sum_{j}^{n} v_j (g_{ij}\cos{(\theta_i - \theta_j)} + b_{ij}\sin{(\theta_i - \theta_j})) \,, &
     ∀ i ∈ \{PV, PQ\} \\
     q_i &= v_i \sum_{j}^{n} v_j (g_{ij}\sin{(\theta_i - \theta_j)} - b_{ij}\cos{(\theta_i - \theta_j})) \,. &
-    ∀ i ∈ \{PQ\} \\
+    ∀ i ∈ \{PQ\}
 \end{aligned}
 ```
 
 The result is stored inplace, inside the vector `cons`.
 """
 function power_balance end
+
+@doc raw"""
+    bus_power_injection(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+
+Evaluate *all* the power injection in the network.
+
+In detail, the function encodes the active balance equations and
+the reactive balance equations at all buses in the network:
+```math
+\begin{aligned}
+    p_i &= v_i \sum_{j}^{n} v_j (g_{ij}\cos{(\theta_i - \theta_j)} + b_{ij}\sin{(\theta_i - \theta_j})) \,, &
+    ∀ i = 1, ⋯, n_b \\
+    q_i &= v_i \sum_{j}^{n} v_j (g_{ij}\sin{(\theta_i - \theta_j)} - b_{ij}\cos{(\theta_i - \theta_j})) \,. &
+    ∀ i = 1, ⋯,  n_b
+\end{aligned}
+```
+
+The result is stored inplace, inside the vector `cons`.
+"""
+function bus_power_injection end
+
+@doc raw"""
+    network_operations(form::AbstractFormulation, cons::AbstractVector, buffer::AbstractNetworkBuffer)
+
+This function calls [`bus_power_injection`](@ref) and uses the
+result to evaluate all the operational cosntraints as well as
+the corresponding operational cost. The final result is stored
+inplace inside `cons`, with the following ordering:
+- `1:npv+2npq`: power balance at PV and PQ nodes (same result as in [`bus_power_injection`](@ref)).
+- `npv+2npq+1:npv+2npq+1`: active power generation at slack nodes
+- `npv+2npq+1:npv+2npq+1+ngen`: reactive power generation at generators
+- `npv+2npq+1+ngen+1`: operational costs
+
+"""
+function network_operations end
 
 # Interface for the constraints
 """

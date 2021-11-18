@@ -10,6 +10,8 @@ struct IndexingCache{IVT} <: AbstractBuffer
     index_pv_to_gen::IVT
     index_ref_to_gen::IVT
 end
+index_buses(idx::IndexingCache) = (idx.index_ref, idx.index_pv, idx.index_pq)
+index_generators(idx::IndexingCache) = (idx.index_generators, idx.index_ref_to_gen, idx.index_pv_to_gen)
 
 """
     PolarNetworkState{VI, VT} <: AbstractNetworkBuffer
@@ -19,10 +21,12 @@ the network, in polar formulation. Attributes are:
 
 - `vmag` (length: nbus): voltage magnitude at each bus
 - `vang` (length: nbus): voltage angle at each bus
-- `pinj` (length: nbus): power injection RHS. Equal to `Cg * Pg - Pd`
-- `qinj` (length: nbus): power injection RHS. Equal to `Cg * Qg - Qd`
-- `pg`   (length: ngen): active power of generators
-- `qg`   (length: ngen): reactive power of generators
+- `pnet` (length: nbus): power generation RHS. Equal to `Cg * Pg`
+- `qnet` (length: nbus): power generation RHS. Equal to `Cg * Qg`
+- `pgen`   (length: ngen): active power of generators
+- `qgen`   (length: ngen): reactive power of generators
+- `pload`  (length: nbus): active loads
+- `qload`  (length: nbus): reactive loads
 - `dx`   (length: nstates): cache the difference between two consecutive states (used in power flow resolution)
 - `balance` (length: nstates): cache for current power imbalance (used in power flow resolution)
 - `bus_gen` (length: ngen): generator-bus incidence matrix `Cg`
@@ -31,73 +35,51 @@ the network, in polar formulation. Attributes are:
 struct PolarNetworkState{VI,VT} <: AbstractNetworkBuffer
     vmag::VT
     vang::VT
-    pinj::VT
-    qinj::VT
-    pg::VT
-    qg::VT
+    pnet::VT
+    qnet::VT
+    pgen::VT
+    qgen::VT
+    pload::VT
+    qload::VT
     balance::VT
     dx::VT
     bus_gen::VI   # Generator-Bus incidence matrix
 end
 
-function PolarNetworkState{VT}(nbus::Int, ngen::Int, nstates::Int, bus_gen::VI) where {VI, VT}
-    # Bus variables
-    pbus = xzeros(VT, nbus)
-    qbus = xzeros(VT, nbus)
-    vmag = xzeros(VT, nbus)
-    vang = xzeros(VT, nbus)
-    # Generators variables
-    pg = xzeros(VT, ngen)
-    qg = xzeros(VT, ngen)
-    # Buffers
-    balance = xzeros(VT, nstates)
-    dx = xzeros(VT, nstates)
-    return PolarNetworkState{VI,VT}(vmag, vang, pbus, qbus, pg, qg, balance, dx, bus_gen)
-end
-
 setvalues!(buf::PolarNetworkState, ::PS.VoltageMagnitude, values) = copyto!(buf.vmag, values)
 setvalues!(buf::PolarNetworkState, ::PS.VoltageAngle, values) = copyto!(buf.vang, values)
 function setvalues!(buf::PolarNetworkState, ::PS.ActivePower, values)
-    pgenbus = view(buf.pinj, buf.bus_gen)
-    # Remove previous values
-    pgenbus .-= buf.pg
-    # Add new values
-    copyto!(buf.pg, values)
-    pgenbus .+= buf.pg
+    pgenbus = view(buf.pnet, buf.bus_gen)
+    pgenbus .= values
+    copyto!(buf.pgen, values)
 end
 function setvalues!(buf::PolarNetworkState, ::PS.ReactivePower, values)
-    qgenbus = view(buf.qinj, buf.bus_gen)
-    # Remove previous values
-    qgenbus .-= buf.qg
-    # Add new values
-    copyto!(buf.qg, values)
-    qgenbus .+= buf.qg
+    qgenbus = view(buf.qnet, buf.bus_gen)
+    qgenbus .= values
+    copyto!(buf.qgen, values)
 end
 function setvalues!(buf::PolarNetworkState, ::PS.ActiveLoad, values)
-    fill!(buf.pinj, 0)
-    # Pbus = Cg * Pg - Pd
-    buf.pinj .-= values
-    pgenbus = view(buf.pinj, buf.bus_gen)
-    pgenbus .+= buf.pg
+    copyto!(buf.pload, values)
 end
 function setvalues!(buf::PolarNetworkState, ::PS.ReactiveLoad, values)
-    fill!(buf.qinj, 0)
-    # Qbus = Cg * Qg - Qd
-    buf.qinj .-= values
-    qgenbus = view(buf.qinj, buf.bus_gen)
-    qgenbus .+= buf.qg
+    copyto!(buf.qload, values)
 end
 
 function Base.iszero(buf::PolarNetworkState)
-    return iszero(buf.pinj) &&
-        iszero(buf.qinj) &&
+    return iszero(buf.pnet) &&
+        iszero(buf.qnet) &&
         iszero(buf.vmag) &&
         iszero(buf.vang) &&
-        iszero(buf.pg) &&
-        iszero(buf.qg) &&
+        iszero(buf.pgen) &&
+        iszero(buf.qgen) &&
+        iszero(buf.pload) &&
+        iszero(buf.qload) &&
         iszero(buf.balance) &&
         iszero(buf.dx)
 end
+
+voltage(buf::PolarNetworkState) = buf.vmag .* exp.(im .* buf.vang)
+voltage_host(buf::PolarNetworkState) = voltage(buf) |> Array
 
 "Store topology of the network on target device."
 struct NetworkTopology{VTI, VTD}
@@ -121,7 +103,7 @@ struct NetworkTopology{VTI, VTD}
     sortperm::VTI # nnz
 end
 
-function NetworkTopology{VTI, VTD}(pf::PS.PowerNetwork) where {VTI, VTD}
+function NetworkTopology(pf::PS.PowerNetwork, ::Type{VTI}, ::Type{VTD}) where {VTI, VTD}
     Y = pf.Ybus
     ybus_re, ybus_im = Spmat{VTI, VTD}(Y)
     lines = pf.lines

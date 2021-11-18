@@ -13,8 +13,6 @@ import CUDA.CUSOLVER
 import ForwardDiff
 using KernelAbstractions
 const KA = KernelAbstractions
-import MathOptInterface
-const MOI = MathOptInterface
 using TimerOutputs: @timeit, TimerOutput
 
 import Base: show, get
@@ -27,6 +25,7 @@ const TIMER = TimerOutput()
 
 include("utils.jl")
 include("architectures.jl")
+
 # Templates
 include("models.jl")
 
@@ -39,11 +38,9 @@ include("PowerSystem/PowerSystem.jl")
 using .PowerSystem
 
 const PS = PowerSystem
+const LS = LinearSolvers
 
 # Polar formulation
 include("Polar/polar.jl")
-
-# Evaluators
-include("Evaluators/Evaluators.jl")
 
 end

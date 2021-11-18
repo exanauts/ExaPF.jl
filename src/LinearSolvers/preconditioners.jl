@@ -42,25 +42,25 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
     P::SMT
     id::Union{GMT,MT}
     function BlockJacobiPreconditioner(J, npart, device=CPU()) where {}
-        if device == CPU()
+        if isa(device, CPU)
             AT  = Array{Float64,3}
             GAT = Nothing
             VI  = Vector{Int64}
             GVI = Nothing
-            MT = Matrix{Float64}
+            MT  = Matrix{Float64}
             GMT = Nothing
             MI  = Matrix{Int64}
-            GMI  = Nothing
+            GMI = Nothing
             SMT = SparseMatrixCSC{Float64,Int64}
-        elseif device == CUDADevice()
+        elseif isa(device, GPU)
             AT  = Array{Float64,3}
-            GAT = CuArray{Float64,3}
+            GAT = CuArray{Float64, 3, CUDA.Mem.DeviceBuffer}
             VI  = Vector{Int64}
-            GVI = CuVector{Int64}
-            MT = Matrix{Float64}
-            GMT = CuMatrix{Float64}
+            GVI = CuArray{Int64, 1, CUDA.Mem.DeviceBuffer}
+            MT  = Matrix{Float64}
+            GMT = CuArray{Float64, 2, CUDA.Mem.DeviceBuffer}
             MI  = Matrix{Int64}
-            GMI = CuMatrix{Int64}
+            GMI = CuArray{Int64, 2, CUDA.Mem.DeviceBuffer}
             SMT = CUDA.CUSPARSE.CuSparseMatrixCSR{Float64}
             J = SparseMatrixCSC(J)
         else
@@ -121,7 +121,7 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
             end
         end
         P = sparse(row, col, nzval)
-        if isa(device, CUDADevice)
+        if isa(device, GPU)
             id = GMT(I, blocksize, blocksize)
             cubpartitions = GMI(bpartitions)
             culpartitions = GVI(lpartitions)
@@ -140,6 +140,17 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT} <: AbstractPre
         return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, blocks, cublocks, map, cumap, part, cupart, P, id)
     end
 end
+
+function BlockJacobiPreconditioner(J::SparseMatrixCSC; nblocks=-1, device=CPU())
+    n = size(J, 1)
+    npartitions = if nblocks > 0
+        nblocks
+    else
+        div(n, 32)
+    end
+    return BlockJacobiPreconditioner(J, npartitions, device)
+end
+BlockJacobiPreconditioner(J::CUSPARSE.CuSparseMatrixCSR; options...) = BlockJacobiPreconditioner(SparseMatrixCSC(J); options...)
 
 """
     build_adjmatrix
@@ -207,12 +218,12 @@ Update the values of the preconditioner matrix from the dense Jacobi blocks
     end
 end
 
-function _update_gpu(j_rowptr, j_colval, j_nzval, p)
+function _update_gpu(p, j_rowptr, j_colval, j_nzval, device)
     nblocks = p.nblocks
-    fillblock_gpu_kernel! = fillblock_gpu!(CUDADevice())
-    fillP_gpu_kernel! = fillP_gpu!(CUDADevice())
+    fillblock_gpu_kernel! = fillblock_gpu!(device)
+    fillP_gpu_kernel! = fillP_gpu!(device)
     # Fill Block Jacobi" begin
-    ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks, dependencies=Event(CUDADevice()))
+    ev = fillblock_gpu_kernel!(p.cublocks, size(p.id,1), p.cupartitions, p.cumap, j_rowptr, j_colval, j_nzval, p.cupart, p.culpartitions, p.id, ndrange=nblocks, dependencies=Event(device))
     wait(ev)
     # Invert blocks begin
     blocklist = Array{CuArray{Float64,2}}(undef, nblocks)
@@ -226,7 +237,7 @@ function _update_gpu(j_rowptr, j_colval, j_nzval, p)
     end
     p.P.nzVal .= 0.0
     # Move blocks to P" begin
-    ev = fillP_gpu_kernel!(p.cublocks, p.cupartitions, p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, p.culpartitions, ndrange=nblocks, dependencies=Event(CUDADevice()))
+    ev = fillP_gpu_kernel!(p.cublocks, p.cupartitions, p.cumap, p.P.rowPtr, p.P.colVal, p.P.nzVal, p.cupart, p.culpartitions, ndrange=nblocks, dependencies=Event(device))
     wait(ev)
     return p.P
 end
@@ -241,12 +252,12 @@ Update the preconditioner `p` from the sparse Jacobian `J` in CSR format for the
 3) Extract the preconditioner matrix `p.P` from the dense blocks `cuJs`
 
 """
-function update(J::CUSPARSE.CuSparseMatrixCSR, p)
-    _update_gpu(J.rowPtr, J.colVal, J.nzVal, p)
+function update(p, J::CUSPARSE.CuSparseMatrixCSR, device)
+    _update_gpu(p, J.rowPtr, J.colVal, J.nzVal, device)
 end
-function update(J::Transpose{T, CUSPARSE.CuSparseMatrixCSR{T}}, p) where T
+function update(p, J::Transpose{T, CUSPARSE.CuSparseMatrixCSR{T}}, device) where T
     Jt = CUSPARSE.CuSparseMatrixCSC(J.parent)
-    _update_gpu(Jt.colPtr, Jt.rowVal, Jt.nzVal, p)
+    _update_gpu(p, Jt.colPtr, Jt.rowVal, Jt.nzVal, device)
 end
 
 @kernel function update_cpu_kernel!(colptr, rowval, nzval, p, lpartitions)
@@ -288,16 +299,16 @@ Update the preconditioner `p` from the sparse Jacobian `J` in CSC format for the
 Note that this implements the same algorithm as for the GPU and becomes very slow on CPU with growing number of blocks.
 
 """
-function update(J::SparseMatrixCSC, p)
-    kernel! = update_cpu_kernel!(CPU())
+function update(p, J::SparseMatrixCSC, device)
+    kernel! = update_cpu_kernel!(device)
     p.P.nzval .= 0.0
-    ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks, dependencies=Event(CPU()))
+    ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks, dependencies=Event(device))
     wait(ev)
     return p.P
 end
-function update(J::Transpose{T, SparseMatrixCSC{T, I}}, p) where {T, I}
+function update(p, J::Transpose{T, SparseMatrixCSC{T, I}}) where {T, I}
     ix, jx, zx = findnz(J.parent)
-    update(sparse(jx, ix, zx), p)
+    update(p, sparse(jx, ix, zx))
 end
 
 is_valid(precond::BlockJacobiPreconditioner) = _check_nan(precond.P)
