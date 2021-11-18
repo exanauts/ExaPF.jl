@@ -1,11 +1,9 @@
 # ExaPF
 
-[![][docs-latest-img]][docs-latest-url] ![CI](https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master) [![][codecov-img]][codecov-url]
-
-[docs-latest-img]: https://img.shields.io/badge/docs-latest-blue.svg
-[docs-latest-url]: https://exanauts.github.io/ExaPF.jl/
-[codecov-img]: https://codecov.io/gh/exanauts/ExaPF.jl/branch/develop/graphs/badge.svg?branch=develop
-[codecov-url]: https://codecov.io/github/exanauts/ExaPF.jl?branch=develop
+| **Documentation** | **Release** | **Dev** |
+|:-:|:-:|:-:|
+| [![][docs-stable-img]][docs-stable-url] | [![][build-stable-img]][build-url] | [![][build-latest-img]][build-url]  |
+| | [![][codecov-stable-img]][codecov-stable-url] | [![][codecov-latest-img]][codecov-latest-url]  |
 
 ExaPF is a HPC package for solving power flow (PF) on a GPU. It currently solves PF using the Newton-Raphson algorithm on NVIDIA GPUs.
 Its main features are:
@@ -61,4 +59,19 @@ refer to [CONTRIBUTING.md](https://github.com/exanauts/ExaPF.jl/blob/master/CONT
 
 ## Funding
 This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy’s Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation’s exascale computing imperative.
+
+
+[docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
+[docs-stable-url]: https://exanauts.github.io/ExaPF.jl/
+
+[codecov-stable-img]: https://codecov.io/gh/exanauts/ExaPF.jl/branch/master/graphs/badge.svg?branch=master
+[codecov-stable-url]: https://codecov.io/github/exanauts/ExaPF.jl?branch=master
+
+[codecov-latest-img]: https://codecov.io/gh/exanauts/ExaPF.jl/branch/develop/graphs/badge.svg?branch=develop
+[codecov-latest-url]: https://codecov.io/github/exanauts/ExaPF.jl?branch=develop
+
+[build-url]: https://github.com/exanauts/ExaPF.jl/actions?query=workflow
+
+[build-stable-img]: https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master
+[build-latest-img]: https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=develop
 
