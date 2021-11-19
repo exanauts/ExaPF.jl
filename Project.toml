@@ -5,7 +5,6 @@ version = "0.6.0"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-ExprTools = "e2ba6199-217a-4e67-a87a-7c52f15ade04"
 FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
@@ -35,11 +34,8 @@ BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDAKernels = "72cfdca4-0801-4ab0-bf6a-d52aa10adc57"
 Ipopt = "b6b21f68-93f8-5de0-b562-5493be1d77c9"
 LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
-NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [targets]
-scripts = ["Ipopt", "NLsolve", "UnicodePlots", "BenchmarkTools"]
 test = ["CUDAKernels", "Test", "Random", "Ipopt", "BenchmarkTools", "LazyArtifacts"]
