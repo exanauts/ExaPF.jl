@@ -230,8 +230,8 @@ end
 function bounds(pf::PowerNetwork, ::Lines, ::ActivePower)
     RATE_A = IndexSet.idx_branch()[6]
     n_lines = get(pf, NumberOfLines())
-    # Flow min is always set equal to 0
-    flow_min = zeros(n_lines)
+    # Flow min is not bounded below
+    flow_min = fill(-Inf, n_lines)
     flow_max = (pf.branches[:, RATE_A] ./ pf.baseMVA).^2
     # According to the spec, if RATE_A is equal to 0, then the flow
     # is unconstrained.
