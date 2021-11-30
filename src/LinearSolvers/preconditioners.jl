@@ -260,37 +260,6 @@ function update(p, J::Transpose{T, CUSPARSE.CuSparseMatrixCSR{T}}, device) where
     _update_gpu(p, Jt.colPtr, Jt.rowVal, Jt.nzVal, device)
 end
 
-@kernel function update_cpu_kernel!(colptr, rowval, nzval, p, lpartitions)
-    nblocks = length(p.partitions)
-    # Fill Block Jacobi
-    b = @index(Global, Linear)
-    blocksize = size(p.id,1)
-    for i in 1:blocksize
-        for j in 1:blocksize
-            p.blocks[i,j,b] = p.id[i,j]
-        end
-    end
-    for k in 1:lpartitions[b]
-        i = p.partitions[k,b]
-        for j in colptr[i]:colptr[i+1]-1
-            if b == p.part[rowval[j]]
-                @inbounds p.blocks[p.map[rowval[j]], p.map[i], b] = nzval[j]
-            end
-        end
-    end
-    # Invert blocks
-    p.blocks[:,:,b] .= inv(p.blocks[:,:,b])
-    # Move blocks to P
-    for k in 1:lpartitions[b]
-        i = p.partitions[k,b]
-        for j in p.P.colptr[i]:p.P.colptr[i+1]-1
-            if b == p.part[p.P.rowval[j]]
-                @inbounds p.P.nzval[j] += p.blocks[p.map[p.P.rowval[j]], p.map[i], b]
-            end
-        end
-    end
-end
-
 """
     function update(J::SparseMatrixCSC, p)
 
@@ -300,10 +269,35 @@ Note that this implements the same algorithm as for the GPU and becomes very slo
 
 """
 function update(p, J::SparseMatrixCSC, device)
-    kernel! = update_cpu_kernel!(device)
     p.P.nzval .= 0.0
-    ev = kernel!(J.colptr, J.rowval, J.nzval, p, p.lpartitions, ndrange=p.nblocks, dependencies=Event(device))
-    wait(ev)
+    # Fill Block Jacobi
+    # TODO: Enabling threading leads to a crash here
+    for b in 1:p.nblocks
+        p.blocks[:,:,b] = p.id[:,:]
+        for k in 1:p.lpartitions[b]
+            i = p.partitions[k,b]
+            for j in J.colptr[i]:J.colptr[i+1]-1
+                if b == p.part[J.rowval[j]]
+                    p.blocks[p.map[J.rowval[j]], p.map[i], b] = J.nzval[j]
+                end
+            end
+        end
+    end
+    for b in 1:p.nblocks
+        # Invert blocks
+        p.blocks[:,:,b] .= inv(p.blocks[:,:,b])
+    end
+    # Move blocks to P
+    for b in 1:p.nblocks
+        for k in 1:p.lpartitions[b]
+            i = p.partitions[k,b]
+            for j in p.P.colptr[i]:p.P.colptr[i+1]-1
+                if b == p.part[p.P.rowval[j]]
+                    p.P.nzval[j] += p.blocks[p.map[p.P.rowval[j]], p.map[i], b]
+                end
+            end
+        end
+    end
     return p.P
 end
 function update(p, J::Transpose{T, SparseMatrixCSC{T, I}}) where {T, I}
