@@ -730,7 +730,7 @@ function adj_branch_flow!(
         adj_vm_from_lines, adj_va_from_lines, adj_vm_to_lines, adj_va_to_lines,
         yff_re, yft_re, ytf_re, ytt_re,
         yff_im, yft_im, ytf_im, ytt_im,
-        f, t, nlines, device
+        f, t, Cf, Ct, nlines, device
     )
     nvbus = length(vang)
     kernel_edge! = adj_branch_flow_edge_kernel!(device)
@@ -745,13 +745,18 @@ function adj_branch_flow!(
             dependencies=Event(device)
     )
     wait(ev)
-    ev = kernel_node!(
-            vmag, adj_vm, vang, adj_va,
-            adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-            f, t, nlines, ndrange = (nvbus, size(adj_slines, 2)),
-            dependencies=Event(device)
-    )
-    wait(ev)
+
+    mul!(adj_vm, Cf, adj_vm_from_lines, 1.0, 1.0)
+    mul!(adj_vm, Ct, adj_vm_to_lines, 1.0, 1.0)
+    mul!(adj_va, Cf, adj_va_from_lines, 1.0, 1.0)
+    mul!(adj_va, Ct, adj_va_to_lines, 1.0, 1.0)
+    # ev = kernel_node!(
+    #         vmag, adj_vm, vang, adj_va,
+    #         adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
+    #         f, t, nlines, ndrange = (nvbus, size(adj_slines, 2)),
+    #         dependencies=Event(device)
+    # )
+    # wait(ev)
 end
 
 KA.@kernel function basis_kernel!(
@@ -766,7 +771,7 @@ KA.@kernel function basis_kernel!(
             to_bus = t[ℓ]
             Δθ = vang[fr_bus, j] - vang[to_bus, j]
             cosθ = cos(Δθ)
-            cons[i,        j] = vmag[fr_bus, j] * vmag[to_bus, j] * cosθ
+            cons[i, j] = vmag[fr_bus, j] * vmag[to_bus, j] * cosθ
         elseif i <= 2 * nlines
             ℓ = i - nlines
             fr_bus = f[ℓ]
