@@ -706,25 +706,6 @@ KA.@kernel function adj_branch_flow_edge_kernel!(
     adj_va_to_lines[ℓ, j] -= adj_Δθ
 end
 
-KA.@kernel function adj_branch_flow_node_kernel!(
-    @Const(vmag), adj_vm, @Const(vang), adj_va,
-    @Const(adj_va_to_lines), @Const(adj_va_from_lines),
-    @Const(adj_vm_to_lines), @Const(adj_vm_from_lines),
-    @Const(f), @Const(t), nlines
-)
-    i, j = @index(Global, NTuple)
-    @inbounds for ℓ in 1:nlines
-        if f[ℓ] == i
-            adj_vm[i, j] += adj_vm_from_lines[ℓ, j]
-            adj_va[i, j] += adj_va_from_lines[ℓ, j]
-        end
-        if t[ℓ] == i
-            adj_vm[i, j] += adj_vm_to_lines[ℓ, j]
-            adj_va[i, j] += adj_va_to_lines[ℓ, j]
-        end
-    end
-end
-
 function adj_branch_flow!(
         adj_slines, vmag, adj_vm, vang, adj_va,
         adj_vm_from_lines, adj_va_from_lines, adj_vm_to_lines, adj_va_to_lines,
@@ -733,10 +714,8 @@ function adj_branch_flow!(
         f, t, Cf, Ct, nlines, device
     )
     nvbus = length(vang)
-    kernel_edge! = adj_branch_flow_edge_kernel!(device)
-    kernel_node! = adj_branch_flow_node_kernel!(device)
 
-    ev = kernel_edge!(
+    ev = adj_branch_flow_edge_kernel!(device)(
             adj_slines, vmag, adj_vm, vang, adj_va,
             adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
             yff_re, yft_re, ytf_re, ytt_re,
@@ -746,17 +725,13 @@ function adj_branch_flow!(
     )
     wait(ev)
 
+    # Aggregate the adjoints on the nodes using the bus-node adjacency matrices.
+    # mul! should be overloaded on the GPU to work with dual numbers
+    # (needed to evaluate the Hessian using forward over reverse)
     mul!(adj_vm, Cf, adj_vm_from_lines, 1.0, 1.0)
     mul!(adj_vm, Ct, adj_vm_to_lines, 1.0, 1.0)
     mul!(adj_va, Cf, adj_va_from_lines, 1.0, 1.0)
     mul!(adj_va, Ct, adj_va_to_lines, 1.0, 1.0)
-    # ev = kernel_node!(
-    #         vmag, adj_vm, vang, adj_va,
-    #         adj_va_to_lines, adj_va_from_lines, adj_vm_to_lines, adj_vm_from_lines,
-    #         f, t, nlines, ndrange = (nvbus, size(adj_slines, 2)),
-    #         dependencies=Event(device)
-    # )
-    # wait(ev)
 end
 
 KA.@kernel function basis_kernel!(
