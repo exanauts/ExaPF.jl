@@ -8,7 +8,7 @@ push!(ARCHS, CUDA_ARCH)
 # Default sparse matrix on CUDA GPU
 ExaPF.default_sparse_matrix(::CUDADevice) = CuSparseMatrixCSR
 
-# LinearAlgebra.mul!
+# Differentiable LinearAlgebra.mul! for ForwardDiff
 @kernel function _spmm_kernel!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
     i, k = @index(Global, NTuple)
     Y[i, k] *= beta

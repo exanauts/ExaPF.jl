@@ -6,6 +6,7 @@ using SparseArrays
 using CUDA
 using KernelAbstractions
 
+using ForwardDiff
 using FiniteDiff
 
 using ExaPF
