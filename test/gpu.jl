@@ -32,3 +32,17 @@ function LinearAlgebra.mul!(Y::AbstractArray{T, 2}, A::CuSparseMatrixCSR, X::Abs
     )
     wait(ev)
 end
+
+function LinearAlgebra.mul!(Y::AbstractArray{T, 1}, A::CuSparseMatrixCSR, X::AbstractArray{T, 1}, alpha::Number, beta::Number) where {T <: ForwardDiff.Dual}
+    n, m = size(A)
+    p = 1
+    @assert size(Y, 1) == n
+    @assert size(X, 1) == m
+
+    ndrange = (n, p)
+    ev = _spmm_kernel!(CUDADevice())(
+        Y, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
+        ndrange=ndrange,
+    )
+    wait(ev)
+end
