@@ -303,3 +303,47 @@ function get_costs_coefficients(pf::PowerNetwork)
     return coefficients
 end
 
+function get_basis_matrix(pf::PowerNetwork)
+    nb = pf.nbus
+    nl = size(pf.branches, 1)
+    Yff, Yft, Ytf, Ytt = pf.lines.Yff, pf.lines.Yft, pf.lines.Ytf, pf.lines.Ytt
+    f, t = pf.lines.from_buses, pf.lines.to_buses
+
+    Cf = sparse(f, 1:nl, ones(nl), nb, nl)       # connection matrix for line & from buses
+    Ct = sparse(t, 1:nl, ones(nl), nb, nl)       # connection matrix for line & to buses
+
+    ysh = (pf.buses[:, 5] .+ 1im .* pf.buses[:, 6]) ./ pf.baseMVA # vector of shunt admittances
+    Ysh = sparse(1:nb, 1:nb, ysh, nb, nb)
+
+    # Build matrix
+    Yc = Cf * Diagonal(Yft) + Ct * Diagonal(Ytf)
+    Ys = Cf * Diagonal(Yft) - Ct * Diagonal(Ytf)
+    Yd = Cf * Diagonal(Yff) * Cf' + Ct * Diagonal(Ytt) * Ct' + Ysh
+
+    return [-real(Yc) -imag(Ys) -real(Yd);
+             imag(Yc)  -real(Ys)  imag(Yd)]
+end
+
+function get_line_flow_matrices(pf::PowerNetwork)
+    nb = pf.nbus
+    nl = size(pf.branches, 1)
+    Yff, Yft, Ytf, Ytt = pf.lines.Yff, pf.lines.Yft, pf.lines.Ytf, pf.lines.Ytt
+
+    yff = Diagonal(Yff)
+    yft = Diagonal(Yft)
+    ytf = Diagonal(Ytf)
+    ytt = Diagonal(Ytt)
+
+    f, t = pf.lines.from_buses, pf.lines.to_buses
+
+    Cf = sparse(f, 1:nl, ones(nl), nb, nl)       # connection matrix for line & from buses
+    Ct = sparse(t, 1:nl, ones(nl), nb, nl)       # connection matrix for line & to buses
+
+    # Build matrix
+    Lfp = [real(yft)  imag(yft)  real(yff) * Cf']
+    Lfq = [-imag(yft) real(yft) -imag(yff) * Cf']
+    Ltp = [real(ytf)  -imag(ytf)  real(ytt) * Ct']
+    Ltq = [-imag(ytf) -real(ytf) -imag(ytt) * Ct']
+    return (Lfp, Lfq, Ltp, Ltq)
+end
+
