@@ -113,7 +113,7 @@ function jacobian_transpose_product!(
 end
 
 ## Sparsity detection
-function jacobian_sparsity(polar::PolarForm, func::Function, xx::AbstractVariable)
+function jacobian_sparsity(polar::PolarForm, func, xx::AbstractVariable)
     nbus = get(polar, PS.NumberOfBuses())
     Vre = Float64[i for i in 1:nbus]
     Vim = Float64[i for i in nbus+1:2*nbus]
