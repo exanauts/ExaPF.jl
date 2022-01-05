@@ -386,6 +386,62 @@ function adjoint_transfer!(
     wait(ev)
 end
 
+KA.@kernel function _reverse_transfer_kernel2!(
+        output, @Const(adj_vmag), @Const(adj_vang), @Const(adj_pgen), @Const(pv), @Const(pq), @Const(ref), @Const(pv2gen),
+    npq, npv, nref, ngen,
+)
+    i, j = @index(Global, NTuple)
+
+    output[i, j] = if i <= npv
+        # x (vang_pv)
+        k = pv[i]
+        adj_vang[k, j]
+    elseif i <= npv + npq
+        k = pq[i - npv]
+        # x (vang_pq)
+        adj_vang[k, j]
+    elseif i <= npv + 2*npq
+        # x (vmag_pq)
+        k = pq[i - npv - npq]
+        adj_vmag[k, j]
+    elseif i <= npv + 2*npq + nref
+        # u (vmag_ref)
+        k = ref[i - npv - 2*npq]
+        adj_vmag[k, j]
+    elseif i <= npv + 2*npq + nref + npv
+        # u (vmag_pv)
+        k = pv[i - npv - 2*npq - nref]
+        adj_vmag[k, j]
+    elseif i <= npv + 2*npq + nref + npv + ngen
+        # u (vmag_pg)
+        k = pv2gen[i - 2*npv - 2*npq - nref]
+        adj_pgen[k, j]
+    end
+
+end
+
+function reverse_transfer!(
+    polar::PolarForm,
+    output, ∂state,
+)
+    nx = get(polar, ExaPF.NumberOfState())
+    nu = get(polar, ExaPF.NumberOfControl())
+    nbus = get(polar, PS.NumberOfBuses())
+    pv = polar.indexing.index_pv
+    pq = polar.indexing.index_pq
+    ref = polar.indexing.index_ref
+    pv2gen = polar.indexing.index_pv_to_gen
+    ev = _reverse_transfer_kernel2!(polar.device)(
+        output,
+        ∂state.vmag, ∂state.vang, ∂state.pgen,
+        pv, pq, ref, pv2gen,
+        length(pq), length(pv), length(ref), length(pv2gen),
+        ndrange=(nx+nu, size(output, 2)),
+        dependencies=Event(polar.device)
+    )
+    wait(ev)
+end
+
 KA.@kernel function active_power_slack!(
     cons, vmag, vang, ref, pd,
     @Const(ybus_re_nzval), @Const(ybus_re_colptr), @Const(ybus_re_rowval), @Const(ybus_im_nzval),
@@ -777,19 +833,19 @@ KA.@kernel function adj_basis_kernel!(
             cosθ = cos(Δθ)
             sinθ = sin(Δθ)
 
-            adj_vang_fr[i]  = -vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
+            adj_vang_fr[i] += -vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
             adj_vang_fr[i] +=  vmag[fr_bus, j] * vmag[to_bus, j] * cosθ * ∂cons[ℓ+nlines, j]
-            adj_vang_to[i]  =  vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
+            adj_vang_to[i] +=  vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
             adj_vang_to[i] -=  vmag[fr_bus, j] * vmag[to_bus, j] * cosθ * ∂cons[ℓ+nlines, j]
 
-            adj_vmag_fr[i] =  vmag[to_bus, j] * cosθ * ∂cons[ℓ, j]
+            adj_vmag_fr[i] +=  vmag[to_bus, j] * cosθ * ∂cons[ℓ, j]
             adj_vmag_fr[i] += vmag[to_bus, j] * sinθ * ∂cons[ℓ+nlines, j]
 
-            adj_vmag_to[i] =  vmag[fr_bus, j] * cosθ * ∂cons[ℓ, j]
+            adj_vmag_to[i] +=  vmag[fr_bus, j] * cosθ * ∂cons[ℓ, j]
             adj_vmag_to[i] += vmag[fr_bus, j] * sinθ * ∂cons[ℓ+nlines, j]
         else i <= nlines + nbus
             b = i - nlines
-            adj_vmag[b, j] = 2.0 * vmag[b, j] * ∂cons[b+2*nlines, j]
+            adj_vmag[b, j] += 2.0 * vmag[b, j] * ∂cons[b+2*nlines, j]
         end
     end
 end

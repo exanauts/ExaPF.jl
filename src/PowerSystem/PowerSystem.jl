@@ -1,6 +1,7 @@
 module PowerSystem
 
 using Printf
+using LinearAlgebra
 using SparseArrays
 
 import Base: show, get

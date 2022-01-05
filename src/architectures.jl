@@ -7,7 +7,7 @@ xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)
 
 xnorm_inf(a) = maximum(abs.(a))
 
-default_sparse_matrix(::CPU) = SparseMatrixCSC
+default_sparse_matrix(::CPU) = SparseMatrixCSC{Float64,Int}
 
 function get_jacobian_types(::CPU)
     SMT = SparseMatrixCSC{Float64,Int}
