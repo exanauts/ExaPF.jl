@@ -387,37 +387,10 @@ function adjoint_transfer!(
 end
 
 KA.@kernel function _reverse_transfer_kernel2!(
-        output, @Const(adj_vmag), @Const(adj_vang), @Const(adj_pgen), @Const(pv), @Const(pq), @Const(ref), @Const(pv2gen),
-    npq, npv, nref, ngen,
+    dest, @Const(src), @Const(map),
 )
     i, j = @index(Global, NTuple)
-
-    output[i, j] = if i <= npv
-        # x (vang_pv)
-        k = pv[i]
-        adj_vang[k, j]
-    elseif i <= npv + npq
-        k = pq[i - npv]
-        # x (vang_pq)
-        adj_vang[k, j]
-    elseif i <= npv + 2*npq
-        # x (vmag_pq)
-        k = pq[i - npv - npq]
-        adj_vmag[k, j]
-    elseif i <= npv + 2*npq + nref
-        # u (vmag_ref)
-        k = ref[i - npv - 2*npq]
-        adj_vmag[k, j]
-    elseif i <= npv + 2*npq + nref + npv
-        # u (vmag_pv)
-        k = pv[i - npv - 2*npq - nref]
-        adj_vmag[k, j]
-    elseif i <= npv + 2*npq + nref + npv + ngen
-        # u (vmag_pg)
-        k = pv2gen[i - 2*npv - 2*npq - nref]
-        adj_pgen[k, j]
-    end
-
+    dest[i, j] = src[map[i], j]
 end
 
 function reverse_transfer!(
@@ -426,16 +399,9 @@ function reverse_transfer!(
 )
     nx = get(polar, ExaPF.NumberOfState())
     nu = get(polar, ExaPF.NumberOfControl())
-    nbus = get(polar, PS.NumberOfBuses())
-    pv = polar.indexing.index_pv
-    pq = polar.indexing.index_pq
-    ref = polar.indexing.index_ref
-    pv2gen = polar.indexing.index_pv_to_gen
+    map = [my_map(polar, State()); my_map(polar, Control())]
     ev = _reverse_transfer_kernel2!(polar.device)(
-        output,
-        ∂state.vmag, ∂state.vang, ∂state.pgen,
-        pv, pq, ref, pv2gen,
-        length(pq), length(pv), length(ref), length(pv2gen),
+        output, ∂state.input, map,
         ndrange=(nx+nu, size(output, 2)),
         dependencies=Event(polar.device)
     )

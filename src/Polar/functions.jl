@@ -131,7 +131,7 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     ref_gen = polar.indexing.index_ref_to_gen
     # Assemble matrix
     M_tot = PS.get_basis_matrix(polar.network)
-    M = M_tot[ref, :] |> SMT
+    M = -M_tot[ref, :] |> SMT
 
     # coefficients
     coefs = polar.costs_coefficients
@@ -141,7 +141,7 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return CostFunction{VT, SMT}(ref_gen, M, c0, c1, c2)
 end
 
-Base.size(::CostFunction) = (1,)
+Base.length(::CostFunction) = 1
 
 function (func::CostFunction)(state)
     costs = state.intermediate.c
@@ -150,9 +150,14 @@ function (func::CostFunction)(state)
     return sum(costs)
 end
 
+function (func::CostFunction)(output, state)
+    output[1] = func(state)
+    return
+end
+
 function adjoint!(func::CostFunction, ∂state, state, ∂v)
     ∂state.pgen .+= ∂v .* (func.c1 .+ 2.0 .* func.c2 .* state.pgen)
-    ∂state.ψ .-= func.M' * ∂state.pgen[func.gen_ref]
+    ∂state.ψ .+= func.M' * ∂state.pgen[func.gen_ref]
     return
 end
 
@@ -187,7 +192,7 @@ function PowerFlowBalance(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return PowerFlowBalance{VT, SMT}(M, Cg, τ)
 end
 
-Base.size(func::PowerFlowBalance) = size(func.τ)
+Base.length(func::PowerFlowBalance) = length(func.τ)
 
 function (func::PowerFlowBalance)(cons, state)
     cons .= func.τ
@@ -197,7 +202,7 @@ function (func::PowerFlowBalance)(cons, state)
 end
 
 function adjoint!(func::PowerFlowBalance, ∂state, state, ∂v)
-    mul!(∂state.ψ, func.M', ∂v, 1.0, -1.0)
+    mul!(∂state.ψ, func.M', ∂v, 1.0, 1.0)
     mul!(∂state.pgen, func.Cg', ∂v, 1.0, 1.0)
     return
 end
@@ -209,7 +214,7 @@ struct VoltageMagnitudePQ <: AbstractExpression
 end
 VoltageMagnitudePQ(polar::PolarForm) = VoltageMagnitudePQ(polar.network.pq)
 
-Base.size(func::VoltageMagnitudePQ) = (length(func.pq),)
+Base.length(func::VoltageMagnitudePQ) = length(func.pq)
 
 function (func::VoltageMagnitudePQ)(cons, state)
     cons .= state.vmag[func.pq]
@@ -240,7 +245,7 @@ function PowerGenerationBounds(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT
     return PowerGenerationBounds{VT, SMT}(M, τ)
 end
 
-Base.size(func::PowerGenerationBounds) = size(func.τ)
+Base.length(func::PowerGenerationBounds) = length(func.τ)
 
 function (func::PowerGenerationBounds)(cons, state)
     cons .= func.τ .+ func.M * state.ψ
@@ -248,7 +253,7 @@ function (func::PowerGenerationBounds)(cons, state)
 end
 
 function adjoint!(func::PowerGenerationBounds, ∂state, state, ∂v)
-    mul!(∂state.ψ, func.M', ∂v, 1.0, -1.0)
+    mul!(∂state.ψ, func.M', ∂v, 1.0, 1.0)
     return
 end
 
@@ -268,16 +273,14 @@ function LineFlows(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     return LineFlows{VT,SMT}(nlines, Lfp, Lfq, Ltp, Ltq)
 end
 
-Base.size(func::LineFlows) = 2 * func.nlines
+Base.length(func::LineFlows) = 2 * func.nlines
 
-function (func::LineFlows)(cons::VT, state::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
+function (func::LineFlows)(cons::AbstractVector, state::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
     sfp = state.intermediate.sfp::VT
     sfq = state.intermediate.sfq::VT
     stp = state.intermediate.stp::VT
     stq = state.intermediate.stq::VT
 
-    # TODO: When Dual numbers are used, mul! dispatches on
-    # default Julia implementation, to slow for our use case
     mul!(sfp, func.Lfp, state.ψ)
     mul!(sfq, func.Lfq, state.ψ)
     mul!(stp, func.Ltp, state.ψ)
@@ -304,12 +307,40 @@ function adjoint!(func::LineFlows, ∂state, state, ∂v)
     stq .*= ∂v[1+nlines:2*nlines]
 
     # Accumulate adjoint
-    mul!(∂state.ψ, func.Lfp', sfp, 2.0, -1.0)
-    mul!(∂state.ψ, func.Lfq', sfq, 2.0, -1.0)
-    mul!(∂state.ψ, func.Ltp', stp, 2.0, -1.0)
-    mul!(∂state.ψ, func.Ltq', stq, 2.0, -1.0)
+    mul!(∂state.ψ, func.Lfp', sfp, 2.0, 1.0)
+    mul!(∂state.ψ, func.Lfq', sfq, 2.0, 1.0)
+    mul!(∂state.ψ, func.Ltp', stp, 2.0, 1.0)
+    mul!(∂state.ψ, func.Ltq', stq, 2.0, 1.0)
 
     return
 end
 
+# Aggregate expressions together
+struct MultiExpressions <: AbstractExpression
+    exprs::Vector{AbstractExpression}
+end
+
+Base.length(func::MultiExpressions) = sum(length.(func.exprs))
+
+function (func::MultiExpressions)(output, state)
+    k = 0
+    for expr in func.exprs
+        m = length(expr)
+        y = view(output, k+1:k+m)
+        expr(y, state)
+        k += m
+    end
+end
+
+function adjoint!(func::MultiExpressions, ∂state, state, ∂v)
+    k = 0
+    for expr in func.exprs
+        m = length(expr)
+        y = view(∂v, k+1:k+m)
+        adjoint!(expr, ∂state, state, y)
+        k += m
+    end
+end
+
 include("legacy.jl")
+
