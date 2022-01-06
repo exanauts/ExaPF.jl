@@ -61,6 +61,7 @@ function hprod!(
     _init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
     myseed!(H.state, state, H.t1sseeds, H.map, polar.device)
     forward_eval_intermediate(polar, H.state)
+    H.func(H.t1sF, H.state)
 
     # Reverse
     adjoint!(H.func, H.∂state, H.state, H.∂t1sF)

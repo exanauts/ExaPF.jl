@@ -131,7 +131,7 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     ref_gen = polar.indexing.index_ref_to_gen
     # Assemble matrix
     M_tot = PS.get_basis_matrix(polar.network)
-    M = M_tot[ref, :] |> SMT
+    M = -M_tot[ref, :] |> SMT
 
     # coefficients
     coefs = polar.costs_coefficients
@@ -150,10 +150,14 @@ function (func::CostFunction)(state)
     return sum(costs)
 end
 
+function (func::CostFunction)(output, state)
+    output[1] = func(state)
+    return
+end
+
 function adjoint!(func::CostFunction, ∂state, state, ∂v)
-    state.pgen[func.gen_ref] .= -func.M * state.ψ
     ∂state.pgen .+= ∂v .* (func.c1 .+ 2.0 .* func.c2 .* state.pgen)
-    ∂state.ψ .-= func.M' * ∂state.pgen[func.gen_ref]
+    ∂state.ψ .+= func.M' * ∂state.pgen[func.gen_ref]
     return
 end
 
@@ -198,7 +202,7 @@ function (func::PowerFlowBalance)(cons, state)
 end
 
 function adjoint!(func::PowerFlowBalance, ∂state, state, ∂v)
-    mul!(∂state.ψ, func.M', ∂v, 1.0, -1.0)
+    mul!(∂state.ψ, func.M', ∂v, 1.0, 1.0)
     mul!(∂state.pgen, func.Cg', ∂v, 1.0, 1.0)
     return
 end
@@ -249,7 +253,7 @@ function (func::PowerGenerationBounds)(cons, state)
 end
 
 function adjoint!(func::PowerGenerationBounds, ∂state, state, ∂v)
-    mul!(∂state.ψ, func.M', ∂v, 1.0, -1.0)
+    mul!(∂state.ψ, func.M', ∂v, 1.0, 1.0)
     return
 end
 
@@ -277,8 +281,6 @@ function (func::LineFlows)(cons::VT, state::NetworkStack{VT,S}) where {VT<:Abstr
     stp = state.intermediate.stp::VT
     stq = state.intermediate.stq::VT
 
-    # TODO: When Dual numbers are used, mul! dispatches on
-    # default Julia implementation, to slow for our use case
     mul!(sfp, func.Lfp, state.ψ)
     mul!(sfq, func.Lfq, state.ψ)
     mul!(stp, func.Ltp, state.ψ)
@@ -305,10 +307,10 @@ function adjoint!(func::LineFlows, ∂state, state, ∂v)
     stq .*= ∂v[1+nlines:2*nlines]
 
     # Accumulate adjoint
-    mul!(∂state.ψ, func.Lfp', sfp, 2.0, -1.0)
-    mul!(∂state.ψ, func.Lfq', sfq, 2.0, -1.0)
-    mul!(∂state.ψ, func.Ltp', stp, 2.0, -1.0)
-    mul!(∂state.ψ, func.Ltq', stq, 2.0, -1.0)
+    mul!(∂state.ψ, func.Lfp', sfp, 2.0, 1.0)
+    mul!(∂state.ψ, func.Lfq', sfq, 2.0, 1.0)
+    mul!(∂state.ψ, func.Ltp', stp, 2.0, 1.0)
+    mul!(∂state.ψ, func.Ltq', stq, 2.0, 1.0)
 
     return
 end
