@@ -2,7 +2,7 @@
 
 abstract type AbstractStack end
 
-struct NetworkStack{VT} <: AbstractStack
+struct NetworkStack{VT,NT} <: AbstractStack
     # INPUT
     input::VT
     vmag::VT # voltage magnitudes
@@ -10,6 +10,7 @@ struct NetworkStack{VT} <: AbstractStack
     pgen::VT # active power generations
     # INTERMEDIATE
     ψ::VT    # nonlinear basis ψ(vmag, vang)
+    intermediate::NT
 end
 
 function NetworkStack(nbus, ngen, nlines, VT)
@@ -22,9 +23,18 @@ function NetworkStack(nbus, ngen, nlines, VT)
     p2 = pointer(input, 2*nbus+1)
     pgen = unsafe_wrap(VT, p2, ngen)
 
+    # Basis function
     ψ = VT(undef, 2*nlines + nbus) ; fill!(ψ, 0.0)
+    # Intermediate expressions to avoid unecessary allocations
+    intermediate = (
+        c = VT(undef, ngen),     # buffer for costs
+        sfp = VT(undef, nlines), # buffer for line-flow
+        sfq = VT(undef, nlines), # buffer for line-flow
+        stp = VT(undef, nlines), # buffer for line-flow
+        stq = VT(undef, nlines), # buffer for line-flow
+    )
 
-    return NetworkStack{VT}(input, vmag, vang, pgen, ψ)
+    return NetworkStack(input, vmag, vang, pgen, ψ, intermediate)
 end
 
 function NetworkStack(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
@@ -108,7 +118,6 @@ include("second_order.jl")
 struct CostFunction{VT, MT} <: AbstractExpression
     gen_ref::Vector{Int}
     M::MT
-    c::VT
     c0::VT
     c1::VT
     c2::VT
@@ -124,22 +133,21 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     M_tot = PS.get_basis_matrix(polar.network)
     M = M_tot[ref, :] |> SMT
 
-    # costs
-    c = VT(undef, ngen)
     # coefficients
     coefs = polar.costs_coefficients
     c0 = @view coefs[:, 2]
     c1 = @view coefs[:, 3]
     c2 = @view coefs[:, 4]
-    return CostFunction{VT, SMT}(ref_gen, M, c, c0, c1, c2)
+    return CostFunction{VT, SMT}(ref_gen, M, c0, c1, c2)
 end
 
 Base.size(::CostFunction) = (1,)
 
 function (func::CostFunction)(state)
+    costs = state.intermediate.c
     state.pgen[func.gen_ref] .= func.M * state.ψ
-    func.c .= func.c0 .+ func.c1 .* state.pgen .+ func.c2 .* state.pgen.^2
-    return sum(func.c)
+    costs .= func.c0 .+ func.c1 .* state.pgen .+ func.c2 .* state.pgen.^2
+    return sum(costs)
 end
 
 function adjoint!(func::CostFunction, ∂state, state, ∂v)
@@ -251,77 +259,57 @@ struct LineFlows{VT, MT} <: AbstractExpression
     Lfq::MT
     Ltp::MT
     Ltq::MT
-    sfp::VT
-    sfq::VT
-    stp::VT
-    stq::VT
 end
 
 function LineFlows(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
+    SMT = default_sparse_matrix(polar.device)
     nlines = get(polar, PS.NumberOfLines())
     Lfp, Lfq, Ltp, Ltq = PS.get_line_flow_matrices(polar.network)
-    sfp = VT(undef, nlines)
-    sfq = VT(undef, nlines)
-    stp = VT(undef, nlines)
-    stq = VT(undef, nlines)
-    return LineFlows{VT,MT}(nlines, Lfp, Lfq, Ltp, Ltq, sfp, sfq, stp, stq)
+    return LineFlows{VT,SMT}(nlines, Lfp, Lfq, Ltp, Ltq)
 end
 
 Base.size(func::LineFlows) = 2 * func.nlines
 
-function (func::LineFlows)(cons, state)
-    mul!(func.sfp, func.Lfp, state.ψ)
-    mul!(func.sfq, func.Lfq, state.ψ)
-    mul!(func.stp, func.Ltp, state.ψ)
-    mul!(func.stq, func.Ltq, state.ψ)
-    cons[1:func.nlines] .= func.sfp.^2 .+ func.sfq.^2
-    cons[1+func.nlines:2*func.nlines] .= func.stp.^2 .+ func.stq.^2
+function (func::LineFlows)(cons::VT, state::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
+    sfp = state.intermediate.sfp::VT
+    sfq = state.intermediate.sfq::VT
+    stp = state.intermediate.stp::VT
+    stq = state.intermediate.stq::VT
+
+    # TODO: When Dual numbers are used, mul! dispatches on
+    # default Julia implementation, to slow for our use case
+    mul!(sfp, func.Lfp, state.ψ)
+    mul!(sfq, func.Lfq, state.ψ)
+    mul!(stp, func.Ltp, state.ψ)
+    mul!(stq, func.Ltq, state.ψ)
+    cons[1:func.nlines] .= sfp.^2 .+ sfq.^2
+    cons[1+func.nlines:2*func.nlines] .= stp.^2 .+ stq.^2
     return
 end
 
 function adjoint!(func::LineFlows, ∂state, state, ∂v)
     nlines = func.nlines
-    mul!(func.sfp, func.Lfp, state.ψ)
-    mul!(func.sfq, func.Lfq, state.ψ)
-    mul!(func.stp, func.Ltp, state.ψ)
-    mul!(func.stq, func.Ltq, state.ψ)
+    sfp = ∂state.intermediate.sfp
+    sfq = ∂state.intermediate.sfq
+    stp = ∂state.intermediate.stp
+    stq = ∂state.intermediate.stq
+    mul!(sfp, func.Lfp, state.ψ)
+    mul!(sfq, func.Lfq, state.ψ)
+    mul!(stp, func.Ltp, state.ψ)
+    mul!(stq, func.Ltq, state.ψ)
 
-    func.sfp .*= ∂v[1:nlines]
-    func.sfq .*= ∂v[1:nlines]
-    func.stp .*= ∂v[1+nlines:2*nlines]
-    func.stq .*= ∂v[1+nlines:2*nlines]
+    sfp .*= ∂v[1:nlines]
+    sfq .*= ∂v[1:nlines]
+    stp .*= ∂v[1+nlines:2*nlines]
+    stq .*= ∂v[1+nlines:2*nlines]
 
     # Accumulate adjoint
-    mul!(∂state.ψ, func.Lfp', func.sfp, 2.0, -1.0)
-    mul!(∂state.ψ, func.Lfq', func.sfq, 2.0, -1.0)
-    mul!(∂state.ψ, func.Ltp', func.stp, 2.0, -1.0)
-    mul!(∂state.ψ, func.Ltq', func.stq, 2.0, -1.0)
+    mul!(∂state.ψ, func.Lfp', sfp, 2.0, -1.0)
+    mul!(∂state.ψ, func.Lfq', sfq, 2.0, -1.0)
+    mul!(∂state.ψ, func.Ltp', stp, 2.0, -1.0)
+    mul!(∂state.ψ, func.Ltq', stq, 2.0, -1.0)
 
     return
 end
 
-function matpower_jacobian(polar::PolarForm, X::Union{State, Control}, func::PowerFlowBalance, V)
-    nbus = get(polar, PS.NumberOfBuses())
-    pf = polar.network
-    ref, pv, pq = index_buses_host(polar)
-    nref = length(ref)
-    npv = length(pv)
-    npq = length(pq)
-    Ybus = pf.Ybus
-
-    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
-
-    if isa(X, State)
-        j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-        j12 = real(dSbus_dVm[[pv; pq], pq])
-        j21 = imag(dSbus_dVa[pq, [pv; pq]])
-        j22 = imag(dSbus_dVm[pq, pq])
-        return [j11 j12; j21 j22]::SparseMatrixCSC{Float64, Int}
-    elseif isa(X, Control)
-        j11 = real(dSbus_dVm[[pv; pq], [ref; pv]])
-        j12 = sparse(I, npv + npq, npv)
-        j21 = imag(dSbus_dVm[pq, [ref; pv]])
-        j22 = spzeros(npq, npv)
-        return [j11 -j12; j21 j22]::SparseMatrixCSC{Float64, Int}
-    end
-end
+include("legacy.jl")
