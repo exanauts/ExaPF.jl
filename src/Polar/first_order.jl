@@ -23,6 +23,8 @@ struct MyJacobian{Func, VD, SMT, MT, VI, VP}
 end
 
 
+# Ordering: [vmag, vang, pgen]
+
 function my_map(polar::PolarForm, ::State)
     nbus = get(polar, PS.NumberOfBuses())
     ref, pv, pq = index_buses_device(polar)
@@ -38,8 +40,26 @@ end
 number(polar::PolarForm, ::State) = get(polar, NumberOfState())
 number(polar::PolarForm, ::Control) = get(polar, NumberOfControl())
 
+# Coloring
+function jacobian_sparsity(polar::PolarForm, func::AbstractExpression)
+    nbus = get(polar, PS.NumberOfBuses())
+    Vre = Float64[i for i in 1:nbus]
+    Vim = Float64[i for i in nbus+1:2*nbus]
+    V = Vre .+ im .* Vim
+    return matpower_jacobian(polar, func, V)
+end
+
+function get_jacobian_colors(polar::PolarForm, func::AbstractExpression, map::Vector{Int})
+    # Sparsity pattern
+    J = jacobian_sparsity(polar, func)
+    Jsub = J[:, map]
+    # Coloring
+    colors = AutoDiff.SparseDiffTools.matrix_colors(Jsub)
+    return (Jsub, colors)
+end
+
 function MyJacobian(
-    polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, variable,
+    polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int},
 ) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
@@ -48,19 +68,13 @@ function MyJacobian(
     nlines = PS.get(pf, PS.NumberOfLines())
     ngen = PS.get(pf, PS.NumberOfGenerators())
 
-    # Sparsity pattern
-    J = jacobian_sparsity(polar, func, variable)
-    # Coloring
-    coloring = AutoDiff.SparseDiffTools.matrix_colors(J)
+    J_host, coloring = get_jacobian_colors(polar, func, map)
     ncolor = size(unique(coloring),1)
 
+    J = J_host |> SMT
+
     m = size(J, 1)
-
-    map = my_map(polar, variable)
-    nmap = number(polar, variable)
-
-    # Move Jacobian to the GPU
-    J = convert(SMT, J)
+    nmap = length(map)
 
     # Seedings
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N

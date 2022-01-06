@@ -151,6 +151,7 @@ function (func::CostFunction)(state)
 end
 
 function adjoint!(func::CostFunction, ∂state, state, ∂v)
+    state.pgen[func.gen_ref] .= -func.M * state.ψ
     ∂state.pgen .+= ∂v .* (func.c1 .+ 2.0 .* func.c2 .* state.pgen)
     ∂state.ψ .-= func.M' * ∂state.pgen[func.gen_ref]
     return
