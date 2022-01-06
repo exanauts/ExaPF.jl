@@ -11,7 +11,7 @@ struct MyHessian{Func, VD, VI, T1, T2, Buff} <: AutoDiff.AbstractHessian
     buffer::Buff
 end
 
-function MyHessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
+function MyHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
@@ -19,10 +19,10 @@ function MyHessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
     nlines = PS.get(pf, PS.NumberOfLines())
     ngen = PS.get(pf, PS.NumberOfGenerators())
 
-    n_cons = size(func)[1]
+    n_cons = length(func)
 
-    map = [my_map(polar, State()); my_map(polar, Control())] |> VI
     nmap = length(map)
+    map_device = map |> VI
 
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     VD = A{t1s{1}}
@@ -41,7 +41,7 @@ function MyHessian(polar::PolarForm{T, VI, VT, MT}, func) where {T, VI, VT, MT}
 
     intermediate = _get_intermediate_stack(polar, network_basis, VD, 1)
     return MyHessian(
-        func, stack, ∂stack, host_t1sseeds, t1sseeds, t1sF, adj_t1sF, map, intermediate,
+        func, stack, ∂stack, host_t1sseeds, t1sseeds, t1sF, adj_t1sF, map_device, intermediate,
     )
 end
 
@@ -60,6 +60,8 @@ function hprod!(
     # Init seed
     _init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
     myseed!(H.state, state, H.t1sseeds, H.map, polar.device)
+    forward_eval_intermediate(polar, H.state)
+    H.func(H.t1sF, H.state)
 
     # Reverse
     adjoint!(H.func, H.∂state, H.state, H.∂t1sF)
