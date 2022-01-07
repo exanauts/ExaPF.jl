@@ -1,13 +1,14 @@
 
-struct MyHessian{Func, VD, VI, T1, T2, Buff} <: AutoDiff.AbstractHessian
+struct MyHessian{Model, Func, VD, VI, T1, T2, Buff} <: AutoDiff.AbstractHessian
+    model::Model
     func::Func
+    map::VI
     state::NetworkStack{VD}
     ∂state::NetworkStack{VD}
     host_t1sseeds::T1 # Needed because seeds have to be created on the host
     t1sseeds::T2
     t1sF::VD
     ∂t1sF::VD
-    map::VI
     buffer::Buff
 end
 
@@ -27,9 +28,7 @@ function MyHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, ma
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     VD = A{t1s{1}}
 
-    # ̇x
     stack = NetworkStack(nbus, ngen, nlines, VD)
-    # ̄y
     ∂stack = NetworkStack(nbus, ngen, nlines, VD)
 
     t1sF = zeros(Float64, n_cons) |> VD
@@ -41,12 +40,13 @@ function MyHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, ma
 
     intermediate = _get_intermediate_stack(polar, network_basis, VD, 1)
     return MyHessian(
-        func, stack, ∂stack, host_t1sseeds, t1sseeds, t1sF, adj_t1sF, map_device, intermediate,
+        polar, func, map_device, stack, ∂stack, host_t1sseeds, t1sseeds, t1sF, adj_t1sF,
+        intermediate,
     )
 end
 
 function hprod!(
-    polar, H::MyHessian, hv, state, λ, v,
+    H::MyHessian, hv, state, λ, v,
 )
     @assert length(hv) == length(v)
 
@@ -59,15 +59,15 @@ function hprod!(
     nmap = length(H.map)
     # Init seed
     _init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
-    myseed!(H.state, state, H.t1sseeds, H.map, polar.device)
-    forward_eval_intermediate(polar, H.state)
+    myseed!(H.state, state, H.t1sseeds, H.map, H.model.device)
+    forward_eval_intermediate(H.model, H.state)
     H.func(H.t1sF, H.state)
 
     # Reverse
     adjoint!(H.func, H.∂state, H.state, H.∂t1sF)
-    reverse_eval_intermediate(polar, H.∂state, H.state, H.buffer)
+    reverse_eval_intermediate(H.model, H.∂state, H.state, H.buffer)
 
-    AutoDiff.getpartials_kernel!(hv, H.∂state.input, H.map, polar.device)
+    AutoDiff.getpartials_kernel!(hv, H.∂state.input, H.map, H.model.device)
     return
 end
 

@@ -93,4 +93,132 @@ function matpower_jacobian(polar::PolarForm, func::MultiExpressions, V)
     return vcat([matpower_jacobian(polar, expr, V) for expr in func.exprs]...)
 end
 
+# Return full-space Hessian
+function matpower_hessian(polar::PolarForm, func::CostFunction, V, λ)
+    pf = polar.network
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    ref = pf.ref
+    nref = length(ref)
 
+    H11 = spzeros(2* nbus, 2 * nbus + ngen)
+
+    H21 = spzeros(ngen, 2 * nbus)
+    H22 = spdiagm(2.0 .* func.c2)
+    H = [
+        H11;
+        H21 H22;
+    ]::SparseMatrixCSC{Float64, Int}
+
+    # pg_ref is implicit: add term corresponding to ∂pg_ref' * ∂pg_ref
+    Ybus = pf.Ybus
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
+    j11 = real(dSbus_dVm[ref, :])
+    j12 = real(dSbus_dVa[ref, :])
+    j13 = spzeros(nref, ngen)
+    J = [j11 j12 j13]::SparseMatrixCSC{Float64, Int}
+
+    Href = J' * Diagonal(2 .* func.c2[ref]) * J
+
+    return H + Href
+end
+
+function matpower_hessian(polar::PolarForm, func::PowerFlowBalance, V, λ)
+    pf = polar.network
+    Ybus = pf.Ybus
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    pq, pv = pf.pq, pf.pv
+    npq, npv = length(pq), length(pv)
+
+    yp = zeros(nbus)
+    yp[pv] .= λ[1:npv]
+    yp[pq] .= λ[1+npv:npv+npq]
+    Hpθθ, Hpvθ, Hpvv = PS._matpower_hessian(V, Ybus, yp)
+
+    yq = zeros(nbus)
+    yq[pq] .= λ[1+npv+npq:npv+2*npq]
+    Hqθθ, Hqvθ, Hqvv = PS._matpower_hessian(V, Ybus, yq)
+
+    H11 = real.(Hpvv) .+ imag.(Hqvv)
+    H12 = real.(Hpvθ) .+ imag.(Hqvθ)
+    H13 = spzeros(nbus, ngen)
+
+    H21 = real.(Hpvθ') .+ imag.(Hqvθ')
+    H22 = real.(Hpθθ) .+ imag.(Hqθθ)
+    H23 = spzeros(nbus, ngen)
+
+    H31 = spzeros(ngen, nbus)
+    H32 = spzeros(ngen, nbus)
+    H33 = spzeros(ngen, ngen)
+    return [
+        H11 H12 H13;
+        H21 H22 H23;
+        H31 H32 H33
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
+function matpower_hessian(polar::PolarForm, func::PowerGenerationBounds, V, λ)
+    pf = polar.network
+    Ybus = pf.Ybus
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    ref, pv = pf.ref, pf.pv
+    nref, npv = length(ref), length(pv)
+
+    yp = zeros(nbus)
+    yp[ref] .= λ[1:nref]
+    Hpθθ, Hpvθ, Hpvv = PS._matpower_hessian(V, Ybus, yp)
+
+    yq = zeros(nbus)
+    yq[pv] .= λ[nref+1:nref+npv]
+    Hqθθ, Hqvθ, Hqvv = PS._matpower_hessian(V, Ybus, yq)
+
+    H11 = real.(Hpvv) .+ imag.(Hqvv)
+    H12 = real.(Hpvθ) .+ imag.(Hqvθ)
+    H13 = spzeros(nbus, ngen)
+
+    H21 = real.(Hpvθ') .+ imag.(Hqvθ')
+    H22 = real.(Hpθθ) .+ imag.(Hqθθ)
+    H23 = spzeros(nbus, ngen)
+
+    H31 = spzeros(ngen, nbus)
+    H32 = spzeros(ngen, nbus)
+    H33 = spzeros(ngen, ngen)
+    return [
+        H11 H12 H13;
+        H21 H22 H23;
+        H31 H32 H33
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
+function matpower_hessian(polar::PolarForm, func::VoltageMagnitudePQ, V, λ)
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    n = 2*nbus + ngen
+    return spzeros(n, n)
+end
+
+# TODO: not implemented yet
+function matpower_hessian(polar::PolarForm, func::LineFlows, V, λ)
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    n = 2*nbus + ngen
+    return spzeros(n, n)
+end
+
+function matpower_hessian(polar::PolarForm, func::MultiExpressions, V, λ)
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    n = 2*nbus + ngen
+    H = spzeros(n, n)
+
+    k = 0
+    for expr in func.exprs
+        m = length(expr)
+        y = view(λ, k+1:k+m)
+        H += matpower_hessian(polar, expr, V, y)::SparseMatrixCSC{Float64, Int}
+        k += m
+    end
+    return H
+end

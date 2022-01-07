@@ -32,3 +32,10 @@ function get_batch_jacobian_types(::GPU)
     A = CUDA.CuArray
     return SMT, A
 end
+
+function Base.unsafe_wrap(Atype::Type{CUDA.CuArray{T, 1, CUDA.Mem.DeviceBuffer}},
+                          p::CUDA.CuPtr{T}, dim::Integer;
+                          own::Bool=false, ctx::CUDA.CuContext=CUDA.context()) where {T}
+    unsafe_wrap(CUDA.CuArray{T, 1}, p, (dim,); own, ctx)
+end
+

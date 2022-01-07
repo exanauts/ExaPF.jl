@@ -43,7 +43,7 @@ function NetworkStack(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     nlines = get(polar, PS.NumberOfLines())
 
     stack = NetworkStack(nbus, ngen, nlines, VT)
-
+    # Initiate with initial solution
     copyto!(stack.vmag, abs.(polar.network.vbus))
     copyto!(stack.vang, angle.(polar.network.vbus))
     copyto!(stack.pgen, get(polar.network, PS.ActivePower()))
@@ -57,6 +57,8 @@ function Base.empty!(state::NetworkStack)
     fill!(state.ψ, 0.0)
     return
 end
+
+voltage(buf::NetworkStack) = buf.vmag .* exp.(im .* buf.vang)
 
 
 # update basis
@@ -151,7 +153,7 @@ function (func::CostFunction)(state)
 end
 
 function (func::CostFunction)(output, state)
-    output[1] = func(state)
+    CUDA.@allowscalar output[1] = func(state)
     return
 end
 
@@ -194,6 +196,11 @@ end
 
 Base.length(func::PowerFlowBalance) = length(func.τ)
 
+function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerFlowBalance) where {T,VI,VT,MT}
+    m = length(func)
+    return (fill!(VT(undef, m), zero(T)) , fill!(VT(undef, m), zero(T)))
+end
+
 function (func::PowerFlowBalance)(cons, state)
     cons .= func.τ
     mul!(cons, func.M, state.ψ, 1.0, 1.0)
@@ -215,6 +222,11 @@ end
 VoltageMagnitudePQ(polar::PolarForm) = VoltageMagnitudePQ(polar.network.pq)
 
 Base.length(func::VoltageMagnitudePQ) = length(func.pq)
+
+function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudePQ) where {T,VI,VT,MT}
+    v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
+    return convert(VT, v_min[func.pq]), convert(VT, v_max[func.pq])
+end
 
 function (func::VoltageMagnitudePQ)(cons, state)
     cons .= state.vmag[func.pq]
@@ -247,8 +259,19 @@ end
 
 Base.length(func::PowerGenerationBounds) = length(func.τ)
 
+function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where {T,VI,VT,MT}
+    p_min, p_max = PS.bounds(polar.network, PS.Generators(), PS.ActivePower())
+    q_min, q_max = PS.bounds(polar.network, PS.Generators(), PS.ReactivePower())
+    _, ref2gen, _ = index_generators_host(polar)
+    return (
+        convert(VT, [p_min[ref2gen]; q_min]),
+        convert(VT, [p_max[ref2gen]; q_max]),
+    )
+end
+
 function (func::PowerGenerationBounds)(cons, state)
-    cons .= func.τ .+ func.M * state.ψ
+    cons .= func.τ
+    mul!(cons, func.M, state.ψ, 1.0, 1.0)
     return
 end
 
@@ -274,6 +297,11 @@ function LineFlows(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
 end
 
 Base.length(func::LineFlows) = 2 * func.nlines
+
+function bounds(polar::PolarForm{T,VI,VT,MT}, func::LineFlows) where {T,VI,VT,MT}
+    f_min, f_max = PS.bounds(polar.network, PS.Lines(), PS.ActivePower())
+    return convert(VT, [f_min; f_min]), convert(VT, [f_max; f_max])
+end
 
 function (func::LineFlows)(cons::AbstractVector, state::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
     sfp = state.intermediate.sfp::VT
@@ -342,5 +370,6 @@ function adjoint!(func::MultiExpressions, ∂state, state, ∂v)
     end
 end
 
+include("newton.jl")
 include("legacy.jl")
 
