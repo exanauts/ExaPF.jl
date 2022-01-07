@@ -394,12 +394,12 @@ KA.@kernel function _reverse_transfer_kernel2!(
 end
 
 function reverse_transfer!(
-    polar::PolarForm,
+    polar::PolarForm{T, VI, VT, MT},
     output, ∂state,
-)
+) where {T, VI, VT, MT}
     nx = get(polar, ExaPF.NumberOfState())
     nu = get(polar, ExaPF.NumberOfControl())
-    map = [my_map(polar, State()); my_map(polar, Control())]
+    map = [my_map(polar, State()); my_map(polar, Control())] |> VI
     ev = _reverse_transfer_kernel2!(polar.device)(
         output, ∂state.input, map,
         ndrange=(nx+nu, size(output, 2)),
