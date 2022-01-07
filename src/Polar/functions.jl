@@ -43,7 +43,7 @@ function NetworkStack(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     nlines = get(polar, PS.NumberOfLines())
 
     stack = NetworkStack(nbus, ngen, nlines, VT)
-
+    # Initiate with initial solution
     copyto!(stack.vmag, abs.(polar.network.vbus))
     copyto!(stack.vang, angle.(polar.network.vbus))
     copyto!(stack.pgen, get(polar.network, PS.ActivePower()))
@@ -342,5 +342,6 @@ function adjoint!(func::MultiExpressions, ∂state, state, ∂v)
     end
 end
 
+include("newton.jl")
 include("legacy.jl")
 

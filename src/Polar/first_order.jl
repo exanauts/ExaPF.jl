@@ -11,17 +11,19 @@ function jacobian_transpose_product!(polar::PolarForm, pbm::AutoDiff.TapeMemory,
     )
 end
 
-struct MyJacobian{Func, VD, SMT, MT, VI, VP}
+struct MyJacobian{Model, Func, VD, SMT, MT, VI, VP}
+    model::Model
     func::Func
+    map::VI
     stack::NetworkStack{VD}
-    J::SMT
     compressedJ::MT
     coloring::VI
-    map::VI
     t1sseeds::VP
     t1sF::VD
+    J::SMT
 end
 
+Base.size(jac::MyJacobian, n::Int) = size(jac.J, n)
 
 # Ordering: [vmag, vang, pgen]
 
@@ -58,9 +60,7 @@ function get_jacobian_colors(polar::PolarForm, func::AbstractExpression, map::Ve
     return (Jsub, colors)
 end
 
-function MyJacobian(
-    polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int},
-) where {T, VI, VT, MT}
+function MyJacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
@@ -68,32 +68,35 @@ function MyJacobian(
     nlines = PS.get(pf, PS.NumberOfLines())
     ngen = PS.get(pf, PS.NumberOfGenerators())
 
+    n_cons = length(func)
+
+    nmap = length(map)
+    map_device = map |> VI
+
     J_host, coloring = get_jacobian_colors(polar, func, map)
     ncolor = size(unique(coloring),1)
 
+    t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
+    VD = A{t1s{ncolor}}
+
     J = J_host |> SMT
 
-    m = size(J, 1)
-    nmap = length(map)
-
     # Seedings
-    t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-    stack = NetworkStack(nbus, ngen, nlines, A{t1s{ncolor}})
-    t1sF = A{t1s{ncolor}}(zeros(Float64, m))
+    stack = NetworkStack(nbus, ngen, nlines, VD)
+    t1sF = zeros(Float64, n_cons) |> VD
     t1sseeds = AutoDiff.init_seed(coloring, ncolor, nmap)
 
     # Move the seeds over to the device, if necessary
     gput1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(t1sseeds)
-    compressedJ = MT(zeros(Float64, ncolor, m))
+    compressedJ = MT(zeros(Float64, ncolor, n_cons))
 
     return MyJacobian(
-        func, stack, J, compressedJ, coloring, map, gput1sseeds, t1sF,
+        polar, func, map_device, stack, compressedJ, coloring, gput1sseeds, t1sF, J,
     )
 end
 
-@kernel function _seed_kernel2!(
-    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, @Const(x),
-    @Const(seeds), @Const(map),
+@kernel function _seed_kernel!(
+    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, @Const(x), @Const(seeds), @Const(map),
 ) where {T,V,N}
     i = @index(Global, Linear)
     duals[map[i]] = ForwardDiff.Dual{T,V,N}(x[map[i]], seeds[i])
@@ -102,25 +105,25 @@ end
 function myseed!(dest, src, seeds, map, device)
     y = dest.input
     x = src.input
-    ev = _seed_kernel2!(device)(
+    ev = _seed_kernel!(device)(
         y, x, seeds, map, ndrange=length(map), dependencies=Event(device))
     wait(ev)
 end
 
 function jacobian!(
-    polar::PolarForm, jac::MyJacobian, state,
+    jac::MyJacobian, state,
 )
     # init
     jac.stack.input .= state.input
     jac.t1sF .= 0.0
     # seed
-    myseed!(jac.stack, state, jac.t1sseeds, jac.map, polar.device)
+    myseed!(jac.stack, state, jac.t1sseeds, jac.map, jac.model.device)
     # forward pass
-    forward_eval_intermediate(polar, jac.stack)
+    forward_eval_intermediate(jac.model, jac.stack)
     jac.func(jac.t1sF, jac.stack)
     # uncompress
-    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, polar.device)
-    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, polar.device)
+    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, jac.model.device)
+    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, jac.model.device)
     return jac.J
 end
 

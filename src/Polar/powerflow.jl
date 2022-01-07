@@ -213,3 +213,16 @@ function batch_powerflow(
     return ConvergenceStatus(converged, iter, sum(normF), 0)
 end
 
+function run_pf(
+    polar::PolarForm, state::NetworkStack;
+    rtol=1e-8, max_iter=20,
+)
+    solver = NewtonRaphson(tol=rtol, maxiter=max_iter)
+
+    func = PowerFlowBalance(polar)
+    jac = MyJacobian(polar, func, polar.mapx)
+
+    return nlsolve!(solver, jac, state)
+end
+
+
