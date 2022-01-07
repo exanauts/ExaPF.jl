@@ -34,6 +34,8 @@ function matpower_jacobian(polar::PolarForm, func::VoltageMagnitudePQ, V)
     ngen = pf.ngen
     nbus = pf.nbus
     ref, pv, pq = index_buses_host(polar)
+    npq = length(pq)
+
     j11 = sparse(1:npq, pq, ones(npq), npq, nbus)
     j12 = spzeros(npq, nbus + ngen)
     return [j11 j12]::SparseMatrixCSC{Float64, Int}
@@ -86,4 +88,9 @@ function matpower_jacobian(polar::PolarForm, func::LineFlows, V)
         j11 j12 j13;
     ]::SparseMatrixCSC{Float64, Int}
 end
+
+function matpower_jacobian(polar::PolarForm, func::MultiExpressions, V)
+    return vcat([matpower_jacobian(polar, expr, V) for expr in func.exprs]...)
+end
+
 

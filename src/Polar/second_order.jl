@@ -19,7 +19,7 @@ function MyHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, ma
     nlines = PS.get(pf, PS.NumberOfLines())
     ngen = PS.get(pf, PS.NumberOfGenerators())
 
-    n_cons = size(func)[1]
+    n_cons = length(func)
 
     nmap = length(map)
     map_device = map |> VI

@@ -141,7 +141,7 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return CostFunction{VT, SMT}(ref_gen, M, c0, c1, c2)
 end
 
-Base.size(::CostFunction) = (1,)
+Base.length(::CostFunction) = 1
 
 function (func::CostFunction)(state)
     costs = state.intermediate.c
@@ -192,7 +192,7 @@ function PowerFlowBalance(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return PowerFlowBalance{VT, SMT}(M, Cg, τ)
 end
 
-Base.size(func::PowerFlowBalance) = size(func.τ)
+Base.length(func::PowerFlowBalance) = length(func.τ)
 
 function (func::PowerFlowBalance)(cons, state)
     cons .= func.τ
@@ -214,7 +214,7 @@ struct VoltageMagnitudePQ <: AbstractExpression
 end
 VoltageMagnitudePQ(polar::PolarForm) = VoltageMagnitudePQ(polar.network.pq)
 
-Base.size(func::VoltageMagnitudePQ) = (length(func.pq),)
+Base.length(func::VoltageMagnitudePQ) = length(func.pq)
 
 function (func::VoltageMagnitudePQ)(cons, state)
     cons .= state.vmag[func.pq]
@@ -245,7 +245,7 @@ function PowerGenerationBounds(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT
     return PowerGenerationBounds{VT, SMT}(M, τ)
 end
 
-Base.size(func::PowerGenerationBounds) = size(func.τ)
+Base.length(func::PowerGenerationBounds) = length(func.τ)
 
 function (func::PowerGenerationBounds)(cons, state)
     cons .= func.τ .+ func.M * state.ψ
@@ -273,9 +273,9 @@ function LineFlows(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     return LineFlows{VT,SMT}(nlines, Lfp, Lfq, Ltp, Ltq)
 end
 
-Base.size(func::LineFlows) = 2 * func.nlines
+Base.length(func::LineFlows) = 2 * func.nlines
 
-function (func::LineFlows)(cons::VT, state::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
+function (func::LineFlows)(cons::AbstractVector, state::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
     sfp = state.intermediate.sfp::VT
     sfq = state.intermediate.sfq::VT
     stp = state.intermediate.stp::VT
@@ -315,4 +315,32 @@ function adjoint!(func::LineFlows, ∂state, state, ∂v)
     return
 end
 
+# Aggregate expressions together
+struct MultiExpressions <: AbstractExpression
+    exprs::Vector{AbstractExpression}
+end
+
+Base.length(func::MultiExpressions) = sum(length.(func.exprs))
+
+function (func::MultiExpressions)(output, state)
+    k = 0
+    for expr in func.exprs
+        m = length(expr)
+        y = view(output, k+1:k+m)
+        expr(y, state)
+        k += m
+    end
+end
+
+function adjoint!(func::MultiExpressions, ∂state, state, ∂v)
+    k = 0
+    for expr in func.exprs
+        m = length(expr)
+        y = view(∂v, k+1:k+m)
+        adjoint!(expr, ∂state, state, y)
+        k += m
+    end
+end
+
 include("legacy.jl")
+
