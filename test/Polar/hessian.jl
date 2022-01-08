@@ -68,97 +68,47 @@ function test_hessian_with_matpower(polar, device, AT; atol=1e-6, rtol=1e-6)
 end
 
 function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
-    pf = polar.network
-    pv = pf.pv ; npv = length(pv)
-    pq = pf.pq ; npq = length(pq)
-    ref = pf.ref ; nref = length(ref)
-    nbus = pf.nbus
-    ngen = get(polar, PS.NumberOfGenerators())
+    nx = length(polar.mapx)
+    nu = length(polar.mapu)
 
-    pv2gen = polar.indexing.index_pv_to_gen
-    ref2gen = polar.indexing.index_ref_to_gen
-    gen2bus = polar.indexing.index_generators
-    cache = ExaPF.get(polar, ExaPF.PhysicalState())
-    ExaPF.init_buffer!(polar, cache)
+    mymap = [ExaPF.my_map(polar, State()); ExaPF.my_map(polar, Control())]
 
-    xk = ExaPF.initial(polar, State())
-    u = ExaPF.initial(polar, Control())
-    nx = length(xk) ; nu = length(u)
+    stack = ExaPF.NetworkStack(polar)
+    # Solve power flow
+    conv = ExaPF.run_pf(polar, stack)
 
-    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
-    ju = AutoDiff.Jacobian(polar, ExaPF.power_balance, Control())
-    ∂obj = ExaPF.AdjointStackObjective(polar)
+    constraints = [
+        ExaPF.VoltageMagnitudePQ(polar),
+        ExaPF.PowerGenerationBounds(polar),
+        ExaPF.LineFlows(polar),
+        ExaPF.PowerFlowBalance(polar),
+    ]
+    mycons = ExaPF.MultiExpressions(constraints)
 
     # Initiate state and control for FiniteDiff
-    x = [cache.vang[pv] ; cache.vang[pq] ; cache.vmag[pq]]
-    u = [cache.vmag[ref]; cache.vmag[pv]; cache.pgen[pv2gen]]
-
     # CONSTRAINTS
-    @testset "Compare with FiniteDiff Hessian ($constraints)" for constraints in [
-        ExaPF.power_balance,
-        ExaPF.active_power_constraints,
-        ExaPF.reactive_power_constraints,
-        ExaPF.flow_constraints,
-        ExaPF.bus_power_injection,
-    ]
-        ncons = ExaPF.size_constraint(polar, constraints)
-        μ = rand(ncons)
+    m = length(mycons)
+    μ = rand(m)
+    c = zeros(m)
 
-        function jac_x(z)
-            x_ = z[1:nx]
-            u_ = z[1+nx:end]
-            # Transfer control
-            ExaPF.transfer!(polar, cache, u_)
-            # Transfer state (manually)
-            cache.vang[pv] .= x_[1:npv]
-            cache.vang[pq] .= x_[npv+1:npv+npq]
-            cache.vmag[pq] .= x_[npv+npq+1:end]
-            Jx = ExaPF.matpower_jacobian(polar, constraints, State(), cache)
-            Ju = ExaPF.matpower_jacobian(polar, constraints, Control(), cache)
-            return [Jx Ju]' * μ
-        end
-        H_fd = FiniteDiff.finite_difference_jacobian(jac_x, [x; u])
-
-        HessianAD = AutoDiff.Hessian(polar, constraints)
-        tgt = rand(nx + nu)
-        projp = zeros(nx + nu)
-        dev_tgt = MT(tgt)
-        dev_projp = MT(projp)
-        dev_μ = MT(μ)
-        AutoDiff.adj_hessian_prod!(polar, HessianAD, dev_projp, cache, dev_μ, dev_tgt)
-        projp = Array(dev_projp)
-        @test isapprox(projp, H_fd * tgt, rtol=rtol)
-    end
-
-    # OBJECTIVE
-    ncons = ExaPF.size_constraint(polar, ExaPF.cost_production)
-    μ = ones(ncons)
-
-    # Initiate on CPU for FiniteDiff
-    polar_cpu = PolarForm(polar.network, CPU())
-    cache_cpu = ExaPF.get(polar_cpu, ExaPF.PhysicalState())
-    x0 = [x; u] |> Array
-    function obj_fd(z)
-        x_ = z[1:nx]
-        u_ = z[1+nx:end]
-        # Transfer control
-        ExaPF.transfer!(polar_cpu, cache_cpu, u_)
-        # Transfer state (manually)
-        cache_cpu.vang[pv] .= x_[1:npv]
-        cache_cpu.vang[pq] .= x_[npv+1:npv+npq]
-        cache_cpu.vmag[pq] .= x_[npv+npq+1:end]
-        return ExaPF.cost_production(polar_cpu, cache_cpu)
-    end
-    H_fd = FiniteDiff.finite_difference_hessian(obj_fd, x0)
-
-    HessianAD = AutoDiff.Hessian(polar, ExaPF.cost_production)
+    HessianAD = ExaPF.MyHessian(polar, mycons, mymap)
     tgt = rand(nx + nu)
     projp = zeros(nx + nu)
     dev_tgt = MT(tgt)
     dev_projp = MT(projp)
     dev_μ = MT(μ)
-    AutoDiff.adj_hessian_prod!(polar, HessianAD, dev_projp, cache, dev_μ, dev_tgt)
+    ExaPF.hprod!(HessianAD, dev_projp, stack, dev_μ, dev_tgt)
     projp = Array(dev_projp)
-    @test isapprox( projp, H_fd * tgt, rtol=rtol)
+
+    function lagr_x(z)
+        stack.input[mymap] .= z
+        ExaPF.forward_eval_intermediate(polar, stack)
+        mycons(c, stack)
+        return dot(μ, c)
+    end
+    x0 = stack.input[mymap]
+    H_fd = FiniteDiff.finite_difference_hessian(lagr_x, x0)
+
+    @test isapprox(projp, H_fd * tgt, rtol=rtol)
 end
 

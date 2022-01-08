@@ -47,78 +47,57 @@ end
 function test_polar_api(polar, device, M)
     pf = polar.network
     tolerance = 1e-8
-    cache = ExaPF.get(polar, ExaPF.PhysicalState())
-    ExaPF.init_buffer!(polar, cache)
+    stack = ExaPF.NetworkStack(polar)
+    ExaPF.forward_eval_intermediate(polar, stack)
+    power_balance = ExaPF.PowerFlowBalance(polar)
     # Test that values are matching
-    @test myisapprox(pf.vbus, cache.vmag .* exp.(im .* cache.vang))
-    @test myisapprox(pf.sbus, (cache.pnet .- cache.pload) .+ im .* (cache.qnet .- cache.qload))
+    @test myisapprox(pf.vbus, stack.vmag .* exp.(im .* stack.vang))
     xₖ = ExaPF.initial(polar, State())
-    # Init AD factory
-    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
 
     # Check that initial residual is correct
     mis = pf.vbus .* conj.(pf.Ybus * pf.vbus) .- pf.sbus
     f_mat = [real(mis[[pf.pv; pf.pq]]); imag(mis[pf.pq])];
 
-    cons = cache.balance
-    ExaPF.power_balance(polar, cons, cache)
+    cons = similar(xₖ)
+    power_balance(cons, stack)
     @test myisapprox(cons, f_mat)
 
     # Test powerflow with cache signature
-    conv = powerflow(polar, jx, cache, NewtonRaphson(tol=tolerance))
+    conv = ExaPF.run_pf(polar, stack)
     @test conv.has_converged
-
-    # Get current state
-    ExaPF.get!(polar, State(), xₖ, cache)
-
-    # Bounds on state and control
-    u_min, u_max = ExaPF.bounds(polar, Control())
-    x_min, x_max = ExaPF.bounds(polar, State())
-
-    # Get current control
-    u = similar(u_min)
-    ExaPF.get!(polar, Control(), u, cache)
-
-    h_u_min, h_u_max = u_min |> Array, u_max |> Array
-    h_x_min, h_x_max = x_min |> Array, x_max |> Array
-    @test isless(h_u_min, h_u_max)
-    @test isless(h_x_min, h_x_max)
 
     # Test callbacks
     ## Power Balance
-    ExaPF.power_balance(polar, cons, cache)
+    ExaPF.forward_eval_intermediate(polar, stack)
+    power_balance(cons, stack)
     # As we run powerflow before, the balance should be below tolerance
     @test ExaPF.xnorm_inf(cons) < tolerance
 
     ## Cost Production
-    c2 = ExaPF.cost_production(polar, cache)
+    cost_production = ExaPF.CostFunction(polar)
+    c2 = cost_production(stack)
     @test isa(c2, Real)
     return nothing
 end
 
 function test_polar_constraints(polar, device, M)
-    cache = ExaPF.get(polar, ExaPF.PhysicalState())
-    ExaPF.init_buffer!(polar, cache)
-    # Test that default function is not flagged as a constraint
-    foo(x) = 2*x
-    @test !ExaPF.is_constraint(foo)
+    stack = ExaPF.NetworkStack(polar)
 
-    ## Inequality constraint
-    @testset "Function $cons_function" for cons_function in [
-        ExaPF.voltage_magnitude_constraints,
-        ExaPF.active_power_constraints,
-        ExaPF.reactive_power_constraints,
-        ExaPF.flow_constraints,
-        ExaPF.power_balance,
+    @testset "Expressions $expr" for expr in [
+        ExaPF.VoltageMagnitudePQ,
+        ExaPF.PowerGenerationBounds,
+        ExaPF.LineFlows,
+        ExaPF.PowerFlowBalance,
     ]
-        @test ExaPF.is_constraint(cons_function)
-        m = ExaPF.size_constraint(polar, cons_function)
+        # Instantiate
+        constraints = expr(polar)
+        m = length(constraints)
         @test isa(m, Int)
         g = M{Float64, 1}(undef, m) # TODO: this signature is not great
         fill!(g, 0)
-        cons_function(polar, g, cache)
+        constraints(g, stack)
 
-        g_min, g_max = ExaPF.bounds(polar, cons_function)
+        g_min, g_max = ExaPF.bounds(polar, constraints)
         @test length(g_min) == m
         @test length(g_max) == m
         @test isa(g_min, M)

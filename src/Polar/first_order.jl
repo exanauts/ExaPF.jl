@@ -1,3 +1,8 @@
+function get_tape(polar::PolarForm, expr::AbstractExpression, ∂stack::NetworkStack{VT, Buf}) where {VT, Buf}
+    # TODO
+    intermediate = _get_intermediate_stack(polar, ExaPF.network_basis, VT, 1)
+    return AutoDiff.TapeMemory(expr, ∂stack, intermediate)
+end
 
 function jacobian_transpose_product!(polar::PolarForm, pbm::AutoDiff.TapeMemory, jv, state, ∂v)
     ∂state = pbm.stack

@@ -79,7 +79,7 @@ function Base.iszero(buf::PolarNetworkState)
 end
 
 voltage(buf::PolarNetworkState) = buf.vmag .* exp.(im .* buf.vang)
-voltage_host(buf::PolarNetworkState) = voltage(buf) |> Array
+voltage_host(buf) = voltage(buf) |> Array
 
 "Store topology of the network on target device."
 struct NetworkTopology{VTI, VTD}
