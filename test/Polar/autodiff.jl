@@ -38,7 +38,7 @@ function test_constraints_jacobian(polar, device, MT)
         function jac_fd_x(x)
             stack.input[mymap] .= x
             ExaPF.forward_eval_intermediate(polar, stack)
-            c = zeros(m)
+            c = zeros(m) |> MT
             constraint(c, stack)
             return c
         end
@@ -47,15 +47,17 @@ function test_constraints_jacobian(polar, device, MT)
         Jx = jac.J |> SparseMatrixCSC |> Array
 
         ## JACOBIAN VECTOR PRODUCT
-        tgt = rand(m) |> MT
+        tgt_h = rand(m)
+        tgt = tgt_h |> MT
         output = zeros(nx+nu) |> MT
         ExaPF.jacobian_transpose_product!(polar, pbm, output, stack, tgt)
 
+
         @test size(J) == (m, length(mymap))
-        @test isapprox(Jd, Jx, rtol=1e-5)
-        @test isapprox(Jmat, Jx, rtol=1e-5)
-        @test isapprox(Jmat, Jd, rtol=1e-5)
-        @test isapprox(∂stack.input[mymap], Jx' * tgt, rtol=1e-6)
+        @test myisapprox(Jd, Jx, rtol=1e-5)
+        @test myisapprox(Jmat, Jx, rtol=1e-5)
+        @test myisapprox(Jmat, Jd, rtol=1e-5)
+        @test myisapprox(∂stack.input[mymap], Jx' * tgt_h, rtol=1e-6)
     end
 end
 
@@ -98,7 +100,7 @@ function test_constraints_adjoint(polar, device, MT)
         adj_fd = FiniteDiff.finite_difference_jacobian(test_fd, x) |> Array
         # Loosen the tolerance to 1e-5 there (finite_difference_jacobian
         # is less accurate than finite_difference_gradient)
-        @test isapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-5)
+        @test myisapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-5)
     end
 end
 
@@ -122,16 +124,15 @@ function test_full_space_jacobian(polar, device, MT)
     jac = ExaPF.MyJacobian(polar, mycons, mymap)
     J = ExaPF.jacobian!(jac, stack)
 
-    y = zeros(m)
     function jac_fd_x(x)
         stack.input .= x
         ExaPF.forward_eval_intermediate(polar, stack)
-        c = zeros(m)
+        c = zeros(m) |> MT
         mycons(c, stack)
         return c
     end
     x = copy(stack.input)
     Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x) |> Array
-    @test isapprox(Jd, J, rtol=1e-5)
+    @test myisapprox(Jd, J, rtol=1e-5)
 end
 

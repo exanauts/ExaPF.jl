@@ -153,7 +153,7 @@ function (func::CostFunction)(state)
 end
 
 function (func::CostFunction)(output, state)
-    output[1] = func(state)
+    CUDA.@allowscalar output[1] = func(state)
     return
 end
 
@@ -270,7 +270,8 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where
 end
 
 function (func::PowerGenerationBounds)(cons, state)
-    cons .= func.τ .+ func.M * state.ψ
+    cons .= func.τ
+    mul!(cons, func.M, state.ψ, 1.0, 1.0)
     return
 end
 

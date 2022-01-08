@@ -88,8 +88,8 @@ function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     # Initiate state and control for FiniteDiff
     # CONSTRAINTS
     m = length(mycons)
-    μ = rand(m)
-    c = zeros(m)
+    μ = rand(m) |> MT
+    c = zeros(m) |> MT
 
     HessianAD = ExaPF.MyHessian(polar, mycons, mymap)
     tgt = rand(nx + nu)
@@ -107,7 +107,7 @@ function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
         return dot(μ, c)
     end
     x0 = stack.input[mymap]
-    H_fd = FiniteDiff.finite_difference_hessian(lagr_x, x0)
+    H_fd = FiniteDiff.finite_difference_hessian(lagr_x, x0) |> Array
 
     @test isapprox(projp, H_fd * tgt, rtol=rtol)
 end

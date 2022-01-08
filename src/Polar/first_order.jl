@@ -34,12 +34,12 @@ Base.size(jac::MyJacobian, n::Int) = size(jac.J, n)
 
 function my_map(polar::PolarForm, ::State)
     nbus = get(polar, PS.NumberOfBuses())
-    ref, pv, pq = index_buses_device(polar)
+    ref, pv, pq = index_buses_host(polar)
     return Int[nbus .+ pv; nbus .+ pq; pq]
 end
 function my_map(polar::PolarForm, ::Control)
     nbus = get(polar, PS.NumberOfBuses())
-    ref, pv, pq = index_buses_device(polar)
+    ref, pv, pq = index_buses_host(polar)
     pv2gen = polar.network.pv2gen
     return Int[ref; pv; 2*nbus .+ pv2gen]
 end
@@ -94,6 +94,7 @@ function MyJacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, m
     # Move the seeds over to the device, if necessary
     gput1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(t1sseeds)
     compressedJ = MT(zeros(Float64, ncolor, n_cons))
+    coloring = coloring |> VI
 
     return MyJacobian(
         polar, func, map_device, stack, compressedJ, coloring, gput1sseeds, t1sF, J,

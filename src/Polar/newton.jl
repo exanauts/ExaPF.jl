@@ -5,6 +5,7 @@ struct NLBuffer{VT}
 end
 NLBuffer{VT}(n::Int) where VT = NLBuffer(VT(undef, n), VT(undef, n))
 
+
 function extract_values!(dest, src)
     @assert length(dest) == length(src)
     for i in eachindex(dest)
@@ -50,3 +51,19 @@ function nlsolve!(
     end
     return ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
 end
+
+function run_pf(
+    polar::PolarForm, state::NetworkStack;
+    rtol=1e-8, max_iter=20,
+)
+    solver = NewtonRaphson(tol=rtol, maxiter=max_iter)
+    mapx = my_map(polar, State())
+
+    func = PowerFlowBalance(polar)
+    jac = MyJacobian(polar, func, mapx)
+
+    conv = nlsolve!(solver, jac, state)
+    return conv
+end
+
+
