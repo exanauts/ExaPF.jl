@@ -147,7 +147,7 @@ Base.length(::CostFunction) = 1
 
 function (func::CostFunction)(state)
     costs = state.intermediate.c
-    state.pgen[func.gen_ref] .= func.M * state.ψ
+    mul!(state.pgen[func.gen_ref], func.M, state.ψ)
     costs .= func.c0 .+ func.c1 .* state.pgen .+ func.c2 .* state.pgen.^2
     return sum(costs)
 end
@@ -159,7 +159,7 @@ end
 
 function adjoint!(func::CostFunction, ∂state, state, ∂v)
     ∂state.pgen .+= ∂v .* (func.c1 .+ 2.0 .* func.c2 .* state.pgen)
-    ∂state.ψ .+= func.M' * ∂state.pgen[func.gen_ref]
+    mul!(∂state.ψ, func.M', ∂state.pgen[func.gen_ref], 1.0, 1.0)
     return
 end
 

@@ -6,8 +6,6 @@ function test_constraints_jacobian(polar, device, MT)
     ∂stack = ExaPF.NetworkStack(polar)
 
     mymap = [ExaPF.my_map(polar, State()); ExaPF.my_map(polar, Control())]
-    # n = length(stack.input)
-    # mymap = collect(1:n)
 
     # Solve power flow
     conv = ExaPF.run_pf(polar, stack)

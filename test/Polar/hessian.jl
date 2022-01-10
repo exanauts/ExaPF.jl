@@ -67,16 +67,18 @@ function test_hessian_with_matpower(polar, device, AT; atol=1e-6, rtol=1e-6)
     return nothing
 end
 
-function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
+function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     nx = length(polar.mapx)
     nu = length(polar.mapu)
 
     mymap = [ExaPF.my_map(polar, State()); ExaPF.my_map(polar, Control())]
 
     stack = ExaPF.NetworkStack(polar)
+    ExaPF.forward_eval_intermediate(polar, stack)
     # Solve power flow
     conv = ExaPF.run_pf(polar, stack)
 
+    # Tests all expressions in once with MultiExpressions
     constraints = [
         ExaPF.VoltageMagnitudePQ(polar),
         ExaPF.PowerGenerationBounds(polar),
@@ -107,8 +109,45 @@ function test_hessian_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
         return dot(μ, c)
     end
     x0 = stack.input[mymap]
-    H_fd = FiniteDiff.finite_difference_hessian(lagr_x, x0) |> Array
+    H_fd = FiniteDiff.finite_difference_hessian(lagr_x, x0)
+    proj_fd = similar(x0, nx+nu)
+    mul!(proj_fd, H_fd.data, dev_tgt, 1, 0)
 
-    @test isapprox(projp, H_fd * tgt, rtol=rtol)
+    @test isapprox(projp, Array(proj_fd), rtol=rtol)
+end
+
+function test_full_space_hessian(polar, device, MT)
+    stack = ExaPF.NetworkStack(polar)
+    ExaPF.forward_eval_intermediate(polar, stack)
+
+    n = length(stack.input)
+    # Hessian / (x, u)
+    mymap = [ExaPF.my_map(polar, State()); ExaPF.my_map(polar, Control())]
+
+    constraints = [
+        # ExaPF.CostFunction(polar),
+        ExaPF.PowerFlowBalance(polar),
+        ExaPF.PowerGenerationBounds(polar),
+        ExaPF.LineFlows(polar),
+    ]
+    mycons = ExaPF.MultiExpressions(constraints)
+
+    m = length(mycons)
+    y = rand(m) |> MT
+
+    hess = ExaPF.FullHessian(polar, mycons, mymap)
+    H = ExaPF.hessian!(hess, stack, y)
+    c = zeros(m) |> MT
+
+    function hess_fd_x(x)
+        stack.input[mymap] .= x
+        ExaPF.forward_eval_intermediate(polar, stack)
+        mycons(c, stack)
+        return dot(c, y)
+    end
+    x = stack.input[mymap]
+    Hd = FiniteDiff.finite_difference_hessian(hess_fd_x, x)
+    @test myisapprox(Hd.data, H, rtol=1e-5)
+    return
 end
 

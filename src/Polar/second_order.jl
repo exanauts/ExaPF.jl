@@ -71,3 +71,85 @@ function hprod!(
     return
 end
 
+
+struct FullHessian{Model, Func, VD, SMT, MT, VI, VP, Buff} <: AutoDiff.AbstractHessian
+    model::Model
+    func::Func
+    map::VI
+    state::NetworkStack{VD}
+    ∂state::NetworkStack{VD}
+    coloring::VI
+    t1sseeds::VP
+    t1sF::VD
+    ∂t1sF::VD
+    buffer::Buff
+    compressedH::MT
+    H::SMT
+end
+
+function get_hessian_colors(polar::PolarForm, func::AbstractExpression, map::Vector{Int})
+    H = hessian_sparsity(polar, func)::SparseMatrixCSC
+    Hsub = H[map, map] # reorder
+    colors = AutoDiff.SparseDiffTools.matrix_colors(Hsub)
+    return (Hsub, colors)
+end
+
+function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
+    (SMT, A) = get_jacobian_types(polar.device)
+
+    pf = polar.network
+    nbus = PS.get(pf, PS.NumberOfBuses())
+    nlines = PS.get(pf, PS.NumberOfLines())
+    ngen = PS.get(pf, PS.NumberOfGenerators())
+
+    n_cons = length(func)
+
+    nmap = length(map)
+    map_device = map |> VI
+
+    H_host, coloring = get_hessian_colors(polar, func, map)
+    ncolor = length(unique(coloring))
+    VD = A{ForwardDiff.Dual{Nothing, Float64, ncolor}}
+
+    H = H_host |> SMT
+
+    # Structures
+    stack = NetworkStack(nbus, ngen, nlines, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, VD)
+    t1sF = zeros(Float64, n_cons) |> VD
+    adj_t1sF = similar(t1sF)
+
+    # Seedings
+    t1sseeds = AutoDiff.init_seed(coloring, ncolor, nmap) |> A
+
+    compressedH = MT(undef, ncolor, nmap)
+    coloring = coloring |> VI
+
+    intermediate = _get_intermediate_stack(polar, network_basis, VD, 1)
+    return FullHessian(
+        polar, func, map_device, stack, ∂stack, coloring, t1sseeds, t1sF, adj_t1sF,
+        intermediate, compressedH, H,
+    )
+end
+
+function hessian!(
+    H::FullHessian, state, λ,
+)
+    # init
+    H.state.input .= state.input
+    empty!(H.∂state)
+    H.∂t1sF .= λ
+    # seed
+    myseed!(H.state, state, H.t1sseeds, H.map, H.model.device)
+    # forward pass
+    forward_eval_intermediate(H.model, H.state)
+    H.func(H.t1sF, H.state)
+    # forward-over-reverse pass
+    adjoint!(H.func, H.∂state, H.state, H.∂t1sF)
+    reverse_eval_intermediate(H.model, H.∂state, H.state, H.buffer)
+    # uncompress
+    AutoDiff.partials_hess!(H.compressedH, H.∂state.input, H.map, H.model.device)
+    AutoDiff.uncompress_kernel!(H.H, H.compressedH, H.coloring, H.model.device)
+    return H.H
+end
+
