@@ -86,9 +86,11 @@ function MyJacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, m
 
     J = J_host |> SMT
 
-    # Seedings
+    # Structures
     stack = NetworkStack(nbus, ngen, nlines, VD)
     t1sF = zeros(Float64, n_cons) |> VD
+
+    # Seedings
     t1sseeds = AutoDiff.init_seed(coloring, ncolor, nmap)
 
     # Move the seeds over to the device, if necessary
