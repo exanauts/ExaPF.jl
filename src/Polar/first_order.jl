@@ -127,7 +127,6 @@ function jacobian!(
     # seed
     myseed!(jac.stack, state, jac.t1sseeds, jac.map, jac.model.device)
     # forward pass
-    forward_eval_intermediate(jac.model, jac.stack)
     jac.func(jac.t1sF, jac.stack)
     # uncompress
     AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, jac.model.device)

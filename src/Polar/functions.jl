@@ -32,6 +32,10 @@ function NetworkStack(nbus, ngen, nlines, VT)
         sfq = VT(undef, nlines), # buffer for line-flow
         stp = VT(undef, nlines), # buffer for line-flow
         stq = VT(undef, nlines), # buffer for line-flow
+        ∂edge_vm_fr = VT(undef, nlines), # buffer for basis
+        ∂edge_vm_to = VT(undef, nlines), # buffer for basis
+        ∂edge_va_fr = VT(undef, nlines), # buffer for basis
+        ∂edge_va_to = VT(undef, nlines), # buffer for basis
     )
 
     return NetworkStack(input, vmag, vang, pgen, ψ, intermediate)
@@ -61,47 +65,6 @@ end
 voltage(buf::NetworkStack) = buf.vmag .* exp.(im .* buf.vang)
 
 
-# update basis
-function forward_eval_intermediate(polar::PolarForm, state::NetworkStack)
-    _network_basis(polar, state.ψ, state.vmag, state.vang)
-end
-
-function reverse_eval_intermediate(polar::PolarForm, ∂state::NetworkStack, state::NetworkStack, intermediate)
-    nl = PS.get(polar.network, PS.NumberOfLines())
-    nb = PS.get(polar.network, PS.NumberOfBuses())
-    top = polar.topology
-    f = top.f_buses
-    t = top.t_buses
-
-    fill!(intermediate.∂edge_vm_fr , 0.0)
-    fill!(intermediate.∂edge_vm_to , 0.0)
-    fill!(intermediate.∂edge_va_fr , 0.0)
-    fill!(intermediate.∂edge_va_to , 0.0)
-
-    # Accumulate on edges
-    ndrange = (nl+nb, size(∂state.vmag, 2))
-    ev = adj_basis_kernel!(polar.device)(
-        ∂state.ψ,
-        ∂state.vmag,
-        intermediate.∂edge_vm_fr,
-        intermediate.∂edge_vm_to,
-        intermediate.∂edge_va_fr,
-        intermediate.∂edge_va_to,
-        state.vmag, state.vang, f, t, nl, nb,
-        ndrange=ndrange, dependencies=Event(polar.device),
-    )
-    wait(ev)
-
-    # Accumulate on nodes
-    Cf = intermediate.Cf
-    Ct = intermediate.Ct
-    mul!(∂state.vmag, Cf, intermediate.∂edge_vm_fr, 1.0, 1.0)
-    mul!(∂state.vmag, Ct, intermediate.∂edge_vm_to, 1.0, 1.0)
-    mul!(∂state.vang, Cf, intermediate.∂edge_va_fr, 1.0, 1.0)
-    mul!(∂state.vang, Ct, intermediate.∂edge_va_to, 1.0, 1.0)
-    return
-end
-
 #=
     Generic expression
 =#
@@ -109,8 +72,86 @@ end
 abstract type AbstractExpression end
 
 
-include("first_order.jl")
-include("second_order.jl")
+#=
+    PolarBasis
+=#
+
+struct PolarBasis{VI, MT} <: AbstractExpression
+    nbus::Int
+    nlines::Int
+    f::VI
+    t::VI
+    Cf::MT
+    Ct::MT
+    device::KA.Device
+end
+
+function PolarBasis(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+    SMT = default_sparse_matrix(polar.device)
+    # Assemble matrix
+    pf = polar.network
+    lines = pf.lines
+    f = lines.from_buses
+    t = lines.to_buses
+
+    nbus = pf.nbus
+    nlines = length(t)
+
+    Cf = sparse(f, 1:nlines, ones(nlines), nbus, nlines)
+    Ct = sparse(t, 1:nlines, ones(nlines), nbus, nlines)
+    Cf = Cf |> SMT
+    Ct = Cf |> SMT
+
+    return PolarBasis{VI, SMT}(nbus, nlines, f, t, Cf, Ct, polar.device)
+end
+
+Base.length(func::PolarBasis) = func.nbus + 2 * func.nlines
+
+# update basis
+function (func::PolarBasis)(output, stack::NetworkStack)
+    ev = basis_kernel!(func.device)(
+        output, stack.vmag, stack.vang,
+        func.f, func.t, func.nlines, func.nbus,
+        ndrange=(length(func), 1), dependencies=Event(func.device)
+    )
+    wait(ev)
+    return
+end
+
+function adjoint!(func::PolarBasis, ∂state::NetworkStack, state::NetworkStack, ∂v)
+    nl = func.nlines
+    nb = func.nbus
+    f = func.f
+    t = func.t
+
+    fill!(∂state.intermediate.∂edge_vm_fr , 0.0)
+    fill!(∂state.intermediate.∂edge_vm_to , 0.0)
+    fill!(∂state.intermediate.∂edge_va_fr , 0.0)
+    fill!(∂state.intermediate.∂edge_va_to , 0.0)
+
+    # Accumulate on edges
+    ndrange = (nl+nb, 1)
+    ev = adj_basis_kernel!(func.device)(
+        ∂v,
+        ∂state.vmag,
+        ∂state.intermediate.∂edge_vm_fr,
+        ∂state.intermediate.∂edge_vm_to,
+        ∂state.intermediate.∂edge_va_fr,
+        ∂state.intermediate.∂edge_va_to,
+        state.vmag, state.vang, f, t, nl, nb,
+        ndrange=ndrange, dependencies=Event(func.device),
+    )
+    wait(ev)
+
+    # Accumulate on nodes
+    Cf = func.Cf
+    Ct = func.Ct
+    mul!(∂state.vmag, Cf, ∂state.intermediate.∂edge_vm_fr, 1.0, 1.0)
+    mul!(∂state.vmag, Ct, ∂state.intermediate.∂edge_vm_to, 1.0, 1.0)
+    mul!(∂state.vang, Cf, ∂state.intermediate.∂edge_va_fr, 1.0, 1.0)
+    mul!(∂state.vang, Ct, ∂state.intermediate.∂edge_va_to, 1.0, 1.0)
+    return
+end
 
 
 #=
@@ -343,7 +384,7 @@ function adjoint!(func::LineFlows, ∂state, state, ∂v)
     return
 end
 
-# Aggregate expressions together
+# Concatenate expressions together
 struct MultiExpressions <: AbstractExpression
     exprs::Vector{AbstractExpression}
 end
@@ -370,6 +411,38 @@ function adjoint!(func::MultiExpressions, ∂state, state, ∂v)
     end
 end
 
-include("newton.jl")
-include("legacy.jl")
+function bounds(polar::PolarForm{T, VI, VT, MT}, func::MultiExpressions) where {T, VI, VT, MT}
+    m = length(func)
+    g_min = zeros(m)
+    g_max = zeros(m)
+    k = 0
+    for expr in func.exprs
+        m = length(expr)
+        l, u = bounds(polar, expr)
+        g_min[k+1:k+m] .= l
+        g_max[k+1:k+m] .= u
+        k += m
+    end
+    return (
+        convert(VT, g_min),
+        convert(VT, g_max),
+    )
+end
 
+struct ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AbstractExpression
+    inner::Expr1
+    outer::Expr2
+end
+
+function (func::ComposedExpressions)(output, state)
+    func.inner(state.ψ, state) # Evaluate basis
+    func.outer(output, state)   # Evaluate expression
+end
+
+function adjoint!(func::ComposedExpressions, ∂state, state, ∂v)
+    adjoint!(func.outer, ∂state, state, ∂v)
+    adjoint!(func.inner, ∂state, state, ∂state.ψ)
+end
+
+# Overload ∘ operator
+Base.ComposedFunction(g::AbstractExpression, f::PolarBasis) = ComposedExpressions(f, g)

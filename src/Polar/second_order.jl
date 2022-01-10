@@ -60,12 +60,10 @@ function hprod!(
     # Init seed
     _init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
     myseed!(H.state, state, H.t1sseeds, H.map, H.model.device)
-    forward_eval_intermediate(H.model, H.state)
+    # Forward
     H.func(H.t1sF, H.state)
-
-    # Reverse
+    # Forward-over-Reverse
     adjoint!(H.func, H.∂state, H.state, H.∂t1sF)
-    reverse_eval_intermediate(H.model, H.∂state, H.state, H.buffer)
 
     AutoDiff.getpartials_kernel!(hv, H.∂state.input, H.map, H.model.device)
     return
@@ -142,11 +140,9 @@ function hessian!(
     # seed
     myseed!(H.state, state, H.t1sseeds, H.map, H.model.device)
     # forward pass
-    forward_eval_intermediate(H.model, H.state)
     H.func(H.t1sF, H.state)
     # forward-over-reverse pass
     adjoint!(H.func, H.∂state, H.state, H.∂t1sF)
-    reverse_eval_intermediate(H.model, H.∂state, H.state, H.buffer)
     # uncompress
     AutoDiff.partials_hess!(H.compressedH, H.∂state.input, H.map, H.model.device)
     AutoDiff.uncompress_kernel!(H.H, H.compressedH, H.coloring, H.model.device)
