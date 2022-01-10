@@ -8,6 +8,7 @@ import Base: show
 
 using CUDA
 using KernelAbstractions
+using CUDAKernels
 import CUDA.CUBLAS
 import CUDA.CUSOLVER
 import CUDA.CUSPARSE
@@ -15,7 +16,7 @@ import Krylov
 import LightGraphs
 import Metis
 
-import ..ExaPF: xnorm, csclsvqr!
+import ..ExaPF: xnorm
 
 const KA = KernelAbstractions
 
@@ -102,9 +103,23 @@ exa_factorize(J::Adjoint{T, SparseMatrixCSC{T, Int}}) where T = lu(J.parent)'
 DirectSolver(J; options...) = DirectSolver(exa_factorize(J))
 DirectSolver() = DirectSolver(nothing)
 
+function update!(s::DirectSolver, J::AbstractMatrix)
+    lu!(s.factorization, J) # Update factorization inplace
+end
+
+function lsolve!(s::DirectSolver, y::AbstractArray)
+    LinearAlgebra.ldiv!(s.factorization, y)
+end
+function lsolve!(s::DirectSolver, y::AbstractArray, x::AbstractArray)
+    LinearAlgebra.ldiv!(y, s.factorization, x)
+end
+
+function rsolve!(s::DirectSolver, y::AbstractArray, x::AbstractArray)
+    LinearAlgebra.ldiv!(y, s.factorization', x)
+end
+
 # Reuse factorization in update
 function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
-    lu!(s.factorization, J) # Update factorization inplace
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
@@ -143,18 +158,6 @@ function batch_ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, Y, Js::Vect
     end
 end
 
-function ldiv!(::DirectSolver{Nothing},
-    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector,
-)
-    CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
-    return 0
-end
-function ldiv!(::DirectSolver{Nothing},
-    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSC, x::CUDA.CuVector,
-)
-    csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
-    return 0
-end
 get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
 
 function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector)
@@ -163,8 +166,11 @@ function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::CUDA.CuVector,
     return 0
 end
 
-function update_preconditioner!(solver::AbstractIterativeLinearSolver, J, device)
-    update(solver.precond, J, device)
+function update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC)
+    update(solver.precond, J, CPU())
+end
+function update!(solver::AbstractIterativeLinearSolver, J::CUSPARSE.CuSparseMatrixCSR)
+    update(solver.precond, J, CUDADevice())
 end
 
 """

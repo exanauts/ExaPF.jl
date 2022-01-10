@@ -1,20 +1,3 @@
-function get_tape(polar::PolarForm, expr::AbstractExpression, ∂stack::NetworkStack{VT, Buf}) where {VT, Buf}
-    # TODO
-    intermediate = _get_intermediate_stack(polar, ExaPF.network_basis, VT, 1)
-    return AutoDiff.TapeMemory(expr, ∂stack, intermediate)
-end
-
-function jacobian_transpose_product!(polar::PolarForm, pbm::AutoDiff.TapeMemory, jv, state, ∂v)
-    ∂state = pbm.stack
-    empty!(∂state)
-    adjoint!(pbm.func, ∂state, state, ∂v)
-    # Accumulate on vmag and vang
-    reverse_eval_intermediate(polar, ∂state, state, pbm.intermediate)
-    # Accumulate on x and u
-    reverse_transfer!(
-        polar, jv, ∂state,
-    )
-end
 
 struct MyJacobian{Model, Func, VD, SMT, MT, VI, VP}
     model::Model
@@ -28,24 +11,13 @@ struct MyJacobian{Model, Func, VD, SMT, MT, VI, VP}
     J::SMT
 end
 
+function Base.show(io::IO, jacobian::MyJacobian)
+    println(io, "A AutoDiff Jacobian for $(typeof(jacobian.func))")
+    ncolor = size(jacobian.compressedJ, 1)
+    print(io, "Number of Jacobian colors: ", ncolor)
+end
+
 Base.size(jac::MyJacobian, n::Int) = size(jac.J, n)
-
-# Ordering: [vmag, vang, pgen]
-
-function my_map(polar::PolarForm, ::State)
-    nbus = get(polar, PS.NumberOfBuses())
-    ref, pv, pq = index_buses_host(polar)
-    return Int[nbus .+ pv; nbus .+ pq; pq]
-end
-function my_map(polar::PolarForm, ::Control)
-    nbus = get(polar, PS.NumberOfBuses())
-    ref, pv, pq = index_buses_host(polar)
-    pv2gen = polar.network.pv2gen
-    return Int[ref; pv; 2*nbus .+ pv2gen]
-end
-
-number(polar::PolarForm, ::State) = get(polar, NumberOfState())
-number(polar::PolarForm, ::Control) = get(polar, NumberOfControl())
 
 # Coloring
 function jacobian_sparsity(polar::PolarForm, func::AbstractExpression)
@@ -127,10 +99,9 @@ function jacobian!(
     # seed
     myseed!(jac.stack, state, jac.t1sseeds, jac.map, jac.model.device)
     # forward pass
-    forward_eval_intermediate(jac.model, jac.stack)
     jac.func(jac.t1sF, jac.stack)
     # uncompress
-    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, jac.model.device)
+    AutoDiff.partials_jac!(jac.compressedJ, jac.t1sF, jac.model.device)
     AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, jac.model.device)
     return jac.J
 end

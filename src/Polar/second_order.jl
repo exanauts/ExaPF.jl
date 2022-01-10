@@ -38,11 +38,26 @@ function MyHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, ma
     host_t1sseeds = Vector{ForwardDiff.Partials{1, Float64}}(undef, nmap)
     t1sseeds = A{ForwardDiff.Partials{1, Float64}}(undef, nmap)
 
-    intermediate = _get_intermediate_stack(polar, network_basis, VD, 1)
+    intermediate = nothing
     return MyHessian(
         polar, func, map_device, stack, ∂stack, host_t1sseeds, t1sseeds, t1sF, adj_t1sF,
         intermediate,
     )
+end
+
+function _init_seed_hessian!(dest, tmp, v::AbstractArray, nmap)
+    @inbounds for i in 1:nmap
+        dest[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i]))
+    end
+    return
+end
+function _init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
+    hostv = Array(v)
+    @inbounds Threads.@threads for i in 1:nmap
+        tmp[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
+    end
+    copyto!(dest, tmp)
+    return
 end
 
 function hprod!(
@@ -60,12 +75,10 @@ function hprod!(
     # Init seed
     _init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
     myseed!(H.state, state, H.t1sseeds, H.map, H.model.device)
-    forward_eval_intermediate(H.model, H.state)
+    # Forward
     H.func(H.t1sF, H.state)
-
-    # Reverse
+    # Forward-over-Reverse
     adjoint!(H.func, H.∂state, H.state, H.∂t1sF)
-    reverse_eval_intermediate(H.model, H.∂state, H.state, H.buffer)
 
     AutoDiff.getpartials_kernel!(hv, H.∂state.input, H.map, H.model.device)
     return
@@ -125,7 +138,7 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, 
     compressedH = MT(undef, ncolor, nmap)
     coloring = coloring |> VI
 
-    intermediate = _get_intermediate_stack(polar, network_basis, VD, 1)
+    intermediate = nothing
     return FullHessian(
         polar, func, map_device, stack, ∂stack, coloring, t1sseeds, t1sF, adj_t1sF,
         intermediate, compressedH, H,
@@ -142,11 +155,9 @@ function hessian!(
     # seed
     myseed!(H.state, state, H.t1sseeds, H.map, H.model.device)
     # forward pass
-    forward_eval_intermediate(H.model, H.state)
     H.func(H.t1sF, H.state)
     # forward-over-reverse pass
     adjoint!(H.func, H.∂state, H.state, H.∂t1sF)
-    reverse_eval_intermediate(H.model, H.∂state, H.state, H.buffer)
     # uncompress
     AutoDiff.partials_hess!(H.compressedH, H.∂state.input, H.map, H.model.device)
     AutoDiff.uncompress_kernel!(H.H, H.compressedH, H.coloring, H.model.device)

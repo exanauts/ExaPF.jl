@@ -40,40 +40,37 @@ function run_benchmark(datafile, device, linsolver)
     ntol = 1e-6
     pf = PowerSystem.PowerNetwork(datafile)
     polar = PolarForm(pf, device)
-    cache = ExaPF.get(polar, ExaPF.PhysicalState())
-    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+    mapx = ExaPF.my_map(polar, State())
+    nx = length(mapx)
+    stack = ExaPF.NetworkStack(polar)
+
+    basis = ExaPF.PolarBasis(polar)
+    pflow = ExaPF.PowerFlowBalance(polar)
+    jx = ExaPF.MyJacobian(polar, pflow ∘ basis, mapx)
     J = jx.J
     npartitions = ceil(Int64,(size(jx.J,1)/64))
     if npartitions < 2
         npartitions = 2
     end
     precond = ExaPF.LinearSolvers.BlockJacobiPreconditioner(J, npartitions, device)
-    # Retrieve initial state of network
-    u0 = ExaPF.initial(polar, Control())
 
     algo = linsolver(J; P=precond)
     powerflow_solver = NewtonRaphson(tol=ntol)
+    VT = typeof(stack.input)
+    pf_buffer = ExaPF.NLBuffer{VT}(nx)
 
-    # Init variables
-    buffer = get(polar, ExaPF.PhysicalState())
-    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+    # Warm-up
+    ExaPF.nlsolve!(
+        powerflow_solver, jx, stack; linear_solver=algo, nl_buffer=pf_buffer,
+    )
 
-    # Warmstart
-    ExaPF.init_buffer!(polar, buffer)
-    ExaPF.powerflow(polar, jx, buffer, powerflow_solver; linear_solver=algo)
+    ExaPF.init!(polar, stack)
+    res = @timed ExaPF.nlsolve!(
+        powerflow_solver, jx, stack; linear_solver=algo, nl_buffer=pf_buffer,
+    )
+    convergence = res.value
 
-    TimerOutputs.reset_timer!(ExaPF.TIMER)
-    ExaPF.init_buffer!(polar, buffer)
-    convergence = ExaPF.powerflow(polar, jx, buffer, powerflow_solver; linear_solver=algo)
-
-    # Make sure we are converged
-    @assert(convergence.has_converged)
-
-    # Output
-    prettytime = TimerOutputs.prettytime
-    timers = ExaPF.TIMER.inner_timers
-    inner_timer = timers["Newton"]
-    return convergence.has_converged, timers, inner_timer
+    return convergence.has_converged, res.time
 end
 
 function main()
@@ -81,20 +78,13 @@ function main()
     device = eval(Meta.parse("$(ARGS[2])()"))
     datafile = joinpath(dirname(@__FILE__), ARGS[3])
 
-    has_converged, timers, inner_timer = run_benchmark(datafile, device, linsolver)
-
-    if ARGS[1] == "DirectSolver"
-        println("$(ARGS[1]), $(ARGS[2]), $(ARGS[3]),",
-                printtimer(timers, "Newton"),
-                ", $(has_converged)")
-    else
-        println("$(ARGS[1]), $(ARGS[2]), $(ARGS[3]),",
-                printtimer(timers, "Newton"),",",
-                printtimer(inner_timer, "Jacobian"),",",
-                printtimer(inner_timer, "Linear Solver"),
-                ", $(has_converged)")
-    end
+    has_converged, timer = run_benchmark(datafile, device, linsolver)
     @test has_converged
+
+    println("$(ARGS[1]), $(ARGS[2]), $(ARGS[3]),",
+            timer,
+            ", $(has_converged)")
+
 end
 
 main()
