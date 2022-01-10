@@ -100,11 +100,12 @@ function matpower_hessian(polar::PolarForm, func::CostFunction, V, λ)
     ngen = get(polar, PS.NumberOfGenerators())
     ref = pf.ref
     nref = length(ref)
+    c2 = func.c2 |> Array
 
     H11 = spzeros(2* nbus, 2 * nbus + ngen)
 
     H21 = spzeros(ngen, 2 * nbus)
-    H22 = spdiagm(2.0 .* func.c2)
+    H22 = spdiagm(2.0 .* c2)
     H = [
         H11;
         H21 H22;
@@ -118,7 +119,7 @@ function matpower_hessian(polar::PolarForm, func::CostFunction, V, λ)
     j13 = spzeros(nref, ngen)
     J = [j11 j12 j13]::SparseMatrixCSC{Float64, Int}
 
-    Href = J' * Diagonal(2 .* func.c2[ref]) * J
+    Href = J' * Diagonal(2 .* c2[ref]) * J
 
     return H + Href
 end
