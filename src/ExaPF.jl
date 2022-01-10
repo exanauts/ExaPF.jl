@@ -6,24 +6,16 @@ using LinearAlgebra
 using SparseArrays
 
 import CUDA
-import CUDA.CUBLAS
 import CUDA.CUSPARSE
-import CUDA.CUSOLVER
 
 import ForwardDiff
 using KernelAbstractions
 const KA = KernelAbstractions
-using TimerOutputs: @timeit, TimerOutput
 
 import Base: show, get
 
-const VERBOSE_LEVEL_HIGH = 3
-const VERBOSE_LEVEL_MEDIUM = 2
-const VERBOSE_LEVEL_LOW = 1
-const VERBOSE_LEVEL_NONE = 0
-const TIMER = TimerOutput()
+export run_pf
 
-include("utils.jl")
 include("architectures.jl")
 
 # Templates
@@ -42,5 +34,10 @@ const LS = LinearSolvers
 
 # Polar formulation
 include("Polar/polar.jl")
+
+# CUDA extension
+if CUDA.has_cuda()
+    include("cuda_wrapper.jl")
+end
 
 end

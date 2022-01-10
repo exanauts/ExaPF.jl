@@ -1,6 +1,7 @@
 using Test
 using CUDA
 using KernelAbstractions
+using CUDAKernels
 
 using ExaPF
 import ExaPF: AutoDiff
@@ -17,11 +18,12 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
     # Short version
     polar = ExaPF.PolarForm(datafile, CPU())
-    pf_algo = NewtonRaphson(; verbose=0, tol=1e-10)
-    convergence = ExaPF.powerflow(polar, pf_algo)
+    # Initial values
+    stack = ExaPF.NetworkStack(polar)
+    convergence = run_pf(polar, stack; rtol=1e-10)
     @test convergence.has_converged
     @test convergence.n_iterations == 5
-    @test convergence.norm_residuals <= pf_algo.tol
+    @test convergence.norm_residuals <= 1e-10
 
     # Long version
     pf = PS.PowerNetwork(datafile)
@@ -34,22 +36,28 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
     # Build-up PolarForm object
     polar = ExaPF.PolarForm(pf, CPU())
-    physical_state = get(polar, ExaPF.PhysicalState())
-    ExaPF.init_buffer!(polar, physical_state)
-    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+    stack = ExaPF.NetworkStack(polar)
+    basis = ExaPF.PolarBasis(polar)
+    # Powerflow function
+    pflow = ExaPF.PowerFlowBalance(polar) ∘ basis
+    mapx = ExaPF.my_map(polar, State())
+    # AD for Jacobian
+    jx = ExaPF.MyJacobian(polar, pflow, mapx)
+    # Linear solver
+    linear_solver = LS.DirectSolver(jx.J)
+    # Powerflow solver
+    pf_solver = NewtonRaphson(tol=1e-10)
 
-    linear_solver = LS.DirectSolver()
-    convergence = ExaPF.powerflow(
-        polar, jx, physical_state, pf_algo;
-        linear_solver=linear_solver
+    convergence = ExaPF.nlsolve!(
+        pf_solver, jx, stack; linear_solver=linear_solver,
     )
 
     @test convergence.has_converged
     @test convergence.n_iterations == 5
-    @test convergence.norm_residuals <= pf_algo.tol
+    @test convergence.norm_residuals <= pf_solver.tol
 
     # Reinit buffer
-    ExaPF.init_buffer!(polar, physical_state)
+    ExaPF.init!(polar, stack)
     npartitions = 8
     jac = jx.J
     precond = LS.BlockJacobiPreconditioner(jac, npartitions, CPU())
@@ -60,9 +68,8 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
     # Build powerflow algorithm
     pf_algo = NewtonRaphson(; verbose=0, tol=1e-7)
 
-    convergence = ExaPF.powerflow(
-        polar, jx, physical_state, pf_algo;
-        linear_solver=iterative_linear_solver
+    convergence = ExaPF.nlsolve!(
+        pf_solver, jx, stack; linear_solver=iterative_linear_solver,
     )
 
     @test convergence.has_converged
@@ -71,35 +78,37 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
     if CUDA.has_cuda_gpu()
         polar_gpu = ExaPF.PolarForm(pf, CUDADevice())
-        jx_gpu = AutoDiff.Jacobian(polar_gpu, ExaPF.power_balance, State())
-        physical_state_gpu = get(polar_gpu, ExaPF.PhysicalState())
-        ExaPF.init_buffer!(polar_gpu, physical_state_gpu)
-        linear_solver = LS.DirectSolver()
-        convergence = ExaPF.powerflow(
-            polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
-            linear_solver=linear_solver
+        stack_gpu = ExaPF.NetworkStack(polar_gpu)
+
+        basis_gpu = ExaPF.PolarBasis(polar_gpu)
+        pflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ basis_gpu
+        jx_gpu = ExaPF.MyJacobian(polar_gpu, pflow_gpu, mapx)
+
+        linear_solver = LS.DirectSolver(jx_gpu.J)
+
+        convergence = ExaPF.nlsolve!(
+            pf_solver, jx_gpu, stack_gpu; linear_solver=linear_solver,
         )
 
         @test convergence.has_converged
         @test convergence.n_iterations == 5
-        @test convergence.norm_residuals <= pf_algo.tol
+        @test convergence.norm_residuals <= pf_solver.tol
 
         npartitions = 8
         jac = jx_gpu.J # we need to take the Jacobian on the CPU for partitioning!
         precond = LS.BlockJacobiPreconditioner(jac, npartitions, CUDADevice())
 
         # Reinit buffer
-        ExaPF.init_buffer!(polar_gpu, physical_state_gpu)
+        ExaPF.init!(polar_gpu, stack_gpu)
 
-        linear_solver = ExaPF.KrylovBICGSTAB(jac; P=precond)
-        pf_algo = NewtonRaphson(; verbose=0, tol=1e-7)
-        convergence = ExaPF.powerflow(
-            polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
-            linear_solver=linear_solver
+        iterative_linear_solver = ExaPF.KrylovBICGSTAB(jac; P=precond)
+
+        convergence = ExaPF.nlsolve!(
+            pf_solver, jx_gpu, stack_gpu; linear_solver=iterative_linear_solver,
         )
 
         @test convergence.has_converged
         @test convergence.n_iterations == 5
-        @test convergence.norm_residuals <= pf_algo.tol
+        @test convergence.norm_residuals <= pf_solver.tol
     end
 end

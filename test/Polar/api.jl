@@ -47,18 +47,18 @@ end
 function test_polar_api(polar, device, M)
     pf = polar.network
     tolerance = 1e-8
+    nx = ExaPF.number(polar, State())
     stack = ExaPF.NetworkStack(polar)
-    ExaPF.forward_eval_intermediate(polar, stack)
-    power_balance = ExaPF.PowerFlowBalance(polar)
+    basis  = ExaPF.PolarBasis(polar)
+    power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
     # Test that values are matching
     @test myisapprox(pf.vbus, stack.vmag .* exp.(im .* stack.vang))
-    xₖ = ExaPF.initial(polar, State())
 
     # Check that initial residual is correct
     mis = pf.vbus .* conj.(pf.Ybus * pf.vbus) .- pf.sbus
     f_mat = [real(mis[[pf.pv; pf.pq]]); imag(mis[pf.pq])];
 
-    cons = similar(xₖ)
+    cons = similar(stack.input, nx)
     power_balance(cons, stack)
     @test myisapprox(cons, f_mat)
 
@@ -68,20 +68,20 @@ function test_polar_api(polar, device, M)
 
     # Test callbacks
     ## Power Balance
-    ExaPF.forward_eval_intermediate(polar, stack)
     power_balance(cons, stack)
     # As we run powerflow before, the balance should be below tolerance
     @test ExaPF.xnorm_inf(cons) < tolerance
 
     ## Cost Production
     cost_production = ExaPF.CostFunction(polar)
-    c2 = cost_production(stack)
+    c2 = CUDA.@allowscalar cost_production(stack)[1]
     @test isa(c2, Real)
     return nothing
 end
 
 function test_polar_constraints(polar, device, M)
     stack = ExaPF.NetworkStack(polar)
+    basis  = ExaPF.PolarBasis(polar)
 
     @testset "Expressions $expr" for expr in [
         ExaPF.VoltageMagnitudePQ,
@@ -90,7 +90,7 @@ function test_polar_constraints(polar, device, M)
         ExaPF.PowerFlowBalance,
     ]
         # Instantiate
-        constraints = expr(polar)
+        constraints = expr(polar) ∘ basis
         m = length(constraints)
         @test isa(m, Int)
         g = M{Float64, 1}(undef, m) # TODO: this signature is not great
@@ -108,26 +108,38 @@ function test_polar_constraints(polar, device, M)
 end
 
 function test_polar_powerflow(polar, device, M)
+    SMT = ExaPF.default_sparse_matrix(polar.device)
+    # Init structures
+    stack = ExaPF.NetworkStack(polar)
+    mapx = ExaPF.my_map(polar, State())
     pf_solver = NewtonRaphson(tol=1e-6)
     npartitions = 8
+
+    basis = ExaPF.PolarBasis(polar)
+    pflow = ExaPF.PowerFlowBalance(polar)
+    n = length(pflow)
+
     # Get reduced space Jacobian on the CPU
-    J = ExaPF.powerflow_jacobian(polar)
-    n = size(J, 1)
+    J = ExaPF.jacobian_sparsity(polar, pflow)
+    J = J[:, mapx]
+
+    @test n == size(J, 1) == length(mapx)
+
     # Build preconditioner
     precond = LS.BlockJacobiPreconditioner(J, npartitions, device)
 
-    J_gpu = ExaPF.powerflow_jacobian_device(polar)
+    J_gpu = J |> SMT
 
     # Init AD
-    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
-    # Init buffer
-    buffer = get(polar, ExaPF.PhysicalState())
+    jx = ExaPF.MyJacobian(polar, pflow ∘ basis, mapx)
 
     @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
         algo = LinSolver(J_gpu; P=precond)
-        ExaPF.init_buffer!(polar, buffer)
-        convergence = ExaPF.powerflow(polar, jx, buffer, pf_solver; linear_solver=algo)
+        ExaPF.init!(polar, stack)
+        convergence = ExaPF.nlsolve!(
+            pf_solver, jx, stack; linear_solver=algo)
         @test convergence.has_converged
         @test convergence.norm_residuals < pf_solver.tol
     end
 end
+

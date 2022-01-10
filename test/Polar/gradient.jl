@@ -1,8 +1,9 @@
 function test_reduced_gradient(polar, device, MT)
     stack = ExaPF.NetworkStack(polar)
+    basis  = ExaPF.PolarBasis(polar)
     ∂stack = ExaPF.NetworkStack(polar)
 
-    power_balance = ExaPF.PowerFlowBalance(polar)
+    power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
 
     mapx = ExaPF.my_map(polar, State())
     mapu = ExaPF.my_map(polar, Control())
@@ -27,16 +28,17 @@ function test_reduced_gradient(polar, device, MT)
     @test isapprox(h∇gₓ, J[:, mapx])
     @test isapprox(h∇gᵤ, J[:, mapu])
 
-    cost_production = ExaPF.CostFunction(polar)
-    ExaPF.forward_eval_intermediate(polar, stack)
-    obj = cost_production(stack)
-    pbm = ExaPF.get_tape(polar, cost_production, ∂stack)
+    cost_production = ExaPF.CostFunction(polar) ∘ basis
+
+    c = zeros(1)
+    cost_production(c, stack)
 
     grad = similar(stack.input, nx+nu)
 
-    ExaPF.jacobian_transpose_product!(polar, pbm, grad, stack, 1.0)
-    ∇fₓ = grad[1:nx]
-    ∇fᵤ = grad[1+nx:nx+nu]
+    empty!(∂stack)
+    ExaPF.adjoint!(cost_production, ∂stack, stack, 1.0)
+    ∇fₓ = ∂stack.input[mapx]
+    ∇fᵤ = ∂stack.input[mapu]
 
     h∇fₓ = ∇fₓ |> Array
     h∇fᵤ = ∇fᵤ |> Array
@@ -53,8 +55,8 @@ function test_reduced_gradient(polar, device, MT)
     function reduced_cost(u_)
         stack.input[mapu] .= u_
         ExaPF.nlsolve!(solver, jx, stack)
-        ExaPF.forward_eval_intermediate(polar, stack)
-        return cost_production(stack)
+        cost_production(c, stack)
+        return c[1]
     end
 
     u = stack.input[mapu]
@@ -62,45 +64,3 @@ function test_reduced_gradient(polar, device, MT)
     @test isapprox(grad_fd[:], grad_adjoint, rtol=1e-4)
 end
 
-function test_objective_adjoint(polar, device, MT)
-    pf = polar.network
-    nbus = pf.nbus
-    pv = pf.pv ; npv = length(pv)
-    pq = pf.pq ; npq = length(pq)
-    ref = pf.ref ; nref = length(ref)
-    pv2gen = polar.indexing.index_pv_to_gen
-    nx = ExaPF.get(polar, ExaPF.NumberOfState())
-
-    cache = ExaPF.get(polar, ExaPF.PhysicalState())
-    ExaPF.init_buffer!(polar, cache)
-
-    u = ExaPF.initial(polar, Control())
-
-    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
-    conv = powerflow(polar, jx, cache, NewtonRaphson(tol=1e-12))
-
-    # Evaluate gradient
-    pbm = ExaPF.pullback_objective(polar)
-    ExaPF.gradient_objective!(polar, pbm, cache)
-
-    # Compare with finite diff
-    x = [cache.vang[pv] ; cache.vang[pq] ; cache.vmag[pq]]
-    u = [cache.vmag[ref]; cache.vmag[pv]; cache.pgen[pv2gen]]
-
-    function test_objective_fd(z)
-        x_ = z[1:nx]
-        u_ = z[1+nx:end]
-        # Transfer control
-        ExaPF.transfer!(polar, cache, u_)
-        # Transfer state (manually)
-        cache.vang[pv] .= x_[1:npv]
-        cache.vang[pq] .= x_[npv+1:npv+npq]
-        cache.vmag[pq] .= x_[npv+npq+1:end]
-        return ExaPF.cost_production(polar, cache)
-    end
-    ∇f = FiniteDiff.finite_difference_jacobian(test_objective_fd, [x; u])
-
-    @test myisapprox(∇f[1:nx], pbm.stack.∇fₓ, rtol=1e-5)
-    @test myisapprox(∇f[1+nx:end], pbm.stack.∇fᵤ, rtol=1e-5)
-    return
-end

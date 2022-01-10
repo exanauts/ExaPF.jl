@@ -61,7 +61,6 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
     nbus = size(bus, 1)
     ngen = size(gen, 1)
 
-    ybus_re, ybus_im = ExaPF.Spmat{T{Int}, T{Float64}}(Ybus)
     SBASE = data["baseMVA"][1]
     Sbus, Sload = PS.assembleSbus(gen, bus, SBASE, bus_to_indexes)
     pbus = real(Sbus)
