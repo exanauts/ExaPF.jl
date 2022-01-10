@@ -211,6 +211,13 @@ end
     end
 end
 
+@kernel function getpartials_hess_kernel!(compressedH, @Const(duals), @Const(map))
+    i = @index(Global, Linear)
+    for j in eachindex(ForwardDiff.partials.(duals[map[i]]).values)
+        compressedH[j, i] = ForwardDiff.partials.(duals[map[i]]).values[j]
+    end
+end
+
 """
     getpartials_kernel!(compressedJ, t1sF)
 
@@ -228,6 +235,14 @@ end
 function getpartials_kernel!(compressedJ::AbstractMatrix, t1sF, device)
     kernel! = getpartials_kernel!(device)
     ev = kernel!(compressedJ, t1sF, ndrange=length(t1sF), dependencies=Event(device))
+    wait(ev)
+end
+
+function partials_hess!(compressedH::AbstractMatrix, duals, map, device)
+    ev = getpartials_hess_kernel!(device)(
+        compressedH, duals, map,
+        ndrange=length(map), dependencies=Event(device),
+    )
     wait(ev)
 end
 

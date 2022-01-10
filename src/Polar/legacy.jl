@@ -222,3 +222,14 @@ function matpower_hessian(polar::PolarForm, func::MultiExpressions, V, λ)
     end
     return H
 end
+
+function hessian_sparsity(polar::PolarForm, func)
+    m = length(func)
+    nbus = get(polar, PS.NumberOfBuses())
+    Vre = Float64[i for i in 1:nbus]
+    Vim = Float64[i for i in nbus+1:2*nbus]
+    V = Vre .+ im .* Vim
+    y = rand(m)
+    return matpower_hessian(polar, func, V, y)
+end
+
