@@ -13,12 +13,12 @@ function matpower_jacobian(polar::PolarForm, func::PowerFlowBalance, V)
 
     dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
 
-    Cg_tot = sparse(gen2bus, 1:ngen, -ones(ngen), nbus, ngen)
+    Cg_tot = sparse(gen2bus, 1:ngen, ones(ngen), nbus, ngen)
     Cg = Cg_tot[[pv; pq], :]
 
     j11 = real(dSbus_dVm[[pv; pq], :])
     j12 = real(dSbus_dVa[[pv; pq], :])
-    j13 = Cg #sparse(gen2bus, 1:ngen, -ones(ngen), npv + npq, ngen)
+    j13 = -Cg
     j21 = imag(dSbus_dVm[pq, :])
     j22 = imag(dSbus_dVa[pq, :])
     j23 = spzeros(npq, ngen)
@@ -57,8 +57,8 @@ function matpower_jacobian(polar::PolarForm, func::PowerGenerationBounds, V)
     j12 = real(dSbus_dVa[ref, :])
     j13 = spzeros(nref, ngen)
 
-    j21 = imag(dSbus_dVm[gen2bus, :])
-    j22 = imag(dSbus_dVa[gen2bus, :])
+    j21 = imag(dSbus_dVm[[ref; pv], :])
+    j22 = imag(dSbus_dVa[[ref; pv], :])
     j23 = spzeros(ngen, ngen)
     # w.r.t. control
     return [
@@ -198,7 +198,8 @@ function matpower_hessian(polar::PolarForm, func::PowerGenerationBounds, V, λ)
     Hpθθ, Hpvθ, Hpvv = PS._matpower_hessian(V, Ybus, yp)
 
     yq = zeros(nbus)
-    yq[pv] .= λ[nref+1:nref+npv]
+    yq[ref] .= λ[nref+1:2*nref]
+    yq[pv] .= λ[2*nref+1:2*nref+npv]
     Hqθθ, Hqvθ, Hqvv = PS._matpower_hessian(V, Ybus, yq)
 
     H11 = real.(Hpvv) .+ imag.(Hqvv)

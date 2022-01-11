@@ -18,7 +18,7 @@ function test_constraints_jacobian(polar, device, MT)
         ExaPF.PolarBasis,
         ExaPF.VoltageMagnitudePQ,
         ExaPF.PowerFlowBalance,
-        # ExaPF.PowerGenerationBounds,
+        ExaPF.PowerGenerationBounds,
         ExaPF.LineFlows,
     ]
         constraint = expr(polar) ∘ basis
@@ -56,6 +56,7 @@ function test_constraints_jacobian(polar, device, MT)
         @test myisapprox(Jmat, Jx, rtol=1e-5)
         @test myisapprox(Jmat, Jd, rtol=1e-5)
         @test isapprox(∂stack.input[mymap], Jx' * tgt_h, rtol=1e-6)
+        @test isapprox(∂stack.input[mymap], Jmat' * tgt_h, rtol=1e-6)
     end
 end
 
@@ -110,7 +111,7 @@ function test_full_space_jacobian(polar, device, MT)
 
     constraints = [
         ExaPF.VoltageMagnitudePQ(polar),
-        # ExaPF.PowerGenerationBounds(polar),
+        ExaPF.PowerGenerationBounds(polar),
         ExaPF.LineFlows(polar),
         ExaPF.PowerFlowBalance(polar),
     ]

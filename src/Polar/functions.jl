@@ -176,7 +176,11 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     SMT = default_sparse_matrix(polar.device)
     # Load indexing
     ref = polar.network.ref
-    ref_gen = polar.indexing.index_ref_to_gen
+    gen2bus = polar.network.gen2bus
+    if length(ref) > 1
+        error("Too many generators are affected to the slack nodes")
+    end
+    ref_gen = Int[findfirst(isequal(ref[1]), gen2bus)]
     # Assemble matrix
     M_tot = PS.get_basis_matrix(polar.network)
     M = -M_tot[ref, :] |> SMT
@@ -303,12 +307,21 @@ end
 Base.length(func::PowerGenerationBounds) = length(func.τ)
 
 function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where {T,VI,VT,MT}
+    pf = polar.network
+    ngen = pf.ngen
+    nbus = pf.nbus
+    ref, pv = pf.ref, pf.pv
+    # Build incidence matrix
+    Cg = sparse(pf.gen2bus, 1:ngen, ones(ngen), nbus, ngen)
+    Cgp = Cg[ref, :]
+    Cgq = Cg[[ref ; pv], :]
+    # Get original bounds
     p_min, p_max = PS.bounds(polar.network, PS.Generators(), PS.ActivePower())
     q_min, q_max = PS.bounds(polar.network, PS.Generators(), PS.ReactivePower())
-    _, ref2gen, _ = index_generators_host(polar)
+    # Aggregate bounds on ref and pv nodes
     return (
-        convert(VT, [p_min[ref2gen]; q_min]),
-        convert(VT, [p_max[ref2gen]; q_max]),
+        convert(VT, [Cgp * p_min; Cgq * q_min]),
+        convert(VT, [Cgp * p_max; Cgq * q_max]),
     )
 end
 
