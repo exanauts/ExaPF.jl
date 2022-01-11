@@ -71,6 +71,12 @@ voltage(buf::NetworkStack) = buf.vmag .* exp.(im .* buf.vang)
 
 abstract type AbstractExpression end
 
+function (expr::AbstractExpression)(stack::AbstractStack)
+    m = length(expr)
+    output = similar(stack.input, m)
+    expr(output, stack)
+    return output
+end
 
 #=
     PolarBasis
@@ -88,19 +94,18 @@ end
 
 function PolarBasis(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     SMT = default_sparse_matrix(polar.device)
+    nlines = PS.get(polar.network, PS.NumberOfLines())
     # Assemble matrix
     pf = polar.network
+    nbus = pf.nbus
     lines = pf.lines
     f = lines.from_buses
     t = lines.to_buses
 
-    nbus = pf.nbus
-    nlines = length(t)
-
     Cf = sparse(f, 1:nlines, ones(nlines), nbus, nlines)
     Ct = sparse(t, 1:nlines, ones(nlines), nbus, nlines)
     Cf = Cf |> SMT
-    Ct = Cf |> SMT
+    Ct = Ct |> SMT
 
     return PolarBasis{VI, SMT}(nbus, nlines, f, t, Cf, Ct, polar.device)
 end
@@ -186,15 +191,12 @@ end
 
 Base.length(::CostFunction) = 1
 
-function (func::CostFunction)(state)
-    costs = state.intermediate.c
-    mul!(state.pgen[func.gen_ref], func.M, state.ψ)
-    costs .= func.c0 .+ func.c1 .* state.pgen .+ func.c2 .* state.pgen.^2
-    return sum(costs)
-end
-
 function (func::CostFunction)(output, state)
-    CUDA.@allowscalar output[1] = func(state)
+    costs = state.intermediate.c
+    pg_ref = view(state.pgen, func.gen_ref)
+    mul!(pg_ref, func.M, state.ψ)
+    costs .= func.c0 .+ func.c1 .* state.pgen .+ func.c2 .* state.pgen.^2
+    CUDA.@allowscalar output[1] = sum(costs)
     return
 end
 
@@ -435,7 +437,7 @@ struct ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AbstractExpression
 end
 
 function (func::ComposedExpressions)(output, state)
-    func.inner(state.ψ, state) # Evaluate basis
+    func.inner(state.ψ, state)  # Evaluate basis
     func.outer(output, state)   # Evaluate expression
 end
 
@@ -446,3 +448,6 @@ end
 
 # Overload ∘ operator
 Base.ComposedFunction(g::AbstractExpression, f::PolarBasis) = ComposedExpressions(f, g)
+Base.length(func::ComposedExpressions) = length(func.outer)
+bounds(polar, func::ComposedExpressions) = bounds(polar, func.outer)
+

@@ -38,7 +38,7 @@ function MyHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, ma
     host_t1sseeds = Vector{ForwardDiff.Partials{1, Float64}}(undef, nmap)
     t1sseeds = A{ForwardDiff.Partials{1, Float64}}(undef, nmap)
 
-    intermediate = _get_intermediate_stack(polar, network_basis, VD, 1)
+    intermediate = nothing
     return MyHessian(
         polar, func, map_device, stack, ∂stack, host_t1sseeds, t1sseeds, t1sF, adj_t1sF,
         intermediate,
@@ -123,7 +123,7 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, 
     compressedH = MT(undef, ncolor, nmap)
     coloring = coloring |> VI
 
-    intermediate = _get_intermediate_stack(polar, network_basis, VD, 1)
+    intermediate = nothing
     return FullHessian(
         polar, func, map_device, stack, ∂stack, coloring, t1sseeds, t1sF, adj_t1sF,
         intermediate, compressedH, H,

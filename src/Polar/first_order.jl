@@ -1,20 +1,3 @@
-function get_tape(polar::PolarForm, expr::AbstractExpression, ∂stack::NetworkStack{VT, Buf}) where {VT, Buf}
-    # TODO
-    intermediate = _get_intermediate_stack(polar, ExaPF.network_basis, VT, 1)
-    return AutoDiff.TapeMemory(expr, ∂stack, intermediate)
-end
-
-function jacobian_transpose_product!(polar::PolarForm, pbm::AutoDiff.TapeMemory, jv, state, ∂v)
-    ∂state = pbm.stack
-    empty!(∂state)
-    adjoint!(pbm.func, ∂state, state, ∂v)
-    # Accumulate on vmag and vang
-    reverse_eval_intermediate(polar, ∂state, state, pbm.intermediate)
-    # Accumulate on x and u
-    reverse_transfer!(
-        polar, jv, ∂state,
-    )
-end
 
 struct MyJacobian{Model, Func, VD, SMT, MT, VI, VP}
     model::Model

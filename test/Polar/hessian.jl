@@ -74,7 +74,8 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     mymap = [ExaPF.my_map(polar, State()); ExaPF.my_map(polar, Control())]
 
     stack = ExaPF.NetworkStack(polar)
-    ExaPF.forward_eval_intermediate(polar, stack)
+    basis  = ExaPF.PolarBasis(polar)
+
     # Solve power flow
     conv = ExaPF.run_pf(polar, stack)
 
@@ -85,7 +86,7 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
         ExaPF.LineFlows(polar),
         ExaPF.PowerFlowBalance(polar),
     ]
-    mycons = ExaPF.MultiExpressions(constraints)
+    mycons = ExaPF.MultiExpressions(constraints) ∘ basis
 
     # Initiate state and control for FiniteDiff
     # CONSTRAINTS
@@ -104,7 +105,6 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
 
     function lagr_x(z)
         stack.input[mymap] .= z
-        ExaPF.forward_eval_intermediate(polar, stack)
         mycons(c, stack)
         return dot(μ, c)
     end
@@ -118,7 +118,7 @@ end
 
 function test_full_space_hessian(polar, device, MT)
     stack = ExaPF.NetworkStack(polar)
-    ExaPF.forward_eval_intermediate(polar, stack)
+    basis  = ExaPF.PolarBasis(polar)
 
     n = length(stack.input)
     # Hessian / (x, u)
@@ -130,7 +130,7 @@ function test_full_space_hessian(polar, device, MT)
         ExaPF.PowerGenerationBounds(polar),
         ExaPF.LineFlows(polar),
     ]
-    mycons = ExaPF.MultiExpressions(constraints)
+    mycons = ExaPF.MultiExpressions(constraints) ∘ basis
 
     m = length(mycons)
     y = rand(m) |> MT
@@ -141,7 +141,6 @@ function test_full_space_hessian(polar, device, MT)
 
     function hess_fd_x(x)
         stack.input[mymap] .= x
-        ExaPF.forward_eval_intermediate(polar, stack)
         mycons(c, stack)
         return dot(c, y)
     end

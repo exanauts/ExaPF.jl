@@ -89,9 +89,35 @@ function matpower_jacobian(polar::PolarForm, func::LineFlows, V)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
+function matpower_jacobian(polar::PolarForm, func::PolarBasis, V)
+    pf = polar.network
+    nbus = pf.nbus
+    ngen = pf.ngen
+    nlines = get(polar, PS.NumberOfLines())
+
+    dS_dVm, dS_dVa = PS._matpower_basis_jacobian(V, pf.lines)
+    dV2 = 2 * sparse(1:nbus, 1:nbus, abs.(V), nbus, nbus)
+
+    j11 = real(dS_dVm)
+    j12 = real(dS_dVa)
+    j13 = spzeros(nlines, ngen)
+    j21 = imag(dS_dVm)
+    j22 = imag(dS_dVa)
+    j23 = spzeros(nlines, ngen)
+    j31 = dV2
+    j32 = spzeros(nbus, nbus)
+    j33 = spzeros(nbus, ngen)
+    return [
+        j11 j12 j13;
+        j21 j22 j23;
+        j31 j32 j33
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
 function matpower_jacobian(polar::PolarForm, func::MultiExpressions, V)
     return vcat([matpower_jacobian(polar, expr, V) for expr in func.exprs]...)
 end
+matpower_jacobian(polar::PolarForm, func::ComposedExpressions, V) = matpower_jacobian(polar, func.outer, V)
 
 # Return full-space Hessian
 function matpower_hessian(polar::PolarForm, func::CostFunction, V, λ)
@@ -223,6 +249,7 @@ function matpower_hessian(polar::PolarForm, func::MultiExpressions, V, λ)
     end
     return H
 end
+matpower_hessian(polar::PolarForm, func::ComposedExpressions, V, y) = matpower_hessian(polar, func.outer, V, y)
 
 function hessian_sparsity(polar::PolarForm, func)
     m = length(func)

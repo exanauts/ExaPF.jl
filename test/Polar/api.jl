@@ -48,8 +48,8 @@ function test_polar_api(polar, device, M)
     pf = polar.network
     tolerance = 1e-8
     stack = ExaPF.NetworkStack(polar)
-    ExaPF.forward_eval_intermediate(polar, stack)
-    power_balance = ExaPF.PowerFlowBalance(polar)
+    basis  = ExaPF.PolarBasis(polar)
+    power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
     # Test that values are matching
     @test myisapprox(pf.vbus, stack.vmag .* exp.(im .* stack.vang))
     xₖ = ExaPF.initial(polar, State())
@@ -68,20 +68,20 @@ function test_polar_api(polar, device, M)
 
     # Test callbacks
     ## Power Balance
-    ExaPF.forward_eval_intermediate(polar, stack)
     power_balance(cons, stack)
     # As we run powerflow before, the balance should be below tolerance
     @test ExaPF.xnorm_inf(cons) < tolerance
 
     ## Cost Production
     cost_production = ExaPF.CostFunction(polar)
-    c2 = cost_production(stack)
+    c2 = cost_production(stack)[1]
     @test isa(c2, Real)
     return nothing
 end
 
 function test_polar_constraints(polar, device, M)
     stack = ExaPF.NetworkStack(polar)
+    basis  = ExaPF.PolarBasis(polar)
 
     @testset "Expressions $expr" for expr in [
         ExaPF.VoltageMagnitudePQ,
@@ -90,7 +90,7 @@ function test_polar_constraints(polar, device, M)
         ExaPF.PowerFlowBalance,
     ]
         # Instantiate
-        constraints = expr(polar)
+        constraints = expr(polar) ∘ basis
         m = length(constraints)
         @test isa(m, Int)
         g = M{Float64, 1}(undef, m) # TODO: this signature is not great

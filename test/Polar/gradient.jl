@@ -1,8 +1,9 @@
 function test_reduced_gradient(polar, device, MT)
     stack = ExaPF.NetworkStack(polar)
+    basis  = ExaPF.PolarBasis(polar)
     ∂stack = ExaPF.NetworkStack(polar)
 
-    power_balance = ExaPF.PowerFlowBalance(polar)
+    power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
 
     mapx = ExaPF.my_map(polar, State())
     mapu = ExaPF.my_map(polar, Control())
@@ -27,16 +28,17 @@ function test_reduced_gradient(polar, device, MT)
     @test isapprox(h∇gₓ, J[:, mapx])
     @test isapprox(h∇gᵤ, J[:, mapu])
 
-    cost_production = ExaPF.CostFunction(polar)
-    ExaPF.forward_eval_intermediate(polar, stack)
-    obj = cost_production(stack)
-    pbm = ExaPF.get_tape(polar, cost_production, ∂stack)
+    cost_production = ExaPF.CostFunction(polar) ∘ basis
+
+    c = zeros(1)
+    cost_production(c, stack)
 
     grad = similar(stack.input, nx+nu)
 
-    ExaPF.jacobian_transpose_product!(polar, pbm, grad, stack, 1.0)
-    ∇fₓ = grad[1:nx]
-    ∇fᵤ = grad[1+nx:nx+nu]
+    empty!(∂stack)
+    ExaPF.adjoint!(cost_production, ∂stack, stack, 1.0)
+    ∇fₓ = ∂stack.input[mapx]
+    ∇fᵤ = ∂stack.input[mapu]
 
     h∇fₓ = ∇fₓ |> Array
     h∇fᵤ = ∇fᵤ |> Array
@@ -53,8 +55,8 @@ function test_reduced_gradient(polar, device, MT)
     function reduced_cost(u_)
         stack.input[mapu] .= u_
         ExaPF.nlsolve!(solver, jx, stack)
-        ExaPF.forward_eval_intermediate(polar, stack)
-        return cost_production(stack)
+        cost_production(c, stack)
+        return c[1]
     end
 
     u = stack.input[mapu]

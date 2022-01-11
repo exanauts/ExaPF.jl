@@ -59,7 +59,8 @@ function run_pf(
     solver = NewtonRaphson(tol=rtol, maxiter=max_iter)
     mapx = my_map(polar, State())
 
-    func = PowerFlowBalance(polar)
+    basis = PolarBasis(polar)
+    func = PowerFlowBalance(polar) ∘ basis
     jac = MyJacobian(polar, func, mapx)
 
     conv = nlsolve!(solver, jac, state)
