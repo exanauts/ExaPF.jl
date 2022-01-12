@@ -15,10 +15,6 @@ end
 function PolarForm(pf::PS.PowerNetwork, device::KA.CPU)
     return PolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device)
 end
-function PolarForm(pf::PS.PowerNetwork, device::KA.GPU)
-    return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device)
-end
-
 # Convenient constructor
 PolarForm(datafile::String, device) = PolarForm(PS.PowerNetwork(datafile), device)
 

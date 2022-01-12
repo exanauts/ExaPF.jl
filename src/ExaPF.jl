@@ -6,9 +6,6 @@ using LinearAlgebra
 using SparseArrays
 
 import CUDA
-import CUDA.CUBLAS
-import CUDA.CUSPARSE
-import CUDA.CUSOLVER
 
 import ForwardDiff
 using KernelAbstractions
@@ -36,5 +33,10 @@ const LS = LinearSolvers
 
 # Polar formulation
 include("Polar/polar.jl")
+
+# CUDA extension
+if CUDA.has_cuda()
+    include("cuda_wrapper.jl")
+end
 
 end

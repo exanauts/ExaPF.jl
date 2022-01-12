@@ -4,7 +4,6 @@ module AutoDiff
 using SparseArrays
 
 using CUDA
-import CUDA.CUSPARSE
 import ForwardDiff
 import SparseDiffTools
 using KernelAbstractions
