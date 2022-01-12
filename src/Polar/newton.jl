@@ -58,7 +58,7 @@ function nlsolve!(
     algo::NewtonRaphson,
     jac::MyJacobian,
     state::NetworkStack{VT,Buf};
-    linear_solver=DirectSolver(),
+    linear_solver=DirectSolver(jac.J),
     nl_buffer=NLBuffer{VT}(size(jac, 2)),
 ) where {VT, Buf}
     iter = 0
@@ -83,6 +83,7 @@ function nlsolve!(
         end
 
         # Update
+        LS.update!(linear_solver, J)
         n_iters = LS.ldiv!(linear_solver, Δx, J, residual)
         x .= x .- Δx
 

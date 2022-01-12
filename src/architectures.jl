@@ -21,18 +21,6 @@ function get_jacobian_types(::GPU)
     return SMT, A
 end
 
-function get_batch_jacobian_types(::CPU)
-    SMT = SparseMatrixCSC{Float64,Int}
-    A = Array
-    return SMT, A
-end
-
-function get_batch_jacobian_types(::GPU)
-    SMT = CUSPARSE.CuSparseMatrixCSR{Float64}
-    A = CUDA.CuArray
-    return SMT, A
-end
-
 function Base.unsafe_wrap(Atype::Type{CUDA.CuArray{T, 1, CUDA.Mem.DeviceBuffer}},
                           p::CUDA.CuPtr{T}, dim::Integer;
                           own::Bool=false, ctx::CUDA.CuContext=CUDA.context()) where {T}

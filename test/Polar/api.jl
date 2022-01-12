@@ -108,26 +108,38 @@ function test_polar_constraints(polar, device, M)
 end
 
 function test_polar_powerflow(polar, device, M)
+    SMT = ExaPF.default_sparse_matrix(polar.device)
+    # Init structures
+    stack = ExaPF.NetworkStack(polar)
+    mapx = ExaPF.my_map(polar, State())
     pf_solver = NewtonRaphson(tol=1e-6)
     npartitions = 8
+
+    basis = ExaPF.PolarBasis(polar)
+    pflow = ExaPF.PowerFlowBalance(polar)
+    n = length(pflow)
+
     # Get reduced space Jacobian on the CPU
-    J = ExaPF.powerflow_jacobian(polar)
-    n = size(J, 1)
+    J = ExaPF.jacobian_sparsity(polar, pflow)
+    J = J[:, mapx]
+
+    @test n == size(J, 1) == length(mapx)
+
     # Build preconditioner
     precond = LS.BlockJacobiPreconditioner(J, npartitions, device)
 
-    J_gpu = ExaPF.powerflow_jacobian_device(polar)
+    J_gpu = J |> SMT
 
     # Init AD
-    jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
-    # Init buffer
-    buffer = get(polar, ExaPF.PhysicalState())
+    jx = ExaPF.MyJacobian(polar, pflow ∘ basis, mapx)
 
     @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
         algo = LinSolver(J_gpu; P=precond)
-        ExaPF.init_buffer!(polar, buffer)
-        convergence = ExaPF.powerflow(polar, jx, buffer, pf_solver; linear_solver=algo)
+        ExaPF.init!(polar, stack)
+        convergence = ExaPF.nlsolve!(
+            pf_solver, jx, stack; linear_solver=algo)
         @test convergence.has_converged
         @test convergence.norm_residuals < pf_solver.tol
     end
 end
+

@@ -15,7 +15,7 @@ import Krylov
 import LightGraphs
 import Metis
 
-import ..ExaPF: xnorm, csclsvqr!
+import ..ExaPF: xnorm
 
 const KA = KernelAbstractions
 
@@ -119,7 +119,6 @@ end
 
 # Reuse factorization in update
 function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
-    lu!(s.factorization, J) # Update factorization inplace
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
@@ -178,8 +177,11 @@ function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::CUDA.CuVector,
     return 0
 end
 
-function update_preconditioner!(solver::AbstractIterativeLinearSolver, J, device)
-    update(solver.precond, J, device)
+function update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC)
+    update(solver.precond, J, CPU())
+end
+function update!(solver::AbstractIterativeLinearSolver, J::CUSPARSE.CuSparseMatrixCSR)
+    update(solver.precond, J, CUDADevice())
 end
 
 """

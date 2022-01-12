@@ -4,7 +4,7 @@ function matpower_jacobian(polar::PolarForm, func::PowerFlowBalance, V)
     pf = polar.network
     nbus = pf.nbus
     ngen = pf.ngen
-    ref, pv, pq = index_buses_host(polar)
+    ref, pv, pq = pf.ref, pf.pv, pf.pq
     gen2bus = pf.gen2bus
     nref = length(ref)
     npv = length(pv)
@@ -33,7 +33,7 @@ function matpower_jacobian(polar::PolarForm, func::VoltageMagnitudePQ, V)
     pf = polar.network
     ngen = pf.ngen
     nbus = pf.nbus
-    ref, pv, pq = index_buses_host(polar)
+    ref, pv, pq = pf.ref, pf.pv, pf.pq
     npq = length(pq)
 
     j11 = sparse(1:npq, pq, ones(npq), npq, nbus)
@@ -46,7 +46,7 @@ function matpower_jacobian(polar::PolarForm, func::PowerGenerationBounds, V)
     nbus = pf.nbus
     ngen = pf.ngen
     gen2bus = pf.gen2bus
-    ref, pv, pq = index_buses_host(polar)
+    ref, pv, pq = pf.ref, pf.pv, pf.pq
     nref = length(ref)
     npv = length(pv)
     npq = length(pq)
@@ -71,7 +71,7 @@ function matpower_jacobian(polar::PolarForm, func::LineFlows, V)
     nbus = get(polar, PS.NumberOfBuses())
     nlines = get(polar, PS.NumberOfLines())
     pf = polar.network
-    ref, pv, pq = index_buses_host(polar)
+    ref, pv, pq = pf.ref, pf.pv, pf.pq
     ngen = pf.ngen
     nref = length(ref)
     npv  = length(pv)

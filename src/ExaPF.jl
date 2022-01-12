@@ -16,6 +16,8 @@ const KA = KernelAbstractions
 
 import Base: show, get
 
+export run_pf
+
 include("architectures.jl")
 
 # Templates
