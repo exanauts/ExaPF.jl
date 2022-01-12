@@ -74,7 +74,7 @@ function test_polar_api(polar, device, M)
 
     ## Cost Production
     cost_production = ExaPF.CostFunction(polar)
-    c2 = cost_production(stack)[1]
+    c2 = CUDA.@allowscalar cost_production(stack)[1]
     @test isa(c2, Real)
     return nothing
 end

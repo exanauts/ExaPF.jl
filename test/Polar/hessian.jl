@@ -44,7 +44,7 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     proj_fd = similar(x0, nx+nu)
     mul!(proj_fd, H_fd.data, dev_tgt, 1, 0)
 
-    @test isapprox(projp, Array(proj_fd), rtol=rtol)
+    @test myisapprox(projp, Array(proj_fd), rtol=rtol)
 end
 
 function test_full_space_hessian(polar, device, MT)

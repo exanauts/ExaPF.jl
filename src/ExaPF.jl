@@ -6,6 +6,7 @@ using LinearAlgebra
 using SparseArrays
 
 import CUDA
+import CUDA.CUSPARSE
 
 import ForwardDiff
 using KernelAbstractions

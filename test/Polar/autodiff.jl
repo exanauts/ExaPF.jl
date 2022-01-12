@@ -55,8 +55,8 @@ function test_constraints_jacobian(polar, device, MT)
         @test myisapprox(Jd, Jx, rtol=1e-5)
         @test myisapprox(Jmat, Jx, rtol=1e-5)
         @test myisapprox(Jmat, Jd, rtol=1e-5)
-        @test isapprox(∂stack.input[mymap], Jx' * tgt_h, rtol=1e-6)
-        @test isapprox(∂stack.input[mymap], Jmat' * tgt_h, rtol=1e-6)
+        @test myisapprox(∂stack.input[mymap], Jx' * tgt_h, rtol=1e-6)
+        @test myisapprox(∂stack.input[mymap], Jmat' * tgt_h, rtol=1e-6)
     end
 end
 
@@ -98,7 +98,7 @@ function test_constraints_adjoint(polar, device, MT)
         adj_fd = FiniteDiff.finite_difference_jacobian(test_fd, x) |> Array
         # Loosen the tolerance to 1e-5 there (finite_difference_jacobian
         # is less accurate than finite_difference_gradient)
-        @test isapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-5)
+        @test myisapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-5)
     end
 end
 

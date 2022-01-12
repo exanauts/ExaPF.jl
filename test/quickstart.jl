@@ -1,6 +1,7 @@
 using Test
 using CUDA
 using KernelAbstractions
+using CUDAKernels
 
 using ExaPF
 import ExaPF: AutoDiff
@@ -79,8 +80,8 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
         polar_gpu = ExaPF.PolarForm(pf, CUDADevice())
         stack_gpu = ExaPF.NetworkStack(polar_gpu)
 
-        basis_gpu = ExaPF.PolarBasis(polar)
-        pflow_gpu = ExaPF.PowerFlowBalance(polar) ∘ basis
+        basis_gpu = ExaPF.PolarBasis(polar_gpu)
+        pflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ basis_gpu
         jx_gpu = ExaPF.MyJacobian(polar_gpu, pflow_gpu, mapx)
 
         linear_solver = LS.DirectSolver(jx_gpu.J)

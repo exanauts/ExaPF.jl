@@ -268,8 +268,11 @@ Base.length(::CostFunction) = 1
 
 function (func::CostFunction)(output, state)
     costs = state.intermediate.c
+    # pg_ref = view(state.pgen, func.gen_ref)
+    res = similar(costs, length(func.gen_ref))
     pg_ref = view(state.pgen, func.gen_ref)
-    mul!(pg_ref, func.M, state.ψ)
+    mul!(res, func.M, state.ψ)
+    pg_ref .= res
     costs .= func.c0 .+ func.c1 .* state.pgen .+ func.c2 .* state.pgen.^2
     CUDA.@allowscalar output[1] = sum(costs)
     return

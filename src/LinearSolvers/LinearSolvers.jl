@@ -8,6 +8,7 @@ import Base: show
 
 using CUDA
 using KernelAbstractions
+using CUDAKernels
 import CUDA.CUBLAS
 import CUDA.CUSOLVER
 import CUDA.CUSPARSE
@@ -157,18 +158,6 @@ function batch_ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, Y, Js::Vect
     end
 end
 
-function ldiv!(::DirectSolver{Nothing},
-    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector,
-)
-    CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
-    return 0
-end
-function ldiv!(::DirectSolver{Nothing},
-    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSC, x::CUDA.CuVector,
-)
-    csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
-    return 0
-end
 get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
 
 function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector)
