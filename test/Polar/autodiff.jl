@@ -1,6 +1,6 @@
 function test_constraints_jacobian(polar, device, MT)
-    nx = length(polar.mapx)
-    nu = length(polar.mapu)
+    nx = ExaPF.number(polar, State())
+    nu = ExaPF.number(polar, Control())
 
     stack = ExaPF.NetworkStack(polar)
     ∂stack = ExaPF.NetworkStack(polar)
@@ -61,8 +61,8 @@ function test_constraints_jacobian(polar, device, MT)
 end
 
 function test_constraints_adjoint(polar, device, MT)
-    nx = length(polar.mapx)
-    nu = length(polar.mapu)
+    nx = ExaPF.number(polar, State())
+    nu = ExaPF.number(polar, Control())
     mymap = [ExaPF.my_map(polar, State()); ExaPF.my_map(polar, Control())]
 
     stack = ExaPF.NetworkStack(polar)

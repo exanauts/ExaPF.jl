@@ -12,7 +12,7 @@ default_sparse_matrix(::CPU) = SparseMatrixCSC{Float64,Int}
 function get_jacobian_types(::CPU)
     SMT = SparseMatrixCSC{Float64,Int}
     A = Vector
-	return SMT, A
+    return SMT, A
 end
 
 function get_jacobian_types(::GPU)
@@ -24,7 +24,7 @@ end
 function get_batch_jacobian_types(::CPU)
     SMT = SparseMatrixCSC{Float64,Int}
     A = Array
-	return SMT, A
+    return SMT, A
 end
 
 function get_batch_jacobian_types(::GPU)

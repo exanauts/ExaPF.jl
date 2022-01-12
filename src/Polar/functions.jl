@@ -73,6 +73,7 @@ function init!(polar::PolarForm, stack::NetworkStack)
 end
 
 voltage(buf::NetworkStack) = buf.vmag .* exp.(im .* buf.vang)
+voltage_host(buf::NetworkStack) = voltage(buf) |> Array
 
 
 #=
@@ -123,6 +124,33 @@ end
 Base.length(func::PolarBasis) = func.nbus + 2 * func.nlines
 
 # update basis
+@kernel function basis_kernel!(
+    cons, @Const(vmag), @Const(vang), @Const(f), @Const(t), nlines, nbus,
+)
+    i, j = @index(Global, NTuple)
+
+    @inbounds begin
+        if i <= nlines
+            ℓ = i
+            fr_bus = f[ℓ]
+            to_bus = t[ℓ]
+            Δθ = vang[fr_bus, j] - vang[to_bus, j]
+            cosθ = cos(Δθ)
+            cons[i, j] = vmag[fr_bus, j] * vmag[to_bus, j] * cosθ
+        elseif i <= 2 * nlines
+            ℓ = i - nlines
+            fr_bus = f[ℓ]
+            to_bus = t[ℓ]
+            Δθ = vang[fr_bus, j] - vang[to_bus, j]
+            sinθ = sin(Δθ)
+            cons[i, j] = vmag[fr_bus, j] * vmag[to_bus, j] * sinθ
+        elseif i <= 2 * nlines + nbus
+            b = i - 2 * nlines
+            cons[i, j] = vmag[b, j] * vmag[b, j]
+        end
+    end
+end
+
 function (func::PolarBasis)(output, stack::NetworkStack)
     ev = basis_kernel!(func.device)(
         output, stack.vmag, stack.vang,
@@ -131,6 +159,39 @@ function (func::PolarBasis)(output, stack::NetworkStack)
     )
     wait(ev)
     return
+end
+
+@kernel function adj_basis_kernel!(
+    ∂cons, adj_vmag, adj_vmag_fr, adj_vmag_to,
+    adj_vang_fr, adj_vang_to,
+    @Const(vmag), @Const(vang), @Const(f), @Const(t), nlines, nbus,
+)
+    i, j = @index(Global, NTuple)
+
+    @inbounds begin
+        if i <= nlines
+            ℓ = i
+            fr_bus = f[ℓ]
+            to_bus = t[ℓ]
+            Δθ = vang[fr_bus, j] - vang[to_bus, j]
+            cosθ = cos(Δθ)
+            sinθ = sin(Δθ)
+
+            adj_vang_fr[i] += -vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
+            adj_vang_fr[i] +=  vmag[fr_bus, j] * vmag[to_bus, j] * cosθ * ∂cons[ℓ+nlines, j]
+            adj_vang_to[i] +=  vmag[fr_bus, j] * vmag[to_bus, j] * sinθ * ∂cons[ℓ, j]
+            adj_vang_to[i] -=  vmag[fr_bus, j] * vmag[to_bus, j] * cosθ * ∂cons[ℓ+nlines, j]
+
+            adj_vmag_fr[i] +=  vmag[to_bus, j] * cosθ * ∂cons[ℓ, j]
+            adj_vmag_fr[i] += vmag[to_bus, j] * sinθ * ∂cons[ℓ+nlines, j]
+
+            adj_vmag_to[i] +=  vmag[fr_bus, j] * cosθ * ∂cons[ℓ, j]
+            adj_vmag_to[i] += vmag[fr_bus, j] * sinθ * ∂cons[ℓ+nlines, j]
+        else i <= nlines + nbus
+            b = i - nlines
+            adj_vmag[b, j] += 2.0 * vmag[b, j] * ∂cons[b+2*nlines, j]
+        end
+    end
 end
 
 function adjoint!(func::PolarBasis, ∂state::NetworkStack, state::NetworkStack, ∂v)
@@ -196,7 +257,7 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     M = -M_tot[ref, :] |> SMT
 
     # coefficients
-    coefs = polar.costs_coefficients
+    coefs = PS.get_costs_coefficients(polar.network)
     c0 = @view coefs[:, 2]
     c1 = @view coefs[:, 3]
     c2 = @view coefs[:, 4]
@@ -221,6 +282,29 @@ function adjoint!(func::CostFunction, ∂state, state, ∂v)
 end
 
 
+@doc raw"""
+    PowerFlowBalance
+
+Subset of the power injection in the network
+corresponding to ``(p_{inj}^{pv}, p_{inj}^{pq}, q_{inj}^{pq})``.
+They are associated to the function
+
+```math
+g(x, u) = 0 .
+```
+introduced in the documentation.
+
+In detail, the function encodes the active balance equations at
+PV and PQ nodes, and the reactive balance equations at PQ nodes:
+```math
+\begin{aligned}
+    p_i &= v_i \sum_{j}^{n} v_j (g_{ij}\cos{(\theta_i - \theta_j)} + b_{ij}\sin{(\theta_i - \theta_j})) \,, &
+    ∀ i ∈ \{PV, PQ\} \\
+    q_i &= v_i \sum_{j}^{n} v_j (g_{ij}\sin{(\theta_i - \theta_j)} - b_{ij}\cos{(\theta_i - \theta_j})) \,. &
+    ∀ i ∈ \{PQ\}
+\end{aligned}
+```
+"""
 struct PowerFlowBalance{VT, MT} <: AbstractExpression
     M::MT
     Cg::MT
@@ -272,6 +356,19 @@ function adjoint!(func::PowerFlowBalance, ∂state, state, ∂v)
 end
 
 
+"""
+    VoltageMagnitudePQ
+
+Bounds the voltage magnitudes at PQ nodes:
+```math
+v_{pq}^♭ ≤ v_{pq} ≤ v_{pq}^♯ .
+```
+
+## Note
+The constraints on the voltage magnitudes at PV nodes ``v_{pv}``
+are taken into account when bounding the control ``u``.
+
+"""
 struct VoltageMagnitudePQ <: AbstractExpression
     pq::Vector{Int}
 
@@ -293,7 +390,17 @@ function adjoint!(func::VoltageMagnitudePQ, ∂state, state, ∂v)
     ∂state.vmag[func.pq] .+= ∂v
 end
 
+"""
+    PowerGenerationBounds
 
+Constraints on the **active power production**
+and on the **reactive power production** at the generators
+that are not already taken into account in the bound constraints.
+```math
+p_g^♭ ≤ p_g ≤ p_g^♯  ;
+q_g^♭ ≤ q_g ≤ q_g^♯  .
+```
+"""
 struct PowerGenerationBounds{VT, MT} <: AbstractExpression
     M::MT
     τ::VT
@@ -347,6 +454,12 @@ function adjoint!(func::PowerGenerationBounds, ∂state, state, ∂v)
 end
 
 
+"""
+    LineFlows
+
+Thermal limit constraints porting on the lines of the network.
+
+"""
 struct LineFlows{VT, MT} <: AbstractExpression
     nlines::Int
     Lfp::MT

@@ -45,6 +45,21 @@ function MyHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, ma
     )
 end
 
+function _init_seed_hessian!(dest, tmp, v::AbstractArray, nmap)
+    @inbounds for i in 1:nmap
+        dest[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i]))
+    end
+    return
+end
+function _init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
+    hostv = Array(v)
+    @inbounds Threads.@threads for i in 1:nmap
+        tmp[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
+    end
+    copyto!(dest, tmp)
+    return
+end
+
 function hprod!(
     H::MyHessian, hv, state, λ, v,
 )

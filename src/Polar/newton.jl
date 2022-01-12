@@ -1,3 +1,44 @@
+export NewtonRaphson
+
+abstract type AbstractNonLinearSolver end
+
+"""
+    NewtonRaphson <: AbstractNonLinearSolver
+
+Newton-Raphson algorithm. Used to solve the non-linear equation
+``g(x, u) = 0``, at a fixed control ``u``.
+
+### Attributes
+- `maxiter::Int` (default 20): maximum number of iterations
+- `tol::Float64` (default `1e-8`): tolerance of the algorithm
+- `verbose::Int` (default `NONE`): verbosity level
+
+"""
+struct NewtonRaphson <: AbstractNonLinearSolver
+    maxiter::Int
+    tol::Float64
+    verbose::Int
+end
+NewtonRaphson(; maxiter=20, tol=1e-8, verbose=0) = NewtonRaphson(maxiter, tol, verbose)
+
+"""
+    ConvergenceStatus
+
+Convergence status returned by a non-linear algorithm.
+
+### Attributes
+- `has_converged::Bool`: states whether the algorithm has converged.
+- `n_iterations::Int`: total number of iterations of the non-linear algorithm.
+- `norm_residuals::Float64`: final residual.
+- `n_linear_solves::Int`: number of linear systems ``Ax = b`` resolved during the run.
+
+"""
+struct ConvergenceStatus
+    has_converged::Bool
+    n_iterations::Int
+    norm_residuals::Float64
+    n_linear_solves::Int
+end
 
 struct NLBuffer{VT}
     x::VT
@@ -52,6 +93,25 @@ function nlsolve!(
     return ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
 end
 
+"""
+    run_pf(polar::PolarForm, stack::NetworkStack;
+           rtol=1e-8, max_iter=20,
+    )
+
+Solve the power flow equations ``g(x, u) = 0`` w.r.t. the state ``x``,
+using the ([`NewtonRaphson`](@ref) algorithm.
+The initial state ``x`` is specified inside
+`stack`. The object `stack` is modified inplace in the function.
+
+The algorithm stops when a tolerance `rtol` or a maximum number of
+iterations `maxiter` is reached.
+
+## Arguments
+
+* `polar::AbstractFormulation`: formulation of the power flow equation
+* `stack::NetworkStack`: initial values in the network
+
+"""
 function run_pf(
     polar::PolarForm, state::NetworkStack;
     rtol=1e-8, max_iter=20,

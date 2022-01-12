@@ -47,18 +47,18 @@ end
 function test_polar_api(polar, device, M)
     pf = polar.network
     tolerance = 1e-8
+    nx = ExaPF.number(polar, State())
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
     power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
     # Test that values are matching
     @test myisapprox(pf.vbus, stack.vmag .* exp.(im .* stack.vang))
-    xₖ = ExaPF.initial(polar, State())
 
     # Check that initial residual is correct
     mis = pf.vbus .* conj.(pf.Ybus * pf.vbus) .- pf.sbus
     f_mat = [real(mis[[pf.pv; pf.pq]]); imag(mis[pf.pq])];
 
-    cons = similar(xₖ)
+    cons = similar(stack.input, nx)
     power_balance(cons, stack)
     @test myisapprox(cons, f_mat)
 

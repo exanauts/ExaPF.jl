@@ -11,24 +11,13 @@ struct MyJacobian{Model, Func, VD, SMT, MT, VI, VP}
     J::SMT
 end
 
+function Base.show(io::IO, jacobian::MyJacobian)
+    println(io, "A AutoDiff Jacobian for $(typeof(jacobian.func))")
+    ncolor = size(jacobian.compressedJ, 1)
+    print(io, "Number of Jacobian colors: ", ncolor)
+end
+
 Base.size(jac::MyJacobian, n::Int) = size(jac.J, n)
-
-# Ordering: [vmag, vang, pgen]
-
-function my_map(polar::PolarForm, ::State)
-    nbus = get(polar, PS.NumberOfBuses())
-    ref, pv, pq = index_buses_host(polar)
-    return Int[nbus .+ pv; nbus .+ pq; pq]
-end
-function my_map(polar::PolarForm, ::Control)
-    nbus = get(polar, PS.NumberOfBuses())
-    ref, pv, pq = index_buses_host(polar)
-    pv2gen = polar.network.pv2gen
-    return Int[ref; pv; 2*nbus .+ pv2gen]
-end
-
-number(polar::PolarForm, ::State) = get(polar, NumberOfState())
-number(polar::PolarForm, ::Control) = get(polar, NumberOfControl())
 
 # Coloring
 function jacobian_sparsity(polar::PolarForm, func::AbstractExpression)

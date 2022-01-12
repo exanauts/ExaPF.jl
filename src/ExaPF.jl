@@ -13,17 +13,9 @@ import CUDA.CUSOLVER
 import ForwardDiff
 using KernelAbstractions
 const KA = KernelAbstractions
-using TimerOutputs: @timeit, TimerOutput
 
 import Base: show, get
 
-const VERBOSE_LEVEL_HIGH = 3
-const VERBOSE_LEVEL_MEDIUM = 2
-const VERBOSE_LEVEL_LOW = 1
-const VERBOSE_LEVEL_NONE = 0
-const TIMER = TimerOutput()
-
-include("utils.jl")
 include("architectures.jl")
 
 # Templates
