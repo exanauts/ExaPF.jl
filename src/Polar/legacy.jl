@@ -145,7 +145,7 @@ function matpower_hessian(polar::PolarForm, func::CostFunction, V, λ)
     j13 = spzeros(nref, ngen)
     J = [j11 j12 j13]::SparseMatrixCSC{Float64, Int}
 
-    Href = J' * Diagonal(2 .* c2[ref]) * J
+    Href = J' * Diagonal(2 .* c2[func.gen_ref]) * J
 
     return H + Href
 end

@@ -102,6 +102,21 @@ exa_factorize(J::Adjoint{T, SparseMatrixCSC{T, Int}}) where T = lu(J.parent)'
 DirectSolver(J; options...) = DirectSolver(exa_factorize(J))
 DirectSolver() = DirectSolver(nothing)
 
+function update!(s::DirectSolver, J::AbstractMatrix)
+    lu!(s.factorization, J) # Update factorization inplace
+end
+
+function lsolve!(s::DirectSolver, y::AbstractArray)
+    LinearAlgebra.ldiv!(s.factorization, y)
+end
+function lsolve!(s::DirectSolver, y::AbstractArray, x::AbstractArray)
+    LinearAlgebra.ldiv!(y, s.factorization, x)
+end
+
+function rsolve!(s::DirectSolver, y::AbstractArray, x::AbstractArray)
+    LinearAlgebra.ldiv!(y, s.factorization', x)
+end
+
 # Reuse factorization in update
 function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
     lu!(s.factorization, J) # Update factorization inplace

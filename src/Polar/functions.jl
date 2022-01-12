@@ -62,6 +62,16 @@ function Base.empty!(state::NetworkStack)
     return
 end
 
+function init!(polar::PolarForm, stack::NetworkStack)
+    vmag = abs.(polar.network.vbus)
+    vang = angle.(polar.network.vbus)
+    pg = get(polar.network, PS.ActivePower())
+
+    copyto!(stack.vmag, vmag)
+    copyto!(stack.vang, vang)
+    copyto!(stack.pgen, pg)
+end
+
 voltage(buf::NetworkStack) = buf.vmag .* exp.(im .* buf.vang)
 
 
