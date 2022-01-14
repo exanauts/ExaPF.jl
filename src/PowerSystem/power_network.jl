@@ -44,7 +44,7 @@ struct PowerNetwork <: AbstractPowerSystem
     sbus::Vector{Complex{Float64}}
     sload::Vector{Complex{Float64}}
 
-    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[], multi_generators=:aggregate)
+    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
         # Parsed data indexes
         BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
         LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
@@ -58,14 +58,6 @@ struct PowerNetwork <: AbstractPowerSystem
 
         # BUSES
         bus_id_to_indexes = get_bus_id_to_indexes(bus)
-
-        # GENERATORS
-        if has_multiple_generators(gen) && multi_generators == :aggregate
-            gen, σg = merge_multi_generators(gen)
-            if !isnothing(cost_coefficients)
-                cost_coefficients = merge_cost_coefficients(cost_coefficients, gen, σg)
-            end
-        end
 
         # LINES
         # Remove specified lines

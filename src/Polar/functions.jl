@@ -1,8 +1,23 @@
 
 
-abstract type AbstractStack end
+abstract type AbstractStack{VT} end
 
-struct NetworkStack{VT,NT} <: AbstractStack
+
+function Base.copyto!(stack::AbstractStack{VT}, map::AbstractVector{Int}, src::VT) where VT
+    @assert length(map) == length(src)
+    for i in eachindex(map)
+        stack.input[map[i]] = src[i]
+    end
+end
+
+function Base.copyto!(dest::VT, stack::AbstractStack{VT}, map::AbstractVector{Int}) where VT
+    @assert length(map) == length(dest)
+    for i in eachindex(map)
+        dest[i] = stack.input[map[i]]
+    end
+end
+
+struct NetworkStack{VT,NT} <: AbstractStack{VT}
     # INPUT
     input::VT
     vmag::VT # voltage magnitudes
@@ -41,16 +56,22 @@ function NetworkStack(nbus, ngen, nlines, VT)
     return NetworkStack(input, vmag, vang, pgen, ψ, intermediate)
 end
 
+function init!(polar::PolarForm, stack::NetworkStack)
+    vmag = abs.(polar.network.vbus)
+    vang = angle.(polar.network.vbus)
+    pg = get(polar.network, PS.ActivePower())
+
+    copyto!(stack.vmag, vmag)
+    copyto!(stack.vang, vang)
+    copyto!(stack.pgen, pg)
+end
+
 function NetworkStack(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
     nlines = get(polar, PS.NumberOfLines())
-
     stack = NetworkStack(nbus, ngen, nlines, VT)
-    # Initiate with initial solution
-    copyto!(stack.vmag, abs.(polar.network.vbus))
-    copyto!(stack.vang, angle.(polar.network.vbus))
-    copyto!(stack.pgen, get(polar.network, PS.ActivePower()))
+    init!(polar, stack)
     return stack
 end
 
@@ -62,15 +83,17 @@ function Base.empty!(state::NetworkStack)
     return
 end
 
-function init!(polar::PolarForm, stack::NetworkStack)
-    vmag = abs.(polar.network.vbus)
-    vang = angle.(polar.network.vbus)
-    pg = get(polar.network, PS.ActivePower())
+function bounds(polar::PolarForm{T, VI, VT, MT}, stack::NetworkStack) where {T, VI, VT, MT}
+    nbus = polar.network.nbus
+    vmag_min, vmag_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
+    vang_min, vang_max = fill(-Inf, nbus), fill(Inf, nbus)
+    pgen_min, pgen_max = PS.bounds(polar.network, PS.Generators(), PS.ActivePower())
 
-    copyto!(stack.vmag, vmag)
-    copyto!(stack.vang, vang)
-    copyto!(stack.pgen, pg)
+    lb = [vmag_min; vang_min; pgen_min]
+    ub = [vmag_max; vang_max; pgen_max]
+    return convert(VT, lb), convert(VT, ub)
 end
+
 
 voltage(buf::NetworkStack) = buf.vmag .* exp.(im .* buf.vang)
 voltage_host(buf::NetworkStack) = voltage(buf) |> Array
