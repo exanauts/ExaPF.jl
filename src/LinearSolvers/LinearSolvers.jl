@@ -107,17 +107,6 @@ function update!(s::DirectSolver, J::AbstractMatrix)
     lu!(s.factorization, J) # Update factorization inplace
 end
 
-function lsolve!(s::DirectSolver, y::AbstractArray)
-    LinearAlgebra.ldiv!(s.factorization, y)
-end
-function lsolve!(s::DirectSolver, y::AbstractArray, x::AbstractArray)
-    LinearAlgebra.ldiv!(y, s.factorization, x)
-end
-
-function rsolve!(s::DirectSolver, y::AbstractArray, x::AbstractArray)
-    LinearAlgebra.ldiv!(y, s.factorization', x)
-end
-
 # Reuse factorization in update
 function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
@@ -134,10 +123,6 @@ function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray)
 end
 # Solve system A'x = y
 function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
-    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
-    return 0
-end
-function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::Array, J::SparseMatrixCSC, x::Array)
     LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
     return 0
 end

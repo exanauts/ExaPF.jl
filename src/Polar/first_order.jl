@@ -22,10 +22,8 @@ Base.size(jac::MyJacobian, n::Int) = size(jac.J, n)
 # Coloring
 function jacobian_sparsity(polar::PolarForm, func::AbstractExpression)
     nbus = get(polar, PS.NumberOfBuses())
-    Vre = Float64[i for i in 1:nbus]
-    Vim = Float64[i for i in nbus+1:2*nbus]
-    V = Vre .+ im .* Vim
-    return matpower_jacobian(polar, func, V)
+    v = polar.network.vbus .+ 0.01 .* rand(ComplexF64, nbus)
+    return matpower_jacobian(polar, func, v)
 end
 
 function get_jacobian_colors(polar::PolarForm, func::AbstractExpression, map::Vector{Int})
