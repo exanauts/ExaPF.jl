@@ -27,6 +27,33 @@ end
 
 CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = CuSparseMatrixCSR(A)
 
+
+# AbstractStack
+
+@kernel function _transfer_to_input!(input, map, src)
+    i = @index(Global, Linear)
+    input[map[i]] = src[i]
+end
+
+@kernel function _transfer_fr_input!(dest, input, map)
+    i = @index(Global, Linear)
+    dest[i] = input[map[i]]
+end
+
+function Base.copyto!(stack::AbstractStack{VT}, map::AbstractVector{Int}, vals::VT) where {VT <: CuArray}
+    @assert length(map) == length(vals)
+    ndrange = (length(map),)
+    ev = _transfer_to_input!(CUDADevice())(stack.input, map, vals, ndrange=ndrange)
+    wait(ev)
+end
+
+function Base.copyto!(dest::VT, stack::AbstractStack{VT}, map::AbstractVector{Int}) where {VT <: CuArray}
+    @assert length(map) == length(vals)
+    ndrange = (length(map),)
+    ev = _transfer_fr_input!(CUDADevice())(dest, stack.input, map, ndrange=ndrange)
+    wait(ev)
+end
+
 #=
     LinearSolvers
 =#
