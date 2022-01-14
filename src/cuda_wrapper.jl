@@ -10,11 +10,11 @@ function PolarForm(pf::PS.PowerNetwork, device::CUDADevice)
     return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device)
 end
 
-default_sparse_matrix(::CUDADevice) = CuSparseMatrixCSR
+default_sparse_matrix(::CUDADevice) = CuSparseMatrixCSR{Float64, Int32}
 xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)
 
 function get_jacobian_types(::CUDADevice)
-    SMT = CuSparseMatrixCSR
+    SMT = CuSparseMatrixCSR{Float64, Int32}
     A = CUDA.CuVector
     return SMT, A
 end
@@ -24,6 +24,8 @@ function Base.unsafe_wrap(Atype::Type{CUDA.CuArray{T, 1, CUDA.Mem.DeviceBuffer}}
                           own::Bool=false, ctx::CUDA.CuContext=CUDA.context()) where {T}
     unsafe_wrap(CUDA.CuArray{T, 1}, p, (dim,); own, ctx)
 end
+
+CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = CuSparseMatrixCSR(A)
 
 #=
     LinearSolvers
@@ -82,26 +84,40 @@ end
 #=
     Generic SpMV for CuSparseMatrixCSR
 =#
+function ForwardDiff.npartials(vec::CuVector{ForwardDiff.Dual{T, V, N}}) where {T, V, N}
+    return N
+end
 
 # Differentiable LinearAlgebra.mul! for ForwardDiff
-@kernel function _spmm_kernel!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
+@kernel function _spmv_csr_kernel!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
     i, k = @index(Global, NTuple)
-    Y[i, k] *= beta
+    Y[k, i] *= beta
     @inbounds for c in rowPtr[i]:rowPtr[i+1]-1
         j = colVal[c]
-        Y[i, k] += alpha * nzVal[c] * X[j, k]
+        Y[k, i] += alpha * nzVal[c] * X[k, j]
     end
 end
 
-function LinearAlgebra.mul!(Y::AbstractArray{T, 1}, A::CUSPARSE.CuSparseMatrixCSR, X::AbstractArray{T, 1}, alpha::Number, beta::Number) where {T <: ForwardDiff.Dual}
+function LinearAlgebra.mul!(
+    Y::CuArray{T, 1},
+    A::CUSPARSE.CuSparseMatrixCSR,
+    X::AbstractArray{T, 1},
+    alpha::Number, beta::Number,
+) where {T <: ForwardDiff.Dual}
     n, m = size(A)
-    p = 1
     @assert size(Y, 1) == n
     @assert size(X, 1) == m
 
+    N = ForwardDiff.npartials(Y)
+    p = 1 + N
+
+    # Reinterpret duals as double.
+    Ys = reshape(reinterpret(Float64, Y), p, n)
+    Xs = reshape(reinterpret(Float64, X), p, m)
+
     ndrange = (n, p)
-    ev = _spmm_kernel!(CUDADevice())(
-        Y, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
+    ev = _spmv_csr_kernel!(CUDADevice())(
+        Ys, Xs, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
         ndrange=ndrange,
     )
     wait(ev)
@@ -138,7 +154,7 @@ function LinearAlgebra.mul!(
 
     B = A.parent
 
-    nthreads = 32
+    nthreads = 256
     threads_y = p
     threads_x = div(nthreads, threads_y)
     threads = (threads_x, threads_y)

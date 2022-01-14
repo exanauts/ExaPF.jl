@@ -243,6 +243,7 @@ struct CostFunction{VT, MT} <: AbstractExpression
 end
 
 function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+    nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
     SMT = default_sparse_matrix(polar.device)
     # Load indexing
@@ -252,9 +253,12 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
         error("Too many generators are affected to the slack nodes")
     end
     ref_gen = Int[findfirst(isequal(ref[1]), gen2bus)]
+
+    # Gen-bus incidence matrix
+    Cg = sparse(ref_gen, ref, ones(1), ngen, 2 * nbus)
     # Assemble matrix
     M_tot = PS.get_basis_matrix(polar.network)
-    M = -M_tot[ref, :] |> SMT
+    M = - Cg * M_tot |> SMT
 
     # coefficients
     coefs = PS.get_costs_coefficients(polar.network)
@@ -268,11 +272,9 @@ Base.length(::CostFunction) = 1
 
 function (func::CostFunction)(output, state)
     costs = state.intermediate.c
-    # pg_ref = view(state.pgen, func.gen_ref)
-    res = similar(costs, length(func.gen_ref))
-    pg_ref = view(state.pgen, func.gen_ref)
-    mul!(res, func.M, state.ψ)
-    pg_ref .= res
+    # Update pgen_ref
+    state.pgen[func.gen_ref] .= 0.0
+    mul!(state.pgen, func.M, state.ψ, 1.0, 1.0)
     costs .= func.c0 .+ func.c1 .* state.pgen .+ func.c2 .* state.pgen.^2
     CUDA.@allowscalar output[1] = sum(costs)
     return
@@ -280,7 +282,7 @@ end
 
 function adjoint!(func::CostFunction, ∂state, state, ∂v)
     ∂state.pgen .+= ∂v .* (func.c1 .+ 2.0 .* func.c2 .* state.pgen)
-    mul!(∂state.ψ, func.M', ∂state.pgen[func.gen_ref], 1.0, 1.0)
+    mul!(∂state.ψ, func.M', ∂state.pgen, 1.0, 1.0)
     return
 end
 
@@ -511,10 +513,12 @@ function adjoint!(func::LineFlows, ∂state, state, ∂v)
     mul!(stp, func.Ltp, state.ψ)
     mul!(stq, func.Ltq, state.ψ)
 
-    sfp .*= ∂v[1:nlines]
-    sfq .*= ∂v[1:nlines]
-    stp .*= ∂v[1+nlines:2*nlines]
-    stq .*= ∂v[1+nlines:2*nlines]
+    @views begin
+        sfp .*= ∂v[1:nlines]
+        sfq .*= ∂v[1:nlines]
+        stp .*= ∂v[1+nlines:2*nlines]
+        stq .*= ∂v[1+nlines:2*nlines]
+    end
 
     # Accumulate adjoint
     mul!(∂state.ψ, func.Lfp', sfp, 2.0, 1.0)

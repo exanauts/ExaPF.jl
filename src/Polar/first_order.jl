@@ -101,7 +101,7 @@ function jacobian!(
     # forward pass
     jac.func(jac.t1sF, jac.stack)
     # uncompress
-    AutoDiff.getpartials_kernel!(jac.compressedJ, jac.t1sF, jac.model.device)
+    AutoDiff.partials_jac!(jac.compressedJ, jac.t1sF, jac.model.device)
     AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, jac.model.device)
     return jac.J
 end

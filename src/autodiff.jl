@@ -31,23 +31,6 @@ any nonlinear constraint ``h(x)``.
 abstract type AbstractHessian end
 
 
-# Cache for adjoint
-"""
-    TapeMemory{F, S, I}
-
-This object is used as a buffer to compute the adjoint of a given function
-``h(x)``. It stores internally all intermediate values necessary
-to compute the adjoint, and cache the stack used in the backward pass.
-
-## Note
-This structure is largely inspired from [ChainRulesCore.jl](https://juliadiff.org/ChainRulesCore.jl/stable/design/changing_the_primal.html#The-Journey-to-rrule).
-"""
-struct TapeMemory{F, S, I}
-    func::F
-    stack::S
-    intermediate::I
-end
-
 # Seeding
 function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor, nmap)
     for i in 1:nmap
@@ -92,11 +75,9 @@ end
 
 
 # Get partials
-@kernel function getpartials_kernel!(compressedJ, @Const(t1sF))
-    i = @index(Global, Linear)
-    for j in eachindex(ForwardDiff.partials.(t1sF[i]).values)
-        @inbounds compressedJ[j, i] = ForwardDiff.partials.(t1sF[i]).values[j]
-    end
+@kernel function getpartials_jac_kernel!(compressedJ, @Const(duals))
+    i, j = @index(Global, NTuple)
+    compressedJ[j, i] = duals[j+1, i]
 end
 
 # Get partials for Hessian projection
@@ -108,10 +89,8 @@ end
 end
 
 @kernel function getpartials_hess_kernel!(compressedH, @Const(duals), @Const(map))
-    i = @index(Global, Linear)
-    for j in eachindex(ForwardDiff.partials.(duals[map[i]]).values)
-        compressedH[j, i] = ForwardDiff.partials.(duals[map[i]]).values[j]
-    end
+    i, j = @index(Global, NTuple)
+    compressedH[j, i] = duals[j+1, map[i]]
 end
 
 """
@@ -128,16 +107,34 @@ function getpartials_kernel!(hv::AbstractVector, adj_t1sx, map, device)
     wait(ev)
 end
 
-function getpartials_kernel!(compressedJ::AbstractMatrix, t1sF, device)
-    kernel! = getpartials_kernel!(device)
-    ev = kernel!(compressedJ, t1sF, ndrange=length(t1sF), dependencies=Event(device))
+function partials_jac!(
+    compressedJ::AbstractMatrix{T},
+    duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}},
+    device,
+) where {T, N}
+    n = length(duals)
+    @assert size(compressedJ) == (N, n)
+    duals_ = reshape(reinterpret(T, duals), N+1, n)
+    ndrange = (n, N)
+    ev = getpartials_jac_kernel!(device)(
+        compressedJ, duals_,
+        ndrange=ndrange, dependencies=Event(device),
+    )
     wait(ev)
 end
 
-function partials_hess!(compressedH::AbstractMatrix, duals, map, device)
+function partials_hess!(
+    compressedH::AbstractMatrix,
+    duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}},
+    map, device,
+) where {T, N}
+    n = length(map)
+    @assert size(compressedH) == (N, n)
+    duals_ = reshape(reinterpret(Float64, duals), N+1, length(duals))
+    ndrange = (n, N)
     ev = getpartials_hess_kernel!(device)(
-        compressedH, duals, map,
-        ndrange=length(map), dependencies=Event(device),
+        compressedH, duals_, map,
+        ndrange=ndrange, dependencies=Event(device),
     )
     wait(ev)
 end
@@ -174,131 +171,6 @@ function uncompress_kernel!(J, compressedJ, coloring, device)
         ev = kernel!(J.rowPtr, J.colVal, J.nzVal, compressedJ, coloring, ndrange=size(J,1), dependencies=Event(device))
     else
         error("Unknown device $device")
-    end
-    wait(ev)
-end
-
-# BATCH AUTODIFF
-# Init seeding
-function batch_init_seed_hessian!(dest, tmp, v::Matrix, nmap, device)
-    nbatch = size(dest, 2)
-    @inbounds for i in 1:nmap
-        for j in 1:nbatch
-            dest[i, j] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i, j]))
-        end
-    end
-    return
-end
-
-@kernel function _gpu_init_seed_hessian!(dest, v)
-    i, j = @index(Global, NTuple)
-    @inbounds dest[i, j] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i, j]))
-end
-
-function batch_init_seed_hessian!(dest, tmp, v::CUDA.CuMatrix, nmap, device)
-    ndrange = (nmap, size(dest, 2))
-    ev = _gpu_init_seed_hessian!(device)(dest, v, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
-    wait(ev)
-end
-
-# Seeds
-@kernel function batch_seed_kernel_hessian!(
-    duals::AbstractMatrix{ForwardDiff.Dual{T, V, N}},
-    x::AbstractVector{V},
-    seeds::AbstractMatrix{ForwardDiff.Partials{N, V}}
-) where {T,V,N}
-    i, j = @index(Global, NTuple)
-    duals[i, j] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i, j])
-end
-
-function batch_seed_hessian!(t1sseeds, varx, t1svarx, device)
-    kernel! = batch_seed_kernel_hessian!(device)
-    nvars = size(t1svarx, 1)
-    nbatch = size(t1svarx, 2)
-    ndrange = (nvars, nbatch)
-    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
-    wait(ev)
-end
-
-@kernel function batch_seed_kernel_jacobian!(
-    duals::AbstractMatrix{ForwardDiff.Dual{T, V, N}},
-    x::AbstractMatrix{V},
-    seeds::AbstractVector{ForwardDiff.Partials{N, V}}
-) where {T,V,N}
-    i, j = @index(Global, NTuple)
-    duals[i, j] = ForwardDiff.Dual{T,V,N}(x[i, j], seeds[i])
-end
-
-function batch_seed_jacobian!(t1sseeds, varx, t1svarx, device)
-    kernel! = batch_seed_kernel_jacobian!(device)
-    nvars = size(t1svarx, 1)
-    nbatch = size(t1svarx, 2)
-    ndrange = (nvars, nbatch)
-    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
-    wait(ev)
-end
-
-# Partials
-@kernel function batch_getpartials_hv_kernel!(hv, adj_t1sx, map)
-    i, j = @index(Global, NTuple)
-    hv[i, j] = ForwardDiff.partials(adj_t1sx[map[i], j]).values[1]
-end
-
-function batch_partials_hessian!(hv::AbstractMatrix, adj_t1sx, map, device)
-    kernel! = batch_getpartials_hv_kernel!(device)
-    nvars = size(hv, 1)
-    nbatch = size(hv, 2)
-    ndrange = (nvars, nbatch)
-    ev = kernel!(hv, adj_t1sx, map, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
-    wait(ev)
-end
-
-@kernel function batch_getpartials_jac_kernel!(compressedJ, t1sF)
-    i, j = @index(Global, NTuple)
-    compressedJ[:, i, j] .= ForwardDiff.partials.(t1sF[i, j]).values
-end
-
-@kernel function batch_getpartials_jac_kernel_gpu!(compressedJ, t1sF)
-    i, j = @index(Global, NTuple)
-    p = ForwardDiff.partials.(t1sF[i, j]).values
-    for k in eachindex(p)
-        @inbounds compressedJ[k, i, j] = p[k]
-    end
-end
-
-function batch_partials_jacobian!(compressedJ::AbstractArray{T, 3}, t1sF, device) where T
-    kernel! = batch_getpartials_jac_kernel_gpu!(device)
-    ndrange = size(t1sF)
-    ev = kernel!(compressedJ, t1sF, ndrange=ndrange, dependencies=Event(device), workgroupsize=256)
-    wait(ev)
-end
-
-# Uncompress kernels
-@kernel function batch_uncompress_kernel_gpu!(J_rowPtr, J_colVal, J_nzVal, compressedJ, coloring)
-    i, j = @index(Global, NTuple)
-    for k in J_rowPtr[i]:J_rowPtr[i+1]-1
-        J_nzVal[k, j] = compressedJ[coloring[J_colVal[k]], i, j]
-    end
-end
-
-@kernel function batch_uncompress_kernel_cpu!(J_colptr, J_rowval, J_nzval, compressedJ, coloring)
-    i, j = @index(Global, NTuple)
-    @inbounds for k in J_colptr[i]:J_colptr[i+1]-1
-        @inbounds J_nzval[j][k] = compressedJ[coloring[i], J_rowval[k], j]
-    end
-end
-
-function batch_uncompress!(Js, compressedJ, coloring, device)
-    if isa(device, GPU)
-        kernel! = batch_uncompress_kernel_gpu!(device)
-        ndrange = (size(Js, 2), size(compressedJ, 3))
-        ev = kernel!(Js.rowPtr, Js.colVal, Js.nzVal, compressedJ, coloring, ndrange=ndrange, dependencies=Event(device))
-    else
-        kernel! = batch_uncompress_kernel_cpu!(device)
-        Jsnzval = Vector{Float64}[J.nzval for J in Js]
-        J = Js[1]
-        ndrange = (size(J, 2), size(compressedJ, 3))
-        ev = kernel!(J.colptr, J.rowval, Jsnzval, compressedJ, coloring, ndrange=ndrange, dependencies=Event(device))
     end
     wait(ev)
 end
