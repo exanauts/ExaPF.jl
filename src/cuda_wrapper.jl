@@ -48,7 +48,7 @@ function Base.copyto!(stack::AbstractStack{VT}, map::AbstractVector{Int}, vals::
 end
 
 function Base.copyto!(dest::VT, stack::AbstractStack{VT}, map::AbstractVector{Int}) where {VT <: CuArray}
-    @assert length(map) == length(vals)
+    @assert length(map) == length(dest)
     ndrange = (length(map),)
     ev = _transfer_fr_input!(CUDADevice())(dest, stack.input, map, ndrange=ndrange)
     wait(ev)
@@ -145,7 +145,7 @@ function LinearAlgebra.mul!(
     ndrange = (n, p)
     ev = _spmv_csr_kernel!(CUDADevice())(
         Ys, Xs, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
-        ndrange=ndrange,
+        ndrange=ndrange, dependencies=Event(CUDADevice()),
     )
     wait(ev)
 end
