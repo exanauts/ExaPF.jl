@@ -59,7 +59,7 @@ function matpower_jacobian(polar::PolarForm, func::PowerGenerationBounds, V)
 
     j21 = imag(dSbus_dVm[[ref; pv], :])
     j22 = imag(dSbus_dVa[[ref; pv], :])
-    j23 = spzeros(ngen, ngen)
+    j23 = spzeros(nref + npv, ngen)
     # w.r.t. control
     return [
         j11 j12 j13 ;
