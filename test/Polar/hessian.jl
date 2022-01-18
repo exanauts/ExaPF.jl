@@ -25,7 +25,7 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     μ = rand(m) |> MT
     c = zeros(m) |> MT
 
-    HessianAD = ExaPF.MyHessian(polar, mycons, mymap)
+    HessianAD = ExaPF.HessianProd(polar, mycons, mymap)
     tgt = rand(nx + nu)
     projp = zeros(nx + nu)
     dev_tgt = MT(tgt)

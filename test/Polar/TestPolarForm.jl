@@ -43,6 +43,7 @@ function runtests(datafile, device, AT)
 
     @testset "PolarForm API" begin
         test_polar_api(polar, device, AT)
+        test_polar_stack(polar, device, AT)
         test_polar_constraints(polar, device, AT)
         test_polar_powerflow(polar, device, AT)
     end

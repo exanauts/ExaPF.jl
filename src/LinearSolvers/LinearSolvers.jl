@@ -23,7 +23,6 @@ const KA = KernelAbstractions
 
 export bicgstab, list_solvers
 export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
-export get_transpose
 
 @enum(
     SolveStatus,
@@ -48,8 +47,6 @@ List linear solvers available on current device.
 
 """
 function list_solvers end
-
-get_transpose(::AbstractLinearSolver, M::AbstractMatrix) = transpose(M)
 
 """
     ldiv!(solver, x, A, y)
@@ -96,11 +93,8 @@ struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: Abstrac
     factorization::Fac
 end
 
-exa_factorize(J::AbstractSparseMatrix) = nothing
-exa_factorize(J::SparseMatrixCSC{T, Int}) where T = lu(J)
-exa_factorize(J::Adjoint{T, SparseMatrixCSC{T, Int}}) where T = lu(J.parent)'
-
-DirectSolver(J; options...) = DirectSolver(exa_factorize(J))
+DirectSolver(J; options...) = DirectSolver(lu(J))
+DirectSolver(J::CUSPARSE.CuSparseMatrixCSR; options...) = DirectSolver(nothing)
 DirectSolver() = DirectSolver(nothing)
 
 function update!(s::DirectSolver, J::AbstractMatrix)
@@ -130,24 +124,6 @@ end
 function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector)
     F = lu(J)
     LinearAlgebra.ldiv!(y, F, x)
-    return 0
-end
-
-function batch_ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, Y, Js::Vector{SparseMatrixCSC{Float64, Int}}, X)
-    nbatch = length(Js)
-    for i in 1:nbatch
-        lu!(s.factorization, Js[i])
-        y = view(Y, :, i)
-        x = view(X, :, i)
-        LinearAlgebra.ldiv!(y, s.factorization, x)
-    end
-end
-
-get_transpose(::DirectSolver, M::CUSPARSE.CuSparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSC(M)
-
-function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSR, x::CUDA.CuVector)
-    Jt = get_transpose(s, J)
-    csclsvqr!(Jt, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
 

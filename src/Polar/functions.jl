@@ -56,6 +56,10 @@ function NetworkStack(nbus, ngen, nlines, VT)
     return NetworkStack(input, vmag, vang, pgen, ψ, intermediate)
 end
 
+function Base.show(io::IO, stack::NetworkStack)
+    print(io, "$(length(stack.input))-elements NetworkStack{$(typeof(stack.input))}")
+end
+
 function init!(polar::PolarForm, stack::NetworkStack)
     vmag = abs.(polar.network.vbus)
     vang = angle.(polar.network.vbus)
@@ -75,11 +79,11 @@ function NetworkStack(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     return stack
 end
 
-function Base.empty!(state::NetworkStack)
-    fill!(state.vmag, 0.0)
-    fill!(state.vang, 0.0)
-    fill!(state.pgen, 0.0)
-    fill!(state.ψ, 0.0)
+function Base.empty!(stack::NetworkStack)
+    fill!(stack.vmag, 0.0)
+    fill!(stack.vang, 0.0)
+    fill!(stack.pgen, 0.0)
+    fill!(stack.ψ, 0.0)
     return
 end
 
@@ -142,6 +146,10 @@ function PolarBasis(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     Ct = Ct |> SMT
 
     return PolarBasis{VI, SMT}(nbus, nlines, f, t, Cf, Ct, polar.device)
+end
+
+function Base.show(io::IO, func::PolarBasis)
+    print(io, "PolarBasis (AbstractExpression)")
 end
 
 Base.length(func::PolarBasis) = func.nbus + 2 * func.nlines
@@ -217,27 +225,27 @@ end
     end
 end
 
-function adjoint!(func::PolarBasis, ∂state::NetworkStack, state::NetworkStack, ∂v)
+function adjoint!(func::PolarBasis, ∂stack::NetworkStack, stack::NetworkStack, ∂v)
     nl = func.nlines
     nb = func.nbus
     f = func.f
     t = func.t
 
-    fill!(∂state.intermediate.∂edge_vm_fr , 0.0)
-    fill!(∂state.intermediate.∂edge_vm_to , 0.0)
-    fill!(∂state.intermediate.∂edge_va_fr , 0.0)
-    fill!(∂state.intermediate.∂edge_va_to , 0.0)
+    fill!(∂stack.intermediate.∂edge_vm_fr , 0.0)
+    fill!(∂stack.intermediate.∂edge_vm_to , 0.0)
+    fill!(∂stack.intermediate.∂edge_va_fr , 0.0)
+    fill!(∂stack.intermediate.∂edge_va_to , 0.0)
 
     # Accumulate on edges
     ndrange = (nl+nb, 1)
     ev = adj_basis_kernel!(func.device)(
         ∂v,
-        ∂state.vmag,
-        ∂state.intermediate.∂edge_vm_fr,
-        ∂state.intermediate.∂edge_vm_to,
-        ∂state.intermediate.∂edge_va_fr,
-        ∂state.intermediate.∂edge_va_to,
-        state.vmag, state.vang, f, t, nl, nb,
+        ∂stack.vmag,
+        ∂stack.intermediate.∂edge_vm_fr,
+        ∂stack.intermediate.∂edge_vm_to,
+        ∂stack.intermediate.∂edge_va_fr,
+        ∂stack.intermediate.∂edge_va_to,
+        stack.vmag, stack.vang, f, t, nl, nb,
         ndrange=ndrange, dependencies=Event(func.device),
     )
     wait(ev)
@@ -245,10 +253,10 @@ function adjoint!(func::PolarBasis, ∂state::NetworkStack, state::NetworkStack,
     # Accumulate on nodes
     Cf = func.Cf
     Ct = func.Ct
-    mul!(∂state.vmag, Cf, ∂state.intermediate.∂edge_vm_fr, 1.0, 1.0)
-    mul!(∂state.vmag, Ct, ∂state.intermediate.∂edge_vm_to, 1.0, 1.0)
-    mul!(∂state.vang, Cf, ∂state.intermediate.∂edge_va_fr, 1.0, 1.0)
-    mul!(∂state.vang, Ct, ∂state.intermediate.∂edge_va_to, 1.0, 1.0)
+    mul!(∂stack.vmag, Cf, ∂stack.intermediate.∂edge_vm_fr, 1.0, 1.0)
+    mul!(∂stack.vmag, Ct, ∂stack.intermediate.∂edge_vm_to, 1.0, 1.0)
+    mul!(∂stack.vang, Cf, ∂stack.intermediate.∂edge_va_fr, 1.0, 1.0)
+    mul!(∂stack.vang, Ct, ∂stack.intermediate.∂edge_va_to, 1.0, 1.0)
     return
 end
 
@@ -291,21 +299,25 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return CostFunction{VT, SMT}(ref_gen, M, c0, c1, c2)
 end
 
+function Base.show(io::IO, func::CostFunction)
+    print(io, "CostFunction (AbstractExpression)")
+end
+
 Base.length(::CostFunction) = 1
 
-function (func::CostFunction)(output, state)
-    costs = state.intermediate.c
+function (func::CostFunction)(output::AbstractArray, stack::AbstractStack)
+    costs = stack.intermediate.c
     # Update pgen_ref
-    state.pgen[func.gen_ref] .= 0.0
-    mul!(state.pgen, func.M, state.ψ, 1.0, 1.0)
-    costs .= func.c0 .+ func.c1 .* state.pgen .+ func.c2 .* state.pgen.^2
+    stack.pgen[func.gen_ref] .= 0.0
+    mul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
+    costs .= func.c0 .+ func.c1 .* stack.pgen .+ func.c2 .* stack.pgen.^2
     CUDA.@allowscalar output[1] = sum(costs)
     return
 end
 
-function adjoint!(func::CostFunction, ∂state, state, ∂v)
-    ∂state.pgen .+= ∂v .* (func.c1 .+ 2.0 .* func.c2 .* state.pgen)
-    mul!(∂state.ψ, func.M', ∂state.pgen, 1.0, 1.0)
+function adjoint!(func::CostFunction, ∂stack, stack, ∂v)
+    ∂stack.pgen .+= ∂v .* (func.c1 .+ 2.0 .* func.c2 .* stack.pgen)
+    mul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
     return
 end
 
@@ -363,6 +375,10 @@ function PowerFlowBalance(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return PowerFlowBalance{VT, SMT}(M, Cg, τ)
 end
 
+function Base.show(io::IO, func::PowerFlowBalance)
+    print(io, "PowerFlowBalance (AbstractExpression)")
+end
+
 Base.length(func::PowerFlowBalance) = length(func.τ)
 
 function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerFlowBalance) where {T,VI,VT,MT}
@@ -370,16 +386,16 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerFlowBalance) where {T,V
     return (fill!(VT(undef, m), zero(T)) , fill!(VT(undef, m), zero(T)))
 end
 
-function (func::PowerFlowBalance)(cons, state)
+function (func::PowerFlowBalance)(cons::AbstractArray, stack::AbstractStack)
     cons .= func.τ
-    mul!(cons, func.M, state.ψ, 1.0, 1.0)
-    mul!(cons, func.Cg, state.pgen, 1.0, 1.0)
+    mul!(cons, func.M, stack.ψ, 1.0, 1.0)
+    mul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
     return
 end
 
-function adjoint!(func::PowerFlowBalance, ∂state, state, ∂v)
-    mul!(∂state.ψ, func.M', ∂v, 1.0, 1.0)
-    mul!(∂state.pgen, func.Cg', ∂v, 1.0, 1.0)
+function adjoint!(func::PowerFlowBalance, ∂stack, stack, ∂v)
+    mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
+    mul!(∂stack.pgen, func.Cg', ∂v, 1.0, 1.0)
     return
 end
 
@@ -403,6 +419,10 @@ struct VoltageMagnitudePQ <: AbstractExpression
 end
 VoltageMagnitudePQ(polar::PolarForm) = VoltageMagnitudePQ(polar.network.pq)
 
+function Base.show(io::IO, func::VoltageMagnitudePQ)
+    print(io, "VoltageMagnitudePQ (AbstractExpression)")
+end
+
 Base.length(func::VoltageMagnitudePQ) = length(func.pq)
 
 function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudePQ) where {T,VI,VT,MT}
@@ -410,12 +430,12 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudePQ) where {T
     return convert(VT, v_min[func.pq]), convert(VT, v_max[func.pq])
 end
 
-function (func::VoltageMagnitudePQ)(cons, state)
-    cons .= state.vmag[func.pq]
+function (func::VoltageMagnitudePQ)(cons::AbstractArray, stack::AbstractStack)
+    cons .= stack.vmag[func.pq]
 end
 
-function adjoint!(func::VoltageMagnitudePQ, ∂state, state, ∂v)
-    ∂state.vmag[func.pq] .+= ∂v
+function adjoint!(func::VoltageMagnitudePQ, ∂stack, stack, ∂v)
+    ∂stack.vmag[func.pq] .+= ∂v
 end
 
 """
@@ -449,6 +469,10 @@ function PowerGenerationBounds(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT
     return PowerGenerationBounds{VT, SMT}(M, τ)
 end
 
+function Base.show(io::IO, func::PowerGenerationBounds)
+    print(io, "PowerGenerationBounds (AbstractExpression)")
+end
+
 Base.length(func::PowerGenerationBounds) = length(func.τ)
 
 function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where {T,VI,VT,MT}
@@ -470,14 +494,14 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where
     )
 end
 
-function (func::PowerGenerationBounds)(cons, state)
+function (func::PowerGenerationBounds)(cons::AbstractArray, stack::AbstractStack)
     cons .= func.τ
-    mul!(cons, func.M, state.ψ, 1.0, 1.0)
+    mul!(cons, func.M, stack.ψ, 1.0, 1.0)
     return
 end
 
-function adjoint!(func::PowerGenerationBounds, ∂state, state, ∂v)
-    mul!(∂state.ψ, func.M', ∂v, 1.0, 1.0)
+function adjoint!(func::PowerGenerationBounds, ∂stack, stack, ∂v)
+    mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
     return
 end
 
@@ -503,6 +527,10 @@ function LineFlows(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     return LineFlows{VT,SMT}(nlines, Lfp, Lfq, Ltp, Ltq)
 end
 
+function Base.show(io::IO, func::LineFlows)
+    print(io, "LineFlows (AbstractExpression)")
+end
+
 Base.length(func::LineFlows) = 2 * func.nlines
 
 function bounds(polar::PolarForm{T,VI,VT,MT}, func::LineFlows) where {T,VI,VT,MT}
@@ -510,31 +538,31 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::LineFlows) where {T,VI,VT,MT
     return convert(VT, [f_min; f_min]), convert(VT, [f_max; f_max])
 end
 
-function (func::LineFlows)(cons::AbstractVector, state::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
-    sfp = state.intermediate.sfp::VT
-    sfq = state.intermediate.sfq::VT
-    stp = state.intermediate.stp::VT
-    stq = state.intermediate.stq::VT
+function (func::LineFlows)(cons::AbstractVector, stack::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
+    sfp = stack.intermediate.sfp::VT
+    sfq = stack.intermediate.sfq::VT
+    stp = stack.intermediate.stp::VT
+    stq = stack.intermediate.stq::VT
 
-    mul!(sfp, func.Lfp, state.ψ)
-    mul!(sfq, func.Lfq, state.ψ)
-    mul!(stp, func.Ltp, state.ψ)
-    mul!(stq, func.Ltq, state.ψ)
+    mul!(sfp, func.Lfp, stack.ψ)
+    mul!(sfq, func.Lfq, stack.ψ)
+    mul!(stp, func.Ltp, stack.ψ)
+    mul!(stq, func.Ltq, stack.ψ)
     cons[1:func.nlines] .= sfp.^2 .+ sfq.^2
     cons[1+func.nlines:2*func.nlines] .= stp.^2 .+ stq.^2
     return
 end
 
-function adjoint!(func::LineFlows, ∂state, state, ∂v)
+function adjoint!(func::LineFlows, ∂stack, stack, ∂v)
     nlines = func.nlines
-    sfp = ∂state.intermediate.sfp
-    sfq = ∂state.intermediate.sfq
-    stp = ∂state.intermediate.stp
-    stq = ∂state.intermediate.stq
-    mul!(sfp, func.Lfp, state.ψ)
-    mul!(sfq, func.Lfq, state.ψ)
-    mul!(stp, func.Ltp, state.ψ)
-    mul!(stq, func.Ltq, state.ψ)
+    sfp = ∂stack.intermediate.sfp
+    sfq = ∂stack.intermediate.sfq
+    stp = ∂stack.intermediate.stp
+    stq = ∂stack.intermediate.stq
+    mul!(sfp, func.Lfp, stack.ψ)
+    mul!(sfq, func.Lfq, stack.ψ)
+    mul!(stp, func.Ltp, stack.ψ)
+    mul!(stq, func.Ltq, stack.ψ)
 
     @views begin
         sfp .*= ∂v[1:nlines]
@@ -544,10 +572,10 @@ function adjoint!(func::LineFlows, ∂state, state, ∂v)
     end
 
     # Accumulate adjoint
-    mul!(∂state.ψ, func.Lfp', sfp, 2.0, 1.0)
-    mul!(∂state.ψ, func.Lfq', sfq, 2.0, 1.0)
-    mul!(∂state.ψ, func.Ltp', stp, 2.0, 1.0)
-    mul!(∂state.ψ, func.Ltq', stq, 2.0, 1.0)
+    mul!(∂stack.ψ, func.Lfp', sfp, 2.0, 1.0)
+    mul!(∂stack.ψ, func.Lfq', sfq, 2.0, 1.0)
+    mul!(∂stack.ψ, func.Ltp', stp, 2.0, 1.0)
+    mul!(∂stack.ψ, func.Ltq', stq, 2.0, 1.0)
 
     return
 end
@@ -559,30 +587,30 @@ end
 
 Base.length(func::MultiExpressions) = sum(length.(func.exprs))
 
-function (func::MultiExpressions)(output, state)
+function (func::MultiExpressions)(output::AbstractArray, stack::AbstractStack)
     k = 0
     for expr in func.exprs
         m = length(expr)
         y = view(output, k+1:k+m)
-        expr(y, state)
+        expr(y, stack)
         k += m
     end
 end
 
-function adjoint!(func::MultiExpressions, ∂state, state, ∂v)
+function adjoint!(func::MultiExpressions, ∂stack, stack, ∂v)
     k = 0
     for expr in func.exprs
         m = length(expr)
         y = view(∂v, k+1:k+m)
-        adjoint!(expr, ∂state, state, y)
+        adjoint!(expr, ∂stack, stack, y)
         k += m
     end
 end
 
 function bounds(polar::PolarForm{T, VI, VT, MT}, func::MultiExpressions) where {T, VI, VT, MT}
     m = length(func)
-    g_min = zeros(m)
-    g_max = zeros(m)
+    g_min = VT(undef, m)
+    g_max = VT(undef, m)
     k = 0
     for expr in func.exprs
         m = length(expr)
@@ -602,14 +630,14 @@ struct ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AbstractExpression
     outer::Expr2
 end
 
-function (func::ComposedExpressions)(output, state)
-    func.inner(state.ψ, state)  # Evaluate basis
-    func.outer(output, state)   # Evaluate expression
+function (func::ComposedExpressions)(output::AbstractArray, stack::AbstractStack)
+    func.inner(stack.ψ, stack)  # Evaluate basis
+    func.outer(output, stack)   # Evaluate expression
 end
 
-function adjoint!(func::ComposedExpressions, ∂state, state, ∂v)
-    adjoint!(func.outer, ∂state, state, ∂v)
-    adjoint!(func.inner, ∂state, state, ∂state.ψ)
+function adjoint!(func::ComposedExpressions, ∂stack, stack, ∂v)
+    adjoint!(func.outer, ∂stack, stack, ∂v)
+    adjoint!(func.inner, ∂stack, stack, ∂stack.ψ)
 end
 
 # Overload ∘ operator

@@ -1,5 +1,5 @@
 
-struct MyJacobian{Model, Func, VD, SMT, MT, VI, VP}
+struct Jacobian{Model, Func, VD, SMT, MT, VI, VP}
     model::Model
     func::Func
     map::VI
@@ -11,13 +11,13 @@ struct MyJacobian{Model, Func, VD, SMT, MT, VI, VP}
     J::SMT
 end
 
-function Base.show(io::IO, jacobian::MyJacobian)
-    println(io, "A AutoDiff Jacobian for $(typeof(jacobian.func))")
+function Base.show(io::IO, jacobian::Jacobian)
+    println(io, "A AutoDiff Jacobian for $(jacobian.func)")
     ncolor = size(jacobian.compressedJ, 1)
     print(io, "Number of Jacobian colors: ", ncolor)
 end
 
-Base.size(jac::MyJacobian, n::Int) = size(jac.J, n)
+Base.size(jac::Jacobian, n::Int) = size(jac.J, n)
 
 # Coloring
 function jacobian_sparsity(polar::PolarForm, func::AbstractExpression)
@@ -35,7 +35,7 @@ function get_jacobian_colors(polar::PolarForm, func::AbstractExpression, map::Ve
     return (Jsub, colors)
 end
 
-function MyJacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
+function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
@@ -68,34 +68,19 @@ function MyJacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, m
     compressedJ = MT(zeros(Float64, ncolor, n_cons))
     coloring = coloring |> VI
 
-    return MyJacobian(
+    return Jacobian(
         polar, func, map_device, stack, compressedJ, coloring, gput1sseeds, t1sF, J,
     )
 end
 
-@kernel function _seed_kernel!(
-    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, @Const(x), @Const(seeds), @Const(map),
-) where {T,V,N}
-    i = @index(Global, Linear)
-    duals[map[i]] = ForwardDiff.Dual{T,V,N}(x[map[i]], seeds[i])
-end
-
-function myseed!(dest, src, seeds, map, device)
-    y = dest.input
-    x = src.input
-    ev = _seed_kernel!(device)(
-        y, x, seeds, map, ndrange=length(map), dependencies=Event(device))
-    wait(ev)
-end
-
 function jacobian!(
-    jac::MyJacobian, state,
+    jac::Jacobian, stack,
 )
     # init
-    jac.stack.input .= state.input
+    jac.stack.input .= stack.input
     jac.t1sF .= 0.0
     # seed
-    myseed!(jac.stack, state, jac.t1sseeds, jac.map, jac.model.device)
+    AutoDiff.seed!(jac.stack, stack, jac.t1sseeds, jac.map, jac.model.device)
     # forward pass
     jac.func(jac.t1sF, jac.stack)
     # uncompress

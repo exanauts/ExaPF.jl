@@ -10,8 +10,8 @@ function test_reduced_gradient(polar, device, MT)
     nx = length(mapx)
     nu = length(mapu)
 
-    jx = ExaPF.MyJacobian(polar, power_balance, mapx)
-    ju = ExaPF.MyJacobian(polar, power_balance, mapu)
+    jx = ExaPF.Jacobian(polar, power_balance, mapx)
+    ju = ExaPF.Jacobian(polar, power_balance, mapu)
 
     # Solve power flow
     solver = NewtonRaphson(tol=1e-12)
