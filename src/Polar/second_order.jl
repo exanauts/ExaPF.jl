@@ -1,10 +1,10 @@
 
-struct MyHessian{Model, Func, VD, VI, T1, T2, Buff} <: AutoDiff.AbstractHessian
+struct HessianProd{Model, Func, VD, VI, T1, T2, Buff} <: AutoDiff.AbstractHessian
     model::Model
     func::Func
     map::VI
-    state::NetworkStack{VD}
-    ∂state::NetworkStack{VD}
+    stack::NetworkStack{VD}
+    ∂stack::NetworkStack{VD}
     host_t1sseeds::T1 # Needed because seeds have to be created on the host
     t1sseeds::T2
     t1sF::VD
@@ -12,7 +12,7 @@ struct MyHessian{Model, Func, VD, VI, T1, T2, Buff} <: AutoDiff.AbstractHessian
     buffer::Buff
 end
 
-function MyHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
+function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
@@ -39,48 +39,33 @@ function MyHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, ma
     t1sseeds = A{ForwardDiff.Partials{1, Float64}}(undef, nmap)
 
     intermediate = nothing
-    return MyHessian(
+    return HessianProd(
         polar, func, map_device, stack, ∂stack, host_t1sseeds, t1sseeds, t1sF, adj_t1sF,
         intermediate,
     )
 end
 
-function _init_seed_hessian!(dest, tmp, v::AbstractArray, nmap)
-    @inbounds for i in 1:nmap
-        dest[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i]))
-    end
-    return
-end
-function _init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
-    hostv = Array(v)
-    @inbounds Threads.@threads for i in 1:nmap
-        tmp[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
-    end
-    copyto!(dest, tmp)
-    return
-end
-
 function hprod!(
-    H::MyHessian, hv, state, λ, v,
+    H::HessianProd, hv, stack, λ, v,
 )
     @assert length(hv) == length(v)
 
     # Init dual variables
-    H.state.input .= state.input
-    empty!(H.∂state)
+    H.stack.input .= stack.input
+    empty!(H.∂stack)
     H.∂t1sF .= λ
 
     # Seeding
     nmap = length(H.map)
     # Init seed
-    _init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
-    myseed!(H.state, state, H.t1sseeds, H.map, H.model.device)
+    AutoDiff.init_seed_hessian!(H.t1sseeds, H.host_t1sseeds, v, nmap)
+    AutoDiff.seed!(H.stack, stack, H.t1sseeds, H.map, H.model.device)
     # Forward
-    H.func(H.t1sF, H.state)
+    H.func(H.t1sF, H.stack)
     # Forward-over-Reverse
-    adjoint!(H.func, H.∂state, H.state, H.∂t1sF)
+    adjoint!(H.func, H.∂stack, H.stack, H.∂t1sF)
 
-    AutoDiff.getpartials_kernel!(hv, H.∂state.input, H.map, H.model.device)
+    AutoDiff.getpartials_kernel!(hv, H.∂stack.input, H.map, H.model.device)
     return
 end
 
@@ -89,8 +74,8 @@ struct FullHessian{Model, Func, VD, SMT, MT, VI, VP, Buff} <: AutoDiff.AbstractH
     model::Model
     func::Func
     map::VI
-    state::NetworkStack{VD}
-    ∂state::NetworkStack{VD}
+    stack::NetworkStack{VD}
+    ∂stack::NetworkStack{VD}
     coloring::VI
     t1sseeds::VP
     t1sF::VD
@@ -146,20 +131,20 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, 
 end
 
 function hessian!(
-    H::FullHessian, state, λ,
+    H::FullHessian, stack, λ,
 )
     # init
-    H.state.input .= state.input
-    empty!(H.∂state)
+    H.stack.input .= stack.input
+    empty!(H.∂stack)
     H.∂t1sF .= λ
     # seed
-    myseed!(H.state, state, H.t1sseeds, H.map, H.model.device)
+    AutoDiff.seed!(H.stack, stack, H.t1sseeds, H.map, H.model.device)
     # forward pass
-    H.func(H.t1sF, H.state)
+    H.func(H.t1sF, H.stack)
     # forward-over-reverse pass
-    adjoint!(H.func, H.∂state, H.state, H.∂t1sF)
+    adjoint!(H.func, H.∂stack, H.stack, H.∂t1sF)
     # uncompress
-    AutoDiff.partials_hess!(H.compressedH, H.∂state.input, H.map, H.model.device)
+    AutoDiff.partials_hess!(H.compressedH, H.∂stack.input, H.map, H.model.device)
     AutoDiff.uncompress_kernel!(H.H, H.compressedH, H.coloring, H.model.device)
     return H.H
 end

@@ -228,8 +228,6 @@ Return indexing corresponding to a subset of the buses.
 ```julia
 npq = get(pf, NumberOfPQBuses())
 npv = get(pf, NumberOfPVBuses())
-index_pv = get(pf, PVIndexes()())
-index_gen = get(pf, GeneratorIndexes()())
 
 ```
 """

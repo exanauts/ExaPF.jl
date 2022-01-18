@@ -30,7 +30,7 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
     nbus = PS.get(pf, PS.NumberOfBuses())
     @test nbus == 1354
 
-    pv_indexes = PS.get(pf, PS.PVIndexes())
+    pv_indexes = pf.pv
     # Test only first PV index.
     @test pv_indexes[1] == 17
 
@@ -42,7 +42,7 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
     pflow = ExaPF.PowerFlowBalance(polar) ∘ basis
     mapx = ExaPF.my_map(polar, State())
     # AD for Jacobian
-    jx = ExaPF.MyJacobian(polar, pflow, mapx)
+    jx = ExaPF.Jacobian(polar, pflow, mapx)
     # Linear solver
     linear_solver = LS.DirectSolver(jx.J)
     # Powerflow solver
@@ -82,7 +82,7 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
         basis_gpu = ExaPF.PolarBasis(polar_gpu)
         pflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ basis_gpu
-        jx_gpu = ExaPF.MyJacobian(polar_gpu, pflow_gpu, mapx)
+        jx_gpu = ExaPF.Jacobian(polar_gpu, pflow_gpu, mapx)
 
         linear_solver = LS.DirectSolver(jx_gpu.J)
 

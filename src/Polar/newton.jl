@@ -56,7 +56,7 @@ end
 
 function nlsolve!(
     algo::NewtonRaphson,
-    jac::MyJacobian,
+    jac::Jacobian,
     state::NetworkStack{VT,Buf};
     linear_solver=DirectSolver(jac.J),
     nl_buffer=NLBuffer{VT}(size(jac, 2)),
@@ -122,7 +122,7 @@ function run_pf(
 
     basis = PolarBasis(polar)
     func = PowerFlowBalance(polar) ∘ basis
-    jac = MyJacobian(polar, func, mapx)
+    jac = Jacobian(polar, func, mapx)
 
     conv = nlsolve!(solver, jac, state)
     return conv

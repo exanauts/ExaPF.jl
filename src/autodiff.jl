@@ -52,24 +52,34 @@ function init_seed(coloring, ncolor, nmap)
     return t1sseeds
 end
 
-@kernel function seed_kernel!(
-    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, @Const(x),
-    @Const(seeds)
+@kernel function _seed_kernel!(
+    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, @Const(x), @Const(seeds), @Const(map),
 ) where {T,V,N}
     i = @index(Global, Linear)
-    duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
+    duals[map[i]] = ForwardDiff.Dual{T,V,N}(x[map[i]], seeds[i])
 end
 
-"""
-    seed!
+function init_seed_hessian!(dest, tmp, v::AbstractArray, nmap)
+    @inbounds for i in 1:nmap
+        dest[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i]))
+    end
+    return
+end
 
-Calling the seeding kernel.
-Seeding is parallelized over the `ncolor` number of duals.
+function init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
+    hostv = Array(v)
+    @inbounds Threads.@threads for i in 1:nmap
+        tmp[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
+    end
+    copyto!(dest, tmp)
+    return
+end
 
-"""
-function seed!(t1sseeds, varx, t1svarx, device)
-    kernel! = seed_kernel!(device)
-    ev = kernel!(t1svarx, varx, t1sseeds, ndrange=length(t1svarx), dependencies=Event(device))
+function seed!(dest, src, seeds, map, device)
+    y = dest.input
+    x = src.input
+    ev = _seed_kernel!(device)(
+        y, x, seeds, map, ndrange=length(map), dependencies=Event(device))
     wait(ev)
 end
 

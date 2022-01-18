@@ -26,7 +26,7 @@ function test_constraints_jacobian(polar, device, MT)
 
         # Allocation
 
-        jac = ExaPF.MyJacobian(polar, constraint, mymap)
+        jac = ExaPF.Jacobian(polar, constraint, mymap)
         # Evaluate Jacobian with AD
         J = ExaPF.jacobian!(jac, stack)
         # Matpower Jacobian
@@ -119,7 +119,7 @@ function test_full_space_jacobian(polar, device, MT)
 
     m = length(mycons)
 
-    jac = ExaPF.MyJacobian(polar, mycons, mymap)
+    jac = ExaPF.Jacobian(polar, mycons, mymap)
     J = ExaPF.jacobian!(jac, stack)
 
     function jac_fd_x(x)

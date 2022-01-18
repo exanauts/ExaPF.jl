@@ -147,16 +147,6 @@ function get(pf::PowerNetwork, ::ReactivePower)
     return pf.generators[:, QG] ./ pf.baseMVA
 end
 
-## Indexing
-get(pf::PowerNetwork, ::GeneratorIndexes) = pf.gen2bus
-get(pf::PowerNetwork, ::PVIndexes) = pf.pv
-get(pf::PowerNetwork, ::PQIndexes) = pf.pq
-get(pf::PowerNetwork, ::SlackIndexes) = pf.ref
-get(pf::PowerNetwork, ::AllBusesIndex) = (pf.ref, pf.pv, pf.pq)
-get(pf::PowerNetwork, ::SlackToGeneratorsIndex) = pf.ref2gen
-get(pf::PowerNetwork, ::PVToGeneratorsIndex) = pf.pv2gen
-get(pf::PowerNetwork, ::AllGeneratorsIndex) = (pf.gen2bus, pf.ref2gen, pf.pv2gen)
-
 has_inactive_generators(pf::PowerNetwork) = any(isequal(0), view(pf.generators, :, 8))
 active_generators(pf::PowerNetwork) = findall(isequal(1), view(pf.generators, :, 8))
 inactive_generators(pf::PowerNetwork) = findall(isequal(0), view(pf.generators, :, 8))

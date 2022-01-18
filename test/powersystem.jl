@@ -124,9 +124,9 @@ function test_powernetwork_api(datafile)
     q_min, q_max = PS.bounds(pf, PS.Generators(), PS.ReactivePower())
     @test length(q_min) == n_gen
     @test length(q_max) == n_gen
-    idx = PS.get(pf, PS.GeneratorIndexes())
+    idx = pf.gen2bus
     @test length(idx) == n_gen
-    @test n_gen == length(pf.ref) + length(pf.pv)
+    @test n_gen >= length(pf.ref) + length(pf.pv)
 
     # Test costs coefficients
     coefs = PS.get_costs_coefficients(pf)
@@ -160,13 +160,7 @@ function test_powernetwork_contingencies(datafile)
 end
 
 function test_multiple_generators(datafile)
-    pf = PS.PowerNetwork(datafile; multi_generators=:aggregate)
-    n_gen = PS.get(pf, PS.NumberOfGenerators())
-    n_pv = PS.get(pf, PS.NumberOfPVBuses())
-    n_ref = PS.get(pf, PS.NumberOfSlackBuses())
-    @test n_gen == n_pv + n_ref
-
-    pf = PS.PowerNetwork(datafile; multi_generators=:keep)
+    pf = PS.PowerNetwork(datafile)
     n_gen = PS.get(pf, PS.NumberOfGenerators())
     n_pv = PS.get(pf, PS.NumberOfPVBuses())
     n_ref = PS.get(pf, PS.NumberOfSlackBuses())

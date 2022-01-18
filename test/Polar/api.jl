@@ -1,45 +1,32 @@
-function test_polar_network_cache(polar, device, M)
-    nₓ = ExaPF.get(polar, NumberOfState())
+function test_polar_stack(polar, device, M)
     ngen = get(polar, PS.NumberOfGenerators())
     nbus = get(polar, PS.NumberOfBuses())
-    u0 = ExaPF.initial(polar, Control())
+    nlines = get(polar, PS.NumberOfLines())
 
-    cache = ExaPF.get(polar, ExaPF.PhysicalState())
+    mapu = ExaPF.my_map(polar, Control()) |> M
+    u0 = rand(length(mapu)) |> M
+    stack = ExaPF.NetworkStack(polar)
 
     # By defaut, values are equal to 0
-    @test iszero(cache)
-    @test isa(cache.vmag, M)
-    @test cache.bus_gen == polar.indexing.index_generators
-    # Transfer control u0 inside cache
-    ExaPF.transfer!(polar, cache, u0)
+    @test isa(stack.input, M)
+    @test isa(stack.vmag, M)
+
+    # Copty control u0 inside cache
+    copyto!(stack, mapu, u0)
+    @test stack.input[mapu] == u0
+
     # Test that all attributes have valid length
-    @test length(cache.vang) == length(cache.vmag) == length(cache.pnet) == length(cache.qnet) == nbus
-    @test length(cache.pgen) == length(cache.qgen) == length(cache.bus_gen) == ngen
-    @test length(cache.dx) == length(cache.balance) == nₓ
+    @test length(stack.vang) == length(stack.vmag) == nbus
+    @test length(stack.pgen) == ngen
+    @test length(stack.input) == ngen + 2 * nbus
+    @test length(stack.ψ) == 2 * nlines + nbus
 
-    ## Buses
-    values = similar(u0, nbus)
-    fill!(values, 1)
-    ExaPF.setvalues!(cache, PS.VoltageMagnitude(), values)
-    ExaPF.setvalues!(cache, PS.VoltageAngle(), values)
-    ExaPF.setvalues!(cache, PS.ActiveLoad(), values)
-    ExaPF.setvalues!(cache, PS.ReactiveLoad(), values)
-    @test cache.vmag == values
-    @test cache.vang == values
-    @test cache.pload == values
-    @test cache.qload == values
+    # Bounds
+    b♭, b♯ = ExaPF.bounds(polar, stack)
+    @test myisless(b♭, b♯)
 
-    ## Generators
-    vgens = similar(u0, ngen)
-    fill!(vgens, 2.0)
-    ExaPF.setvalues!(cache, PS.ActivePower(), vgens)
-    ExaPF.setvalues!(cache, PS.ReactivePower(), vgens)
-    genbus = polar.indexing.index_generators
-    @test cache.pgen == vgens
-    @test cache.qgen == vgens
-    @test cache.pnet[genbus] == vgens # Pinj = Cg*Pg
-    @test cache.qnet[genbus] == vgens # Qinj = Cg*Qg
-    @test !iszero(cache)
+    empty!(stack)
+    @test iszero(stack.input)
 
     return nothing
 end
@@ -83,14 +70,23 @@ function test_polar_constraints(polar, device, M)
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
 
+    io = devnull
+    vpq = ExaPF.VoltageMagnitudePQ(polar)
+    pgb = ExaPF.PowerGenerationBounds(polar)
+    lfw = ExaPF.LineFlows(polar)
+    pfb = ExaPF.PowerFlowBalance(polar)
+    mle = ExaPF.MultiExpressions([vpq, pgb, lfw, pfb])
+
     @testset "Expressions $expr" for expr in [
-        ExaPF.VoltageMagnitudePQ,
-        ExaPF.PowerGenerationBounds,
-        ExaPF.LineFlows,
-        ExaPF.PowerFlowBalance,
+        vpq,
+        pgb,
+        lfw,
+        pfb,
+        mle,
     ]
+        println(io, expr)
         # Instantiate
-        constraints = expr(polar) ∘ basis
+        constraints = expr ∘ basis
         m = length(constraints)
         @test isa(m, Int)
         g = M{Float64, 1}(undef, m) # TODO: this signature is not great
@@ -131,7 +127,7 @@ function test_polar_powerflow(polar, device, M)
     J_gpu = J |> SMT
 
     # Init AD
-    jx = ExaPF.MyJacobian(polar, pflow ∘ basis, mapx)
+    jx = ExaPF.Jacobian(polar, pflow ∘ basis, mapx)
 
     @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
         algo = LinSolver(J_gpu; P=precond)

@@ -46,7 +46,7 @@ function run_benchmark(datafile, device, linsolver)
 
     basis = ExaPF.PolarBasis(polar)
     pflow = ExaPF.PowerFlowBalance(polar)
-    jx = ExaPF.MyJacobian(polar, pflow ∘ basis, mapx)
+    jx = ExaPF.Jacobian(polar, pflow ∘ basis, mapx)
     J = jx.J
     npartitions = ceil(Int64,(size(jx.J,1)/64))
     if npartitions < 2
