@@ -46,14 +46,6 @@ struct NLBuffer{VT}
 end
 NLBuffer{VT}(n::Int) where VT = NLBuffer(VT(undef, n), VT(undef, n))
 
-
-function extract_values!(dest, src)
-    @assert length(dest) == length(src)
-    for i in eachindex(dest)
-        dest[i] = src[i].value
-    end
-end
-
 function nlsolve!(
     algo::NewtonRaphson,
     jac::Jacobian,
@@ -68,13 +60,15 @@ function nlsolve!(
 
     map = jac.map
     x = view(state.input, map)
-
+    n = (jac.ncolors+1) * length(nl_buffer.y)
+    F = reshape(reinterpret(eltype(nl_buffer.y), jac.t1sF), n)
+    stridedF = @view F[1:jac.ncolors+1:n]
     residual = nl_buffer.y
     Δx = nl_buffer.x
 
     for i in 1:algo.maxiter
         J = jacobian!(jac, state)
-        extract_values!(residual, jac.t1sF)
+        copyto!(residual, stridedF)
 
         normF = xnorm(residual)
         if xnorm(residual) < algo.tol
@@ -127,4 +121,3 @@ function run_pf(
     conv = nlsolve!(solver, jac, state)
     return conv
 end
-

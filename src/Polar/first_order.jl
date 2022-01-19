@@ -5,6 +5,7 @@ struct Jacobian{Model, Func, VD, SMT, VI}
     map::VI
     stack::NetworkStack{VD}
     coloring::VI
+    ncolors::Int
     t1sF::VD
     J::SMT
 end
@@ -46,10 +47,10 @@ function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map
     map_device = map |> VI
 
     J_host, coloring = get_jacobian_colors(polar, func, map)
-    ncolor = size(unique(coloring),1)
+    ncolors = size(unique(coloring),1)
 
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
-    VD = A{t1s{ncolor}}
+    VD = A{t1s{ncolors}}
 
     J = J_host |> SMT
 
@@ -60,7 +61,7 @@ function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map
     coloring = coloring |> VI
 
     return Jacobian(
-        polar, func, map_device, stack, coloring, t1sF, J,
+        polar, func, map_device, stack, coloring, ncolors, t1sF, J,
     )
 end
 
