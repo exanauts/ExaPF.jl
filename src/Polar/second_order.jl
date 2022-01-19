@@ -68,6 +68,7 @@ struct FullHessian{Model, Func, VD, SMT, VI, Buff} <: AutoDiff.AbstractHessian
     stack::NetworkStack{VD}
     ∂stack::NetworkStack{VD}
     coloring::VI
+    ncolors::Int
     t1sF::VD
     ∂t1sF::VD
     buffer::Buff
@@ -95,8 +96,8 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, 
     map_device = map |> VI
 
     H_host, coloring = get_hessian_colors(polar, func, map)
-    ncolor = length(unique(coloring))
-    VD = A{ForwardDiff.Dual{Nothing, Float64, ncolor}}
+    ncolors = length(unique(coloring))
+    VD = A{ForwardDiff.Dual{Nothing, Float64, ncolors}}
 
     H = H_host |> SMT
 
@@ -110,7 +111,7 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, 
 
     intermediate = nothing
     return FullHessian(
-        polar, func, map_device, stack, ∂stack, coloring, t1sF, adj_t1sF,
+        polar, func, map_device, stack, ∂stack, coloring, ncolors, t1sF, adj_t1sF,
         intermediate, H,
     )
 end
