@@ -60,6 +60,9 @@ function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map
 
     coloring = coloring |> VI
 
+    # seed
+    AutoDiff.seed_coloring!(stack.input, coloring, map_device, polar.device)
+
     return Jacobian(
         polar, func, map_device, stack, coloring, ncolors, t1sF, J,
     )
@@ -69,10 +72,8 @@ function jacobian!(
     jac::Jacobian, stack,
 )
     # init
-    jac.stack.input .= stack.input
+    AutoDiff.set_value!(jac.stack.input, stack.input, jac.model.device)
     jac.t1sF .= 0.0
-    # seed
-    AutoDiff.seed_coloring!(jac.stack.input, stack.input, jac.coloring, jac.map, jac.model.device)
     # forward pass
     jac.func(jac.t1sF, jac.stack)
     # extract partials

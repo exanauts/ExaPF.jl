@@ -109,6 +109,9 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, 
 
     coloring = coloring |> VI
 
+    # seed
+    AutoDiff.seed_coloring!(stack.input, coloring, map_device, polar.device)
+
     intermediate = nothing
     return FullHessian(
         polar, func, map_device, stack, ∂stack, coloring, ncolors, t1sF, adj_t1sF,
@@ -120,11 +123,9 @@ function hessian!(
     H::FullHessian, stack, λ,
 )
     # init
-    H.stack.input .= stack.input
+    AutoDiff.set_value!(H.stack.input, stack.input, H.model.device)
     empty!(H.∂stack)
     H.∂t1sF .= λ
-    # seed
-    AutoDiff.seed_coloring!(H.stack.input, stack.input, H.coloring, H.map, H.model.device)
     # forward pass
     H.func(H.t1sF, H.stack)
     # forward-over-reverse pass
