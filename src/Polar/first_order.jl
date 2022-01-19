@@ -1,12 +1,10 @@
 
-struct Jacobian{Model, Func, VD, SMT, MT, VI, VP}
+struct Jacobian{Model, Func, VD, SMT, VI}
     model::Model
     func::Func
     map::VI
     stack::NetworkStack{VD}
-    compressedJ::MT
     coloring::VI
-    t1sseeds::VP
     t1sF::VD
     J::SMT
 end
@@ -45,7 +43,6 @@ function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map
 
     n_cons = length(func)
 
-    nmap = length(map)
     map_device = map |> VI
 
     J_host, coloring = get_jacobian_colors(polar, func, map)
@@ -60,16 +57,10 @@ function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map
     stack = NetworkStack(nbus, ngen, nlines, VD)
     t1sF = zeros(Float64, n_cons) |> VD
 
-    # Seedings
-    t1sseeds = AutoDiff.init_seed(coloring, ncolor, nmap)
-
-    # Move the seeds over to the device, if necessary
-    gput1sseeds = A{ForwardDiff.Partials{ncolor,Float64}}(t1sseeds)
-    compressedJ = MT(zeros(Float64, ncolor, n_cons))
     coloring = coloring |> VI
 
     return Jacobian(
-        polar, func, map_device, stack, compressedJ, coloring, gput1sseeds, t1sF, J,
+        polar, func, map_device, stack, coloring, t1sF, J,
     )
 end
 
@@ -80,12 +71,11 @@ function jacobian!(
     jac.stack.input .= stack.input
     jac.t1sF .= 0.0
     # seed
-    AutoDiff.seed!(jac.stack, stack, jac.t1sseeds, jac.map, jac.model.device)
+    AutoDiff.seed_coloring!(jac.stack.input, stack.input, jac.coloring, jac.map, jac.model.device)
     # forward pass
     jac.func(jac.t1sF, jac.stack)
-    # uncompress
-    AutoDiff.partials_jac!(jac.compressedJ, jac.t1sF, jac.model.device)
-    AutoDiff.uncompress_kernel!(jac.J, jac.compressedJ, jac.coloring, jac.model.device)
+    # extract partials
+    AutoDiff.partials_jac!(jac.J, jac.t1sF, jac.coloring, jac.model.device)
     return jac.J
 end
 
