@@ -34,11 +34,9 @@ abstract type AbstractHessian end
 # Seeding
 
 @kernel function _seed_coloring_kernel!(
-    duals, @Const(x), @Const(coloring), @Const(map),
+    duals, @Const(coloring), @Const(map),
 )
     i, j = @index(Global, NTuple)
-
-    duals[1, map[i]] = x[map[i]]
 
     if coloring[i] == j
         duals[j+1, map[i]] = 1.0
@@ -63,13 +61,13 @@ function seed!(dest::AbstractVector{ForwardDiff.Dual{Nothing, T, 1}}, src, v, ma
     wait(ev)
 end
 
-function seed_coloring!(dest::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, src, coloring, map, device) where {T, N}
+function seed_coloring!(dest::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, coloring, map, device) where {T, N}
     n = length(dest)
     ncolors = N
     dest_ = reshape(reinterpret(T, dest), N+1, n)
     ndrange = (length(map), ncolors)
     ev = _seed_coloring_kernel!(device)(
-        dest_, src, coloring, map, ndrange=ndrange, dependencies=Event(device))
+        dest_, coloring, map, ndrange=ndrange, dependencies=Event(device))
     wait(ev)
 end
 
@@ -156,6 +154,22 @@ function partials_hess!(J, duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}
     else
         error("Unknown device $device")
     end
+    wait(ev)
+end
+
+@kernel function _set_value_kernel!(
+    duals, @Const(primals),
+)
+    i = @index(Global, Linear)
+
+    duals[1, i] = primals[i]
+end
+
+function set_value!(duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, primals::AbstractVector{T}, device) where {T,N}
+    n = length(duals)
+    duals_ = reshape(reinterpret(T, duals), N+1, n)
+    ev = _set_value_kernel!(device)(
+        duals_, primals, ndrange=n, dependencies=Event(device))
     wait(ev)
 end
 
