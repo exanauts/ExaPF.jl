@@ -32,63 +32,48 @@ abstract type AbstractHessian end
 
 
 # Seeding
-function _init_seed!(t1sseeds, t1sseedvecs, coloring, ncolor, nmap)
-    for i in 1:nmap
-        t1sseedvecs[:,i] .= 0
-        @inbounds for j in 1:ncolor
-            if coloring[i] == j
-                t1sseedvecs[j,i] = 1.0
-            end
-        end
-        t1sseeds[i] = ForwardDiff.Partials{ncolor, Float64}(NTuple{ncolor, Float64}(t1sseedvecs[:,i]))
-    end
-end
 
-function init_seed(coloring, ncolor, nmap)
-    t1sseeds = Vector{ForwardDiff.Partials{ncolor, Float64}}(undef, nmap)
-    t1sseedvecs = zeros(Float64, ncolor, nmap)
-    # The seeding is always done on the CPU since it's faster
-    _init_seed!(t1sseeds, t1sseedvecs, Array(coloring), ncolor, nmap)
-    return t1sseeds
+@kernel function _seed_coloring_kernel!(
+    duals, @Const(x), @Const(coloring), @Const(map),
+)
+    i, j = @index(Global, NTuple)
+
+    duals[1, map[i]] = x[map[i]]
+
+    if coloring[i] == j
+        duals[j+1, map[i]] = 1.0
+    end
 end
 
 @kernel function _seed_kernel!(
-    duals::AbstractArray{ForwardDiff.Dual{T, V, N}}, @Const(x), @Const(seeds), @Const(map),
-) where {T,V,N}
+    duals, @Const(x), @Const(v), @Const(map),
+)
     i = @index(Global, Linear)
-    duals[map[i]] = ForwardDiff.Dual{T,V,N}(x[map[i]], seeds[i])
+
+    duals[1, map[i]] = x[map[i]]
+    duals[2, map[i]] = v[i]
 end
 
-function init_seed_hessian!(dest, tmp, v::AbstractArray, nmap)
-    @inbounds for i in 1:nmap
-        dest[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(v[i]))
-    end
-    return
-end
-
-function init_seed_hessian!(dest, tmp, v::CUDA.CuArray, nmap)
-    hostv = Array(v)
-    @inbounds Threads.@threads for i in 1:nmap
-        tmp[i] = ForwardDiff.Partials{1, Float64}(NTuple{1, Float64}(hostv[i]))
-    end
-    copyto!(dest, tmp)
-    return
-end
-
-function seed!(dest, src, seeds, map, device)
-    y = dest.input
-    x = src.input
+function seed!(dest::AbstractVector{ForwardDiff.Dual{Nothing, T, 1}}, src, v, map, device) where {T}
+    n = length(dest)
+    dest_ = reshape(reinterpret(T, dest), 2, n)
+    ndrange = length(map)
     ev = _seed_kernel!(device)(
-        y, x, seeds, map, ndrange=length(map), dependencies=Event(device))
+        dest_, src, v, map, ndrange=ndrange, dependencies=Event(device))
     wait(ev)
 end
 
+function seed_coloring!(dest::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, src, coloring, map, device) where {T, N}
+    n = length(dest)
+    ncolors = N
+    dest_ = reshape(reinterpret(T, dest), N+1, n)
+    ndrange = (length(map), ncolors)
+    ev = _seed_coloring_kernel!(device)(
+        dest_, src, coloring, map, ndrange=ndrange, dependencies=Event(device))
+    wait(ev)
+end
 
 # Get partials
-@kernel function getpartials_jac_kernel!(compressedJ, @Const(duals))
-    i, j = @index(Global, NTuple)
-    compressedJ[j, i] = duals[j+1, i]
-end
 
 # Get partials for Hessian projection
 @kernel function getpartials_hv_kernel!(hv, @Const(adj_t1sx), @Const(map))
@@ -98,87 +83,76 @@ end
     end
 end
 
-@kernel function getpartials_hess_kernel!(compressedH, @Const(duals), @Const(map))
-    i, j = @index(Global, NTuple)
-    compressedH[j, i] = duals[j+1, map[i]]
-end
-
-"""
-    getpartials_kernel!(compressedJ, t1sF)
-
-Calling the partial extraction kernel.
-Extract the partials from the AutoDiff dual type on the target
-device and put it in the compressed Jacobian `compressedJ`.
-
-"""
 function getpartials_kernel!(hv::AbstractVector, adj_t1sx, map, device)
     kernel! = getpartials_hv_kernel!(device)
     ev = kernel!(hv, adj_t1sx, map, ndrange=length(hv), dependencies=Event(device))
     wait(ev)
 end
 
-function partials_jac!(
-    compressedJ::AbstractMatrix{T},
-    duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}},
-    device,
-) where {T, N}
-    n = length(duals)
-    @assert size(compressedJ) == (N, n)
-    duals_ = reshape(reinterpret(T, duals), N+1, n)
-    ndrange = (n, N)
-    ev = getpartials_jac_kernel!(device)(
-        compressedJ, duals_,
-        ndrange=ndrange, dependencies=Event(device),
-    )
-    wait(ev)
-end
+# Sparse Jacobian partials
 
-function partials_hess!(
-    compressedH::AbstractMatrix,
-    duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}},
-    map, device,
-) where {T, N}
-    n = length(map)
-    @assert size(compressedH) == (N, n)
-    duals_ = reshape(reinterpret(Float64, duals), N+1, length(duals))
-    ndrange = (n, N)
-    ev = getpartials_hess_kernel!(device)(
-        compressedH, duals_, map,
-        ndrange=ndrange, dependencies=Event(device),
-    )
-    wait(ev)
-end
-
-
-# Uncompress kernels
-@kernel function uncompress_kernel_gpu!(@Const(J_rowPtr), @Const(J_colVal), J_nzVal, @Const(compressedJ), @Const(coloring))
+@kernel function partials_kernel_gpu!(@Const(J_rowPtr), @Const(J_colVal), J_nzVal, @Const(duals), @Const(coloring))
     i = @index(Global, Linear)
+
     @inbounds for j in J_rowPtr[i]:J_rowPtr[i+1]-1
-        @inbounds J_nzVal[j] = compressedJ[coloring[J_colVal[j]], i]
+        @inbounds J_nzVal[j] = duals[coloring[J_colVal[j]]+1, i]
     end
 end
 
-@kernel function uncompress_kernel_cpu!(J_colptr, J_rowval, J_nzval, compressedJ, coloring)
+@kernel function partials_kernel_cpu!(J_colptr, J_rowval, J_nzval, duals, coloring)
     # CSC is column oriented: nmap is equal to number of columns
     i = @index(Global, Linear)
+
     @inbounds for j in J_colptr[i]:J_colptr[i+1]-1
-        @inbounds J_nzval[j] = compressedJ[coloring[i], J_rowval[j]]
+        @inbounds J_nzval[j] = duals[coloring[i]+1, J_rowval[j]]
     end
 end
 
-"""
-    uncompress_kernel!(J, compressedJ, coloring)
+function partials_jac!(J, duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, coloring, device) where {T, N}
+    n = length(duals)
+    duals_ = reshape(reinterpret(T, duals), N+1, n)
 
-Uncompress the compressed Jacobian matrix from `compressedJ`
-to sparse CSC (on the CPU) or CSR (on the GPU).
-"""
-function uncompress_kernel!(J, compressedJ, coloring, device)
     if isa(device, CPU)
-        kernel! = uncompress_kernel_cpu!(device)
-        ev = kernel!(J.colptr, J.rowval, J.nzval, compressedJ, coloring, ndrange=size(J,2), dependencies=Event(device))
+        kernel! = partials_kernel_cpu!(device)
+        ev = kernel!(J.colptr, J.rowval, J.nzval, duals_, coloring, ndrange=size(J,2), dependencies=Event(device))
     elseif isa(device, GPU)
-        kernel! = uncompress_kernel_gpu!(device)
-        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, compressedJ, coloring, ndrange=size(J,1), dependencies=Event(device))
+        kernel! = partials_kernel_gpu!(device)
+        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, duals_, coloring, ndrange=size(J,1), dependencies=Event(device))
+    else
+        error("Unknown device $device")
+    end
+    wait(ev)
+end
+
+# Sparse Hessian partials
+
+@kernel function partials_kernel_gpu!(@Const(J_rowPtr), @Const(J_colVal), J_nzVal, @Const(duals), @Const(map), @Const(coloring))
+    i = @index(Global, Linear)
+
+    @inbounds for j in J_rowPtr[i]:J_rowPtr[i+1]-1
+        @inbounds J_nzVal[j] = duals[coloring[J_colVal[j]]+1, map[i]]
+    end
+end
+
+@kernel function partials_kernel_cpu!(J_colptr, J_rowval, J_nzval, duals, map, coloring)
+    # CSC is column oriented: nmap is equal to number of columns
+    i = @index(Global, Linear)
+
+    @inbounds for j in J_colptr[i]:J_colptr[i+1]-1
+        @inbounds J_nzval[j] = duals[coloring[i]+1, map[J_rowval[j]]]
+    end
+end
+
+function partials_hess!(J, duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, map, coloring, device) where {T, N}
+    n = length(duals)
+    duals_ = reshape(reinterpret(T, duals), N+1, n)
+
+    if isa(device, CPU)
+        kernel! = partials_kernel_cpu!(device)
+        ev = kernel!(J.colptr, J.rowval, J.nzval, duals_, map, coloring, ndrange=size(J,2), dependencies=Event(device))
+    elseif isa(device, GPU)
+        kernel! = partials_kernel_gpu!(device)
+        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, duals_, map, coloring, ndrange=size(J,1), dependencies=Event(device))
     else
         error("Unknown device $device")
     end
