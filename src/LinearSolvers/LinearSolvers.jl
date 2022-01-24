@@ -9,6 +9,7 @@ import Base: show
 
 using CUDA
 using KernelAbstractions
+using CUDAKernels
 import CUDA.CUBLAS
 import CUDA.CUSOLVER
 import CUDA.CUSPARSE
