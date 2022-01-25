@@ -259,11 +259,14 @@ function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
     CUDA.allowscalar() do
-        Krylov.bicgstab!(solver.inner, J, x;
-                                        M=solver.precond,
-                                        atol=solver.atol,
-                                        rtol=solver.rtol,
-                                        verbose=solver.verbose)
+        Krylov.bicgstab!(
+            solver.inner, J, x;
+            N=solver.precond,
+            atol=solver.atol,
+            rtol=solver.rtol,
+            verbose=solver.verbose,
+            history=true,
+        )
     end
     copyto!(y, solver.inner.x)
     return length(solver.inner.stats.residuals)

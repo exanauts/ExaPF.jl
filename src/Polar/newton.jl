@@ -121,7 +121,6 @@ function nlsolve!(
         LS.update!(linear_solver, J)
         n_iters = LS.ldiv!(linear_solver, Δx, J, residual)
         x .= x .- Δx
-
         push!(linsol_iters, n_iters)
 
         iter += 1
