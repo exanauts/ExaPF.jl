@@ -63,6 +63,13 @@ struct PowerNetwork <: AbstractPowerSystem
         # Remove specified lines
         lines = get_active_branches(lines, remove_lines)
 
+        # GENERATORS
+        gen_status = view(gen, :, 8)
+        # Get active generators
+        on = findall(gen_status .> 0)
+        gen = gen[on, :]
+
+
         # size of the system
         nbus = size(bus, 1)
         ngen = size(gen, 1)
@@ -80,7 +87,7 @@ struct PowerNetwork <: AbstractPowerSystem
             costs[:, 6] .= 1.0 # c₂
             costs[:, 7] .= 0.0 # c₃
         else
-            costs = cost_coefficients
+            costs = cost_coefficients[on, :]
         end
         # Check consistency of cost coefficients
         @assert size(costs, 1) == size(gen, 1)
@@ -135,9 +142,25 @@ get(pf::PowerNetwork, ::NumberOfPVBuses) = length(pf.pv)
 get(pf::PowerNetwork, ::NumberOfPQBuses) = length(pf.pq)
 get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
 
+## Voltage
+function voltage(pf::PowerNetwork)
+    genbus = pf.gen2bus
+	v0 = pf.vbus
+    vg = view(pf.generators, :, 6)
+    vcb = ones(length(v0))
+    vcb[pf.pq] .= 0
+    k = findall(vcb[genbus] .> 0)
+    v0[genbus[k]] .= vg ./ abs.(v0[genbus[k]]) .* v0[genbus[k]]
+    return v0
+end
+get(pf::PowerNetwork, ::VoltageMagnitude) = abs.(voltage(pf))
+get(pf::PowerNetwork, ::VoltageAngle) = angle.(voltage(pf))
+
+
 ## Loads
 get(pf::PowerNetwork, ::ActiveLoad) = real.(pf.sload)
 get(pf::PowerNetwork, ::ReactiveLoad) = imag.(pf.sload)
+## Power
 function get(pf::PowerNetwork, ::ActivePower)
     GEN_BUS, PG, QG, _ = IndexSet.idx_gen()
     return pf.generators[:, PG] ./ pf.baseMVA

@@ -61,8 +61,8 @@ function Base.show(io::IO, stack::NetworkStack)
 end
 
 function init!(polar::PolarForm, stack::NetworkStack)
-    vmag = abs.(polar.network.vbus)
-    vang = angle.(polar.network.vbus)
+    vmag = get(polar.network, PS.VoltageMagnitude())
+    vang = get(polar.network, PS.VoltageAngle())
     pg = get(polar.network, PS.ActivePower())
 
     copyto!(stack.vmag, vmag)
