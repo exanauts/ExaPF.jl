@@ -1,23 +1,19 @@
 
-
-abstract type AbstractStack{VT} end
-
-
-function Base.copyto!(stack::AbstractStack{VT}, map::AbstractVector{Int}, src::VT) where VT
+function Base.copyto!(stack::AutoDiff.AbstractStack{VT}, map::AbstractVector{Int}, src::VT) where {VT}
     @assert length(map) == length(src)
     for i in eachindex(map)
         stack.input[map[i]] = src[i]
     end
 end
 
-function Base.copyto!(dest::VT, stack::AbstractStack{VT}, map::AbstractVector{Int}) where VT
+function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack{VT}, map::AbstractVector{Int}) where {VT}
     @assert length(map) == length(dest)
     for i in eachindex(map)
         dest[i] = stack.input[map[i]]
     end
 end
 
-struct NetworkStack{VT,NT} <: AbstractStack{VT}
+struct NetworkStack{VT,NT} <: AutoDiff.AbstractStack
     # INPUT
     input::VT
     vmag::VT # voltage magnitudes
@@ -109,7 +105,7 @@ voltage_host(buf::NetworkStack) = voltage(buf) |> Array
 
 abstract type AbstractExpression end
 
-function (expr::AbstractExpression)(stack::AbstractStack)
+function (expr::AbstractExpression)(stack::NetworkStack)
     m = length(expr)
     output = similar(stack.input, m)
     expr(output, stack)
@@ -305,7 +301,7 @@ end
 
 Base.length(::CostFunction) = 1
 
-function (func::CostFunction)(output::AbstractArray, stack::AbstractStack)
+function (func::CostFunction)(output::AbstractArray, stack::NetworkStack)
     costs = stack.intermediate.c
     # Update pgen_ref
     stack.pgen[func.gen_ref] .= 0.0
@@ -386,7 +382,7 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerFlowBalance) where {T,V
     return (fill!(VT(undef, m), zero(T)) , fill!(VT(undef, m), zero(T)))
 end
 
-function (func::PowerFlowBalance)(cons::AbstractArray, stack::AbstractStack)
+function (func::PowerFlowBalance)(cons::AbstractArray, stack::NetworkStack)
     cons .= func.τ
     mul!(cons, func.M, stack.ψ, 1.0, 1.0)
     mul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
@@ -430,7 +426,7 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudePQ) where {T
     return convert(VT, v_min[func.pq]), convert(VT, v_max[func.pq])
 end
 
-function (func::VoltageMagnitudePQ)(cons::AbstractArray, stack::AbstractStack)
+function (func::VoltageMagnitudePQ)(cons::AbstractArray, stack::NetworkStack)
     cons .= stack.vmag[func.pq]
 end
 
@@ -494,7 +490,7 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where
     )
 end
 
-function (func::PowerGenerationBounds)(cons::AbstractArray, stack::AbstractStack)
+function (func::PowerGenerationBounds)(cons::AbstractArray, stack::NetworkStack)
     cons .= func.τ
     mul!(cons, func.M, stack.ψ, 1.0, 1.0)
     return
@@ -587,7 +583,7 @@ end
 
 Base.length(func::MultiExpressions) = sum(length.(func.exprs))
 
-function (func::MultiExpressions)(output::AbstractArray, stack::AbstractStack)
+function (func::MultiExpressions)(output::AbstractArray, stack::NetworkStack)
     k = 0
     for expr in func.exprs
         m = length(expr)
@@ -630,7 +626,7 @@ struct ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AbstractExpression
     outer::Expr2
 end
 
-function (func::ComposedExpressions)(output::AbstractArray, stack::AbstractStack)
+function (func::ComposedExpressions)(output::AbstractArray, stack::NetworkStack)
     func.inner(stack.ψ, stack)  # Evaluate basis
     func.outer(output, stack)   # Evaluate expression
 end

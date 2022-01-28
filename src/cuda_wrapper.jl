@@ -42,14 +42,14 @@ end
     dest[i] = input[map[i]]
 end
 
-function Base.copyto!(stack::AbstractStack{VT}, map::AbstractVector{Int}, vals::VT) where {VT <: CuArray}
+function Base.copyto!(stack::AutoDiff.AbstractStack, map::AbstractVector{Int}, vals::VT) where {VT <: CuArray}
     @assert length(map) == length(vals)
     ndrange = (length(map),)
     ev = _transfer_to_input!(CUDADevice())(stack.input, map, vals, ndrange=ndrange)
     wait(ev)
 end
 
-function Base.copyto!(dest::VT, stack::AbstractStack{VT}, map::AbstractVector{Int}) where {VT <: CuArray}
+function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack, map::AbstractVector{Int}) where {VT <: CuArray}
     @assert length(map) == length(dest)
     ndrange = (length(map),)
     ev = _transfer_fr_input!(CUDADevice())(dest, stack.input, map, ndrange=ndrange)

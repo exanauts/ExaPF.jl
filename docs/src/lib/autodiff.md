@@ -3,31 +3,19 @@ CurrentModule = ExaPF.AutoDiff
 ```
 # AutoDiff
 
-## Adjoint
-
-```@docs
-TapeMemory
-```
-
-## Jacobian
+## Abstract Types
 
 ```@docs
 AbstractJacobian
-ConstantJacobian
-Jacobian
-jacobian!
+AbstractStack
+AbstractHessian
 ```
 
-### API reference for the Jacobian
+### AutoDiff API
 ```@docs
 seed!
-getpartials_kernel!
-uncompress_kernel!
-```
-
-## Hessian
-```@docs
-AbstractHessian
-Hessian
-adj_hessian_prod!
+seed_coloring!
+partials_jac!
+partials_hess!
+set_value!
 ```
