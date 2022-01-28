@@ -6,16 +6,16 @@ CurrentModule = ExaPF.AutoDiff
 ## Abstract Types
 
 ```@docs
+AbstractHessianProd
+AbstractFullHessian
 AbstractJacobian
 AbstractStack
-AbstractHessian
 ```
 
 ### AutoDiff API
 ```@docs
 seed!
 seed_coloring!
-partials_jac!
-partials_hess!
+partials!
 set_value!
 ```
