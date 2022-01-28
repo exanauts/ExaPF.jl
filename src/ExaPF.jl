@@ -15,7 +15,7 @@ const KA = KernelAbstractions
 import Base: show, get
 
 export run_pf
-export State, Control
+export State, Control, PolarForm
 # Export KernelAbstractions devices
 export CPU
 

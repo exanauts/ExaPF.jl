@@ -19,13 +19,13 @@ end
 Base.size(jac::Jacobian, n::Int) = size(jac.J, n)
 
 # Coloring
-function jacobian_sparsity(polar::PolarForm, func::AbstractExpression)
+function jacobian_sparsity(polar::PolarForm, func::AutoDiff.AbstractExpression)
     nbus = get(polar, PS.NumberOfBuses())
     v = polar.network.vbus .+ 0.01 .* rand(ComplexF64, nbus)
     return matpower_jacobian(polar, func, v)
 end
 
-function get_jacobian_colors(polar::PolarForm, func::AbstractExpression, map::Vector{Int})
+function get_jacobian_colors(polar::PolarForm, func::AutoDiff.AbstractExpression, map::Vector{Int})
     # Sparsity pattern
     J = jacobian_sparsity(polar, func)
     Jsub = J[:, map]
@@ -34,7 +34,7 @@ function get_jacobian_colors(polar::PolarForm, func::AbstractExpression, map::Ve
     return (Jsub, colors)
 end
 
-function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
+function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network

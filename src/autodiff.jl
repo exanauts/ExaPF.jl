@@ -12,6 +12,23 @@ using ..ExaPF: State, Control
 
 import Base: show
 
+abstract type AbstractStack{VT} end
+
+#=
+    Generic expression
+=#
+
+abstract type AbstractExpression end
+
+function (expr::AbstractExpression)(stack::AbstractStack)
+    m = length(expr)
+    output = similar(stack.input, m)
+    expr(output, stack)
+    return output
+end
+
+function adjoint! end
+
 """
     AbstractJacobian
 
@@ -20,9 +37,6 @@ any nonlinear constraint ``h(x)``.
 
 """
 abstract type AbstractJacobian end
-
-abstract type AbstractStack end
-
 
 function jacobian!(jac::AbstractJacobian, stack::AbstractStack)
     error("Mising method jacobian!(", typeof(jac), ", ", typeof(stack), ")")
