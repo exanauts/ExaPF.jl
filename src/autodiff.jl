@@ -226,6 +226,7 @@ end
     partials!(jac::AbstractJacobian)
 
 Extract partials from Jacobian `jac` in `jac.J`.
+
 """
 function partials!(jac::AbstractJacobian)
     J = jac.J
@@ -273,6 +274,7 @@ end
     partials!(hess::AbstractFullHessian)
 
 Extract partials from Hessian `hess` into `hess.H`.
+
 """
 function partials!(hess::AbstractFullHessian)
     H = hess.H
@@ -309,10 +311,11 @@ end
 """
     set_value!(
         jac,
-        primals::AbstractVector{T}\
+        primals::AbstractVector{T}
     ) where {T}
 
 Set values of `ForwardDiff.Dual` numbers in `jac` to `primals`.
+
 """
 function set_value!(
     jac,
