@@ -13,7 +13,27 @@ function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack{VT}, map::Abstract
     end
 end
 
-struct NetworkStack{VT,NT} <: AutoDiff.AbstractStack
+"""
+    NetworkStack <: AbstractStack
+    NetworkStack(polar::PolarForm)
+    NetworkStack(nbus::Int, ngen::Int, nlines::Int, VT::Type)
+
+Store the variables associated to the polar formulation.
+The variables are stored in the field `input`, ordered as follows
+```
+    input = [vmag ; vang ; pgen]
+```
+The object stores also intermediate variables needed
+in the expression tree, such as the LKMR basis `ψ`.
+
+### Notes
+
+The NetworkStack can be instantiated on the host or on
+the target device.
+
+
+"""
+struct NetworkStack{VT,NT} <: AutoDiff.AbstractStack{VT}
     # INPUT
     input::VT
     vmag::VT # voltage magnitudes
@@ -56,6 +76,13 @@ function Base.show(io::IO, stack::NetworkStack)
     print(io, "$(length(stack.input))-elements NetworkStack{$(typeof(stack.input))}")
 end
 
+"""
+    init!(polar::PolarForm, stack::NetworkStack)
+
+Set `stack.input` with the initial values specified
+in the base [`PS.PowerSystem`](@ref) object.
+
+"""
 function init!(polar::PolarForm, stack::NetworkStack)
     vmag = get(polar.network, PS.VoltageMagnitude())
     vang = get(polar.network, PS.VoltageAngle())
@@ -95,28 +122,37 @@ function bounds(polar::PolarForm{T, VI, VT, MT}, stack::NetworkStack) where {T, 
 end
 
 
+"Get complex voltage from `NetworkStack`."
 voltage(buf::NetworkStack) = buf.vmag .* exp.(im .* buf.vang)
 voltage_host(buf::NetworkStack) = voltage(buf) |> Array
 
 
 #=
-    Generic expression
-=#
-
-abstract type AbstractExpression end
-
-function (expr::AbstractExpression)(stack::NetworkStack)
-    m = length(expr)
-    output = similar(stack.input, m)
-    expr(output, stack)
-    return output
-end
-
-#=
     PolarBasis
 =#
 
-struct PolarBasis{VI, MT} <: AbstractExpression
+@doc raw"""
+    PolarBasis{VI, MT} <: AbstractExpression
+    PolarBasis(polar::PolarForm)
+
+Implement the LKMR nonlinear basis. Takes as
+input the voltage magnitudes `vmag` and the voltage
+angles `vang` and returns
+```math
+    \begin{aligned}
+        & \psi_\ell^C(v, \theta) = v^f  v^t  \cos(\theta_f - \theta_t) \quad \forall \ell = 1, \cdots, n_\ell \\
+        & \psi_\ell^S(v, \theta) = v^f  v^t  \sin(\theta_f - \theta_t) \quad \forall \ell = 1, \cdots, n_\ell \\
+        & \psi_k(v, \theta) = v_k^2 \quad \forall k = 1, \cdots, n_b
+    \end{aligned}
+```
+
+**Dimension:** `2 * n_lines + n_bus`
+
+### Complexity
+`3 n_lines + n_bus` mul, `n_lines` `cos` and `n_lines` `sin`
+
+"""
+struct PolarBasis{VI, MT} <: AutoDiff.AbstractExpression
     nbus::Int
     nlines::Int
     f::VI
@@ -142,10 +178,6 @@ function PolarBasis(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     Ct = Ct |> SMT
 
     return PolarBasis{VI, SMT}(nbus, nlines, f, t, Cf, Ct, polar.device)
-end
-
-function Base.show(io::IO, func::PolarBasis)
-    print(io, "PolarBasis (AbstractExpression)")
 end
 
 Base.length(func::PolarBasis) = func.nbus + 2 * func.nlines
@@ -256,12 +288,31 @@ function adjoint!(func::PolarBasis, ∂stack::NetworkStack, stack::NetworkStack,
     return
 end
 
+function Base.show(io::IO, func::PolarBasis)
+    print(io, "PolarBasis (AbstractExpression)")
+end
+
 
 #=
     CostFunction
 =#
 
-struct CostFunction{VT, MT} <: AbstractExpression
+@doc raw"""
+    CostFunction{VT, MT} <: AutoDiff.AbstractExpression
+    CostFunction(polar)
+
+Implement the quadratic cost function for OPF
+```math
+    ∑_{g=1}^{n_g} c_{2,g} p_g^2 + c_{1,g} p_g + c_{0,g}
+```
+
+**Dimension:** `1`
+
+### Complexity
+`1` SpMV, `1` `sum`
+
+"""
+struct CostFunction{VT, MT} <: AutoDiff.AbstractExpression
     gen_ref::Vector{Int}
     M::MT
     c0::VT
@@ -295,10 +346,6 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return CostFunction{VT, SMT}(ref_gen, M, c0, c1, c2)
 end
 
-function Base.show(io::IO, func::CostFunction)
-    print(io, "CostFunction (AbstractExpression)")
-end
-
 Base.length(::CostFunction) = 1
 
 function (func::CostFunction)(output::AbstractArray, stack::NetworkStack)
@@ -317,20 +364,22 @@ function adjoint!(func::CostFunction, ∂stack, stack, ∂v)
     return
 end
 
+function Base.show(io::IO, func::CostFunction)
+    print(io, "CostFunction (AbstractExpression)")
+end
+
+
+#=
+    PowerFlowBalance
+=#
 
 @doc raw"""
-    PowerFlowBalance
+    PowerFlowBalance{VT, MT}
+    PowerFlowBalance(polar)
 
-Subset of the power injection in the network
+Implement a subset of the power injection
 corresponding to ``(p_{inj}^{pv}, p_{inj}^{pq}, q_{inj}^{pq})``.
-They are associated to the function
-
-```math
-g(x, u) = 0 .
-```
-introduced in the documentation.
-
-In detail, the function encodes the active balance equations at
+The function encodes the active balance equations at
 PV and PQ nodes, and the reactive balance equations at PQ nodes:
 ```math
 \begin{aligned}
@@ -340,8 +389,14 @@ PV and PQ nodes, and the reactive balance equations at PQ nodes:
     ∀ i ∈ \{PQ\}
 \end{aligned}
 ```
+
+**Dimension:** `n_{pv} + 2 * n_{pq}`
+
+### Complexity
+`2` SpMV
+
 """
-struct PowerFlowBalance{VT, MT} <: AbstractExpression
+struct PowerFlowBalance{VT, MT} <: AutoDiff.AbstractExpression
     M::MT
     Cg::MT
     τ::VT
@@ -371,18 +426,9 @@ function PowerFlowBalance(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return PowerFlowBalance{VT, SMT}(M, Cg, τ)
 end
 
-function Base.show(io::IO, func::PowerFlowBalance)
-    print(io, "PowerFlowBalance (AbstractExpression)")
-end
-
 Base.length(func::PowerFlowBalance) = length(func.τ)
 
-function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerFlowBalance) where {T,VI,VT,MT}
-    m = length(func)
-    return (fill!(VT(undef, m), zero(T)) , fill!(VT(undef, m), zero(T)))
-end
-
-function (func::PowerFlowBalance)(cons::AbstractArray, stack::NetworkStack)
+function (func::PowerFlowBalance)(cons::AbstractArray, stack::AutoDiff.AbstractStack)
     cons .= func.τ
     mul!(cons, func.M, stack.ψ, 1.0, 1.0)
     mul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
@@ -395,38 +441,46 @@ function adjoint!(func::PowerFlowBalance, ∂stack, stack, ∂v)
     return
 end
 
+function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerFlowBalance) where {T,VI,VT,MT}
+    m = length(func)
+    return (fill!(VT(undef, m), zero(T)) , fill!(VT(undef, m), zero(T)))
+end
+
+function Base.show(io::IO, func::PowerFlowBalance)
+    print(io, "PowerFlowBalance (AbstractExpression)")
+end
+
 
 """
     VoltageMagnitudePQ
 
-Bounds the voltage magnitudes at PQ nodes:
+Implement the bounds on voltage magnitudes not
+taken into account in the bound constraints. In
+the reduced space, this is associated to the
+the voltage magnitudes at PQ nodes:
 ```math
 v_{pq}^♭ ≤ v_{pq} ≤ v_{pq}^♯ .
 ```
 
-## Note
-The constraints on the voltage magnitudes at PV nodes ``v_{pv}``
+**Dimension:** `n_pq`
+
+### Complexity
+`1` copyto
+
+### Note
+In the reduced space, the constraints on the voltage magnitudes at PV nodes ``v_{pv}``
 are taken into account when bounding the control ``u``.
 
 """
-struct VoltageMagnitudePQ <: AbstractExpression
+struct VoltageMagnitudePQ <: AutoDiff.AbstractExpression
     pq::Vector{Int}
 
 end
 VoltageMagnitudePQ(polar::PolarForm) = VoltageMagnitudePQ(polar.network.pq)
 
-function Base.show(io::IO, func::VoltageMagnitudePQ)
-    print(io, "VoltageMagnitudePQ (AbstractExpression)")
-end
-
 Base.length(func::VoltageMagnitudePQ) = length(func.pq)
 
-function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudePQ) where {T,VI,VT,MT}
-    v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
-    return convert(VT, v_min[func.pq]), convert(VT, v_max[func.pq])
-end
-
-function (func::VoltageMagnitudePQ)(cons::AbstractArray, stack::NetworkStack)
+function (func::VoltageMagnitudePQ)(cons::AbstractArray, stack::AutoDiff.AbstractStack)
     cons .= stack.vmag[func.pq]
 end
 
@@ -434,18 +488,36 @@ function adjoint!(func::VoltageMagnitudePQ, ∂stack, stack, ∂v)
     ∂stack.vmag[func.pq] .+= ∂v
 end
 
-"""
-    PowerGenerationBounds
+function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudePQ) where {T,VI,VT,MT}
+    v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
+    return convert(VT, v_min[func.pq]), convert(VT, v_max[func.pq])
+end
 
-Constraints on the **active power production**
-and on the **reactive power production** at the generators
-that are not already taken into account in the bound constraints.
-```math
-p_g^♭ ≤ p_g ≤ p_g^♯  ;
-q_g^♭ ≤ q_g ≤ q_g^♯  .
-```
+function Base.show(io::IO, func::VoltageMagnitudePQ)
+    print(io, "VoltageMagnitudePQ (AbstractExpression)")
+end
+
+
 """
-struct PowerGenerationBounds{VT, MT} <: AbstractExpression
+    PowerGenerationBounds{VT, MT}
+    PowerGenerationBounds(polar)
+
+Constraints on the active power productions
+and on the reactive power productions
+that are not already taken into account in the bound constraints.
+In the reduced space, that amounts to
+```math
+p_{g,ref}^♭ ≤ p_{g,ref} ≤ p_{g,ref}^♯  ;
+C_g q_g^♭ ≤ C_g q_g ≤ C_g q_g^♯  .
+```
+
+**Dimension:** `n_pv + 2 n_ref`
+
+### Complexity
+`1` copyto, `1` SpMV
+
+"""
+struct PowerGenerationBounds{VT, MT} <: AutoDiff.AbstractExpression
     M::MT
     τ::VT
 end
@@ -465,11 +537,18 @@ function PowerGenerationBounds(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT
     return PowerGenerationBounds{VT, SMT}(M, τ)
 end
 
-function Base.show(io::IO, func::PowerGenerationBounds)
-    print(io, "PowerGenerationBounds (AbstractExpression)")
+Base.length(func::PowerGenerationBounds) = length(func.τ)
+
+function (func::PowerGenerationBounds)(cons::AbstractArray, stack::AutoDiff.AbstractStack)
+    cons .= func.τ
+    mul!(cons, func.M, stack.ψ, 1.0, 1.0)
+    return
 end
 
-Base.length(func::PowerGenerationBounds) = length(func.τ)
+function adjoint!(func::PowerGenerationBounds, ∂stack, stack, ∂v)
+    mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
+    return
+end
 
 function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where {T,VI,VT,MT}
     pf = polar.network
@@ -490,25 +569,24 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where
     )
 end
 
-function (func::PowerGenerationBounds)(cons::AbstractArray, stack::NetworkStack)
-    cons .= func.τ
-    mul!(cons, func.M, stack.ψ, 1.0, 1.0)
-    return
-end
-
-function adjoint!(func::PowerGenerationBounds, ∂stack, stack, ∂v)
-    mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
-    return
+function Base.show(io::IO, func::PowerGenerationBounds)
+    print(io, "PowerGenerationBounds (AbstractExpression)")
 end
 
 
 """
-    LineFlows
+    LineFlows{VT, MT}
+    LineFlows(polar)
 
-Thermal limit constraints porting on the lines of the network.
+Implement thermal limit constraints on the lines of the network.
+
+**Dimension:** `2 * n_lines`
+
+### Complexity
+`4` SpMV, `4 * n_lines` quadratic, `2 * n_lines` add
 
 """
-struct LineFlows{VT, MT} <: AbstractExpression
+struct LineFlows{VT, MT} <: AutoDiff.AbstractExpression
     nlines::Int
     Lfp::MT
     Lfq::MT
@@ -523,16 +601,7 @@ function LineFlows(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     return LineFlows{VT,SMT}(nlines, Lfp, Lfq, Ltp, Ltq)
 end
 
-function Base.show(io::IO, func::LineFlows)
-    print(io, "LineFlows (AbstractExpression)")
-end
-
 Base.length(func::LineFlows) = 2 * func.nlines
-
-function bounds(polar::PolarForm{T,VI,VT,MT}, func::LineFlows) where {T,VI,VT,MT}
-    f_min, f_max = PS.bounds(polar.network, PS.Lines(), PS.ActivePower())
-    return convert(VT, [f_min; f_min]), convert(VT, [f_max; f_max])
-end
 
 function (func::LineFlows)(cons::AbstractVector, stack::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
     sfp = stack.intermediate.sfp::VT
@@ -576,9 +645,35 @@ function adjoint!(func::LineFlows, ∂stack, stack, ∂v)
     return
 end
 
-# Concatenate expressions together
-struct MultiExpressions <: AbstractExpression
-    exprs::Vector{AbstractExpression}
+function bounds(polar::PolarForm{T,VI,VT,MT}, func::LineFlows) where {T,VI,VT,MT}
+    f_min, f_max = PS.bounds(polar.network, PS.Lines(), PS.ActivePower())
+    return convert(VT, [f_min; f_min]), convert(VT, [f_max; f_max])
+end
+
+function Base.show(io::IO, func::LineFlows)
+    print(io, "LineFlows (AbstractExpression)")
+end
+
+
+#=
+    MultiExpressions
+=#
+
+"""
+    MultiExpressions <: AbstractExpression
+
+Implement expressions concatenation. Takes as
+input a vector of expressions `[expr1,...,exprN]`
+and concatenate them in a single expression `mexpr`, such
+that
+```
+    mexpr(x) = [expr1(x) ; expr2(x) ; ... ; exprN(x)]
+
+```
+
+"""
+struct MultiExpressions <: AutoDiff.AbstractExpression
+    exprs::Vector{AutoDiff.AbstractExpression}
 end
 
 Base.length(func::MultiExpressions) = sum(length.(func.exprs))
@@ -621,10 +716,27 @@ function bounds(polar::PolarForm{T, VI, VT, MT}, func::MultiExpressions) where {
     )
 end
 
-struct ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AbstractExpression
+#=
+    ComposedExpressions
+=#
+
+"""
+    ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AbstractExpression
+
+Implement expression composition. Takes as input two expressions
+`expr1` and `expr2` and returns a composed expression `cexpr` such
+that
+```
+    cexpr(x) = expr2 ∘ expr1(x)
+
+### Notes
+Currently, only [`PolarBasis`](@ref) is supported for `expr1`.
+"""
+struct ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AutoDiff.AbstractExpression
     inner::Expr1
     outer::Expr2
 end
+Base.length(func::ComposedExpressions) = length(func.outer)
 
 function (func::ComposedExpressions)(output::AbstractArray, stack::NetworkStack)
     func.inner(stack.ψ, stack)  # Evaluate basis
@@ -636,8 +748,7 @@ function adjoint!(func::ComposedExpressions, ∂stack, stack, ∂v)
     adjoint!(func.inner, ∂stack, stack, ∂stack.ψ)
 end
 
-# Overload ∘ operator
-Base.ComposedFunction(g::AbstractExpression, f::PolarBasis) = ComposedExpressions(f, g)
-Base.length(func::ComposedExpressions) = length(func.outer)
 bounds(polar, func::ComposedExpressions) = bounds(polar, func.outer)
+# Overload ∘ operator
+Base.ComposedFunction(g::AutoDiff.AbstractExpression, f::PolarBasis) = ComposedExpressions(f, g)
 

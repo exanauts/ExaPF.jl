@@ -10,7 +10,7 @@ struct HessianProd{Model, Func, VD, VI, Buff} <: AutoDiff.AbstractHessianProd
     buffer::Buff
 end
 
-function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
+function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
@@ -75,14 +75,14 @@ struct FullHessian{Model, Func, VD, SMT, VI, Buff} <: AutoDiff.AbstractFullHessi
     H::SMT
 end
 
-function get_hessian_colors(polar::PolarForm, func::AbstractExpression, map::Vector{Int})
+function get_hessian_colors(polar::PolarForm, func::AutoDiff.AbstractExpression, map::Vector{Int})
     H = hessian_sparsity(polar, func)::SparseMatrixCSC
     Hsub = H[map, map] # reorder
     colors = AutoDiff.SparseDiffTools.matrix_colors(Hsub)
     return (Hsub, colors)
 end
 
-function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
+function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
