@@ -109,6 +109,9 @@ function nlsolve!(
         copyto!(residual, stridedF)
 
         normF = xnorm(residual)
+        if algo.verbose >= 1
+            @printf("#it %d: %.5e\n", i-1, normF)
+        end
         if xnorm(residual) < algo.tol
             converged = true
             break
