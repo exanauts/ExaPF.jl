@@ -114,28 +114,65 @@ abstract type AbstractFullHessian end
 end
 
 @kernel function _seed_kernel!(
-    duals, @Const(x), @Const(v), @Const(map),
+    duals, @Const(v), @Const(map),
 )
     i = @index(Global, Linear)
 
-    duals[1, map[i]] = x[map[i]]
     duals[2, map[i]] = v[i]
 end
 
-function seed!(dest::AbstractVector{ForwardDiff.Dual{Nothing, T, 1}}, src, v, map, device) where {T}
+"""
+    seed!(
+        H::AbstractHessianProd,
+        v::AbstractVector{T},
+    ) where {T}
+
+Seed the duals with v to compute the Hessian vector product ``λ^⊤ H v``.
+
+"""
+function seed!(
+    H::AbstractHessianProd,
+    v::AbstractVector{T},
+) where {T}
+    dest = H.stack.input
+    map = H.map
+    device = H.model.device
     n = length(dest)
     dest_ = reshape(reinterpret(T, dest), 2, n)
     ndrange = length(map)
     ev = _seed_kernel!(device)(
-        dest_, src, v, map, ndrange=ndrange, dependencies=Event(device))
+        dest_, v, map, ndrange=ndrange, dependencies=Event(device))
     wait(ev)
 end
 
-function seed_coloring!(dest::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, coloring, map, device) where {T, N}
+"""
+    seed_coloring!(
+        M::Union{AbstractJacobian, AbstractFullHessian}
+        coloring::AbstractVector,
+    )
+
+Seed the duals with the `coloring` based seeds to compute the Jacobian or Hessian ``M``.
+
+"""
+function seed_coloring!(
+    M::Union{AbstractJacobian, AbstractFullHessian},
+    coloring::AbstractVector,
+)
+    dest = M.stack.input
+    _seed_coloring!(M, coloring, dest)
+end
+
+function _seed_coloring!(
+    M::Union{AbstractJacobian, AbstractFullHessian},
+    coloring::AbstractVector,
+    dest::AbstractVector{ForwardDiff.Dual{Nothing, T, N}},
+) where {T, N}
+    dest = M.stack.input
+    map = M.map
+    device = M.model.device
     n = length(dest)
-    ncolors = N
     dest_ = reshape(reinterpret(T, dest), N+1, n)
-    ndrange = (length(map), ncolors)
+    ndrange = (length(map), N)
     ev = _seed_coloring_kernel!(device)(
         dest_, coloring, map, ndrange=ndrange, dependencies=Event(device))
     wait(ev)
@@ -151,6 +188,12 @@ end
     end
 end
 
+"""
+    getpartials_kernel!(hv::AbstractVector, H::AbstractHessianProd)
+
+Extract partials from `ForwardDiff.Dual` numbers with only 1 partial when computing the Hessian vector product.
+
+"""
 function getpartials_kernel!(hv::AbstractVector, H::AbstractHessianProd)
     device = H.model.device
     map = H.map
@@ -179,6 +222,11 @@ end
     end
 end
 
+"""
+    partials!(jac::AbstractJacobian)
+
+Extract partials from Jacobian `jac` in `jac.J`.
+"""
 function partials!(jac::AbstractJacobian)
     J = jac.J
     N = jac.ncolors
@@ -221,6 +269,11 @@ end
     end
 end
 
+"""
+    partials!(hess::AbstractFullHessian)
+
+Extract partials from Hessian `hess` into `hess.H`.
+"""
 function partials!(hess::AbstractFullHessian)
     H = hess.H
     N = hess.ncolors
@@ -253,7 +306,18 @@ end
     duals[1, i] = primals[i]
 end
 
-function set_value!(jac, primals::AbstractVector{T}) where {T}
+"""
+    set_value!(
+        jac,
+        primals::AbstractVector{T}\
+    ) where {T}
+
+Set values of `ForwardDiff.Dual` numbers in `jac` to `primals`.
+"""
+function set_value!(
+    jac,
+    primals::AbstractVector{T}
+) where {T}
     duals = jac.stack.input
     device = jac.model.device
     n = length(duals)

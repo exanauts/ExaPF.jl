@@ -50,7 +50,7 @@ function hprod!(
     H.∂t1sF .= λ
 
     # Seeding
-    AutoDiff.seed!(H.stack.input, stack.input, v, H.map, H.model.device)
+    AutoDiff.seed!(H, v)
     # Forward
     H.func(H.t1sF, H.stack)
     # Forward-over-Reverse
@@ -109,14 +109,16 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
 
     coloring = coloring |> VI
 
-    # seed
-    AutoDiff.seed_coloring!(stack.input, coloring, map_device, polar.device)
-
     intermediate = nothing
-    return FullHessian(
+    hess = FullHessian(
         polar, func, map_device, stack, ∂stack, coloring, ncolors, t1sF, adj_t1sF,
         intermediate, H,
     )
+
+    # seed
+    AutoDiff.seed_coloring!(hess, coloring)
+
+    return hess
 end
 
 function hessian!(

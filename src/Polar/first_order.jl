@@ -12,8 +12,7 @@ end
 
 function Base.show(io::IO, jacobian::Jacobian)
     println(io, "A AutoDiff Jacobian for $(jacobian.func)")
-    ncolor = size(jacobian.compressedJ, 1)
-    print(io, "Number of Jacobian colors: ", ncolor)
+    print(io, "Number of Jacobian colors: ", jacobian.ncolors)
 end
 
 Base.size(jac::Jacobian, n::Int) = size(jac.J, n)
@@ -60,12 +59,14 @@ function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpres
 
     coloring = coloring |> VI
 
-    # seed
-    AutoDiff.seed_coloring!(stack.input, coloring, map_device, polar.device)
-
-    return Jacobian(
+    jac = Jacobian(
         polar, func, map_device, stack, coloring, ncolors, t1sF, J,
     )
+
+    # seed
+    AutoDiff.seed_coloring!(jac, coloring)
+
+    return jac
 end
 
 function jacobian!(
