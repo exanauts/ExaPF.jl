@@ -1,5 +1,5 @@
 
-struct Jacobian{Model, Func, VD, SMT, VI}
+struct Jacobian{Model, Func, VD, SMT, VI} <: AutoDiff.AbstractJacobian
     model::Model
     func::Func
     map::VI
@@ -72,12 +72,12 @@ function jacobian!(
     jac::Jacobian, stack,
 )
     # init
-    AutoDiff.set_value!(jac.stack.input, stack.input, jac.model.device)
+    AutoDiff.set_value!(jac, stack.input)
     jac.t1sF .= 0.0
     # forward pass
     jac.func(jac.t1sF, jac.stack)
     # extract partials
-    AutoDiff.partials_jac!(jac.J, jac.t1sF, jac.coloring, jac.model.device)
+    AutoDiff.partials!(jac)
     return jac.J
 end
 

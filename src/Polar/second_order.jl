@@ -1,5 +1,5 @@
 
-struct HessianProd{Model, Func, VD, VI, Buff} <: AutoDiff.AbstractHessian
+struct HessianProd{Model, Func, VD, VI, Buff} <: AutoDiff.AbstractHessianProd
     model::Model
     func::Func
     map::VI
@@ -56,12 +56,12 @@ function hprod!(
     # Forward-over-Reverse
     adjoint!(H.func, H.∂stack, H.stack, H.∂t1sF)
 
-    AutoDiff.getpartials_kernel!(hv, H.∂stack.input, H.map, H.model.device)
+    AutoDiff.getpartials_kernel!(hv, H)
     return
 end
 
 
-struct FullHessian{Model, Func, VD, SMT, VI, Buff} <: AutoDiff.AbstractHessian
+struct FullHessian{Model, Func, VD, SMT, VI, Buff} <: AutoDiff.AbstractFullHessian
     model::Model
     func::Func
     map::VI
@@ -123,7 +123,7 @@ function hessian!(
     H::FullHessian, stack, λ,
 )
     # init
-    AutoDiff.set_value!(H.stack.input, stack.input, H.model.device)
+    AutoDiff.set_value!(H, stack.input)
     empty!(H.∂stack)
     H.∂t1sF .= λ
     # forward pass
@@ -131,7 +131,7 @@ function hessian!(
     # forward-over-reverse pass
     adjoint!(H.func, H.∂stack, H.stack, H.∂t1sF)
     # extract partials
-    AutoDiff.partials_hess!(H.H, H.∂stack.input, H.map, H.coloring, H.model.device)
+    AutoDiff.partials!(H)
     return H.H
 end
 

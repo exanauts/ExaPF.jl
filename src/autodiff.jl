@@ -21,15 +21,29 @@ any nonlinear constraint ``h(x)``.
 """
 abstract type AbstractJacobian end
 
-"""
-    AbstractHessian
+abstract type AbstractStack end
 
-Automatic differentiation for the adjoint-Hessian-vector product ``λ^⊤ H v`` of
+
+function jacobian!(jac::AbstractJacobian, stack::AbstractStack)
+    error("Mising method jacobian!(", typeof(jac), ", ", typeof(stack), ")")
+end
+
+"""
+    AbstractHessianProd
+
+Returns the adjoint-Hessian-vector product ``λ^⊤ H v`` of
 any nonlinear constraint ``h(x)``.
 
 """
-abstract type AbstractHessian end
+abstract type AbstractHessianProd end
 
+"""
+    AbstractHessianProd
+
+Full sparse Hessian ``H`` of any nonlinear constraint ``h(x)``.
+
+"""
+abstract type AbstractFullHessian end
 
 # Seeding
 
@@ -81,7 +95,10 @@ end
     end
 end
 
-function getpartials_kernel!(hv::AbstractVector, adj_t1sx, map, device)
+function getpartials_kernel!(hv::AbstractVector, H::AbstractHessianProd)
+    device = H.model.device
+    map = H.map
+    adj_t1sx = H.∂stack.input
     kernel! = getpartials_hv_kernel!(device)
     ev = kernel!(hv, adj_t1sx, map, ndrange=length(hv), dependencies=Event(device))
     wait(ev)
@@ -106,8 +123,15 @@ end
     end
 end
 
-function partials_jac!(J, duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, coloring, device) where {T, N}
+function partials!(jac::AbstractJacobian)
+    J = jac.J
+    N = jac.ncolors
+    T = eltype(J)
+    duals = jac.t1sF
+    device = jac.model.device
+    coloring = jac.coloring
     n = length(duals)
+
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     if isa(device, CPU)
@@ -141,16 +165,24 @@ end
     end
 end
 
-function partials_hess!(J, duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, map, coloring, device) where {T, N}
+function partials!(hess::AbstractFullHessian)
+    H = hess.H
+    N = hess.ncolors
+    T = eltype(H)
+    duals = hess.∂stack.input
+    device = hess.model.device
+    coloring = hess.coloring
+    map = hess.map
     n = length(duals)
+
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     if isa(device, CPU)
         kernel! = partials_kernel_cpu!(device)
-        ev = kernel!(J.colptr, J.rowval, J.nzval, duals_, map, coloring, ndrange=size(J,2), dependencies=Event(device))
+        ev = kernel!(H.colptr, H.rowval, H.nzval, duals_, map, coloring, ndrange=size(H,2), dependencies=Event(device))
     elseif isa(device, GPU)
         kernel! = partials_kernel_gpu!(device)
-        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, duals_, map, coloring, ndrange=size(J,1), dependencies=Event(device))
+        ev = kernel!(H.rowPtr, H.colVal, H.nzVal, duals_, map, coloring, ndrange=size(H,1), dependencies=Event(device))
     else
         error("Unknown device $device")
     end
@@ -165,8 +197,11 @@ end
     duals[1, i] = primals[i]
 end
 
-function set_value!(duals::AbstractVector{ForwardDiff.Dual{Nothing, T, N}}, primals::AbstractVector{T}, device) where {T,N}
+function set_value!(jac, primals::AbstractVector{T}) where {T}
+    duals = jac.stack.input
+    device = jac.model.device
     n = length(duals)
+    N = jac.ncolors
     duals_ = reshape(reinterpret(T, duals), N+1, n)
     ev = _set_value_kernel!(device)(
         duals_, primals, ndrange=n, dependencies=Event(device))
