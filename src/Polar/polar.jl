@@ -3,7 +3,7 @@
 """
     PolarForm{T, IT, VT, MT}
 
-Wrap a [`PS.PowerNetwork`](@ref) network to move the data on
+Wrap a [`PS.PowerNetwork`](@ref) network to load the data on
 the target device (`CPU()` and `CUDADevice()` are currently supported).
 
 """
@@ -16,15 +16,34 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.CPU)
     return PolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device)
 end
 # Convenient constructor
-PolarForm(datafile::String, device) = PolarForm(PS.PowerNetwork(datafile), device)
+PolarForm(datafile::String, device=CPU()) = PolarForm(PS.PowerNetwork(datafile), device)
 
-# Default ordering: [vmag, vang, pgen]
+# Getters (bridge to PowerNetwork)
+get(polar::PolarForm, attr::PS.AbstractNetworkAttribute) = get(polar.network, attr)
+
+number(polar::PolarForm, v::AbstractVariable) = length(my_map(polar, v))
+
+# Default ordering in NetworkStack: [vmag, vang, pgen]
+
+"""
+    my_map(polar::PolarForm, ::State)
+
+Return the mapping associated to the `State()` in [`NetworkStack`](@ref)
+according to the polar formulation `PolarForm`.
+"""
 function my_map(polar::PolarForm, ::State)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ref, pv, pq = pf.ref, pf.pv, pf.pq
     return Int[nbus .+ pv; nbus .+ pq; pq]
 end
+
+"""
+    my_map(polar::PolarForm, ::Control)
+
+Return the mapping associated to the `Control()` in [`NetworkStack`](@ref)
+according to the polar formulation `PolarForm`.
+"""
 function my_map(polar::PolarForm, ::Control)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
@@ -32,11 +51,6 @@ function my_map(polar::PolarForm, ::Control)
     pv2gen = polar.network.pv2gen
     return Int[ref; pv; 2*nbus .+ pv2gen]
 end
-
-number(polar::PolarForm, v::AbstractVariable) = length(my_map(polar, v))
-
-# Getters
-get(polar::PolarForm, attr::PS.AbstractNetworkAttribute) = get(polar.network, attr)
 
 function Base.show(io::IO, polar::PolarForm)
     # Network characteristics
