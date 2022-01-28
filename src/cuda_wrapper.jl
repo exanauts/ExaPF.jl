@@ -6,6 +6,8 @@ import CUDA.CUSOLVER
 
 using CUDAKernels
 
+export CUDAKernels
+
 function PolarForm(pf::PS.PowerNetwork, device::CUDADevice)
     return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device)
 end

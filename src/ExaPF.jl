@@ -15,13 +15,14 @@ const KA = KernelAbstractions
 import Base: show, get
 
 export run_pf
+export State, Control
+# Export KernelAbstractions devices
+export CPU
 
-include("architectures.jl")
 
-# Templates
-include("models.jl")
+include("templates.jl")
+include("utils.jl")
 
-# Import submodules
 include("autodiff.jl")
 using .AutoDiff
 include("LinearSolvers/LinearSolvers.jl")
