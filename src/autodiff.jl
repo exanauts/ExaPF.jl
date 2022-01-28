@@ -12,12 +12,45 @@ using ..ExaPF: State, Control
 
 import Base: show
 
+"""
+    AbstractStack{VT}
+
+Abstract variable storing the inputs and the intermediate values in the expression tree.
+
+"""
 abstract type AbstractStack{VT} end
 
 #=
     Generic expression
 =#
 
+"""
+    AbstractExpression
+
+Abstract type for differentiable function ``f(x)``.
+Any `AbstractExpression` implements two functions: a forward
+mode to evaluate ``f(x)``, and an adjoint to evaluate ``∂f(x)``.
+
+### Forward mode
+The direct evaluation of the function ``f`` is implemented as
+```julia
+(expr::AbstractExpression)(output::VT, stack::AbstractStack{VT}) where VT<:AbstractArray
+
+```
+the input being specified in `stack`, the results being stored in the array `output`.
+
+### Reverse mode
+The adjoint of the function is specified by the function `adjoint!`, with
+the signature:
+```julia
+adjoint!(expr::AbstractExpression, ∂stack::AbstractStack{VT}, stack::AbstractStack{VT}, ̄v::VT) where VT<:AbstractArray
+
+```
+The variable `stack` stores the result of the direct evaluation, and is not
+modified in `adjoint!`. The results are stored inside the adjoint stack
+`∂stack`.
+
+"""
 abstract type AbstractExpression end
 
 function (expr::AbstractExpression)(stack::AbstractStack)
@@ -27,6 +60,15 @@ function (expr::AbstractExpression)(stack::AbstractStack)
     return output
 end
 
+"""
+    adjoint!(expr::AbstractExpression, ∂stack::AbstractStack{VT}, stack::AbstractStack{VT}, ̄v::VT) where VT<:AbstractArray
+
+Compute the adjoint of the `AbstractExpression` `expr` with relation to the
+adjoint vector `̄v`. The results are stored in the adjoint stack `∂stack`.
+The variable `stack` stores the result of a previous direct evaluation, and is not
+modified in `adjoint!`.
+
+"""
 function adjoint! end
 
 """
