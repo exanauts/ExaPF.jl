@@ -318,6 +318,7 @@ struct CostFunction{VT, MT} <: AutoDiff.AbstractExpression
     c0::VT
     c1::VT
     c2::VT
+    pload::VT
 end
 
 function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
@@ -343,7 +344,11 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     c0 = @view coefs[:, 2]
     c1 = @view coefs[:, 3]
     c2 = @view coefs[:, 4]
-    return CostFunction{VT, SMT}(ref_gen, M, c0, c1, c2)
+
+    # Active loads
+    pload = PS.get(polar.network, PS.ActiveLoad())
+
+    return CostFunction{VT, SMT}(ref_gen, M, c0, c1, c2, pload[ref])
 end
 
 Base.length(::CostFunction) = 1
@@ -351,7 +356,7 @@ Base.length(::CostFunction) = 1
 function (func::CostFunction)(output::AbstractArray, stack::NetworkStack)
     costs = stack.intermediate.c
     # Update pgen_ref
-    stack.pgen[func.gen_ref] .= 0.0
+    stack.pgen[func.gen_ref] .= func.pload
     mul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
     costs .= func.c0 .+ func.c1 .* stack.pgen .+ func.c2 .* stack.pgen.^2
     CUDA.@allowscalar output[1] = sum(costs)
@@ -563,9 +568,11 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where
     p_min, p_max = PS.bounds(polar.network, PS.Generators(), PS.ActivePower())
     q_min, q_max = PS.bounds(polar.network, PS.Generators(), PS.ReactivePower())
     # Aggregate bounds on ref and pv nodes
+    lb = [Cgp * p_min; Cgq * q_min]
+    ub = [Cgp * p_max; Cgq * q_max]
     return (
-        convert(VT, [Cgp * p_min; Cgq * q_min]),
-        convert(VT, [Cgp * p_max; Cgq * q_max]),
+        convert(VT, lb),
+        convert(VT, ub),
     )
 end
 
