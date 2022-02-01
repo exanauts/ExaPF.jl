@@ -1,12 +1,12 @@
 
-function Base.copyto!(stack::AutoDiff.AbstractStack{VT}, map::AbstractVector{Int}, src::VT) where {VT}
+function Base.copyto!(stack::AutoDiff.AbstractStack{VT}, map::AbstractVector{Int}, src::AbstractVector) where {VT}
     @assert length(map) == length(src)
     for i in eachindex(map)
         stack.input[map[i]] = src[i]
     end
 end
 
-function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack{VT}, map::AbstractVector{Int}) where {VT}
+function Base.copyto!(dest::AbstractVector, stack::AutoDiff.AbstractStack{VT}, map::AbstractVector{Int}) where {VT}
     @assert length(map) == length(dest)
     for i in eachindex(map)
         dest[i] = stack.input[map[i]]
