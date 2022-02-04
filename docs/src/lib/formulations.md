@@ -26,7 +26,7 @@ init!
 
 The state and the control are defined as mapping:
 ```@docs
-my_map
+mapping
 
 ```
 
@@ -46,7 +46,7 @@ implemented in the following `AbstractExpression`:
 ```@docs
 PolarBasis
 PowerFlowBalance
-VoltageMagnitudePQ
+VoltageMagnitudeBounds
 PowerGenerationBounds
 LineFlows
 

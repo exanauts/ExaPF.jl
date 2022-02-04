@@ -2,7 +2,7 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     nx = ExaPF.number(polar, State())
     nu = ExaPF.number(polar, Control())
 
-    mymap = [ExaPF.my_map(polar, State()); ExaPF.my_map(polar, Control())]
+    mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
 
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
@@ -12,7 +12,7 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
 
     # Tests all expressions in once with MultiExpressions
     constraints = [
-        ExaPF.VoltageMagnitudePQ(polar),
+        ExaPF.VoltageMagnitudeBounds(polar),
         ExaPF.PowerGenerationBounds(polar),
         ExaPF.LineFlows(polar),
         ExaPF.PowerFlowBalance(polar),
@@ -57,12 +57,12 @@ function test_full_space_hessian(polar, device, MT)
 
     n = length(stack.input)
     # Hessian / (x, u)
-    mymap = [ExaPF.my_map(polar, State()); ExaPF.my_map(polar, Control())]
+    mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
 
     constraints = [
         ExaPF.CostFunction(polar),
         ExaPF.PowerFlowBalance(polar),
-        ExaPF.VoltageMagnitudePQ(polar),
+        ExaPF.VoltageMagnitudeBounds(polar),
         ExaPF.PowerGenerationBounds(polar),
         ExaPF.LineFlows(polar),
     ]

@@ -109,6 +109,17 @@ function test_powernetwork_api(datafile)
         res = PS.get(pf, Attr())
         @test isa(res, Int)
     end
+    for Attr in [
+        PS.VoltageMagnitude,
+        PS.VoltageAngle,
+        PS.ActiveLoad,
+        PS.ReactiveLoad,
+        PS.ActivePower,
+        PS.ReactivePower,
+    ]
+        res = PS.get(pf, Attr())
+        @test isa(res, Vector{Float64})
+    end
 
     # Buses
     n_bus = PS.get(pf, PS.NumberOfBuses())
@@ -127,6 +138,10 @@ function test_powernetwork_api(datafile)
     idx = pf.gen2bus
     @test length(idx) == n_gen
     @test n_gen >= length(pf.ref) + length(pf.pv)
+    @test isa(PS.has_multiple_generators(pf), Bool)
+    active = PS.active_generators(pf)
+    inactive = PS.inactive_generators(pf)
+    @test length(active) + length(inactive) == n_gen
 
     # Test costs coefficients
     coefs = PS.get_costs_coefficients(pf)

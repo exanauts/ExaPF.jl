@@ -19,9 +19,8 @@ const PS = PowerSystem
 const LS = LinearSolvers
 
 include("api.jl")
-include("autodiff.jl")
-include("gradient.jl")
-include("hessian.jl")
+include("first_order.jl")
+include("second_order.jl")
 
 function myisless(a, b)
     h_a = a |> Array

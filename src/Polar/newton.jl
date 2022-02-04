@@ -137,7 +137,7 @@ end
 Solve the power flow equations ``g(x, u) = 0`` w.r.t. the stack ``x``,
 using the ([`NewtonRaphson`](@ref) algorithm.
 The initial state ``x`` is specified implicitly inside
-`stack`, with the mapping [`my_map`](@ref) associated to the polar
+`stack`, with the mapping [`mapping`](@ref) associated to the polar
 formulation. The object `stack` is modified inplace in the function.
 
 The algorithm stops when a tolerance `rtol` or a maximum number of
@@ -154,7 +154,7 @@ function run_pf(
     rtol=1e-8, max_iter=20, verbose=0,
 )
     solver = NewtonRaphson(tol=rtol, maxiter=max_iter, verbose=verbose)
-    mapx = my_map(polar, State())
+    mapx = mapping(polar, State())
 
     basis = PolarBasis(polar)
     func = PowerFlowBalance(polar) ∘ basis

@@ -21,17 +21,17 @@ PolarForm(datafile::String, device=CPU()) = PolarForm(PS.PowerNetwork(datafile),
 # Getters (bridge to PowerNetwork)
 get(polar::PolarForm, attr::PS.AbstractNetworkAttribute) = get(polar.network, attr)
 
-number(polar::PolarForm, v::AbstractVariable) = length(my_map(polar, v))
+number(polar::PolarForm, v::AbstractVariable) = length(mapping(polar, v))
 
 # Default ordering in NetworkStack: [vmag, vang, pgen]
 
 """
-    my_map(polar::PolarForm, ::State)
+    mapping(polar::PolarForm, ::State)
 
 Return the mapping associated to the `State()` in [`NetworkStack`](@ref)
 according to the polar formulation `PolarForm`.
 """
-function my_map(polar::PolarForm, ::State)
+function mapping(polar::PolarForm, ::State)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ref, pv, pq = pf.ref, pf.pv, pf.pq
@@ -39,12 +39,12 @@ function my_map(polar::PolarForm, ::State)
 end
 
 """
-    my_map(polar::PolarForm, ::Control)
+    mapping(polar::PolarForm, ::Control)
 
 Return the mapping associated to the `Control()` in [`NetworkStack`](@ref)
 according to the polar formulation `PolarForm`.
 """
-function my_map(polar::PolarForm, ::Control)
+function mapping(polar::PolarForm, ::Control)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ref, pv, pq = pf.ref, pf.pv, pf.pq
