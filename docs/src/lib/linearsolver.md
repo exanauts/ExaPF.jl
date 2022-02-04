@@ -59,7 +59,4 @@ AbstractPreconditioner
 ```@docs
 BlockJacobiPreconditioner
 update
-build_adjmatrix
-fillblock_gpu!
-fillP_gpu!
 ```

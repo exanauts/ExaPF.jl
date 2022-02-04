@@ -13,25 +13,25 @@ makedocs(
         prettyurls = Base.get(ENV, "CI", nothing) == "true",
         mathengine = Documenter.KaTeX()
     ),
-    # modules = [ExaPF],
-    # repo = "https://github.com/exanauts/ExaPF.jl/blob/{commit}{path}#{line}",
-    # strict = true,
-    # checkdocs = :exports,
+    modules = [ExaPF],
+    repo = "https://github.com/exanauts/ExaPF.jl/blob/{commit}{path}#{line}",
+    strict = true,
+    checkdocs = :exports,
     pages = [
         "Home" => "index.md",
         "Quick start" => "quickstart.md",
         "Manual" => [
-            "AutoDiff" => "man/autodiff.md",
-            "Linear Solver" => "man/linearsolver.md",
+            "Polar formulation" => "man/formulations.md",
             "PowerSystem" => "man/powersystem.md",
-            "Formulations" => "man/formulations.md",
+            "AutoDiff" => "man/autodiff.md",
+            "Linear Solvers" => "man/linearsolver.md",
             "Benchmark" => "man/benchmark.md",
         ],
         "Library" => [
-            "AutoDiff" => "lib/autodiff.md",
-            "Linear Solver" => "lib/linearsolver.md",
+            "Polar formulation" => "lib/formulations.md",
             "PowerSystem" => "lib/powersystem.md",
-            "Formulations" => "lib/formulations.md",
+            "AutoDiff" => "lib/autodiff.md",
+            "Linear Solvers" => "lib/linearsolver.md",
         ]
     ]
 )
