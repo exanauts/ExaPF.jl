@@ -52,7 +52,7 @@ convergence = run_pf(polar, stack; verbose=1)
 ```
 
 Implicitly, ExaPF has just proceed to the following operations:
-- instantiate automatically a starting point ``x_0`` from the variables stores in `stack`
+- instantiate automatically a starting point ``x_0`` from the variables stored in `stack`
 - instantiate the Jacobian of the powerflow equations using AutoDiff.
 - solve the powerflow equations iteratively, using a Newton-Raphson algorithm.
 
@@ -82,7 +82,7 @@ However, a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object stores only the **phy
 of the network.
 To choose a given mathematical formulation,
 we need to pass the object `pf` to an [`ExaPF.AbstractFormulation`](@ref) layer.
-Currently, only the the polar formulation is provided
+Currently, only the polar formulation is provided
 with the [`ExaPF.PolarForm`](@ref) structure. In the future, other formulations
 (e.g. `RectangularForm`) may be implemented as well.
 

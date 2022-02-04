@@ -2,16 +2,16 @@
 
 [`ExaPF.jl`](https://github.com/exanauts/ExaPF.jl) is a
 package to solve the power flow problem on upcoming exascale architectures.
-Targeting exascale architectures implies a focus on graphics processing units
-(GPUs) as these systems lack substantial computational performance through classical CPUs.
+The code has been designed to be:
+1. **Portable:** Targeting exascale architectures implies a focus on graphics processing units (GPUs) as these systems lack substantial computational performance through classical CPUs.
+1. **Differentiable:** All the expressions implemented in ExaPF are fully compatible with [ForwardDiff.jl](https://github.com/JuliaDiff/ForwardDiff.jl/), and routines are provided to extract first- and second-order derivatives to solve efficiently power flow and optimal power flow problems.
 
 ExaPF implements a [vectorized modeler](man/formulations.md) for power systems, which allows
-to manipulate basic expressions. By design, all expressions are fully differentiable :
+to manipulate basic expressions. All expressions are fully differentiable :
 their first and second-order derivatives can be extracted efficiently
 using [automatic differentiation](man/autodiff.md). In addition,
 we leverage the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and
 [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl) to make ExaPF portable across GPU architectures.
-
 
 
 ## Table of contents
