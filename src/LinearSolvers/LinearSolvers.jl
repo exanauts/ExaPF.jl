@@ -157,8 +157,7 @@ end
 function ldiv!(solver::BICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
-    P = solver.precond.P
-    y[:], n_iters, status = bicgstab(J, x, P, y; maxiter=solver.maxiter,
+    y[:], n_iters, status = bicgstab(J, x, solver.precond, y; maxiter=solver.maxiter,
                                      verbose=solver.verbose, tol=solver.tol)
     if status != Converged
         @warn("BICGSTAB failed to converge. Final status is $(status)")
@@ -188,9 +187,7 @@ end
 function ldiv!(solver::EigenBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
-    P = solver.precond.P
-
-    y[:], n_iters, status = bicgstab_eigen(J, x, P, y; maxiter=solver.maxiter,
+    y[:], n_iters, status = bicgstab_eigen(J, x, solver.precond, y; maxiter=solver.maxiter,
                                            verbose=solver.verbose, tol=solver.tol)
     if status != Converged
         error("EigenBICGSTAB failed to converge. Final status is $(status)")
@@ -224,9 +221,8 @@ end
 function ldiv!(solver::DQGMRES,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
-    P = solver.precond.P
     CUDA.allowscalar() do
-        Krylov.dqgmres!(solver.inner, J, x; N=P)
+        Krylov.dqgmres!(solver.inner, J, x; N=solver.precond)
     end
     copyto!(y, solver.inner.x)
     return length(solver.inner.stats.residuals)
