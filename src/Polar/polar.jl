@@ -1,7 +1,7 @@
 # Polar formulation
 
 """
-    PolarForm{T, IT, VT, MT}
+    PolarForm{T, IT, VT, MT} <: AbstractFormulation
 
 Wrap a [`PS.PowerNetwork`](@ref) network to load the data on
 the target device (`CPU()` and `CUDADevice()` are currently supported).

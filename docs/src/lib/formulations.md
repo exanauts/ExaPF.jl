@@ -1,97 +1,70 @@
 ```@meta
 CurrentModule = ExaPF
+const PS = ExaPF.PowerSystem
 ```
 
-# Formulations
 
-## Description
+# Polar formulation
+
+## Generic templates
 
 ```@docs
+AbstractVariable
 AbstractFormulation
+State
+Control
+
+```
+
+## Structure and variables
+```@docs
 PolarForm
+NetworkStack
+init!
+
+```
+
+The state and the control are defined as mapping:
+```@docs
+my_map
 
 ```
 
 ## Powerflow solver
 
 ```@docs
-powerflow
+run_pf
 NewtonRaphson
 
 ```
 
 ## Constraints
 
-Current supported constraints are:
+The different parts of the polar formulation are
+implemented in the following `AbstractExpression`:
+
 ```@docs
-voltage_magnitude_constraints
-active_power_constraints
-reactive_power_constraints
-flow_constraints
-power_balance
-bus_power_injection
-network_operations
+PolarBasis
+PowerFlowBalance
+VoltageMagnitudePQ
+PowerGenerationBounds
+LineFlows
 
 ```
 
-These functions allow to query constraints' attributes:
-```@docs
-is_constraint
-size_constraint
-bounds
+## Objective
 
+The production costs is given in the `AbstractExpression` `CostFunction`:
+```@docs
+CostFunction
 ```
 
-ExaPF implements special functions to compute the derivatives
-of each constraints:
+# Composition of expressions
+
+The different expressions can be combined together
+in several different ways.
 ```@docs
-adjoint!
-jacobian_transpose_product!
-matpower_jacobian
-matpower_hessian
-jacobian_sparsity
+MultiExpressions
+ComposedExpressions
 ```
 
-
-## API Reference
-
-### Variables
-
-```@docs
-AbstractVariable
-State
-Control
-PhysicalState
-
-```
-
-Get default values attached to a given variable:
-```@docs
-initial
-
-```
-
-### Attributes
-
-```@docs
-AbstractFormAttribute
-NumberOfState
-NumberOfControl
-
-```
-`ExaPF` extends `Base.get` to query the different attributes
-of a model:
-```@docs
-get
-
-```
-The associated setter is implemented with `setvalues!`:
-```@docs
-setvalues!
-```
-
-### Costs
-
-```@docs
-cost_production
-```

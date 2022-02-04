@@ -2,9 +2,7 @@
 """
     AbstractFormulation
 
-Second layer of the package, implementing the interface between
-the first layer (the topology of the network) and the
-third layer (implementing the callbacks for the optimization solver).
+Interface between the data and the mathemical formulation.
 
 """
 abstract type AbstractFormulation end

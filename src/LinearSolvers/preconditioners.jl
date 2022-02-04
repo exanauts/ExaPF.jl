@@ -31,11 +31,12 @@ end
 """
     BlockJacobiPreconditioner
 
-Creates an object for the block-Jacobi preconditioner
+Overlapping-Schwarz preconditioner.
+
+### Attributes
 
 * `nblocks::Int64`: Number of partitions or blocks.
 * `blocksize::Int64`: Size of each block.
-* `nJs::Int64`: Size of the blocks. For the GPUs these all have to be of equal size.
 * `partitions::Vector{Vector{Int64}}``: `npart` partitions stored as lists
 * `cupartitions`: `partitions` transfered to the GPU
 * `lpartitions::Vector{Int64}``: Length of each partitions.
@@ -46,7 +47,6 @@ Creates an object for the block-Jacobi preconditioner
 * `cumap`: `cumap` transferred to the GPU`
 * `part`: Partitioning as output by Metis
 * `cupart`: `part` transferred to the GPU
-* `P`: The sparse precondition matrix whose values are updated at each iteration
 """
 struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: AbstractPreconditioner
     nblocks::Int64

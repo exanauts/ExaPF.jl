@@ -80,7 +80,7 @@ end
     init!(polar::PolarForm, stack::NetworkStack)
 
 Set `stack.input` with the initial values specified
-in the base [`PS.PowerSystem`](@ref) object.
+in the base [`PS.PowerNetwork`](@ref) object.
 
 """
 function init!(polar::PolarForm, stack::NetworkStack)

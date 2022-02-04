@@ -3,16 +3,30 @@ CurrentModule = ExaPF.AutoDiff
 ```
 # AutoDiff
 
-## Abstract Types
-
+## Variables
 ```@docs
-AbstractHessianProd
-AbstractFullHessian
-AbstractJacobian
 AbstractStack
+
 ```
 
-### AutoDiff API
+## Expressions
+
+```@docs
+AbstractExpression
+adjoint!
+
+```
+
+
+## First and second-order derivatives
+
+```@docs
+AbstractJacobian
+AbstractHessianProd
+AbstractFullHessian
+```
+
+## Utils
 ```@docs
 seed!
 seed_coloring!

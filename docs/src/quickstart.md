@@ -45,13 +45,14 @@ datafile = joinpath(artifact_path(exadata_hash), "ExaData", "case1354.m")
 ```
 The powerflow equations can be solved in three lines of code, as
 ```@repl quickstart
-polar = ExaPF.PolarForm(datafile, CPU())
-pf_algo = NewtonRaphson(; verbose=1, tol=1e-10)
-convergence = ExaPF.powerflow(polar, pf_algo)
+polar = ExaPF.PolarForm(datafile, CPU())  # Load data
+stack = ExaPF.NetworkStack(polar)         # Load variables
+convergence = run_pf(polar, stack; verbose=1)
+
 ```
 
 Implicitly, ExaPF has just proceed to the following operations:
-- instantiate automatically a starting point ``x_0`` from MATPOWER's data
+- instantiate automatically a starting point ``x_0`` from the variables stores in `stack`
 - instantiate the Jacobian of the powerflow equations using AutoDiff.
 - solve the powerflow equations iteratively, using a Newton-Raphson algorithm.
 
@@ -74,14 +75,14 @@ of the network. For instance, we can retrieve the number of buses
 or get the indexing of the PV buses with
 ```@repl quickstart
 nbus = PS.get(pf, PS.NumberOfBuses())
-pv_indexes = PS.get(pf, PS.PVIndexes())
+pv_indexes = pf.pv;
 ```
 
 However, a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object stores only the **physical** attributes
-of the network, independently of the mathematical formulations
-we can use to model the network. To choose a particular formulation,
+of the network.
+To choose a given mathematical formulation,
 we need to pass the object `pf` to an [`ExaPF.AbstractFormulation`](@ref) layer.
-Currently, the only layer implemented is the polar formulation,
+Currently, only the the polar formulation is provided
 with the [`ExaPF.PolarForm`](@ref) structure. In the future, other formulations
 (e.g. `RectangularForm`) may be implemented as well.
 
@@ -127,26 +128,34 @@ The algorithm solves at each step the linear equation:
 ```
 Hence, the algorithm requires the following elements:
 
-- an initial position $x_0$
+- an initial variable $x_0$
 - a function to solve efficiently the linear system $(\nabla_x g_k) x_{k+1} = g(x_k, u)$
 - a function to evaluate the Jacobian $\nabla_x g_k$
 
-that translate to the Julia code:
+The variable $x$ is instantiated as:
 ```@repl quickstart
-physical_state = get(polar, ExaPF.PhysicalState());
-ExaPF.init_buffer!(polar, physical_state); # populate values inside buffer
-linear_solver = LS.DirectSolver();
+stack = ExaPF.NetworkStack(polar)
+```
+The function $g$ is implemented using ExaPF's custom modeler:
+```@repl quickstart
+basis = ExaPF.PolarBasis(polar)
+powerflow = ExaPF.PowerFlowBalance(polar) ∘ basis
 ```
 
-We build a Jacobian object storing all structures needed by
-the AutoDiff backend:
+The Jacobian $\nabla_x g$ is evaluated automatically using
+forward-mode AutoDiff:
 ```@repl quickstart
-jx = AutoDiff.Jacobian(polar, ExaPF.power_balance, State())
+mapx = ExaPF.my_map(polar, State());
+jx = ExaPF.Jacobian(polar, powerflow, mapx)
 ```
+The (direct) linear solver can be instantiated directly as
+```@repl quickstart
+linear_solver = LS.DirectSolver(jx.J);
 
+```
 Let's explain further these three objects.
 
-- `physical_state` is a `AbstractPhysicalCache` storing all the physical values
+- `stack` is a `AbstractStack` storing all the variables
   attached to the formulation `polar::PolarForm`.
 - `jx` is a `Jacobian` structure which allows the solver to compute efficiently
   the Jacobian of the powerflow equations $\nabla_x g$ using AutoDiff.
@@ -157,13 +166,13 @@ Let's explain further these three objects.
 In the AutoDiff Jacobian `jx`, the evaluation of the Jacobian ``J``
 is stored in `jx.J`:
 ```@repl quickstart
-jac = jx.J;
+jac = jx.J
 ```
 This matrix is at the basis of the powerflow algorithm. At each
-iteration, the AutoDiff backend updates the values in the Jacobian `jx`,
-then we take the updated matrix `jx.J` to evaluate the
+iteration, the AutoDiff backend updates the nonzero values in the sparse Jacobian `jx`
+and solve the associated linear system to compute the next descent direction.
 
-The procedure is implemented in the `powerflow` function, which
+The procedure is implemented in the `nlsolve!` function, which
 uses a Newton-Raphson algorithm to solve the powerflow equations.
 The Newton-Raphson algorithm is specified as:
 ```@repl quickstart
@@ -172,11 +181,10 @@ pf_algo = NewtonRaphson(; verbose=1, tol=1e-10)
 
 Then, we can solve the powerflow equations simply with
 ```@repl quickstart
-convergence = ExaPF.powerflow(polar, jx, physical_state, pf_algo;
-                              linear_solver=linear_solver)
+convergence = ExaPF.nlsolve!(pf_algo, jx, stack; linear_solver=linear_solver)
 ```
 Here, the algorithm solves the powerflow equations in 5 iterations.
-The algorithm modifies the values of `physical_state` inplace, to
+The algorithm modifies the values of `stack` inplace, to
 avoid any unnecessary memory allocations.
 
 
@@ -193,18 +201,22 @@ polar_gpu = ExaPF.PolarForm(pf, CUDADevice())
 avoid unnecessary movements between the host and the device.
 We can load the other structures directly on the GPU with:
 ```@repl quickstart
-physical_state_gpu = get(polar_gpu, ExaPF.PhysicalState());
-ExaPF.init_buffer!(polar_gpu, physical_state_gpu); # populate values inside buffer
-jx_gpu = AutoDiff.Jacobian(polar_gpu, ExaPF.power_balance, State());
-linear_solver = LS.DirectSolver();
+stack_gpu = ExaPF.NetworkStack(polar_gpu)
+
+basis_gpu = ExaPF.PolarBasis(polar_gpu)
+pflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ basis_gpu
+jx_gpu = ExaPF.Jacobian(polar_gpu, pflow_gpu, mapx)
+
+linear_solver = LS.DirectSolver(jx_gpu.J)
 ```
-Then, solving the powerflow equations on the GPU is straightforward
+Then, solving the powerflow equations on the GPU directly
+translates as
 ```@repl quickstart
-convergence = ExaPF.powerflow(polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
-                              linear_solver=linear_solver)
+convergence = ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=linear_solver)
 ```
 
-Note that we get the same convergence pattern as on the CPU.
+Note that we get exactly the same iterations as when we solve the power
+flow equations on the CPU.
 
 
 ### How to solve the linear system with BICGSTAB?
@@ -215,14 +227,14 @@ a wrapper for different iterative algorithms (GMRES, BICGSTAB).
 
 The performance of iterative solvers is usually improved if we use
 a preconditioner.
-`ExaPF.jl` implements a block-Jacobi preconditioner, tailored
+`ExaPF.jl` implements an overlapping Schwarz preconditioner, tailored
 for GPU usage. To build an instance with 8 blocks, just write
 ```@repl quickstart
 npartitions = 8;
 jac_gpu = jx_gpu.J;
 precond = LS.BlockJacobiPreconditioner(jac_gpu, npartitions, CUDADevice());
 ```
-You can define an iterative solver preconditioned with `precond` simply as:
+You can attach the preconditioner to an BICGSTAB algorithm simply as
 ```@repl quickstart
 linear_solver = ExaPF.KrylovBICGSTAB(jac_gpu; P=precond);
 
@@ -230,15 +242,18 @@ linear_solver = ExaPF.KrylovBICGSTAB(jac_gpu; P=precond);
 (this will use the BICGSTAB algorithm implemented in
 [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl/)).
 
-We need to update accordingly the tolerance of the Newton-Raphson algorithm,
-as it can not be below the tolerance of the iterative solver.
+We need to update accordingly the tolerance of the Newton-Raphson algorithm
+(the iterative solver is less accurate than the direct solver):
 ```@repl quickstart
 pf_algo = NewtonRaphson(; verbose=1, tol=1e-7)
 ```
 
-Solving the same problem with a different linear solver requires resetting the initial value and the saved solution.
+We reset the variables to their initial values:
 ```@repl quickstart
-ExaPF.init_buffer!(polar_gpu, physical_state_gpu)
-convergence = ExaPF.powerflow(polar_gpu, jx_gpu, physical_state_gpu, pf_algo;
-                              linear_solver=linear_solver)
+ExaPF.init!(polar_gpu, stack_gpu)
+```
+Then, solving the power flow with the iterative solvers
+directly translates to one call to `nlsolve!`:
+```@repl quickstart
+convergence = ExaPF.nlsolve!(pf_algo, jx_gpu, stack_gpu; linear_solver=linear_solver)
 ```
