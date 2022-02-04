@@ -23,7 +23,7 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
     @test isapprox(S, pf.sbus)
 
     polar = PolarForm(pf, CPU())
-    mapx = ExaPF.my_map(polar, State())
+    mapx = ExaPF.mapping(polar, State())
     stack = ExaPF.NetworkStack(polar)
     # solve power flow
     convergence = ExaPF.run_pf(polar, stack)

@@ -40,9 +40,8 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
     basis = ExaPF.PolarBasis(polar)
     # Powerflow function
     pflow = ExaPF.PowerFlowBalance(polar) ∘ basis
-    mapx = ExaPF.my_map(polar, State())
     # AD for Jacobian
-    jx = ExaPF.Jacobian(polar, pflow, mapx)
+    jx = ExaPF.Jacobian(polar, pflow, State())
     # Linear solver
     linear_solver = LS.DirectSolver(jx.J)
     # Powerflow solver

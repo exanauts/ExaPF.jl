@@ -3,10 +3,13 @@ function test_polar_stack(polar, device, M)
     nbus = get(polar, PS.NumberOfBuses())
     nlines = get(polar, PS.NumberOfLines())
 
-    mapu = ExaPF.my_map(polar, Control()) |> M
+    mapx = ExaPF.mapping(polar, State()) |> M
+    mapu = ExaPF.mapping(polar, Control()) |> M
     u0 = rand(length(mapu)) |> M
     stack = ExaPF.NetworkStack(polar)
 
+    # Test display
+    println(devnull, stack)
     # By defaut, values are equal to 0
     @test isa(stack.input, M)
     @test isa(stack.vmag, M)
@@ -14,6 +17,12 @@ function test_polar_stack(polar, device, M)
     # Copty control u0 inside cache
     copyto!(stack, mapu, u0)
     @test stack.input[mapu] == u0
+
+    # Get state
+    nx = length(mapx)
+    x = similar(u0, nx)
+    copyto!(x, stack, mapx)
+    @test stack.input[mapx] == x
 
     # Test that all attributes have valid length
     @test length(stack.vang) == length(stack.vmag) == nbus
@@ -63,6 +72,9 @@ function test_polar_api(polar, device, M)
     cost_production = ExaPF.CostFunction(polar)
     c2 = CUDA.@allowscalar cost_production(stack)[1]
     @test isa(c2, Real)
+    # Test display
+    println(devnull, cost_production)
+    println(devnull, basis)
     return nothing
 end
 
@@ -71,7 +83,7 @@ function test_polar_constraints(polar, device, M)
     basis  = ExaPF.PolarBasis(polar)
 
     io = devnull
-    vpq = ExaPF.VoltageMagnitudePQ(polar)
+    vpq = ExaPF.VoltageMagnitudeBounds(polar)
     pgb = ExaPF.PowerGenerationBounds(polar)
     lfw = ExaPF.LineFlows(polar)
     pfb = ExaPF.PowerFlowBalance(polar)
@@ -107,7 +119,6 @@ function test_polar_powerflow(polar, device, M)
     SMT = ExaPF.default_sparse_matrix(polar.device)
     # Init structures
     stack = ExaPF.NetworkStack(polar)
-    mapx = ExaPF.my_map(polar, State())
     pf_solver = NewtonRaphson(tol=1e-6)
     npartitions = 8
 
@@ -115,22 +126,19 @@ function test_polar_powerflow(polar, device, M)
     pflow = ExaPF.PowerFlowBalance(polar)
     n = length(pflow)
 
-    # Get reduced space Jacobian on the CPU
-    J = ExaPF.jacobian_sparsity(polar, pflow)
-    J = J[:, mapx]
+    # Init AD
+    jx = ExaPF.Jacobian(polar, pflow ∘ basis, State())
+    J = jx.J
+    @test isa(J, SMT)
+    J_host = SparseMatrixCSC(J)
 
-    @test n == size(J, 1) == length(mapx)
+    @test n == size(J, 1) == ExaPF.number(polar, State())
 
     # Build preconditioner
-    precond = LS.BlockJacobiPreconditioner(J, npartitions, device)
-
-    J_gpu = J |> SMT
-
-    # Init AD
-    jx = ExaPF.Jacobian(polar, pflow ∘ basis, mapx)
+    precond = LS.BlockJacobiPreconditioner(J_host, npartitions, device)
 
     @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
-        algo = LinSolver(J_gpu; P=precond)
+        algo = LinSolver(J; P=precond)
         ExaPF.init!(polar, stack)
         convergence = ExaPF.nlsolve!(
             pf_solver, jx, stack; linear_solver=algo)

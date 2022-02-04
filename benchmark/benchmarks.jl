@@ -40,13 +40,12 @@ function run_benchmark(datafile, device, linsolver)
     ntol = 1e-6
     pf = PowerSystem.PowerNetwork(datafile)
     polar = PolarForm(pf, device)
-    mapx = ExaPF.my_map(polar, State())
-    nx = length(mapx)
+    nx = ExaPF.number(polar, State())
     stack = ExaPF.NetworkStack(polar)
 
     basis = ExaPF.PolarBasis(polar)
     pflow = ExaPF.PowerFlowBalance(polar)
-    jx = ExaPF.Jacobian(polar, pflow ∘ basis, mapx)
+    jx = ExaPF.Jacobian(polar, pflow ∘ basis, State())
     J = jx.J
     npartitions = ceil(Int64,(size(jx.J,1)/64))
     if npartitions < 2

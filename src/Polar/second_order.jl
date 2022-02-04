@@ -60,6 +60,15 @@ function hprod!(
     return
 end
 
+function _hessian_sparsity(polar::PolarForm, func)
+    m = length(func)
+    nbus = get(polar, PS.NumberOfBuses())
+    Vre = Float64[i for i in 1:nbus]
+    Vim = Float64[i for i in nbus+1:2*nbus]
+    V = Vre .+ im .* Vim
+    y = rand(m)
+    return matpower_hessian(polar, func, V, y)
+end
 
 struct FullHessian{Model, Func, VD, SMT, VI, Buff} <: AutoDiff.AbstractFullHessian
     model::Model
@@ -75,8 +84,8 @@ struct FullHessian{Model, Func, VD, SMT, VI, Buff} <: AutoDiff.AbstractFullHessi
     H::SMT
 end
 
-function get_hessian_colors(polar::PolarForm, func::AutoDiff.AbstractExpression, map::Vector{Int})
-    H = hessian_sparsity(polar, func)::SparseMatrixCSC
+function _get_hessian_colors(polar::PolarForm, func::AutoDiff.AbstractExpression, map::Vector{Int})
+    H = _hessian_sparsity(polar, func)::SparseMatrixCSC
     Hsub = H[map, map] # reorder
     colors = AutoDiff.SparseDiffTools.matrix_colors(Hsub)
     return (Hsub, colors)
@@ -95,7 +104,7 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     nmap = length(map)
     map_device = map |> VI
 
-    H_host, coloring = get_hessian_colors(polar, func, map)
+    H_host, coloring = _get_hessian_colors(polar, func, map)
     ncolors = length(unique(coloring))
     VD = A{ForwardDiff.Dual{Nothing, Float64, ncolors}}
 

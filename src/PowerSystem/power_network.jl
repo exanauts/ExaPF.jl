@@ -170,6 +170,12 @@ function get(pf::PowerNetwork, ::ReactivePower)
     return pf.generators[:, QG] ./ pf.baseMVA
 end
 
+function has_multiple_generators(pf::PowerNetwork)
+    GEN_BUS = IndexSet.idx_gen()[1]
+    ngens = size(pf.generators, 1)
+    nbuses = length(unique(pf.generators[:, GEN_BUS]))
+    return ngens > nbuses
+end
 has_inactive_generators(pf::PowerNetwork) = any(isequal(0), view(pf.generators, :, 8))
 active_generators(pf::PowerNetwork) = findall(isequal(1), view(pf.generators, :, 8))
 inactive_generators(pf::PowerNetwork) = findall(isequal(0), view(pf.generators, :, 8))

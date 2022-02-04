@@ -121,7 +121,6 @@ function bounds(polar::PolarForm{T, VI, VT, MT}, stack::NetworkStack) where {T, 
     return convert(VT, lb), convert(VT, ub)
 end
 
-
 "Get complex voltage from `NetworkStack`."
 voltage(buf::NetworkStack) = buf.vmag .* exp.(im .* buf.vang)
 voltage_host(buf::NetworkStack) = voltage(buf) |> Array
@@ -457,7 +456,7 @@ end
 
 
 """
-    VoltageMagnitudePQ
+    VoltageMagnitudeBounds
 
 Implement the bounds on voltage magnitudes not
 taken into account in the bound constraints. In
@@ -477,29 +476,29 @@ In the reduced space, the constraints on the voltage magnitudes at PV nodes ``v_
 are taken into account when bounding the control ``u``.
 
 """
-struct VoltageMagnitudePQ <: AutoDiff.AbstractExpression
+struct VoltageMagnitudeBounds <: AutoDiff.AbstractExpression
     pq::Vector{Int}
 
 end
-VoltageMagnitudePQ(polar::PolarForm) = VoltageMagnitudePQ(polar.network.pq)
+VoltageMagnitudeBounds(polar::PolarForm) = VoltageMagnitudeBounds(polar.network.pq)
 
-Base.length(func::VoltageMagnitudePQ) = length(func.pq)
+Base.length(func::VoltageMagnitudeBounds) = length(func.pq)
 
-function (func::VoltageMagnitudePQ)(cons::AbstractArray, stack::AutoDiff.AbstractStack)
+function (func::VoltageMagnitudeBounds)(cons::AbstractArray, stack::AutoDiff.AbstractStack)
     cons .= stack.vmag[func.pq]
 end
 
-function adjoint!(func::VoltageMagnitudePQ, ∂stack, stack, ∂v)
+function adjoint!(func::VoltageMagnitudeBounds, ∂stack, stack, ∂v)
     ∂stack.vmag[func.pq] .+= ∂v
 end
 
-function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudePQ) where {T,VI,VT,MT}
+function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudeBounds) where {T,VI,VT,MT}
     v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
     return convert(VT, v_min[func.pq]), convert(VT, v_max[func.pq])
 end
 
-function Base.show(io::IO, func::VoltageMagnitudePQ)
-    print(io, "VoltageMagnitudePQ (AbstractExpression)")
+function Base.show(io::IO, func::VoltageMagnitudeBounds)
+    print(io, "VoltageMagnitudeBounds (AbstractExpression)")
 end
 
 

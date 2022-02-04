@@ -29,7 +29,7 @@ function matpower_jacobian(polar::PolarForm, func::PowerFlowBalance, V)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_jacobian(polar::PolarForm, func::VoltageMagnitudePQ, V)
+function matpower_jacobian(polar::PolarForm, func::VoltageMagnitudeBounds, V)
     pf = polar.network
     ngen = pf.ngen
     nbus = pf.nbus
@@ -220,7 +220,7 @@ function matpower_hessian(polar::PolarForm, func::PowerGenerationBounds, V, λ)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_hessian(polar::PolarForm, func::VoltageMagnitudePQ, V, λ)
+function matpower_hessian(polar::PolarForm, func::VoltageMagnitudeBounds, V, λ)
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
     n = 2*nbus + ngen
@@ -251,14 +251,4 @@ function matpower_hessian(polar::PolarForm, func::MultiExpressions, V, λ)
     return H
 end
 matpower_hessian(polar::PolarForm, func::ComposedExpressions, V, y) = matpower_hessian(polar, func.outer, V, y)
-
-function hessian_sparsity(polar::PolarForm, func)
-    m = length(func)
-    nbus = get(polar, PS.NumberOfBuses())
-    Vre = Float64[i for i in 1:nbus]
-    Vim = Float64[i for i in nbus+1:2*nbus]
-    V = Vre .+ im .* Vim
-    y = rand(m)
-    return matpower_hessian(polar, func, V, y)
-end
 

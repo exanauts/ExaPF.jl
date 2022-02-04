@@ -160,7 +160,7 @@ function ldiv!(solver::BICGSTAB,
     y[:], n_iters, status = bicgstab(J, x, solver.precond, y; maxiter=solver.maxiter,
                                      verbose=solver.verbose, tol=solver.tol)
     if status != Converged
-        @warn("BICGSTAB failed to converge. Final status is $(status)")
+        error("BICGSTAB failed to converge. Final status is $(status)")
     end
     return n_iters
 end
