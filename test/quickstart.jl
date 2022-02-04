@@ -81,7 +81,7 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
         basis_gpu = ExaPF.PolarBasis(polar_gpu)
         pflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ basis_gpu
-        jx_gpu = ExaPF.Jacobian(polar_gpu, pflow_gpu, mapx)
+        jx_gpu = ExaPF.Jacobian(polar_gpu, pflow_gpu, State())
 
         linear_solver = LS.DirectSolver(jx_gpu.J)
 
