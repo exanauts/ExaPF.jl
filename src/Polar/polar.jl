@@ -48,8 +48,13 @@ function my_map(polar::PolarForm, ::Control)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ref, pv, pq = pf.ref, pf.pv, pf.pq
-    pv2gen = polar.network.pv2gen
-    return Int[ref; pv; 2*nbus .+ pv2gen]
+    genidx = Int[]
+    for (idx, b) in enumerate(pf.gen2bus)
+        if b != ref[1]
+            push!(genidx, idx)
+        end
+    end
+    return Int[ref; pv; 2*nbus .+ genidx]
 end
 
 function Base.show(io::IO, polar::PolarForm)

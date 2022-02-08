@@ -33,8 +33,18 @@ end
 
 function test_polar_api(polar, device, M)
     pf = polar.network
+    npv, npq, nref = length(pf.pv), length(pf.pq), length(pf.ref)
+    ngen = pf.ngen
+
     tolerance = 1e-8
     nx = ExaPF.number(polar, State())
+    nu = ExaPF.number(polar, Control())
+    # Test mapping
+    mapx = ExaPF.my_map(polar, State())
+    mapu = ExaPF.my_map(polar, Control())
+    @test length(mapx) == nx == npv + 2*npq
+    @test length(mapu) == nu == npv + nref + ngen - 1
+
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
     power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
