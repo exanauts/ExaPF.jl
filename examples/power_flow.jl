@@ -33,7 +33,7 @@ polar = ExaPF.PolarForm(casefile, localdevice)
 # Load variables
 stack = ExaPF.NetworkStack(polar)
 # Mapping associated to the state
-mapx = ExaPF.my_map(polar, State())
+mapx = ExaPF.mapping(polar, State())
 # Power flow solver
 pf_solver = NewtonRaphson(tol=1e-6, verbose=2)
 # Expressions

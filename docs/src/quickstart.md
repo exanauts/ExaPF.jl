@@ -145,7 +145,7 @@ powerflow = ExaPF.PowerFlowBalance(polar) ∘ basis
 The Jacobian $\nabla_x g$ is evaluated automatically using
 forward-mode AutoDiff:
 ```@repl quickstart
-mapx = ExaPF.my_map(polar, State());
+mapx = ExaPF.mapping(polar, State());
 jx = ExaPF.Jacobian(polar, powerflow, mapx)
 ```
 The (direct) linear solver can be instantiated directly as
