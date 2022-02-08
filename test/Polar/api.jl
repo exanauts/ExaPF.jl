@@ -49,8 +49,8 @@ function test_polar_api(polar, device, M)
     nx = ExaPF.number(polar, State())
     nu = ExaPF.number(polar, Control())
     # Test mapping
-    mapx = ExaPF.my_map(polar, State())
-    mapu = ExaPF.my_map(polar, Control())
+    mapx = ExaPF.mapping(polar, State())
+    mapu = ExaPF.mapping(polar, Control())
     @test length(mapx) == nx == npv + 2*npq
     @test length(mapu) == nu == npv + nref + ngen - 1
 
