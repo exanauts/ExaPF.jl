@@ -3,7 +3,6 @@ using ExaPF
 using KernelAbstractions
 using Test
 using Printf
-using TimerOutputs
 
 import ExaPF: PowerSystem, LinearSolvers, AutoDiff
 
@@ -14,27 +13,6 @@ import ExaPF: PowerSystem, LinearSolvers, AutoDiff
 # push!(ARGS, "CPU")
 # push!(ARGS, "case300.m")
 # push!(ARGS, "caseGO30R-025.raw")
-
-
-# We do need the time in ms, and not with time units all over the place
-function TimerOutputs.prettytime(t)
-    value = t / 1e6 # "ms"
-
-    if round(value) >= 100
-        str = string(@sprintf("%.0f", value))
-    elseif round(value * 10) >= 100
-        str = string(@sprintf("%.1f", value))
-    elseif round(value * 100) >= 100
-        str = string(@sprintf("%.2f", value))
-    else
-        str = string(@sprintf("%.3f", value))
-    end
-    return lpad(str, 6, " ")
-end
-
-function printtimer(timers, key::String)
-   TimerOutputs.prettytime(timers[key].accumulated_data.time)
-end
 
 function run_benchmark(datafile, device, linsolver)
     ntol = 1e-6
