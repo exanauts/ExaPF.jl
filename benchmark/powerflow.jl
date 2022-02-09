@@ -1,7 +1,6 @@
 using ExaPF
 using Printf
 using SparseArrays
-using TimerOutputs
 import ExaPF: LinearSolvers
 const LS = LinearSolvers
 
