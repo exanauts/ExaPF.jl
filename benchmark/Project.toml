@@ -1,0 +1,9 @@
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CUDAKernels = "72cfdca4-0801-4ab0-bf6a-d52aa10adc57"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+ExaPF = "0cf0e50c-a82e-488f-ac7e-41ffdff1b8aa"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
+LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"

@@ -1,0 +1,23 @@
+{
+    "cpu": {
+        "case1354pegase.m": {
+            "overlaps": [0],
+            "exclude": []
+        },
+        "case9241pegase.m": {
+            "overlaps": [0],
+            "exclude": ["bicgstab"]
+        }
+    },
+    "cuda": {
+        "case1354pegase.m": {
+            "overlaps": [0, 1, 2],
+            "exclude": []
+        },
+        "case9241pegase.m": {
+            "overlaps": [0, 1, 2],
+            "exclude": []
+        }
+    }
+}
+

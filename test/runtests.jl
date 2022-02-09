@@ -30,6 +30,7 @@ end
 # Load test modules
 @isdefined(TestLinearSolvers)    || include("TestLinearSolvers.jl")
 @isdefined(TestPolarFormulation) || include("Polar/TestPolarForm.jl")
+@isdefined(ExaBenchmark)         || include(joinpath(BENCHMARK_DIR, "benchmarks.jl"))
 
 init_time = time()
 @testset "Test ExaPF" begin
@@ -68,13 +69,11 @@ init_time = time()
 
     include("quickstart.jl")
 
-    @testset "Test Benchmark script" begin
-        empty!(ARGS)
-        push!(ARGS, "KrylovBICGSTAB")
-        push!(ARGS, "CPU")
-        push!(ARGS, joinpath(INSTANCES_DIR, "case300.m"))
-        include(joinpath(BENCHMARK_DIR, "benchmarks.jl"))
+    @testset "Benchmark" begin
+        @info("Test benchmark suite")
+        ExaBenchmark.benchmark("case30.m", CPU())
     end
+    println()
 end
 println("TOTAL RUNNING TIME: $(round(time() - init_time; digits=1)) seconds.")
 
