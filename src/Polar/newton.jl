@@ -37,6 +37,17 @@ struct ConvergenceStatus
     n_iterations::Int
     norm_residuals::Float64
     n_linear_solves::Int
+    time_jacobian::Float64
+    time_linear_solver::Float64
+    time_total::Float64
+end
+
+function Base.show(io::IO, conv::ConvergenceStatus)
+    println(io, "Power flow has converged: ", conv.has_converged)
+    @printf(io, "  * #iterations: %d\n", conv.n_iterations)
+    @printf(io, "  * Time Jacobian (s) ........: %1.4f\n", conv.time_jacobian)
+    @printf(io, "  * Time linear solver (s) ...: %1.4f\n", conv.time_linear_solver)
+    @printf(io, "  * Time total (s) ...........: %1.4f\n", conv.time_total)
 end
 
 struct NLBuffer{VT}
@@ -95,6 +106,9 @@ function nlsolve!(
     converged = false
     normF = Inf
     linsol_iters = Int[]
+    time_total = 0.0
+    time_jacobian = 0.0
+    time_linear_solver = 0.0
 
     map = jac.map
     x = view(stack.input, map)
@@ -104,8 +118,11 @@ function nlsolve!(
     residual = nl_buffer.y
     Δx = nl_buffer.x
 
+    tic = time()
     for i in 1:algo.maxiter
-        J = jacobian!(jac, stack)
+        time_jacobian += @elapsed begin
+            J = jacobian!(jac, stack)
+        end
         copyto!(residual, stridedF)
 
         normF = xnorm(residual)
@@ -118,14 +135,19 @@ function nlsolve!(
         end
 
         # Update
-        LS.update!(linear_solver, J)
-        n_iters = LS.ldiv!(linear_solver, Δx, J, residual)
+        time_linear_solver += @elapsed begin
+            LS.update!(linear_solver, J)
+            n_iters = LS.ldiv!(linear_solver, Δx, J, residual)
+        end
         x .= x .- Δx
         push!(linsol_iters, n_iters)
 
         iter += 1
     end
-    return ConvergenceStatus(converged, iter, normF, sum(linsol_iters))
+    time_total = time() - tic
+    return ConvergenceStatus(
+        converged, iter, normF, sum(linsol_iters), time_jacobian, time_linear_solver, time_total,
+    )
 end
 
 """
