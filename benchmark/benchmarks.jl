@@ -1,7 +1,6 @@
 module ExaBenchmark
 
 using Printf
-using Dates
 # GPU
 using CUDA
 using KernelAbstractions
@@ -370,7 +369,7 @@ function benchmark(
 
         bench_name = split(name, '_')[end]
         instance_name = split(casename, '.')[1]
-        outputfile = joinpath(outputdir, "$(bench_name)_$(instance_name)_$(today())$(ext)")
+        outputfile = joinpath(outputdir, "$(bench_name)_$(instance_name)$(ext)")
         write_csv(outputfile, res)
     end
 end
