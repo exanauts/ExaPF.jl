@@ -1,7 +1,5 @@
 module TestPolarFormulation
 
-@eval Base.Experimental.@optlevel 0
-
 using Test
 
 using CUDA

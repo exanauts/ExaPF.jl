@@ -49,20 +49,30 @@ function test_all_linear_solvers(device, AT, SMT)
     x = similar(b); r = similar(b)
     # Init preconditioner
     nblocks = 2
-    precond = LS.BlockJacobiPreconditioner(A; nblocks=nblocks, device=device)
-    LS.update(precond, A, device)
-    @testset "Linear solver $LinearSolver" for LinearSolver in ExaPF.list_solvers(device)
-        algo = LinearSolver(A; P=precond)
-        fill!(x, 0.0)
-        n_iters = LS.ldiv!(algo, x, A, b)
-        @test n_iters <= m
-        @test x ≈ x♯ atol=1e-6
+    for olevel in [0, 1]
+        precond = LS.BlockJacobiPreconditioner(A; nblocks=nblocks, device=device, noverlaps=olevel)
+        # Test printing
+        println(devnull, precond)
+        LS.update(precond, A, device)
+        @testset "Linear solver $LinearSolver" for LinearSolver in ExaPF.list_solvers(device)
+            algo = LinearSolver(A; P=precond)
+            fill!(x, 0.0)
+            n_iters = LS.ldiv!(algo, x, A, b)
+            @test n_iters <= m
+            @test x ≈ x♯ atol=1e-6
+        end
     end
 end
 
 function runtests(device, AT, SMT)
-    test_custom_bicgstab(device, AT, SMT)
-    test_all_linear_solvers(device, AT, SMT)
+    for name_sym in names(@__MODULE__; all = true)
+        name = string(name_sym)
+        if !startswith(name, "test_")
+            continue
+        end
+        test_func = getfield(@__MODULE__, name_sym)
+        test_func(device, AT, SMT)
+    end
 end
 
 end

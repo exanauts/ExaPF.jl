@@ -28,6 +28,7 @@ if CUDA.has_cuda()
 end
 
 # Load test modules
+@isdefined(TestKernels)          || include("TestKernels.jl")
 @isdefined(TestLinearSolvers)    || include("TestLinearSolvers.jl")
 @isdefined(TestPolarFormulation) || include("Polar/TestPolarForm.jl")
 
@@ -37,6 +38,11 @@ init_time = time()
         @info "Test PowerSystem submodule ..."
         tic = time()
         include("powersystem.jl")
+        println("Took $(round(time() - tic; digits=1)) seconds.")
+
+        @info "Test kernels ..."
+        tic = time()
+        TestKernels.runtests(CPU(), Array, SparseMatrixCSC)
         println("Took $(round(time() - tic; digits=1)) seconds.")
 
         @info "Compare power flow with MATPOWER ..."

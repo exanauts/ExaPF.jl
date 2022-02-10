@@ -164,14 +164,14 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
     end
 end
 
-function BlockJacobiPreconditioner(J::SparseMatrixCSC; nblocks=-1, device=CPU())
+function BlockJacobiPreconditioner(J::SparseMatrixCSC; nblocks=-1, device=CPU(), noverlaps=0)
     n = size(J, 1)
     npartitions = if nblocks > 0
         nblocks
     else
         div(n, 32)
     end
-    return BlockJacobiPreconditioner(J, npartitions, device)
+    return BlockJacobiPreconditioner(J, npartitions, device, noverlaps)
 end
 BlockJacobiPreconditioner(J::CUSPARSE.CuSparseMatrixCSR; options...) = BlockJacobiPreconditioner(SparseMatrixCSC(J); options...)
 

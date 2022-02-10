@@ -32,16 +32,6 @@ CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = CuSpar
 
 # AbstractStack
 
-@kernel function _transfer_to_input!(input, map, src)
-    i = @index(Global, Linear)
-    input[map[i]] = src[i]
-end
-
-@kernel function _transfer_fr_input!(dest, input, map)
-    i = @index(Global, Linear)
-    dest[i] = input[map[i]]
-end
-
 function Base.copyto!(stack::AutoDiff.AbstractStack, map::AbstractVector{Int}, vals::VT) where {VT <: CuArray}
     @assert length(map) == length(vals)
     ndrange = (length(map),)
@@ -56,30 +46,6 @@ function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack, map::AbstractVect
     wait(ev)
 end
 
-#=
-    LinearSolvers
-=#
-function csclsvqr!(A::CUSPARSE.CuSparseMatrixCSC{Float64},
-                    b::CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer},
-                    x::CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer},
-                    tol::Float64,
-                    reorder::Cint,
-                    inda::Char)
-    n = size(A,1)
-    desca = CUSPARSE.CuMatrixDescriptor(
-        CUSPARSE.CUSPARSE_MATRIX_TYPE_GENERAL,
-        CUSPARSE.CUSPARSE_FILL_MODE_LOWER,
-        CUSPARSE.CUSPARSE_DIAG_TYPE_NON_UNIT, inda)
-    singularity = Ref{Cint}(1)
-    CUSOLVER.cusolverSpDcsrlsvqr(CUSOLVER.sparse_handle(), n, A.nnz, desca, A.nzVal, A.colPtr, A.rowVal, b, tol, reorder, x, singularity)
-
-    if singularity[] != -1
-        throw(SingularException(singularity[]))
-    end
-
-    x
-end
-
 # By default, no factorization routine is available
 LinearSolvers.update!(s::DirectSolver{Nothing}, J::CuSparseMatrixCSR) = nothing
 function LinearSolvers.ldiv!(::DirectSolver{Nothing},
@@ -88,43 +54,12 @@ function LinearSolvers.ldiv!(::DirectSolver{Nothing},
     CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0
 end
-function LinearSolvers.ldiv!(::DirectSolver{Nothing},
-    y::CUDA.CuVector, J::CUSPARSE.CuSparseMatrixCSC, x::CUDA.CuVector,
-)
-    csclsvqr!(J, x, y, 1e-8, one(Cint), 'O')
-    return 0
-end
-
-#=
-    Autodiff
-=#
-
-@kernel function _extract_values_kernel(dest, src)
-    i = @index(Global, Linear)
-    dest[i] = src[i].value
-end
-
-function extract_values!(dest::CuArray, src::CuArray)
-    ndrange = (length(dest),)
-    ev = _extract_values_kernel(CUDADevice())(dest, src, ndrange=ndrange)
-    wait(ev)
-end
 
 #=
     Generic SpMV for CuSparseMatrixCSR
 =#
 function ForwardDiff.npartials(vec::CuVector{ForwardDiff.Dual{T, V, N}}) where {T, V, N}
     return N
-end
-
-# Differentiable LinearAlgebra.mul! for ForwardDiff
-@kernel function _spmv_csr_kernel!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
-    i, k = @index(Global, NTuple)
-    Y[k, i] *= beta
-    @inbounds for c in rowPtr[i]:rowPtr[i+1]-1
-        j = colVal[c]
-        Y[k, i] += alpha * nzVal[c] * X[k, j]
-    end
 end
 
 function LinearAlgebra.mul!(

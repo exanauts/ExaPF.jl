@@ -80,9 +80,7 @@ any nonlinear constraint ``h(x)``.
 """
 abstract type AbstractJacobian end
 
-function jacobian!(jac::AbstractJacobian, stack::AbstractStack)
-    error("Mising method jacobian!(", typeof(jac), ", ", typeof(stack), ")")
-end
+function jacobian! end
 
 """
     AbstractHessianProd
@@ -205,20 +203,20 @@ end
 
 # Sparse Jacobian partials
 
-@kernel function partials_kernel_gpu!(@Const(J_rowPtr), @Const(J_colVal), J_nzVal, @Const(duals), @Const(coloring))
+@kernel function partials_kernel_csr!(@Const(J_rowPtr), @Const(J_colVal), J_nzVal, @Const(duals), @Const(coloring))
     i = @index(Global, Linear)
 
-    @inbounds for j in J_rowPtr[i]:J_rowPtr[i+1]-1
-        @inbounds J_nzVal[j] = duals[coloring[J_colVal[j]]+1, i]
+    for j in J_rowPtr[i]:J_rowPtr[i+1]-1
+        J_nzVal[j] = duals[coloring[J_colVal[j]]+1, i]
     end
 end
 
-@kernel function partials_kernel_cpu!(J_colptr, J_rowval, J_nzval, duals, coloring)
+@kernel function partials_kernel_csc!(J_colptr, J_rowval, J_nzval, duals, coloring)
     # CSC is column oriented: nmap is equal to number of columns
     i = @index(Global, Linear)
 
-    @inbounds for j in J_colptr[i]:J_colptr[i+1]-1
-        @inbounds J_nzval[j] = duals[coloring[i]+1, J_rowval[j]]
+    for j in J_colptr[i]:J_colptr[i+1]-1
+        J_nzval[j] = duals[coloring[i]+1, J_rowval[j]]
     end
 end
 
@@ -240,10 +238,10 @@ function partials!(jac::AbstractJacobian)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     if isa(device, CPU)
-        kernel! = partials_kernel_cpu!(device)
+        kernel! = partials_kernel_csc!(device)
         ev = kernel!(J.colptr, J.rowval, J.nzval, duals_, coloring, ndrange=size(J,2), dependencies=Event(device))
     elseif isa(device, GPU)
-        kernel! = partials_kernel_gpu!(device)
+        kernel! = partials_kernel_csr!(device)
         ev = kernel!(J.rowPtr, J.colVal, J.nzVal, duals_, coloring, ndrange=size(J,1), dependencies=Event(device))
     else
         error("Unknown device $device")
