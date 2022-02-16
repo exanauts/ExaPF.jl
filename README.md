@@ -9,7 +9,7 @@ ExaPF is a HPC package implementing a vectorized modeler
 for power systems. It targets primarily GPU architectures, and provides a portable abstraction to model power system on upcoming HPC architectures.
 
 Its main features are:
-* **Portable approach:** All expressions are evaluated fully on the GPU, without data transfers to the host.
+* **Portable approach:** All [expressions](https://exanauts.github.io/ExaPF.jl/dev/lib/formulations/#Constraints) (`PowerFlowBalance`, `CostFunction`, `PowerGenerationBounds`, ...) are evaluated fully on the GPU, without data transfers to the host.
 * **Differentiable kernels:** All the expressions are differentiable with [ForwardDiff.jl](https://github.com/JuliaDiff/ForwardDiff.jl). ExaPF uses matrix coloring to generate efficiently the Jacobian and the Hessian in sparse format.
 * **Power flow solver:** ExaPF implements a power flow solver working fully on the GPU, based on a Newton-Raphson algorithm.
 * **Iterative linear algebra:** ExaPF uses [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl) to solve sparse linear systems entirely on the GPU, together with an overlapping Schwarz preconditioner.
@@ -33,7 +33,7 @@ pkg> test ExaPF
 
 ### How to solve the power flow of a given MATPOWER instance?
 
-ExaPF solves the power flow equations of any power network with a Newton-Raphson algorithm:
+ExaPF solves the power flow equations of a power network with a Newton-Raphson algorithm:
 
 ```julia
 # Input file
@@ -76,7 +76,6 @@ This research was supported by the Exascale Computing Project (17-SC-20-SC), a j
 
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
-[docs-stable-url]: https://exanauts.github.io/ExaPF.jl/
 [docs-stable-url]: https://exanauts.github.io/ExaPF.jl/
 
 [codecov-stable-img]: https://codecov.io/gh/exanauts/ExaPF.jl/branch/master/graphs/badge.svg?branch=master
