@@ -5,15 +5,19 @@
 | [![][docs-stable-img]][docs-stable-url] | [![][build-stable-img]][build-url] | [![][build-latest-img]][build-url]  |
 | | [![][codecov-stable-img]][codecov-stable-url] | [![][codecov-latest-img]][codecov-latest-url]  |
 
-ExaPF is a HPC package for solving power flow (PF) on a GPU. It currently solves PF using the Newton-Raphson algorithm on NVIDIA GPUs.
+ExaPF is a HPC package implementing a vectorized modeler
+for power systems. It targets primarily GPU architectures, and provides a portable abstraction to model power system on upcoming HPC architectures.
+
 Its main features are:
+* **Portable approach:** All expressions are evaluated fully on the GPU, without data transfers to the host.
+* **Differentiable kernels:** All the expressions are differentiable with [ForwardDiff.jl](https://github.com/JuliaDiff/ForwardDiff.jl). ExaPF uses matrix coloring to generate efficiently the Jacobian and the Hessian in sparse format.
+* **Power flow solver:** ExaPF implements a power flow solver working fully on the GPU, based on a Newton-Raphson algorithm.
+* **Iterative linear algebra:** ExaPF uses [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl) to solve sparse linear systems entirely on the GPU, together with an overlapping Schwarz preconditioner.
 
-* Using [CUDA.jl](https://juliagpu.gitlab.io/CUDA.jl/) CuArrays arrays for generating CUDA kernels using the broadcast '.' operator.
-* Using [ForwardDiff.jl](https://github.com/JuliaDiff/ForwardDiff.jl) and Jacobian coloring to generate the compressed Jacobian of the PF equations. The Jacobian evaluation is taking place fully on the GPU.
-* Preconditioned BICGSTAB with support for [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl).
-* A block Jacobi preconditioner that updates on the GPU.
-
-This code will serve as the basis for OPF on GPUs using the reduced gradient method. A similar abstraction than CuArrays will be used to port the code to AMD ROCm and Intel oneAPI through [AMDGPU.jl](https://github.com/JuliaGPU/AMDGPU.jl) and [oneAPI.jl](https://github.com/JuliaGPU/oneAPI.jl), respectively.
+ExaPF leverages [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl)
+to generate portable kernels working on different backends.
+Right now, only CUDA is fully supported, but in the medium term we have good hope to support
+both [AMD ROCm](https://github.com/JuliaGPU/AMDGPU.jl) and [Intel oneAPI](https://github.com/JuliaGPU/oneAPI.jl).
 
 ## Quick-start
 ### Installation
@@ -29,25 +33,35 @@ pkg> test ExaPF
 
 ### How to solve the power flow of a given MATPOWER instance?
 
-ExaPF implements a Newton-Raphson algorithm to solve
-the power flow equations of a power network.
+ExaPF solves the power flow equations of any power network with a Newton-Raphson algorithm:
 
 ```julia
 # Input file
 julia> case = "case57.m"
 # Instantiate a PolarForm object on the CPU.
+# (Replace CPU() by CUDADevice() to deport computation on a CUDA GPU)
 julia> polar = ExaPF.PolarForm(case, CPU())
-# Instantiate a Newton-Raphson algorithm with verbose activated
-julia> pf_algo = NewtonRaphson(verbose=1)
-# Resolution
-julia> ExaPF.powerflow(polar, algo)
-Iteration 0. Residual norm: 4.295.
-Iteration 1. Residual norm: 0.250361.
-Iteration 2. Residual norm: 0.00441074.
-Iteration 3. Residual norm: 2.81269e-06.
-Iteration 4. Residual norm: 3.9111e-12.
-ExaPF.ConvergenceStatus(true, 4, 3.911102241031109e-12, 0)
+# Initial variables
+julia> stack = ExaPF.NetworkStack(polar)
+# Solve power flow
+julia> conv = run_pf(polar, stack; verbose=1)
+#it 0: 6.18195e-01
+#it 1: 8.19603e-03
+#it 2: 7.24135e-06
+#it 3: 4.68355e-12
+Power flow has converged: true
+  * #iterations: 3
+  * Time Jacobian (s) ........: 0.0004
+  * Time linear solver (s) ...: 0.0010
+  * Time total (s) ...........: 0.0014
 ```
+
+For more information on how to solve power flow on the GPU,
+please refer to the [quickstart guide](https://exanauts.github.io/ExaPF.jl/dev/quickstart/).
+
+## Extensions
+
+- [Argos.jl](https://github.com/exanauts/Argos.jl/) uses ExaPF as a modeler to accelerate the resolution of OPF problems on CUDA GPU.
 
 ## Development
 
@@ -62,6 +76,7 @@ This research was supported by the Exascale Computing Project (17-SC-20-SC), a j
 
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
+[docs-stable-url]: https://exanauts.github.io/ExaPF.jl/
 [docs-stable-url]: https://exanauts.github.io/ExaPF.jl/
 
 [codecov-stable-img]: https://codecov.io/gh/exanauts/ExaPF.jl/branch/master/graphs/badge.svg?branch=master
