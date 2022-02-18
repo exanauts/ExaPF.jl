@@ -24,16 +24,16 @@ function _jacobian_sparsity(polar::PolarForm, func::AutoDiff.AbstractExpression)
     return matpower_jacobian(polar, func, v)
 end
 
-function _get_jacobian_colors(polar::PolarForm, func::AutoDiff.AbstractExpression, map::Vector{Int})
+function _get_jacobian_colors(polar::PolarForm, func::AutoDiff.AbstractExpression, map::Vector{Int}, coloring::AutoDiff.AbstractColoring)
     # Sparsity pattern
     J = _jacobian_sparsity(polar, func)
     Jsub = J[:, map]
     # Coloring
-    colors = AutoDiff.SparseDiffTools.matrix_colors(Jsub)
+    colors = AutoDiff.matrix_colors(Jsub, coloring)
     return (Jsub, colors)
 end
 
-function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
+function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}; coloring::AutoDiff.AbstractColoring=AutoDiff.ColPackColoring()) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
@@ -45,7 +45,7 @@ function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpres
 
     map_device = map |> VI
 
-    J_host, coloring = _get_jacobian_colors(polar, func, map)
+    J_host, coloring = _get_jacobian_colors(polar, func, map, coloring)
     ncolors = size(unique(coloring),1)
 
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N

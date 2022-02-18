@@ -21,43 +21,49 @@ function test_constraints_jacobian(polar, device, MT)
         ExaPF.PowerGenerationBounds,
         ExaPF.LineFlows,
     ]
-        constraint = expr(polar) ∘ basis
-        m = length(constraint)
+        @testset "Colorings" for coloring in [
+            ExaPF.AutoDiff.SparseDiffToolsColoring(),
+            ExaPF.AutoDiff.ColPackColoring(),
+        ]
 
-        # Allocation
-        jac = ExaPF.Jacobian(polar, constraint, mymap)
-        # Test display
-        println(devnull, jac)
-        # Evaluate Jacobian with AD
-        J = ExaPF.jacobian!(jac, stack)
-        # Matpower Jacobian
-        Jmat = ExaPF.matpower_jacobian(polar, constraint, V)
-        Jmat = Jmat[:, mymap]
+            constraint = expr(polar) ∘ basis
+            m = length(constraint)
 
-        # Compare with FiniteDiff
-        function jac_fd_x(x)
-            stack.input[mymap] .= x
-            c = zeros(m) |> MT
-            constraint(c, stack)
-            return c
+            # Allocation
+            jac = ExaPF.Jacobian(polar, constraint, mymap; coloring=coloring)
+            # Test display
+            println(devnull, jac)
+            # Evaluate Jacobian with AD
+            J = ExaPF.jacobian!(jac, stack)
+            # Matpower Jacobian
+            Jmat = ExaPF.matpower_jacobian(polar, constraint, V)
+            Jmat = Jmat[:, mymap]
+
+            # Compare with FiniteDiff
+            function jac_fd_x(x)
+                stack.input[mymap] .= x
+                c = zeros(m) |> MT
+                constraint(c, stack)
+                return c
+            end
+            x = copy(stack.input[mymap])
+            Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x) |> Array
+            Jx = jac.J |> SparseMatrixCSC |> Array
+
+            ## JACOBIAN VECTOR PRODUCT
+            tgt_h = rand(m)
+            tgt = tgt_h |> MT
+            output = zeros(nx+nu) |> MT
+            empty!(∂stack)
+            ExaPF.adjoint!(constraint, ∂stack, stack, tgt)
+
+            @test size(J) == (m, length(mymap))
+            @test myisapprox(Jd, Jx, rtol=1e-5)
+            @test myisapprox(Jmat, Jx, rtol=1e-5)
+            @test myisapprox(Jmat, Jd, rtol=1e-5)
+            @test myisapprox(∂stack.input[mymap], Jx' * tgt_h, rtol=1e-6)
+            @test myisapprox(∂stack.input[mymap], Jmat' * tgt_h, rtol=1e-6)
         end
-        x = copy(stack.input[mymap])
-        Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x) |> Array
-        Jx = jac.J |> SparseMatrixCSC |> Array
-
-        ## JACOBIAN VECTOR PRODUCT
-        tgt_h = rand(m)
-        tgt = tgt_h |> MT
-        output = zeros(nx+nu) |> MT
-        empty!(∂stack)
-        ExaPF.adjoint!(constraint, ∂stack, stack, tgt)
-
-        @test size(J) == (m, length(mymap))
-        @test myisapprox(Jd, Jx, rtol=1e-5)
-        @test myisapprox(Jmat, Jx, rtol=1e-5)
-        @test myisapprox(Jmat, Jd, rtol=1e-5)
-        @test myisapprox(∂stack.input[mymap], Jx' * tgt_h, rtol=1e-6)
-        @test myisapprox(∂stack.input[mymap], Jmat' * tgt_h, rtol=1e-6)
     end
 end
 

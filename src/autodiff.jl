@@ -1,7 +1,10 @@
 
 module AutoDiff
 
+import ColPack
+using LinearAlgebra
 using SparseArrays
+using SparseDiffTools
 
 using CUDA
 import ForwardDiff
@@ -11,6 +14,57 @@ using KernelAbstractions
 using ..ExaPF: State, Control
 
 import Base: show
+
+"""
+    AbstractColoring
+
+Coloring algorithm for the Jacobian or Hessian compression
+
+"""
+abstract type AbstractColoring end
+
+"""
+    SparseDiffToolsColoring
+
+Coloring based on `SparseDiffTools.jl`
+
+"""
+struct SparseDiffToolsColoring <: AbstractColoring end
+
+"""
+    ColPackColoring
+
+Coloring based on `ColPack.jl`
+
+"""
+struct ColPackColoring <: AbstractColoring end
+
+export SparseDiffToolsColoring, ColPackColoring
+
+"""
+    matrix_colors(M::SparseMatrixCSC, ::SparseDiffToolsColoring)
+
+Calls the default coloring algorithm of `SparseDiffTools.jl`
+
+"""
+function matrix_colors(M::SparseMatrixCSC, ::SparseDiffToolsColoring)
+    return SparseDiffTools.matrix_colors(M)
+end
+
+"""
+    matrix_colors(M::SparseMatrixCSC, ::ColPackColoring)
+
+Calls the distance one coloring algorithm with natural vertex ordering
+
+"""
+function matrix_colors(M::SparseMatrixCSC, ::ColPackColoring)
+    colpack_coloring = ColPack.ColPackColoring(
+        ColPack.matrix2adjmatrix(M; partition_by_rows=false),
+        ColPack.d1_coloring(),
+        ColPack.natural_ordering(),
+    )
+    return ColPack.get_colors(colpack_coloring)
+end
 
 """
     AbstractStack{VT}

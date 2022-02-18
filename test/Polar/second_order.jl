@@ -52,44 +52,49 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
 end
 
 function test_full_space_hessian(polar, device, MT)
-    stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
-
-    n = length(stack.input)
-    # Hessian / (x, u)
-    mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
-
-    constraints = [
-        ExaPF.CostFunction(polar),
-        ExaPF.PowerFlowBalance(polar),
-        ExaPF.VoltageMagnitudeBounds(polar),
-        ExaPF.PowerGenerationBounds(polar),
-        ExaPF.LineFlows(polar),
+    @testset "Colorings" for coloring in [
+        ExaPF.AutoDiff.SparseDiffToolsColoring(),
+        ExaPF.AutoDiff.ColPackColoring(),
     ]
-    mycons = ExaPF.MultiExpressions(constraints) ∘ basis
+        stack = ExaPF.NetworkStack(polar)
+        basis  = ExaPF.PolarBasis(polar)
 
-    m = length(mycons)
-    y_cpu = rand(m)
-    y = y_cpu |> MT
+        n = length(stack.input)
+        # Hessian / (x, u)
+        mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
 
-    hess = ExaPF.FullHessian(polar, mycons, mymap)
-    H = ExaPF.hessian!(hess, stack, y)
+        constraints = [
+            ExaPF.CostFunction(polar),
+            ExaPF.PowerFlowBalance(polar),
+            ExaPF.VoltageMagnitudeBounds(polar),
+            ExaPF.PowerGenerationBounds(polar),
+            ExaPF.LineFlows(polar),
+        ]
+        mycons = ExaPF.MultiExpressions(constraints) ∘ basis
 
-    c = zeros(m) |> MT
-    ∂stack = ExaPF.NetworkStack(polar)
+        m = length(mycons)
+        y_cpu = rand(m)
+        y = y_cpu |> MT
 
-    function grad_fd_x(x)
-        stack.input[mymap] .= x
-        mycons(c, stack)
-        empty!(∂stack)
-        ExaPF.adjoint!(mycons, ∂stack, stack, y)
-        return ∂stack.input[mymap]
+        hess = ExaPF.FullHessian(polar, mycons, mymap; coloring=coloring)
+        H = ExaPF.hessian!(hess, stack, y)
+
+        c = zeros(m) |> MT
+        ∂stack = ExaPF.NetworkStack(polar)
+
+        function grad_fd_x(x)
+            stack.input[mymap] .= x
+            mycons(c, stack)
+            empty!(∂stack)
+            ExaPF.adjoint!(mycons, ∂stack, stack, y)
+            return ∂stack.input[mymap]
+        end
+        x = stack.input[mymap]
+        Hd = FiniteDiff.finite_difference_jacobian(grad_fd_x, x)
+
+        # Test that both Hessian match
+        @test myisapprox(Hd, H, rtol=1e-5)
     end
-    x = stack.input[mymap]
-    Hd = FiniteDiff.finite_difference_jacobian(grad_fd_x, x)
-
-    # Test that both Hessian match
-    @test myisapprox(Hd, H, rtol=1e-5)
     return
 end
 

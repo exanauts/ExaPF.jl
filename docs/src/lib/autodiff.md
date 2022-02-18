@@ -6,7 +6,9 @@ CurrentModule = ExaPF.AutoDiff
 ## Variables
 ```@docs
 AbstractStack
-
+AbstractColoring
+SparseDiffToolsColoring
+ColPackColoring
 ```
 
 ## Expressions
@@ -14,7 +16,6 @@ AbstractStack
 ```@docs
 AbstractExpression
 adjoint!
-
 ```
 
 
