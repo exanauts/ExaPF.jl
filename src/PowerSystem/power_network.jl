@@ -145,7 +145,7 @@ get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
 ## Voltage
 function voltage(pf::PowerNetwork)
     genbus = pf.gen2bus
-	v0 = pf.vbus
+    v0 = pf.vbus
     vg = view(pf.generators, :, 6)
     vcb = ones(length(v0))
     vcb[pf.pq] .= 0

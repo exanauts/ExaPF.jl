@@ -114,15 +114,19 @@ function bustypeindex(bus, gen, bus_to_indexes)
 
     bustype = convert.(Int, bus[:, BUS_TYPE])
 
+    npv2pq = 0
+    npq2pv = 0
     for i in 1:size(bus, 1)
         if (bustype[i] == PV_BUS_TYPE) && (gencon[i] == 0)
             bustype[i] = PQ_BUS_TYPE
-            println("[dataset] Convert PV bus $(i) to PQ bus.")
+            npv2pq += 1
         elseif (bustype[i] == PQ_BUS_TYPE) && (gencon[i] > 0)
             bustype[i] = PV_BUS_TYPE
-            println("[dataset] Convert PQ bus $(i) to PV bus.")
+            npq2pv += 1
         end
     end
+    (npv2pq > 0) && println("[PS] $(npv2pq) PV buses converted to PQ")
+    (npq2pv > 0) && println("[PS] $(npq2pv) PQ buses converted to PV")
 
     # form vectors
     ref = findall(x -> x==REF_BUS_TYPE, bustype)::Vector{Int}
