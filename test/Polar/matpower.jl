@@ -20,7 +20,7 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
         -0.9000 - 0.3000im, 0.0000 + 0.0000im, -1.0000 - 0.3500im, 0.0000 + 0.0000im,
         -1.2500 - 0.5000im]
 
-    @test isapprox(S, pf.sbus)
+    @test isapprox(S, PS.power_balance(pf))
 
     polar = PolarForm(pf, CPU())
     mapx = ExaPF.mapping(polar, State())
@@ -49,7 +49,7 @@ end
     stack = ExaPF.NetworkStack(polar)
     # Load buffer
     # Check buffer
-    @test pf.vbus ≈ stack.vmag .* exp.(im .* stack.vang)
+    @test PS.voltage(pf) ≈ stack.vmag .* exp.(im .* stack.vang)
 
     # solve power flow
 

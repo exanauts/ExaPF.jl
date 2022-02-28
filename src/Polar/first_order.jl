@@ -20,7 +20,7 @@ Base.size(jac::Jacobian, n::Int) = size(jac.J, n)
 # Coloring
 function _jacobian_sparsity(polar::PolarForm, func::AutoDiff.AbstractExpression)
     nbus = get(polar, PS.NumberOfBuses())
-    v = polar.network.vbus .+ 0.01 .* rand(ComplexF64, nbus)
+    v = PS.voltage(polar.network) .+ 0.01 .* rand(ComplexF64, nbus)
     return matpower_jacobian(polar, func, v)
 end
 

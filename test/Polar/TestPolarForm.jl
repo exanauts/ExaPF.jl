@@ -4,7 +4,6 @@ using Test
 
 using CUDA
 using FiniteDiff
-using ForwardDiff
 using KernelAbstractions
 using LinearAlgebra
 using Random

@@ -58,10 +58,12 @@ function test_polar_api(polar, device, M)
     basis  = ExaPF.PolarBasis(polar)
     power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
     # Test that values are matching
-    @test myisapprox(pf.vbus, stack.vmag .* exp.(im .* stack.vang))
+    vbus = PS.voltage(polar.network)
+    sbus = PS.power_balance(polar.network)
+    @test myisapprox(vbus, stack.vmag .* exp.(im .* stack.vang))
 
     # Check that initial residual is correct
-    mis = pf.vbus .* conj.(pf.Ybus * pf.vbus) .- pf.sbus
+    mis = vbus .* conj.(pf.Ybus * vbus) .- sbus
     f_mat = [real(mis[[pf.pv; pf.pq]]); imag(mis[pf.pq])];
 
     cons = similar(stack.input, nx)
