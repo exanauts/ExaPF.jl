@@ -1,13 +1,11 @@
 using Test
+
 using Random
 using LinearAlgebra
 using SparseArrays
 
 using CUDA
 using KernelAbstractions
-
-using ForwardDiff
-using FiniteDiff
 
 using ExaPF
 using LazyArtifacts
