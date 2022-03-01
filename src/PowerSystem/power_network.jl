@@ -16,7 +16,6 @@ Use a `AbstractFormulation` object to move data to the target device.
 
 """
 struct PowerNetwork <: AbstractPowerSystem
-    vbus::Vector{Complex{Float64}}
     # Admittance matrix
     Ybus::SparseArrays.SparseMatrixCSC{Complex{Float64},Int64}
     # Lines
@@ -38,94 +37,81 @@ struct PowerNetwork <: AbstractPowerSystem
     pq::Vector{Int64}
     # Generators From/To Buses Indexes
     gen2bus::Vector{Int64}
-    ref2gen::Vector{Int64}
-    pv2gen::Vector{Int64}
+end
 
-    sbus::Vector{Complex{Float64}}
-    sload::Vector{Complex{Float64}}
+function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
+    # Parsed data indexes
+    BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
+    LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
-    function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
-        # Parsed data indexes
-        BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
-        LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
+    # retrive required data
+    bus = data["bus"]::Array{Float64, 2}
+    gen = data["gen"]::Array{Float64, 2}
+    lines = data["branch"]::Array{Float64, 2}
+    SBASE = data["baseMVA"][1]::Float64
+    cost_coefficients = Base.get(data, "cost", nothing)
 
-        # retrive required data
-        bus = data["bus"]::Array{Float64, 2}
-        gen = data["gen"]::Array{Float64, 2}
-        lines = data["branch"]::Array{Float64, 2}
-        SBASE = data["baseMVA"][1]::Float64
-        cost_coefficients = Base.get(data, "cost", nothing)
+    # BUSES
+    bus_id_to_indexes = get_bus_id_to_indexes(bus)
 
-        # BUSES
-        bus_id_to_indexes = get_bus_id_to_indexes(bus)
+    # LINES
+    # Remove specified lines
+    lines = get_active_branches(lines, remove_lines)
 
-        # LINES
-        # Remove specified lines
-        lines = get_active_branches(lines, remove_lines)
-
-        # GENERATORS
-        gen_status = view(gen, :, 8)
-        # Get active generators
-        on = findall(gen_status .> 0)
-        gen = gen[on, :]
+    # GENERATORS
+    gen_status = view(gen, :, 8)
+    # Get active generators
+    on = findall(gen_status .> 0)
+    gen = gen[on, :]
 
 
-        # size of the system
-        nbus = size(bus, 1)
-        ngen = size(gen, 1)
+    # size of the system
+    nbus = size(bus, 1)
+    ngen = size(gen, 1)
 
-        # COSTS
-        if isnothing(cost_coefficients)
-            @warn("[PS] Cost function not specified in dataset. Fallback to default coefficients.")
-            # if not specified, costs is set by default to a # quadratic polynomial
-            costs = zeros(ngen, 7)
-            costs[:, 1] .= 2.0 # polynomial model
-            costs[:, 2] .= 0.0 # no start-up cost
-            costs[:, 3] .= 0.0 # no shutdown cost
-            costs[:, 4] .= 3.0 # quadratic polynomial
-            costs[:, 5] .= 0.0 # c₁
-            costs[:, 6] .= 1.0 # c₂
-            costs[:, 7] .= 0.0 # c₃
-        else
-            costs = cost_coefficients[on, :]
-        end
-        # Check consistency of cost coefficients
-        @assert size(costs, 1) == size(gen, 1)
-
-        # obtain V0 from raw data
-        vbus = zeros(Complex{Float64}, nbus)
-        for i in 1:nbus
-            vbus[i] = bus[i, VM]*exp(1im * pi/180 * bus[i, VA])
-        end
-
-        # form Y matrix
-        topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
-
-        branches = Branches{Complex{Float64}}(
-            topology.yff, topology.yft, topology.ytf, topology.ytt,
-            topology.from_buses, topology.to_buses,
-        )
-
-        # bus type indexing
-        ref, pv, pq, bustype, inactive_generators = bustypeindex(bus, gen, bus_id_to_indexes)
-        # check consistency
-        ref_id = bus[ref, 1]
-        @assert bus[ref, 2] == [REF_BUS_TYPE]
-        if !(ref_id[1] in gen[:, 1])
-            error("[PS] No generator attached to slack node.")
-        end
-        if !isempty(inactive_generators)
-            println("[PS] Found $(length(inactive_generators)) inactive generators.")
-        end
-
-        sbus, sload = assembleSbus(gen, bus, SBASE, bus_id_to_indexes)
-        gen2bus = generators_to_buses(gen, bus_id_to_indexes)
-        pv2gen, ref2gen = buses_to_generators(gen2bus, pv, ref)
-        Ybus = topology.ybus
-
-        new(vbus, Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes,
-            ref, pv, pq, gen2bus, ref2gen, pv2gen, sbus, sload)
+    # COSTS
+    if isnothing(cost_coefficients)
+        @warn("[PS] Cost function not specified in dataset. Fallback to default coefficients.")
+        # if not specified, costs is set by default to a # quadratic polynomial
+        costs = zeros(ngen, 7)
+        costs[:, 1] .= 2.0 # polynomial model
+        costs[:, 2] .= 0.0 # no start-up cost
+        costs[:, 3] .= 0.0 # no shutdown cost
+        costs[:, 4] .= 3.0 # quadratic polynomial
+        costs[:, 5] .= 0.0 # c₁
+        costs[:, 6] .= 1.0 # c₂
+        costs[:, 7] .= 0.0 # c₃
+    else
+        costs = cost_coefficients[on, :]
     end
+    # Check consistency of cost coefficients
+    @assert size(costs, 1) == size(gen, 1)
+
+    # form Y matrix
+    topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+
+    branches = Branches{Complex{Float64}}(
+        topology.yff, topology.yft, topology.ytf, topology.ytt,
+        topology.from_buses, topology.to_buses,
+    )
+
+    # bus type indexing
+    ref, pv, pq, bustype, inactive_generators = bustypeindex(bus, gen, bus_id_to_indexes)
+    # check consistency
+    ref_id = bus[ref, 1]
+    @assert bus[ref, 2] == [REF_BUS_TYPE]
+    if !(ref_id[1] in gen[:, 1])
+        error("[PS] No generator attached to slack node.")
+    end
+    if !isempty(inactive_generators)
+        println("[PS] Found $(length(inactive_generators)) inactive generators.")
+    end
+
+    gen2bus = generators_to_buses(gen, bus_id_to_indexes)
+    Ybus = topology.ybus
+
+    PowerNetwork(Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes,
+        ref, pv, pq, gen2bus)
 end
 
 function PowerNetwork(datafile::String; options...)
@@ -145,7 +131,9 @@ get(pf::PowerNetwork, ::NumberOfSlackBuses) = length(pf.ref)
 ## Voltage
 function voltage(pf::PowerNetwork)
     genbus = pf.gen2bus
-    v0 = pf.vbus
+    vm = view(pf.buses, :, 8)
+    va = view(pf.buses, :, 9)
+    v0 = vm .* exp.(1im * pi/ 180.0 .* va)
     vg = view(pf.generators, :, 6)
     vcb = ones(length(v0))
     vcb[pf.pq] .= 0
@@ -156,10 +144,18 @@ end
 get(pf::PowerNetwork, ::VoltageMagnitude) = abs.(voltage(pf))
 get(pf::PowerNetwork, ::VoltageAngle) = angle.(voltage(pf))
 
+function power_balance(pf::PowerNetwork)
+    sbus, _ = assembleSbus(pf.generators, pf.buses, pf.baseMVA, pf.bus_to_indexes)
+    return sbus
+end
 
 ## Loads
-get(pf::PowerNetwork, ::ActiveLoad) = real.(pf.sload)
-get(pf::PowerNetwork, ::ReactiveLoad) = imag.(pf.sload)
+function get(pf::PowerNetwork, ::ActiveLoad)
+    return pf.buses[:, 3] ./ pf.baseMVA
+end
+function get(pf::PowerNetwork, ::ReactiveLoad)
+    return pf.buses[:, 4] ./ pf.baseMVA
+end
 ## Power
 function get(pf::PowerNetwork, ::ActivePower)
     GEN_BUS, PG, QG, _ = IndexSet.idx_gen()
