@@ -6,7 +6,7 @@
 | | [![][codecov-stable-img]][codecov-stable-url] | [![][codecov-latest-img]][codecov-latest-url]  |
 
 ExaPF is a HPC package implementing a vectorized modeler
-for power systems. It targets primarily GPU architectures, and provides a portable abstraction to model power system on upcoming HPC architectures.
+for power systems. It targets primarily GPU architectures, and provides a portable abstraction to model power systems on upcoming HPC architectures.
 
 Its main features are:
 * **Portable approach:** All [expressions](https://exanauts.github.io/ExaPF.jl/dev/lib/formulations/#Constraints) (`PowerFlowBalance`, `CostFunction`, `PowerGenerationBounds`, ...) are evaluated fully on the GPU, without data transfers to the host.
@@ -20,7 +20,7 @@ Right now, only CUDA is fully supported, but in the medium term we have good hop
 both [AMD ROCm](https://github.com/JuliaGPU/AMDGPU.jl) and [Intel oneAPI](https://github.com/JuliaGPU/oneAPI.jl).
 
 ## Quick-start
-### Installation
+### How to install ExaPF?
 
 ```julia
 pkg> add ExaPF
@@ -37,14 +37,16 @@ ExaPF solves the power flow equations of a power network with a Newton-Raphson a
 
 ```julia
 # Input file
-julia> case = "case57.m"
+case = "case57.m"
 # Instantiate a PolarForm object on the CPU.
 # (Replace CPU() by CUDADevice() to deport computation on a CUDA GPU)
-julia> polar = ExaPF.PolarForm(case, CPU())
+polar = ExaPF.PolarForm(case, CPU())
 # Initial variables
-julia> stack = ExaPF.NetworkStack(polar)
+stack = ExaPF.NetworkStack(polar)
 # Solve power flow
-julia> conv = run_pf(polar, stack; verbose=1)
+conv = run_pf(polar, stack; verbose=1)
+```
+```shell
 #it 0: 6.18195e-01
 #it 1: 8.19603e-03
 #it 2: 7.24135e-06

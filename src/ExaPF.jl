@@ -16,9 +16,9 @@ import Base: show, get
 
 export run_pf
 export State, Control, PolarForm
+
 # Export KernelAbstractions devices
 export CPU
-
 
 include("templates.jl")
 include("utils.jl")
