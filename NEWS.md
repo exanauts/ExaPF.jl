@@ -1,8 +1,18 @@
 ExaPF release notes
 ==================
 
-Version 0.6.0 (TBD)
+Version 0.7.0 (TBD)
 -------------------
+
+- API changes
+    * The interface has been completely revamped to [vectorize all operations](https://frapac.github.io/pages/notes/exapf/) (#217)
+- New features
+    * Add overlapping Schwarz-preconditioner (#220)
+    * Full support for multi-generators (#217 #223)
+    * Add new benchmark suite (#226)
+
+Version 0.6.0 (November 19th, 2021)
+-----------------------------------
 
 - New features
   * ExaPF now supports multiple generators per bus [experimental]
