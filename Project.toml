@@ -18,10 +18,10 @@ SparseDiffTools = "47a9eef4-7e08-11e9-0b38-333d64bd3804"
 
 [compat]
 CUDA = "3.4"
-CUDAKernels = "0.3.3"
+CUDAKernels = "0.4"
 FiniteDiff = "2.7"
 ForwardDiff = "0.10"
-KernelAbstractions = "0.7"
+KernelAbstractions = "0.8"
 Krylov = "~0.7.3"
 LightGraphs = "1.3"
 Metis = "1"
