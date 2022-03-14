@@ -1,10 +1,10 @@
 
-struct HessianProd{Model, Func, VD, VI, Buff} <: AutoDiff.AbstractHessianProd
+struct HessianProd{Model, Func, VT, VD, VI, Buff} <: AutoDiff.AbstractHessianProd
     model::Model
     func::Func
     map::VI
-    stack::NetworkStack{VD}
-    ∂stack::NetworkStack{VD}
+    stack::NetworkStack{VT, VD}
+    ∂stack::NetworkStack{VT, VD}
     t1sF::VD
     ∂t1sF::VD
     buffer::Buff
@@ -26,8 +26,10 @@ function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     VD = A{t1s{1}}
 
-    stack = NetworkStack(nbus, ngen, nlines, VD)
-    ∂stack = NetworkStack(nbus, ngen, nlines, VD)
+    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    init!(polar, stack)
+
+    ∂stack = NetworkStack(nbus, ngen, nlines, VT, VD)
 
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
@@ -70,12 +72,12 @@ function _hessian_sparsity(polar::PolarForm, func)
     return matpower_hessian(polar, func, V, y)
 end
 
-struct FullHessian{Model, Func, VD, SMT, VI, Buff} <: AutoDiff.AbstractFullHessian
+struct FullHessian{Model, Func, VT, VD, SMT, VI, Buff} <: AutoDiff.AbstractFullHessian
     model::Model
     func::Func
     map::VI
-    stack::NetworkStack{VD}
-    ∂stack::NetworkStack{VD}
+    stack::NetworkStack{VT, VD}
+    ∂stack::NetworkStack{VT, VD}
     coloring::VI
     ncolors::Int
     t1sF::VD
@@ -111,8 +113,10 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     H = H_host |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, VD)
-    ∂stack = NetworkStack(nbus, ngen, nlines, VD)
+    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    init!(polar, stack)
+
+    ∂stack = NetworkStack(nbus, ngen, nlines, VT, VD)
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
 
