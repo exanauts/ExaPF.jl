@@ -1,9 +1,9 @@
 
-struct Jacobian{Model, Func, VD, SMT, VI} <: AutoDiff.AbstractJacobian
+struct Jacobian{Model, Func, VT, VD, SMT, VI} <: AutoDiff.AbstractJacobian
     model::Model
     func::Func
     map::VI
-    stack::NetworkStack{VD}
+    stack::NetworkStack{VT, VD}
     coloring::VI
     ncolors::Int
     t1sF::VD
@@ -54,7 +54,8 @@ function Jacobian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpres
     J = J_host |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, VD)
+    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 
     coloring = coloring |> VI

@@ -33,43 +33,54 @@ the target device.
 
 
 """
-struct NetworkStack{VT,NT} <: AutoDiff.AbstractStack{VT}
+struct NetworkStack{VT,VD,NT} <: AutoDiff.AbstractStack{VT}
     # INPUT
-    input::VT
-    vmag::VT # voltage magnitudes
-    vang::VT # voltage angles
-    pgen::VT # active power generations
+    input::VD
+    vmag::VD # voltage magnitudes
+    vang::VD # voltage angles
+    pgen::VD # active power generations
     # INTERMEDIATE
-    ψ::VT    # nonlinear basis ψ(vmag, vang)
+    ψ::VD    # nonlinear basis ψ(vmag, vang)
     intermediate::NT
+    # Parameters
+    params::VT
+    pload::VT
+    qload::VT
 end
 
-function NetworkStack(nbus, ngen, nlines, VT)
-    input = VT(undef, 2*nbus + ngen) ; fill!(input, 0.0)
+function NetworkStack(nbus, ngen, nlines, VT, VD)
+    input = VD(undef, 2*nbus + ngen) ; fill!(input, 0.0)
     # Wrap directly array x to avoid dealing with views
     p0 = pointer(input)
-    vmag = unsafe_wrap(VT, p0, nbus)
+    vmag = unsafe_wrap(VD, p0, nbus)
     p1 = pointer(input, nbus+1)
-    vang = unsafe_wrap(VT, p1, nbus)
+    vang = unsafe_wrap(VD, p1, nbus)
     p2 = pointer(input, 2*nbus+1)
-    pgen = unsafe_wrap(VT, p2, ngen)
+    pgen = unsafe_wrap(VD, p2, ngen)
 
     # Basis function
-    ψ = VT(undef, 2*nlines + nbus) ; fill!(ψ, 0.0)
+    ψ = VD(undef, 2*nlines + nbus) ; fill!(ψ, 0.0)
     # Intermediate expressions to avoid unecessary allocations
     intermediate = (
-        c = VT(undef, ngen),     # buffer for costs
-        sfp = VT(undef, nlines), # buffer for line-flow
-        sfq = VT(undef, nlines), # buffer for line-flow
-        stp = VT(undef, nlines), # buffer for line-flow
-        stq = VT(undef, nlines), # buffer for line-flow
-        ∂edge_vm_fr = VT(undef, nlines), # buffer for basis
-        ∂edge_vm_to = VT(undef, nlines), # buffer for basis
-        ∂edge_va_fr = VT(undef, nlines), # buffer for basis
-        ∂edge_va_to = VT(undef, nlines), # buffer for basis
+        c = VD(undef, ngen),     # buffer for costs
+        sfp = VD(undef, nlines), # buffer for line-flow
+        sfq = VD(undef, nlines), # buffer for line-flow
+        stp = VD(undef, nlines), # buffer for line-flow
+        stq = VD(undef, nlines), # buffer for line-flow
+        ∂edge_vm_fr = VD(undef, nlines), # buffer for basis
+        ∂edge_vm_to = VD(undef, nlines), # buffer for basis
+        ∂edge_va_fr = VD(undef, nlines), # buffer for basis
+        ∂edge_va_to = VD(undef, nlines), # buffer for basis
     )
 
-    return NetworkStack(input, vmag, vang, pgen, ψ, intermediate)
+    # Parameters: loads
+    params = VT(undef, 2*nbus) ; fill!(params, 0.0)
+    p0 = pointer(params)
+    pload = unsafe_wrap(VT, p0, nbus)
+    p1 = pointer(params, nbus+1)
+    qload = unsafe_wrap(VT, p1, nbus)
+
+    return NetworkStack(input, vmag, vang, pgen, ψ, intermediate, params, pload, qload)
 end
 
 function Base.show(io::IO, stack::NetworkStack)
@@ -84,20 +95,18 @@ in the base [`PS.PowerNetwork`](@ref) object.
 
 """
 function init!(polar::PolarForm, stack::NetworkStack)
-    vmag = get(polar.network, PS.VoltageMagnitude())
-    vang = get(polar.network, PS.VoltageAngle())
-    pg = get(polar.network, PS.ActivePower())
-
-    copyto!(stack.vmag, vmag)
-    copyto!(stack.vang, vang)
-    copyto!(stack.pgen, pg)
+    copyto!(stack.vmag, get(polar.network, PS.VoltageMagnitude()))
+    copyto!(stack.vang, get(polar.network, PS.VoltageAngle()))
+    copyto!(stack.pgen, get(polar.network, PS.ActivePower()))
+    copyto!(stack.pload, get(polar.network, PS.ActiveLoad()))
+    copyto!(stack.qload, get(polar.network, PS.ReactiveLoad()))
 end
 
 function NetworkStack(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
     nlines = get(polar, PS.NumberOfLines())
-    stack = NetworkStack(nbus, ngen, nlines, VT)
+    stack = NetworkStack(nbus, ngen, nlines, VT, VT)
     init!(polar, stack)
     return stack
 end
@@ -107,6 +116,8 @@ function Base.empty!(stack::NetworkStack)
     fill!(stack.vang, 0.0)
     fill!(stack.pgen, 0.0)
     fill!(stack.ψ, 0.0)
+    fill!(stack.pload, 0.0)
+    fill!(stack.qload, 0.0)
     return
 end
 
@@ -312,12 +323,12 @@ Implement the quadratic cost function for OPF
 
 """
 struct CostFunction{VT, MT} <: AutoDiff.AbstractExpression
+    ref::Vector{Int}
     gen_ref::Vector{Int}
     M::MT
     c0::VT
     c1::VT
     c2::VT
-    pload::VT
 end
 
 function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
@@ -344,10 +355,7 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     c1 = @view coefs[:, 3]
     c2 = @view coefs[:, 4]
 
-    # Active loads
-    pload = PS.get(polar.network, PS.ActiveLoad())
-
-    return CostFunction{VT, SMT}(ref_gen, M, c0, c1, c2, pload[ref])
+    return CostFunction{VT, SMT}(ref, ref_gen, M, c0, c1, c2)
 end
 
 Base.length(::CostFunction) = 1
@@ -355,7 +363,7 @@ Base.length(::CostFunction) = 1
 function (func::CostFunction)(output::AbstractArray, stack::NetworkStack)
     costs = stack.intermediate.c
     # Update pgen_ref
-    stack.pgen[func.gen_ref] .= func.pload
+    stack.pgen[func.gen_ref] .= stack.pload[func.ref]
     mul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
     costs .= func.c0 .+ func.c1 .* stack.pgen .+ func.c2 .* stack.pgen.^2
     CUDA.@allowscalar output[1] = sum(costs)
@@ -403,7 +411,8 @@ PV and PQ nodes, and the reactive balance equations at PQ nodes:
 struct PowerFlowBalance{VT, MT} <: AutoDiff.AbstractExpression
     M::MT
     Cg::MT
-    τ::VT
+    Cdp::MT
+    Cdq::MT
 end
 
 function PowerFlowBalance(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
@@ -413,27 +422,30 @@ function PowerFlowBalance(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     ngen = pf.ngen
     nbus = pf.nbus
     gen = pf.gen2bus
-    pv = pf.pv
+    npv = length(pf.pv)
     npq = length(pf.pq)
 
     # Assemble matrices
     Cg_tot = sparse(gen, 1:ngen, ones(ngen), nbus, ngen)
-    Cg = -[Cg_tot[pv, :] ; spzeros(2*npq, ngen)] |> SMT
+    Cd_tot = spdiagm(nbus, nbus, ones(nbus)) # Identity matrix
+    Cg = -[Cg_tot[pf.pv, :] ; spzeros(2*npq, ngen)] |> SMT
     M_tot = PS.get_basis_matrix(polar.network)
     M = -M_tot[[pf.pv; pf.pq; nbus .+ pf.pq], :] |> SMT
 
     # constant term
-    pload = PS.get(polar.network, PS.ActiveLoad())
-    qload = PS.get(polar.network, PS.ReactiveLoad())
-    τ = [pload[pf.pv]; pload[pf.pq]; qload[pf.pq]] |> VT
-
-    return PowerFlowBalance{VT, SMT}(M, Cg, τ)
+    Cdp = [Cd_tot[[pf.pv ; pf.pq], :]; spzeros(npq, nbus)] |> SMT
+    Cdq = [spzeros(npq+npv, nbus) ; Cd_tot[pf.pq, :]] |> SMT
+    return PowerFlowBalance{VT, SMT}(M, Cg, Cdp, Cdq)
 end
 
-Base.length(func::PowerFlowBalance) = length(func.τ)
+Base.length(func::PowerFlowBalance) = size(func.M, 1)
 
 function (func::PowerFlowBalance)(cons::AbstractArray, stack::AutoDiff.AbstractStack)
-    cons .= func.τ
+    fill!(cons, 0.0)
+    # Constant terms
+    mul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
+    mul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
+    # Variable terms
     mul!(cons, func.M, stack.ψ, 1.0, 1.0)
     mul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
     return
@@ -478,7 +490,6 @@ are taken into account when bounding the control ``u``.
 """
 struct VoltageMagnitudeBounds <: AutoDiff.AbstractExpression
     pq::Vector{Int}
-
 end
 VoltageMagnitudeBounds(polar::PolarForm) = VoltageMagnitudeBounds(polar.network.pq)
 
@@ -523,7 +534,8 @@ C_g q_g^♭ ≤ C_g q_g ≤ C_g q_g^♯  .
 """
 struct PowerGenerationBounds{VT, MT} <: AutoDiff.AbstractExpression
     M::MT
-    τ::VT
+    Cdp::MT
+    Cdq::MT
 end
 
 function PowerGenerationBounds(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
@@ -531,20 +543,24 @@ function PowerGenerationBounds(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT
     pf = polar.network
     nbus = pf.nbus
     M_tot = PS.get_basis_matrix(pf)
+    ns = length(pf.ref) + length(pf.pv)
 
     M = -M_tot[[pf.ref; nbus .+ pf.ref; nbus .+ pf.pv], :]
+    Cd_tot = spdiagm(nbus, nbus, ones(nbus)) # Identity matrix
 
-    pload = PS.get(polar.network, PS.ActiveLoad())
-    qload = PS.get(polar.network, PS.ReactiveLoad())
-    τ = [pload[pf.ref]; qload[pf.ref]; qload[pf.pv]]
-
-    return PowerGenerationBounds{VT, SMT}(M, τ)
+    Cdp = [Cd_tot[pf.ref, :] ; spzeros(ns, nbus)]
+    Cdq = [spzeros(length(pf.ref), nbus) ; Cd_tot[[pf.ref ; pf.pv], :]]
+    return PowerGenerationBounds{VT, SMT}(M, Cdp, Cdq)
 end
 
-Base.length(func::PowerGenerationBounds) = length(func.τ)
+Base.length(func::PowerGenerationBounds) = size(func.M, 1)
 
 function (func::PowerGenerationBounds)(cons::AbstractArray, stack::AutoDiff.AbstractStack)
-    cons .= func.τ
+    fill!(cons, 0.0)
+    # Constant terms
+    mul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
+    mul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
+    # Variable terms
     mul!(cons, func.M, stack.ψ, 1.0, 1.0)
     return
 end
@@ -609,11 +625,11 @@ end
 
 Base.length(func::LineFlows) = 2 * func.nlines
 
-function (func::LineFlows)(cons::AbstractVector, stack::NetworkStack{VT,S}) where {VT<:AbstractVector, S}
-    sfp = stack.intermediate.sfp::VT
-    sfq = stack.intermediate.sfq::VT
-    stp = stack.intermediate.stp::VT
-    stq = stack.intermediate.stq::VT
+function (func::LineFlows)(cons::AbstractVector, stack::NetworkStack{VT,VD,S}) where {VT<:AbstractVector, VD<:AbstractVector, S}
+    sfp = stack.intermediate.sfp::VD
+    sfq = stack.intermediate.sfq::VD
+    stp = stack.intermediate.stp::VD
+    stq = stack.intermediate.stq::VD
 
     mul!(sfp, func.Lfp, stack.ψ)
     mul!(sfq, func.Lfq, stack.ψ)
