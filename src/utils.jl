@@ -36,6 +36,15 @@ end
     end
 end
 
+@kernel function _spmv_csr_kernel_double!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
+    i = @index(Global, Linear)
+    Y[1, i] *= beta
+    @inbounds for c in rowPtr[i]:rowPtr[i+1]-1
+        j = colVal[c]
+        Y[1, i] += alpha * nzVal[c] * X[j]
+    end
+end
+
 #=
     CSC2CSR
 =#
