@@ -87,6 +87,29 @@ function LinearAlgebra.mul!(
     wait(ev)
 end
 
+function LinearAlgebra.mul!(
+    Y::CuArray{T, 1},
+    A::CUSPARSE.CuSparseMatrixCSR,
+    X::AbstractArray{Float64, 1},
+    alpha::Number, beta::Number,
+) where {T <: ForwardDiff.Dual}
+    n, m = size(A)
+    @assert size(Y, 1) == n
+    @assert size(X, 1) == m
+
+    N = ForwardDiff.npartials(Y)
+    p = 1 + N
+
+    # Reinterpret duals as double.
+    Ys = reshape(reinterpret(Float64, Y), p, n)
+
+    ndrange = (n, )
+    ev = _spmv_csr_kernel_double!(CUDADevice())(
+        Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
+        ndrange=ndrange, dependencies=Event(CUDADevice()),
+    )
+    wait(ev)
+end
 
 #=
     Generic SpMV for CuSparseMatrixCSC
