@@ -1,9 +1,9 @@
 
-struct Jacobian{Model, Func, VT, VD, SMT, VI} <: AutoDiff.AbstractJacobian
+struct Jacobian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractJacobian
     model::Model
     func::Func
     map::VI
-    stack::NetworkStack{VT, VD}
+    stack::Stack
     coloring::VI
     ncolors::Int
     t1sF::VD
@@ -84,3 +84,45 @@ function jacobian!(
     return jac.J
 end
 
+function BatchJacobian(
+    polar::PolarForm{T, VI, VT, MT},
+    func::AutoDiff.AbstractExpression,
+    map::Vector{Int},
+    blk_map::Vector{Int},
+    k::Int,
+) where {T, VI, VT, MT}
+    (SMT, A) = get_jacobian_types(polar.device)
+
+    pf = polar.network
+    nbus = PS.get(pf, PS.NumberOfBuses())
+    nlines = PS.get(pf, PS.NumberOfLines())
+    ngen = PS.get(pf, PS.NumberOfGenerators())
+
+    n_cons = length(func) * k
+
+    J_host, coloring = _get_jacobian_colors(polar, func, map)
+    ncolors = length(unique(coloring))
+
+    t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
+    VD = A{t1s{ncolors}}
+
+    # TODO: which data structure?
+    J = repeat(J_host, k) |> SMT
+
+    # Structures
+    stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
+    init!(polar, stack)
+    t1sF = zeros(Float64, n_cons) |> VD
+
+    coloring = repeat(coloring, k) |> VI
+    map_device = blk_map |> VI
+
+    jac = Jacobian(
+        polar, func, map_device, stack, coloring, ncolors, t1sF, J,
+    )
+
+    # seed
+    AutoDiff.seed_coloring!(jac, coloring)
+
+    return jac
+end

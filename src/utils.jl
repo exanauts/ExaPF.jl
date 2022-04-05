@@ -100,3 +100,34 @@ function convert2csr(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
     return Bp, Bj, Bx
 end
 
+
+#=
+    Linear algebra wrappers
+=#
+
+function blockmul!(y::AbstractArray, A::AbstractMatrix, x::AbstractArray, alpha, beta)
+    n, m = size(A)
+    ny = length(y)
+    mx = length(x)
+
+    # check consistency
+    @assert div(ny, n) == div(mx, m)
+    k = div(ny, n)
+    if k == 1
+        mul!(y, A, x, alpha, beta)
+    else
+        y_mat = reshape(y, n, k)
+        x_mat = reshape(x, m, k)
+        mul!(y_mat, A, x_mat, alpha, beta)
+    end
+end
+
+struct BlockSparseMatrix{SMT}
+    k::Int
+    Js::Vector{SMT}
+end
+
+function BlockSparseMatrix(J::AbstractSparseMatrix, k::Int)
+    return BlockSparseMatrix(k, [copy(J) for _ in 1:k])
+end
+
