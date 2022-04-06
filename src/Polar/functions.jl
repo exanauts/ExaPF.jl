@@ -255,19 +255,19 @@ end
             cosθ = cos(Δθ)
             sinθ = sin(Δθ)
 
-            adj_vang_fr[i + shift_cons] += -vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
-            adj_vang_fr[i + shift_cons] +=  vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift]
-            adj_vang_to[i + shift_cons] +=  vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
-            adj_vang_to[i + shift_cons] -=  vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift]
+            adj_vang_fr[i + shift_bus] += -vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
+            adj_vang_fr[i + shift_bus] +=  vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift_cons]
+            adj_vang_to[i + shift_bus] +=  vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
+            adj_vang_to[i + shift_bus] -=  vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift_cons]
 
-            adj_vmag_fr[i + shift_cons] +=  vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
-            adj_vmag_fr[i + shift_cons] += vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
+            adj_vmag_fr[i + shift_bus] +=  vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
+            adj_vmag_fr[i + shift_bus] += vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
 
-            adj_vmag_to[i + shift_cons] +=  vmag[fr_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
-            adj_vmag_to[i + shift_cons] += vmag[fr_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
+            adj_vmag_to[i + shift_bus] +=  vmag[fr_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
+            adj_vmag_to[i + shift_bus] += vmag[fr_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
         else i <= nlines + nbus
             b = i - nlines
-            adj_vmag[b + shift_cons] += 2.0 * vmag[b + shift_bus] * ∂cons[b+2*nlines + shift_cons]
+            adj_vmag[b + shift_bus] += 2.0 * vmag[b + shift_bus] * ∂cons[b+2*nlines + shift_cons]
         end
     end
 end
@@ -300,10 +300,10 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
     # Accumulate on nodes
     Cf = func.Cf
     Ct = func.Ct
-    mul!(∂stack.vmag, Cf, ∂stack.intermediate.∂edge_vm_fr, 1.0, 1.0)
-    mul!(∂stack.vmag, Ct, ∂stack.intermediate.∂edge_vm_to, 1.0, 1.0)
-    mul!(∂stack.vang, Cf, ∂stack.intermediate.∂edge_va_fr, 1.0, 1.0)
-    mul!(∂stack.vang, Ct, ∂stack.intermediate.∂edge_va_to, 1.0, 1.0)
+    blockmul!(∂stack.vmag, Cf, ∂stack.intermediate.∂edge_vm_fr, 1.0, 1.0)
+    blockmul!(∂stack.vmag, Ct, ∂stack.intermediate.∂edge_vm_to, 1.0, 1.0)
+    blockmul!(∂stack.vang, Cf, ∂stack.intermediate.∂edge_va_fr, 1.0, 1.0)
+    blockmul!(∂stack.vang, Ct, ∂stack.intermediate.∂edge_va_to, 1.0, 1.0)
     return
 end
 

@@ -72,17 +72,16 @@ function _hessian_sparsity(polar::PolarForm, func)
     return matpower_hessian(polar, func, V, y)
 end
 
-struct FullHessian{Model, Func, VT, VD, SMT, VI, Buff} <: AutoDiff.AbstractFullHessian
+struct FullHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFullHessian
     model::Model
     func::Func
     map::VI
-    stack::NetworkStack{VT, VD}
-    ∂stack::NetworkStack{VT, VD}
+    stack::Stack
+    ∂stack::Stack
     coloring::VI
     ncolors::Int
     t1sF::VD
     ∂t1sF::VD
-    buffer::Buff
     H::SMT
 end
 
@@ -122,10 +121,9 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
 
     coloring = coloring |> VI
 
-    intermediate = nothing
     hess = FullHessian(
         polar, func, map_device, stack, ∂stack, coloring, ncolors, t1sF, adj_t1sF,
-        intermediate, H,
+        H,
     )
 
     # seed
@@ -150,3 +148,48 @@ function hessian!(
     return H.H
 end
 
+function BatchHessian(
+    polar::PolarForm{T, VI, VT, MT},
+    func::AutoDiff.AbstractExpression,
+    map::Vector{Int},
+    blk_map::Vector{Int},
+    k::Int,
+) where {T, VI, VT, MT}
+    (SMT, A) = get_jacobian_types(polar.device)
+
+    pf = polar.network
+    nbus = PS.get(pf, PS.NumberOfBuses())
+    nlines = PS.get(pf, PS.NumberOfLines())
+    ngen = PS.get(pf, PS.NumberOfGenerators())
+
+    n_cons = length(func) * k
+
+    nmap = length(map)
+
+    H_host, coloring = _get_hessian_colors(polar, func, map)
+    ncolors = length(unique(coloring))
+    VD = A{ForwardDiff.Dual{Nothing, Float64, ncolors}}
+
+    H = repeat(H_host, k) |> SMT
+
+    # Structures
+    stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
+    init!(polar, stack)
+
+    ∂stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
+    t1sF = zeros(Float64, n_cons) |> VD
+    adj_t1sF = similar(t1sF)
+
+    coloring = repeat(coloring, k) |> VI
+
+    map_device = blk_map |> VI
+    hess = FullHessian(
+        polar, func, map_device, stack, ∂stack, coloring, ncolors, t1sF, adj_t1sF,
+        H,
+    )
+
+    # seed
+    AutoDiff.seed_coloring!(hess, coloring)
+
+    return hess
+end
