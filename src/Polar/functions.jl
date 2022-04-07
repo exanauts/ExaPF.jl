@@ -335,6 +335,7 @@ struct CostFunction{VT, MT} <: AutoDiff.AbstractExpression
     ref::Vector{Int}
     gen_ref::Vector{Int}
     M::MT
+    N::MT
     c0::VT
     c1::VT
     c2::VT
@@ -359,13 +360,15 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     M_tot = PS.get_basis_matrix(polar.network)
     M = - Cg * M_tot |> SMT
 
+    N = sparse(ref_gen, ref, ones(1), ngen, nbus)
+
     # coefficients
     coefs = PS.get_costs_coefficients(polar.network)
     c0 = @view coefs[:, 2]
     c1 = @view coefs[:, 3]
     c2 = @view coefs[:, 4]
 
-    return CostFunction{VT, SMT}(ref, ref_gen, M, c0, c1, c2, polar.device)
+    return CostFunction{VT, SMT}(ref, ref_gen, M, N, c0, c1, c2, polar.device)
 end
 
 Base.length(::CostFunction) = 1
@@ -381,8 +384,13 @@ function (func::CostFunction)(output::AbstractArray, stack::AbstractNetworkStack
     ngen = length(func.c0)
     costs = stack.intermediate.c
     # Update pgen_ref
-    stack.pgen[func.gen_ref] .= stack.pload[func.ref]
-    mul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
+    pgen_m = reshape(stack.pgen, ngen, nbatches(stack))
+    pgen_m[func.gen_ref, :] .= 0.0
+    # Add load to pgen_ref
+    blockmul!(stack.pgen, func.N, stack.pload, 1.0, 1.0)
+    # Recompute power injection at ref node
+    blockmul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
+    # Compute quadratic costs
     ndrange = (ngen, nbatches(stack))
     ev = _quadratic_cost_kernel(func.device)(
         costs, stack.pgen, func.c0, func.c1, func.c2, ngen;
@@ -390,7 +398,7 @@ function (func::CostFunction)(output::AbstractArray, stack::AbstractNetworkStack
     )
     wait(ev)
     # Sum costs across all generators
-    sum!(output, costs)
+    sum!(output, reshape(costs, ngen, nbatches(stack))')
     return
 end
 
@@ -409,7 +417,7 @@ function adjoint!(func::CostFunction, ∂stack, stack, ∂v)
         ndrange=ndrange,
     )
     wait(ev)
-    mul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
+    blockmul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
     return
 end
 
@@ -677,11 +685,11 @@ Base.length(func::LineFlows) = 2 * func.nlines
     output[i + nlines + 2 * shift_lines] = stp[i + shift_lines]^2 + stq[i + shift_lines]^2
 end
 
-function (func::LineFlows)(cons::AbstractVector, stack::NetworkStack{VT,VD,S}) where {VT<:AbstractVector, VD<:AbstractVector, S}
-    sfp = stack.intermediate.sfp::VD
-    sfq = stack.intermediate.sfq::VD
-    stp = stack.intermediate.stp::VD
-    stq = stack.intermediate.stq::VD
+function (func::LineFlows)(cons::AbstractVector, stack::AbstractNetworkStack)
+    sfp = stack.intermediate.sfp
+    sfq = stack.intermediate.sfq
+    stp = stack.intermediate.stp
+    stq = stack.intermediate.stq
 
     blockmul!(sfp, func.Lfp, stack.ψ, 1.0, 0.0)
     blockmul!(sfq, func.Lfq, stack.ψ, 1.0, 0.0)
@@ -768,22 +776,24 @@ end
 Base.length(func::MultiExpressions) = sum(length.(func.exprs))
 
 function (func::MultiExpressions)(output::AbstractArray, stack::AutoDiff.AbstractStack)
+    nb = nbatches(stack)
     k = 0
     for expr in func.exprs
         m = length(expr)
-        y = view(output, k+1:k+m)
+        y = view(output, k+1:k+nb*m)
         expr(y, stack)
-        k += m
+        k += nb*m
     end
 end
 
 function adjoint!(func::MultiExpressions, ∂stack, stack, ∂v)
+    nb = nbatches(stack)
     k = 0
     for expr in func.exprs
         m = length(expr)
-        y = view(∂v, k+1:k+m)
+        y = view(∂v, k+1:k+nb*m)
         adjoint!(expr, ∂stack, stack, y)
-        k += m
+        k += nb*m
     end
 end
 

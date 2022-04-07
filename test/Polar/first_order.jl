@@ -99,7 +99,7 @@ function test_constraints_adjoint(polar, device, MT)
         adj_fd = FiniteDiff.finite_difference_jacobian(test_fd, x) |> Array
         # Loosen the tolerance to 1e-5 there (finite_difference_jacobian
         # is less accurate than finite_difference_gradient)
-        @test myisapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-5)
+        @test isapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-5)
     end
 end
 
@@ -198,5 +198,32 @@ function test_reduced_gradient(polar, device, MT)
     u = stack.input[mapu]
     grad_fd = FiniteDiff.finite_difference_jacobian(reduced_cost, u)
     @test isapprox(grad_fd[:], grad_adjoint, rtol=1e-4)
+end
+
+function test_batch_jacobian(polar, device, MT)
+    nblocks = 3
+    mapx = ExaPF.mapping(polar, State())
+    blk_mapx = ExaPF.block_mapping(polar, nblocks, State())
+
+    stack = ExaPF.NetworkStack(polar)
+    blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)
+
+    for expr in [
+        ExaPF.PowerFlowBalance(polar),
+        ExaPF.PowerGenerationBounds(polar),
+        ExaPF.VoltageMagnitudeBounds(polar),
+        ExaPF.LineFlows(polar),
+    ]
+        pf = expr ∘ ExaPF.PolarBasis(polar)
+        m = length(pf)
+
+        jac = ExaPF.Jacobian(polar, pf, mapx)
+        blk_jac = ExaPF.BatchJacobian(polar, pf, mapx, blk_mapx, nblocks)
+
+        ExaPF.jacobian!(jac, stack)
+        ExaPF.jacobian!(blk_jac, blk_stack)
+
+        @test blk_jac.J == repeat(jac.J, nblocks)
+    end
 end
 

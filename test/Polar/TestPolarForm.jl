@@ -40,6 +40,7 @@ function runtests(datafile, device, AT)
     @testset "PolarForm API" begin
         test_polar_api(polar, device, AT)
         test_polar_stack(polar, device, AT)
+        test_polar_blk_stack(polar, device, AT)
         test_polar_constraints(polar, device, AT)
         test_polar_powerflow(polar, device, AT)
     end
@@ -48,12 +49,14 @@ function runtests(datafile, device, AT)
         test_constraints_jacobian(polar, device, AT)
         test_constraints_adjoint(polar, device, AT)
         test_full_space_jacobian(polar, device, AT)
+        test_batch_jacobian(polar, device, AT)
         test_reduced_gradient(polar, device, AT)
     end
 
     @testset "PolarForm AutoDiff (second-order)" begin
         test_hessprod_with_finitediff(polar, device, AT)
         test_full_space_hessian(polar, device, AT)
+        test_batch_hessian(polar, device, AT)
     end
 end
 

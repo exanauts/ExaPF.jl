@@ -93,3 +93,35 @@ function test_full_space_hessian(polar, device, MT)
     return
 end
 
+function test_batch_hessian(polar, device, MT)
+    nblocks = 3
+    mapx = ExaPF.mapping(polar, State())
+    blk_mapx = ExaPF.block_mapping(polar, nblocks, State())
+
+    stack = ExaPF.NetworkStack(polar)
+    blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)
+
+    basis  = ExaPF.PolarBasis(polar)
+    constraints = [
+        ExaPF.CostFunction(polar),
+        ExaPF.PowerFlowBalance(polar),
+        ExaPF.VoltageMagnitudeBounds(polar),
+        ExaPF.PowerGenerationBounds(polar),
+        ExaPF.LineFlows(polar),
+    ]
+    mycons = ExaPF.MultiExpressions(constraints) ∘ basis
+
+    m = length(mycons)
+    y = ones(m)
+    blk_y = repeat(y, nblocks)
+
+    # Evaluate reference Hessian
+    hess = ExaPF.FullHessian(polar, mycons, mapx)
+    H = ExaPF.hessian!(hess, stack, y)
+    # Block evaluation
+    blk_hess = ExaPF.BatchHessian(polar, mycons, mapx, blk_mapx, nblocks)
+    blk_H = ExaPF.hessian!(blk_hess, blk_stack, blk_y)
+
+    @test blk_H == repeat(H, nblocks)
+end
+

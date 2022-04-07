@@ -159,3 +159,28 @@ function test_polar_powerflow(polar, device, M)
     end
 end
 
+function test_polar_blk_stack(polar, device, M)
+    nblocks = 2
+    stack = ExaPF.NetworkStack(polar)
+    blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)
+
+    for expr in [
+        ExaPF.PowerFlowBalance(polar),
+        ExaPF.PowerGenerationBounds(polar),
+        ExaPF.VoltageMagnitudeBounds(polar),
+        ExaPF.LineFlows(polar),
+        ExaPF.CostFunction(polar),
+    ]
+        pf = expr ∘ ExaPF.PolarBasis(polar)
+        m = length(pf)
+        cons = zeros(m)
+        blk_cons = zeros(m * nblocks)
+        # One evaluation
+        pf(cons, stack)
+        # Block evaluation
+        pf(blk_cons, blk_stack)
+        # Test that results match
+        @test blk_cons == repeat(cons, nblocks)
+    end
+end
+
