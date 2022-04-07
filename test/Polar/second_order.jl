@@ -112,8 +112,8 @@ function test_batch_hessian(polar, device, MT)
     mycons = ExaPF.MultiExpressions(constraints) ∘ basis
 
     m = length(mycons)
-    y = ones(m)
-    blk_y = repeat(y, nblocks)
+    y = ones(m) |> MT
+    blk_y = repeat(ones(m), nblocks) |> MT
 
     # Evaluate reference Hessian
     hess = ExaPF.FullHessian(polar, mycons, mapx)

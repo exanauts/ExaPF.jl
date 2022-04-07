@@ -173,14 +173,14 @@ function test_polar_blk_stack(polar, device, M)
     ]
         pf = expr ∘ ExaPF.PolarBasis(polar)
         m = length(pf)
-        cons = zeros(m)
-        blk_cons = zeros(m * nblocks)
+        cons = zeros(m) |> M
+        blk_cons = zeros(m * nblocks) |> M
         # One evaluation
         pf(cons, stack)
         # Block evaluation
         pf(blk_cons, blk_stack)
         # Test that results match
-        @test blk_cons == repeat(cons, nblocks)
+        @test blk_cons ≈ repeat(cons, nblocks)
     end
 end
 

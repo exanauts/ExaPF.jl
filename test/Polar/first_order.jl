@@ -223,7 +223,9 @@ function test_batch_jacobian(polar, device, MT)
         ExaPF.jacobian!(jac, stack)
         ExaPF.jacobian!(blk_jac, blk_stack)
 
-        @test blk_jac.J == repeat(jac.J, nblocks)
+        blk_J_cpu = blk_jac.J |> SparseMatrixCSC
+        J_cpu = jac.J |> SparseMatrixCSC
+        @test blk_J_cpu == repeat(J_cpu, nblocks)
     end
 end
 
