@@ -399,7 +399,8 @@ function (func::CostFunction)(output::AbstractArray, stack::AbstractNetworkStack
     )
     wait(ev)
     # Sum costs across all generators
-    sum!(output, reshape(costs, ngen, nbatches(stack))')
+    # sum!(output, reshape(costs, ngen, nbatches(stack))')
+    output .= sum(reshape(costs, ngen, nbatches(stack))', dims=2)
     return
 end
 

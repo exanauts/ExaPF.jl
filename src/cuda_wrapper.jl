@@ -58,7 +58,7 @@ end
 #=
     Generic SpMV for CuSparseMatrixCSR
 =#
-function ForwardDiff.npartials(vec::CuVector{ForwardDiff.Dual{T, V, N}}) where {T, V, N}
+function ForwardDiff.npartials(vec::CuArray{ForwardDiff.Dual{T, V, N}}) where {T, V, N}
     return N
 end
 
@@ -88,6 +88,33 @@ function LinearAlgebra.mul!(
 end
 
 function LinearAlgebra.mul!(
+    Y::CuArray{T, 2},
+    A::CUSPARSE.CuSparseMatrixCSR,
+    X::AbstractArray{T, 2},
+    alpha::Number, beta::Number,
+) where {T <: ForwardDiff.Dual}
+    n, m = size(A)
+    @assert size(Y, 1) == n
+    @assert size(X, 1) == m
+    @assert size(Y, 2) == size(X, 2)
+
+    k = size(Y, 2)
+    N = ForwardDiff.npartials(Y)
+    p = 1 + N
+
+    # Reinterpret duals as double.
+    Ys = reshape(reinterpret(Float64, Y), p, n, k)
+    Xs = reshape(reinterpret(Float64, X), p, m, k)
+
+    ndrange = (n, p, k)
+    ev = _spmv_blk_csr_kernel!(CUDADevice())(
+        Ys, Xs, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
+        ndrange=ndrange, dependencies=Event(CUDADevice()),
+    )
+    wait(ev)
+end
+
+function LinearAlgebra.mul!(
     Y::CuArray{T, 1},
     A::CUSPARSE.CuSparseMatrixCSR,
     X::AbstractArray{Float64, 1},
@@ -105,6 +132,32 @@ function LinearAlgebra.mul!(
 
     ndrange = (n, )
     ev = _spmv_csr_kernel_double!(CUDADevice())(
+        Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
+        ndrange=ndrange, dependencies=Event(CUDADevice()),
+    )
+    wait(ev)
+end
+
+function LinearAlgebra.mul!(
+    Y::CuArray{T, 2},
+    A::CUSPARSE.CuSparseMatrixCSR,
+    X::AbstractArray{Float64, 2},
+    alpha::Number, beta::Number,
+) where {T <: ForwardDiff.Dual}
+    n, m = size(A)
+    @assert size(Y, 1) == n
+    @assert size(X, 1) == m
+    @assert size(Y, 2) == size(X, 2)
+
+    k = size(Y, 2)
+    N = ForwardDiff.npartials(Y)
+    p = 1 + N
+
+    # Reinterpret duals as double.
+    Ys = reshape(reinterpret(Float64, Y), p, n, k)
+
+    ndrange = (n, k)
+    ev = _spmv_blk_csr_kernel_double!(CUDADevice())(
         Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
         ndrange=ndrange, dependencies=Event(CUDADevice()),
     )
