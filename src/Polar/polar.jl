@@ -115,10 +115,10 @@ function Base.show(io::IO, polar::PolarForm)
     print(io,   "    #states  :   ", n_states)
 end
 
+include("stacks.jl")
 include("functions.jl")
 include("first_order.jl")
 include("second_order.jl")
 include("newton.jl")
 include("legacy.jl")
-include("stochastic.jl")
 
