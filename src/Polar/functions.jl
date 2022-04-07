@@ -245,6 +245,7 @@ end
     i, j = @index(Global, NTuple)
     shift_cons = (j-1) * (nbus + 2*nlines)
     shift_bus  = (j-1) * nbus
+    shift_lines  = (j-1) * nlines
 
     @inbounds begin
         if i <= nlines
@@ -255,16 +256,16 @@ end
             cosθ = cos(Δθ)
             sinθ = sin(Δθ)
 
-            adj_vang_fr[i + shift_bus] += -vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
-            adj_vang_fr[i + shift_bus] +=  vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift_cons]
-            adj_vang_to[i + shift_bus] +=  vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
-            adj_vang_to[i + shift_bus] -=  vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift_cons]
+            adj_vang_fr[i + shift_lines] -= vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
+            adj_vang_fr[i + shift_lines] += vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift_cons]
+            adj_vang_to[i + shift_lines] += vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
+            adj_vang_to[i + shift_lines] -= vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift_cons]
 
-            adj_vmag_fr[i + shift_bus] +=  vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
-            adj_vmag_fr[i + shift_bus] += vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
+            adj_vmag_fr[i + shift_lines] += vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
+            adj_vmag_fr[i + shift_lines] += vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
 
-            adj_vmag_to[i + shift_bus] +=  vmag[fr_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
-            adj_vmag_to[i + shift_bus] += vmag[fr_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
+            adj_vmag_to[i + shift_lines] += vmag[fr_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
+            adj_vmag_to[i + shift_lines] += vmag[fr_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
         else i <= nlines + nbus
             b = i - nlines
             adj_vmag[b + shift_bus] += 2.0 * vmag[b + shift_bus] * ∂cons[b+2*nlines + shift_cons]
