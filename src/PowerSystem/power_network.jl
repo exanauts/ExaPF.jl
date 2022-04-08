@@ -39,35 +39,30 @@ struct PowerNetwork <: AbstractPowerSystem
     gen2bus::Vector{Int64}
 end
 
-function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
+function PowerNetwork(data::Dict{String, Any}; remove_lines=Int[])
     # Parsed data indexes
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     LAM_P, LAM_Q, MU_VMAX, MU_VMIN = IndexSet.idx_bus()
 
     # retrive required data
-    bus = data["bus"]::Array{Float64, 2}
-    gen = data["gen"]::Array{Float64, 2}
-    lines = data["branch"]::Array{Float64, 2}
-    SBASE = data["baseMVA"][1]::Float64
-    cost_coefficients = Base.get(data, "cost", nothing)
+    buses, lines, generators, costs, baseMVA = convert2matpower(data)
 
     # BUSES
-    bus_id_to_indexes = get_bus_id_to_indexes(bus)
+    bus_id_to_indexes = get_bus_id_to_indexes(buses)
 
     # LINES
     # Remove specified lines
     lines = get_active_branches(lines, remove_lines)
 
     # GENERATORS
-    gen_status = view(gen, :, 8)
+    gen_status = view(generators, :, 8)
     # Get active generators
     on = findall(gen_status .> 0)
     gen = gen[on, :]
 
-
     # size of the system
-    nbus = size(bus, 1)
-    ngen = size(gen, 1)
+    nbus = size(buses, 1)
+    ngen = size(generators, 1)
 
     # COSTS
     if isnothing(cost_coefficients)
@@ -88,7 +83,7 @@ function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
     @assert size(costs, 1) == size(gen, 1)
 
     # form Y matrix
-    topology = makeYbus(bus, lines, SBASE, bus_id_to_indexes)
+    topology = makeYbus(bus, lines, baseMVA, bus_id_to_indexes)
 
     branches = Branches{Complex{Float64}}(
         topology.yff, topology.yft, topology.ytf, topology.ytt,
@@ -96,9 +91,9 @@ function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
     )
 
     # bus type indexing
-    ref, pv, pq, bustype, inactive_generators = bustypeindex(bus, gen, bus_id_to_indexes)
+    ref, pv, pq, bustype, inactive_generators = bustypeindex(buses, generators, bus_id_to_indexes)
     # check consistency
-    ref_id = bus[ref, 1]
+    ref_id = buses[ref, 1]
     @assert bus[ref, 2] == [REF_BUS_TYPE]
     if !(ref_id[1] in gen[:, 1])
         error("[PS] No generator attached to slack node.")
@@ -107,15 +102,15 @@ function PowerNetwork(data::Dict{String, Array}; remove_lines=Int[])
         println("[PS] Found $(length(inactive_generators)) inactive generators.")
     end
 
-    gen2bus = generators_to_buses(gen, bus_id_to_indexes)
+    gen2bus = generators_to_buses(generators, bus_id_to_indexes)
     Ybus = topology.ybus
 
-    PowerNetwork(Ybus, branches, bus, lines, gen, costs, SBASE, nbus, ngen, bustype, bus_id_to_indexes,
+    PowerNetwork(Ybus, branches, buses, lines, generators, costs, baseMVA, nbus, ngen, bustype, bus_id_to_indexes,
         ref, pv, pq, gen2bus)
 end
 
 function PowerNetwork(datafile::String; options...)
-    data = import_dataset(datafile)
+    data = PowerModels.parse_file(datafile)
     return PowerNetwork(data; options...)
 end
 

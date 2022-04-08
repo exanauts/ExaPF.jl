@@ -4,6 +4,8 @@ using Printf
 using LinearAlgebra
 using SparseArrays
 
+import PowerModels
+
 import Base: show, get
 
 const PQ_BUS_TYPE = 1
@@ -295,26 +297,10 @@ function get_active_branches(lines, remove_lines)
     end
 end
 
-function import_dataset(datafile::String)
-    if endswith(datafile, ".raw")
-        data_raw = ParsePSSE.parse_raw(datafile)
-        return ParsePSSE.raw_to_exapf(data_raw)
-    elseif endswith(datafile, ".m")
-        data_mat = ParseMAT.parse_mat(datafile)
-        return ParseMAT.mat_to_exapf(data_mat)
-    else
-        error("Unsupported format in file $(datafile): supported extensions are " *
-              "Matpower (.m) or PSSE (.raw)")
-    end
-end
-
 include("indexes.jl")
 using .IndexSet
-include("parsers/parse_mat.jl")
-using .ParseMAT
-include("parsers/parse_psse.jl")
-using .ParsePSSE
 
+include("utils.jl")
 include("topology.jl")
 include("power_network.jl")
 include("matpower.jl")
