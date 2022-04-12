@@ -106,15 +106,22 @@ function BatchJacobian(
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     VD = A{t1s{ncolors}}
 
-    # TODO: which data structure?
-    J = repeat(J_host, k) |> SMT
+    if AutoDiff.has_multiple_expressions(func)
+        slices = AutoDiff.get_slices(func)
+        shuf = [0; cumsum(slices)]
+        jacs_shuf = [J_host[1+shuf[i]:shuf[i+1], :] for i in 1:length(shuf)-1]
+        println(length(coloring))
+        J = vcat([repeat(j, k) for j in jacs_shuf]...) |> SMT
+    else
+        J = repeat(J_host, k) |> SMT
+    end
+    coloring = repeat(coloring, k) |> VI
 
     # Structures
     stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
     init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 
-    coloring = repeat(coloring, k) |> VI
     map_device = blk_map |> VI
 
     jac = Jacobian(

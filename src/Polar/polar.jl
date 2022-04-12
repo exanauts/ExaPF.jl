@@ -57,6 +57,40 @@ function mapping(polar::PolarForm, ::Control)
     return Int[ref; pv; 2*nbus .+ genidx]
 end
 
+function block_mapping(polar::PolarForm, k::Int, ::Control)
+    pf = polar.network
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = polar.network.ngen
+    ref, pv = pf.ref, pf.pv
+    genidx = Int[]
+    for (idx, b) in enumerate(pf.gen2bus)
+        if b != ref[1]
+            push!(genidx, idx)
+        end
+    end
+    nu = (length(pv) + length(ref) + length(genidx)) * k
+    mapu = zeros(Int, nu)
+
+    shift_mag = 0
+    shift_pgen = 2 * nbus * k
+    index = 1
+    for i in 1:k
+        for j in ref
+            mapu[index] = j + (i-1) * nbus + shift_mag
+            index += 1
+        end
+        for j in pv
+            mapu[index] = j + (i-1) * nbus + shift_mag
+            index += 1
+        end
+        for j in genidx
+            mapu[index] = j + (i-1) * ngen + shift_pgen
+            index += 1
+        end
+    end
+    return mapu
+end
+
 function block_mapping(polar::PolarForm, k::Int, ::State)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
@@ -78,19 +112,6 @@ function block_mapping(polar::PolarForm, k::Int, ::State)
         end
     end
     return mapx
-end
-
-function block_mapping(polar::PolarForm, k::Int, ::Control)
-    pf = polar.network
-    nbus = get(polar, PS.NumberOfBuses())
-    ref, pv, pq = pf.ref, pf.pv, pf.pq
-    nu = (length(pv) + 2*length(pq)) * k
-    # TODO
-    mapu = zeros(Int, nu)
-
-    shift_ang = k * nbus
-    shift_mag = 0
-    index = 1
 end
 
 function Base.show(io::IO, polar::PolarForm)

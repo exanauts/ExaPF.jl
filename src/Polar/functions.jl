@@ -634,6 +634,8 @@ struct MultiExpressions <: AutoDiff.AbstractExpression
 end
 
 Base.length(func::MultiExpressions) = sum(length.(func.exprs))
+AutoDiff.has_multiple_expressions(func::MultiExpressions) = true
+AutoDiff.get_slices(func::MultiExpressions) = length.(func.exprs)
 
 function (func::MultiExpressions)(output::AbstractArray, stack::AutoDiff.AbstractStack)
     nb = nbatches(stack)
@@ -696,6 +698,8 @@ struct ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AutoDiff.AbstractExpress
     outer::Expr2
 end
 Base.length(func::ComposedExpressions) = length(func.outer)
+AutoDiff.has_multiple_expressions(func::ComposedExpressions) = AutoDiff.has_multiple_expressions(func.outer)
+AutoDiff.get_slices(func::ComposedExpressions) = AutoDiff.get_slices(func.outer)
 
 function (func::ComposedExpressions)(output::AbstractArray, stack::AutoDiff.AbstractStack)
     func.inner(stack.ψ, stack)  # Evaluate basis

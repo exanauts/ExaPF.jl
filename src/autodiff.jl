@@ -99,6 +99,9 @@ Full sparse Hessian ``H`` of any nonlinear constraint ``h(x)``.
 """
 abstract type AbstractFullHessian end
 
+has_multiple_expressions(func::AbstractExpression) = false
+get_slices(func::AbstractExpression) = 1:length(func)
+
 # Seeding
 
 @kernel function _seed_coloring_kernel!(
