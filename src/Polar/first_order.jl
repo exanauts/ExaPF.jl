@@ -95,11 +95,14 @@ Jacobian(polar::PolarForm, func::AutoDiff.AbstractExpression, x::AbstractVariabl
 function Jacobian(
     polar::PolarForm{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
-    map::Vector{Int},
-    blk_map::Vector{Int},
+    var::AbstractVariable,
     k::Int,
 ) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
+
+    # Generate mappings
+    map = mapping(polar, var)
+    blk_map = mapping(polar, var, k)
 
     pf = polar.network
     nbus = PS.get(pf, PS.NumberOfBuses())
@@ -158,11 +161,14 @@ end
 function BlockJacobian(
     polar::PolarForm{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
-    map::Vector{Int},
-    blk_map::Vector{Int},
+    var::AbstractVariable,
     k::Int,
 ) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
+
+    # Generate mappings
+    map = mapping(polar, var)
+    blk_map = mapping(polar, var, k)
 
     pf = polar.network
     nbus = PS.get(pf, PS.NumberOfBuses())

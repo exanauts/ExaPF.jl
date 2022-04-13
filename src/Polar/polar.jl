@@ -94,6 +94,48 @@ function mapping(polar::PolarForm, ::State, k::Int=1)
     return mapx
 end
 
+function mapping(polar::PolarForm, ::AllVariables, k::Int=1)
+    pf = polar.network
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = polar.network.ngen
+    ref, pv, pq = pf.ref, pf.pv, pf.pq
+    genidx = Int[]
+    for (idx, b) in enumerate(pf.gen2bus)
+        if b != ref[1]
+            push!(genidx, idx)
+        end
+    end
+    nx = (length(pv) + 2*length(pq)) * k
+    nu = (length(pv) + length(ref) + length(genidx)) * k
+    mapxu = zeros(Int, nx+nu)
+
+    shift_mag = 0
+    shift_ang = k * nbus
+    shift_pgen = 2 * nbus * k
+    index = 1
+    for i in 1:k
+        # / x
+        for j in [pv; pq]
+            mapxu[index] = j + (i-1) * nbus + shift_ang
+            index += 1
+        end
+        for j in pq
+            mapxu[index] = j + (i-1) * nbus + shift_mag
+            index += 1
+        end
+        # / u
+        for j in [ref; pv]
+            mapxu[index] = j + (i-1) * nbus + shift_mag
+            index += 1
+        end
+        for j in genidx
+            mapxu[index] = j + (i-1) * ngen + shift_pgen
+            index += 1
+        end
+    end
+    return mapxu
+end
+
 function Base.show(io::IO, polar::PolarForm)
     # Network characteristics
     nbus = PS.get(polar.network, PS.NumberOfBuses())
