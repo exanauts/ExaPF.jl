@@ -96,7 +96,7 @@ end
 function test_batch_hessian(polar, device, MT)
     nblocks = 3
     mapx = ExaPF.mapping(polar, State())
-    blk_mapx = ExaPF.block_mapping(polar, nblocks, State())
+    blk_mapx = ExaPF.mapping(polar, State(), nblocks)
 
     stack = ExaPF.NetworkStack(polar)
     blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)

@@ -26,38 +26,12 @@ number(polar::PolarForm, v::AbstractVariable) = length(mapping(polar, v))
 # Default ordering in NetworkStack: [vmag, vang, pgen]
 
 """
-    mapping(polar::PolarForm, ::State)
-
-Return the mapping associated to the `State()` in [`NetworkStack`](@ref)
-according to the polar formulation `PolarForm`.
-"""
-function mapping(polar::PolarForm, ::State)
-    pf = polar.network
-    nbus = get(polar, PS.NumberOfBuses())
-    ref, pv, pq = pf.ref, pf.pv, pf.pq
-    return Int[nbus .+ pv; nbus .+ pq; pq]
-end
-
-"""
     mapping(polar::PolarForm, ::Control)
 
 Return the mapping associated to the `Control()` in [`NetworkStack`](@ref)
 according to the polar formulation `PolarForm`.
 """
-function mapping(polar::PolarForm, ::Control)
-    pf = polar.network
-    nbus = get(polar, PS.NumberOfBuses())
-    ref, pv, pq = pf.ref, pf.pv, pf.pq
-    genidx = Int[]
-    for (idx, b) in enumerate(pf.gen2bus)
-        if b != ref[1]
-            push!(genidx, idx)
-        end
-    end
-    return Int[ref; pv; 2*nbus .+ genidx]
-end
-
-function block_mapping(polar::PolarForm, k::Int, ::Control)
+function mapping(polar::PolarForm, ::Control, k::Int=1)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ngen = polar.network.ngen
@@ -91,7 +65,13 @@ function block_mapping(polar::PolarForm, k::Int, ::Control)
     return mapu
 end
 
-function block_mapping(polar::PolarForm, k::Int, ::State)
+"""
+    mapping(polar::PolarForm, ::State)
+
+Return the mapping associated to the `State()` in [`NetworkStack`](@ref)
+according to the polar formulation `PolarForm`.
+"""
+function mapping(polar::PolarForm, ::State, k::Int=1)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ref, pv, pq = pf.ref, pf.pv, pf.pq
