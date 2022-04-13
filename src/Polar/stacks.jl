@@ -239,6 +239,20 @@ function BlockNetworkStack(polar::PolarForm{T,VI,VT,MT}, k::Int) where {T,VI,VT,
     return stack
 end
 
+function BlockNetworkStack(
+    polar::PolarForm,
+    ploads::Array{Float64, 2},
+    qloads::Array{Float64, 2},
+)
+    @assert size(ploads) == size(qloads)
+    k = size(ploads, 2)
+    blk_stack = BlockNetworkStack(polar, k)
+
+    copyto!(blk_stack.pload, ploads)
+    copyto!(blk_stack.qload, qloads)
+    return blk_stack
+end
+
 function Base.empty!(stack::BlockNetworkStack)
     fill!(stack.vmag, 0.0)
     fill!(stack.vang, 0.0)

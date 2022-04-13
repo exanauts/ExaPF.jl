@@ -12,6 +12,10 @@ function jacobian!(
     return jac.J
 end
 
+function set_params!(jac::AutoDiff.AbstractJacobian, stack::AbstractNetworkStack)
+    copyto!(jac.stack.params, stack.params)
+end
+
 struct Jacobian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractJacobian
     model::Model
     func::Func
@@ -225,5 +229,4 @@ function AutoDiff.partials!(jac::BlockJacobian)
     )
     wait(ev)
 end
-
 
