@@ -205,7 +205,7 @@ end
 
 nbatches(stack::BlockNetworkStack) = stack.k
 
-function init!(polar::PolarForm, stack::BlockNetworkStack)
+function init!(polar::PolarForm, stack::BlockNetworkStack; loads=true)
     vmag = get(polar.network, PS.VoltageMagnitude())
     vang = get(polar.network, PS.VoltageAngle())
     pgen = get(polar.network, PS.ActivePower())
@@ -224,9 +224,11 @@ function init!(polar::PolarForm, stack::BlockNetworkStack)
         i = (s - 1) * ngen  +1
         copyto!(stack.pgen, i, pgen, 1, ngen)
 
-        i = (s - 1) * nload  +1
-        copyto!(stack.pload, i, pload, 1, nload)
-        copyto!(stack.qload, i, qload, 1, nload)
+        if loads
+            i = (s - 1) * nload  +1
+            copyto!(stack.pload, i, pload, 1, nload)
+            copyto!(stack.qload, i, qload, 1, nload)
+        end
     end
 end
 
@@ -258,8 +260,6 @@ function Base.empty!(stack::BlockNetworkStack)
     fill!(stack.vang, 0.0)
     fill!(stack.pgen, 0.0)
     fill!(stack.ψ, 0.0)
-    fill!(stack.pload, 0.0)
-    fill!(stack.qload, 0.0)
     return
 end
 
@@ -282,3 +282,13 @@ function bounds(polar::PolarForm{T, VI, VT, MT}, stack::BlockNetworkStack) where
     ]
     return convert(VT, lb), convert(VT, ub)
 end
+
+function blockcopy!(stack::BlockNetworkStack, map::AbstractArray, x::AbstractArray)
+    nx = length(x)
+    @assert length(map) % nx == 0
+    nb = div(length(map), nx)
+    for k in 1:nb, i in eachindex(x)
+        stack.input[map[i + (k-1)*nx]] = x[i]
+    end
+end
+
