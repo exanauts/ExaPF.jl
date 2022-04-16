@@ -252,7 +252,7 @@ struct ArrowheadJacobian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractJa
     block_id::VI
 end
 
-function arrowhead_sparsity(J, block_id, nx, nu, nblocks)
+function jacobian_arrowhead_sparsity(J, block_id, nx, nu, nblocks)
     i_jac, j_jac, _ = findnz(J)
     i_coo, j_coo = Int[], Int[]
 
@@ -323,7 +323,7 @@ function ArrowheadJacobian(
         block_id = vcat([fill(_id, m) for _id in 1:k]...)
     end
 
-    i_coo, j_coo = arrowhead_sparsity(J_blk, block_id, nx, nu, k)
+    i_coo, j_coo = jacobian_arrowhead_sparsity(J_blk, block_id, nx, nu, k)
     J = sparse(i_coo, j_coo, ones(length(i_coo))) |> SMT
 
     coloring = repeat(coloring, k) |> VI
@@ -346,7 +346,12 @@ end
 
 @kernel function _arrowhead_partials_csc_kernel!(J_colptr, J_rowval, J_nzval, duals, coloring, nx, nu, nblock)
     j = @index(Global, Linear)
-    jk = (j <= nblock * nx) ? ((j-1) % nblock + 1) : j - nblock * nx
+    if j <= nblock * nx
+        jk = (j-1) % nx + 1
+    else
+        jk = j - nblock * nx + nx
+    end
+
     for c in J_colptr[j]:J_colptr[j+1]-1
         i = J_rowval[c]
         J_nzval[c] = duals[coloring[jk]+1, i]
@@ -362,8 +367,6 @@ function AutoDiff.partials!(jac::ArrowheadJacobian)
     device = jac.model.device
     coloring = jac.coloring
     n = length(duals)
-    nzval = div(nnz(jac.J), jac.nblocks)
-
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     ndrange = (size(J, 2), )

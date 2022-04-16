@@ -119,7 +119,7 @@ function test_batch_hessian(polar, device, MT)
     hess = ExaPF.FullHessian(polar, mycons, mapx)
     H = ExaPF.hessian!(hess, stack, y)
     # Block evaluation
-    blk_hess = ExaPF.BatchHessian(polar, mycons, mapx, blk_mapx, nblocks)
+    blk_hess = ExaPF.BatchHessian(polar, mycons, ExaPF.AllVariables(), nblocks)
     blk_H = ExaPF.hessian!(blk_hess, blk_stack, blk_y)
 
     @test blk_H == repeat(H, nblocks)
