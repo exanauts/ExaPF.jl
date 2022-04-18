@@ -223,7 +223,6 @@ function hessian_arrowhead_sparsity(H, nx, nu, nscen)
     i_hess, j_hess, _ = findnz(H)
     nnzh = length(i_hess)
     i_coo, j_coo = Int[], Int[]
-    ind_uu = Tuple{Int, Int}[]
     idk = 1
     for (i, j) in zip(i_hess, j_hess)
         # Get current scenario
@@ -247,12 +246,10 @@ function hessian_arrowhead_sparsity(H, nx, nu, nscen)
         elseif (nx < ik <= nx+nu) && (nx < jk <= nx+nu)
             push!(i_coo, ik + (nscen-1) * nx)
             push!(j_coo, jk + (nscen-1) * nx)
-            push!(ind_uu, (idk, k))
         end
         idk += 1
     end
-    println(ind_uu)
-    return i_coo, j_coo, ind_uu
+    return i_coo, j_coo
 end
 
 function ArrowheadHessian(
@@ -292,7 +289,7 @@ function ArrowheadHessian(
     VD = A{ForwardDiff.Dual{Nothing, Float64, ncolors}}
 
     H_blk = repeat(H_host, k) |> SMT
-    i_coo, j_coo, _ = hessian_arrowhead_sparsity(H_blk, nx, nu, k)
+    i_coo, j_coo = hessian_arrowhead_sparsity(H_blk, nx, nu, k)
     H = sparse(i_coo, j_coo, ones(length(i_coo)), ntot, ntot) |> SMT
 
     # Structures
