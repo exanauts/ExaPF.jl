@@ -99,7 +99,7 @@ function test_constraints_adjoint(polar, device, MT)
         adj_fd = FiniteDiff.finite_difference_jacobian(test_fd, x) |> Array
         # Loosen the tolerance to 1e-5 there (finite_difference_jacobian
         # is less accurate than finite_difference_gradient)
-        @test isapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-5)
+        @test myisapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-5)
     end
 end
 
@@ -166,7 +166,7 @@ function test_reduced_gradient(polar, device, MT)
 
     cost_production = ExaPF.CostFunction(polar) ∘ basis
 
-    c = zeros(1)
+    c = zeros(1) |> MT
     cost_production(c, stack)
 
     grad = similar(stack.input, nx+nu)
@@ -192,7 +192,7 @@ function test_reduced_gradient(polar, device, MT)
         stack.input[mapu] .= u_
         ExaPF.nlsolve!(solver, jx, stack)
         cost_production(c, stack)
-        return c[1]
+        return sum(c)
     end
 
     u = stack.input[mapu]

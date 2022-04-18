@@ -416,8 +416,8 @@ function adjoint!(func::VoltageMagnitudeBounds, ∂stack, stack, ∂v)
 end
 
 function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudeBounds) where {T,VI,VT,MT}
-    v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
-    return convert(VT, func.Cpq * v_min), convert(VT, func.Cpq * v_max)
+    v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude()) .|> VT
+    return func.Cpq * v_min, func.Cpq * v_max
 end
 
 function Base.show(io::IO, func::VoltageMagnitudeBounds)
