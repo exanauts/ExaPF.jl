@@ -217,14 +217,14 @@ function test_batch_jacobian(polar, device, MT)
         m = length(pf)
 
         jac = ExaPF.Jacobian(polar, pf, mapx)
-        blk_jac = ExaPF.Jacobian(polar, pf, State(), nblocks)
+        blk_jac = ExaPF.ArrowheadJacobian(polar, pf, State(), nblocks)
 
         ExaPF.jacobian!(jac, stack)
         ExaPF.jacobian!(blk_jac, blk_stack)
 
         blk_J_cpu = blk_jac.J |> SparseMatrixCSC
         J_cpu = jac.J |> SparseMatrixCSC
-        @test blk_J_cpu == repeat(J_cpu, nblocks)
+        @test blk_J_cpu ≈ blockdiag([J_cpu for i in 1:nblocks]...)
     end
 end
 

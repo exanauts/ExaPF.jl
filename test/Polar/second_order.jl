@@ -96,7 +96,6 @@ end
 function test_batch_hessian(polar, device, MT)
     nblocks = 3
     mapx = ExaPF.mapping(polar, State())
-    mapu = ExaPF.mapping(polar, Control())
 
     stack = ExaPF.NetworkStack(polar)
     blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)
@@ -116,15 +115,15 @@ function test_batch_hessian(polar, device, MT)
     blk_y = repeat(ones(m), nblocks) |> MT
 
     # Evaluate reference Hessian
-    hess = ExaPF.FullHessian(polar, mycons, [mapx ; mapu])
+    hess = ExaPF.FullHessian(polar, mycons, mapx)
     H = ExaPF.hessian!(hess, stack, y)
     # Block evaluation
-    blk_hess = ExaPF.BatchHessian(polar, mycons, ExaPF.AllVariables(), nblocks)
+    blk_hess = ExaPF.ArrowheadHessian(polar, mycons, ExaPF.State(), nblocks)
     blk_H = ExaPF.hessian!(blk_hess, blk_stack, blk_y)
 
     blk_H_cpu = blk_H |> SparseMatrixCSC
     H_cpu = H |> SparseMatrixCSC
 
-    @test blk_H_cpu ≈ repeat(H_cpu, nblocks)
+    @test blk_H_cpu ≈ blockdiag([H_cpu for i in 1:nblocks]...)
 end
 

@@ -153,55 +153,6 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     return hess
 end
 
-function BatchHessian(
-    polar::PolarForm{T, VI, VT, MT},
-    func::AutoDiff.AbstractExpression,
-    var::AbstractVariable,
-    k::Int,
-) where {T, VI, VT, MT}
-    (SMT, A) = get_jacobian_types(polar.device)
-
-    map = mapping(polar, var)
-    blk_map = mapping(polar, var, k)
-
-    pf = polar.network
-    nbus = PS.get(pf, PS.NumberOfBuses())
-    nlines = PS.get(pf, PS.NumberOfLines())
-    ngen = PS.get(pf, PS.NumberOfGenerators())
-
-    n_cons = length(func) * k
-
-    nmap = length(map)
-
-    H_host, coloring = _get_hessian_colors(polar, func, map)
-    ncolors = length(unique(coloring))
-    VD = A{ForwardDiff.Dual{Nothing, Float64, ncolors}}
-
-    H = repeat(H_host, k) |> SMT
-
-    # Structures
-    stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
-    init!(polar, stack)
-
-    ∂stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
-    t1sF = zeros(Float64, n_cons) |> VD
-    adj_t1sF = similar(t1sF)
-
-    coloring = repeat(coloring, k) |> VI
-
-    map_device = blk_map |> VI
-    hess = FullHessian(
-        polar, func, map_device, stack, ∂stack, coloring, ncolors, t1sF, adj_t1sF,
-        H,
-    )
-
-    # seed
-    AutoDiff.seed_coloring!(hess, coloring)
-
-    return hess
-end
-
-
 struct ArrowheadHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFullHessian
     model::Model
     func::Func
@@ -255,15 +206,26 @@ end
 function ArrowheadHessian(
     polar::PolarForm{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
+    X::AbstractVariable,
     k::Int,
 ) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
     nx = number(polar, State())
     nu = number(polar, Control())
+    if isa(X, Control)
+        nu = nu
+        nx = 0
+    elseif isa(X, State)
+        nu = 0
+        nx = nx
+    elseif isa(X, AllVariables)
+        nu = nu
+        nx = nx
+    end
     ntot = nx * k + nu
 
-    map = mapping(polar, AllVariables())
-    blk_map = mapping(polar, AllVariables(), k)
+    map = mapping(polar, X)
+    blk_map = mapping(polar, X, k)
 
     varid = Int[]
     for i in 1:k
