@@ -258,3 +258,17 @@ function LinearAlgebra.mul!(
     )
 end
 
+@kernel function _blk_transfer_to_input!(input, map, src, nx)
+    i, k = @index(Global, NTuple)
+    input[map[i + (k-1)*nx]] = src[i]
+end
+
+function blockcopy!(stack::BlockNetworkStack, map::CuArray{Int}, x::CuArray{Float64})
+    nx = length(x)
+    @assert length(map) % nx == 0
+    nb = div(length(map), nx)
+    ndrange = (nx, nb)
+    ev = _blk_transfer_to_input!(CUDADevice())(stack.input, map, x, nx, ndrange=ndrange)
+    wait(ev)
+end
+

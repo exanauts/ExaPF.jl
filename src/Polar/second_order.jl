@@ -250,7 +250,7 @@ function ArrowheadHessian(
     ncolors = length(unique(coloring))
     VD = A{ForwardDiff.Dual{Nothing, Float64, ncolors}}
 
-    H_blk = repeat(H_host, k) |> SMT
+    H_blk = repeat(H_host, k)
     i_coo, j_coo = hessian_arrowhead_sparsity(H_blk, nx, nu, k)
     H = sparse(i_coo, j_coo, ones(length(i_coo)), ntot, ntot) |> SMT
 
@@ -265,6 +265,8 @@ function ArrowheadHessian(
     coloring = repeat(coloring, k) |> VI
 
     map_device = blk_map |> VI
+    varid = varid |> VI
+
     hess = ArrowheadHessian(
         polar, func, map_device, stack, ∂stack,
         coloring, ncolors, t1sF, adj_t1sF, H,
@@ -317,6 +319,47 @@ end
     end
 end
 
+@kernel function _arrowhead_hess_partials_csr_kernel!(
+    J_rowptr, J_colval, J_nzval, duals, map, coloring, vartype, nblocks, nx, nu,
+)
+    i = @index(Global, Linear)
+
+    shift = nblocks * nx
+
+    for c in J_rowptr[i]:J_rowptr[i+1]-1
+        j = J_colval[c]
+        # xx
+        if (1 <= i <= shift) && (1 <= j <= shift)
+            k = div(i-1, nx) + 1
+            ik = (i-1) % nx + 1 + (k-1) * (nx+nu)
+            jk = (j-1) % nx + 1
+            J_nzval[c] = duals[coloring[jk]+1, map[ik]]
+        # xu
+        elseif (1 <= i <= shift) && (shift + 1 <= j <= shift + nu)
+            k = div(i-1, nx) + 1
+            ik = (i-1) % nx + 1 + (k-1) * (nx+nu)
+            jk = j - shift + nx
+            J_nzval[c] = duals[coloring[jk]+1, map[ik]]
+        # ux
+        elseif (shift + 1 <= i <= shift + nu) && (1 <= j <= shift)
+            k = div(j-1, nx) + 1
+            ik = i - shift + (k-1) * (nx+nu) + nx
+            jk = (j-1) % nx + 1
+            J_nzval[c] = duals[coloring[jk]+1, map[ik]]
+        # uu
+        elseif (shift < i <= shift + nu) && (shift < j <= shift + nu)
+            J_nzval[c] = 0.0
+            ik = i - shift + nx
+            jk = j - shift + nx
+            for k in 1:nblocks
+                ℓ = (k-1) * (nx+nu) + ik
+                @assert vartype[ℓ] == 1
+                J_nzval[c] += duals[coloring[jk]+1, map[ℓ]]
+            end
+        end
+    end
+end
+
 function AutoDiff.partials!(hess::ArrowheadHessian)
     H = hess.H
     N = hess.ncolors
@@ -327,11 +370,19 @@ function AutoDiff.partials!(hess::ArrowheadHessian)
     n = length(duals)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
-    ndrange = (size(H, 2), )
-    ev = _arrowhead_hess_partials_csc_kernel!(device)(
-        H.colptr, H.rowval, H.nzval, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
-        ndrange=ndrange, dependencies=Event(device),
-    )
+    if isa(H, SparseMatrixCSC)
+        ndrange = (size(H, 2), )
+        ev = _arrowhead_hess_partials_csc_kernel!(device)(
+            H.colptr, H.rowval, H.nzval, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
+            ndrange=ndrange, dependencies=Event(device),
+        )
+    elseif isa(H, CuSparseMatrixCSR)
+        ndrange = (size(H, 1), )
+        ev = _arrowhead_hess_partials_csr_kernel!(device)(
+            H.rowPtr, H.colVal, H.nzVal, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
+            ndrange=ndrange, dependencies=Event(device),
+        )
+    end
     wait(ev)
 end
 

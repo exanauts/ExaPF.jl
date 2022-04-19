@@ -172,7 +172,7 @@ function ArrowheadJacobian(
         shuf = [0; cumslices]
         cumslices .*= k
         jacs_shuf = [J_host[1+shuf[i]:shuf[i+1], :] for i in 1:length(shuf)-1]
-        J_blk = vcat([repeat(j, k) for j in jacs_shuf]...) |> SMT
+        J_blk = vcat([repeat(j, k) for j in jacs_shuf]...)
         block_id = Int[]
         idk = 1
         for i in 1:n_cons
@@ -186,7 +186,7 @@ function ArrowheadJacobian(
             push!(block_id, b)
         end
     else
-        J_blk = repeat(J_host, k) |> SMT
+        J_blk = repeat(J_host, k)
         m = length(func)
         block_id = vcat([fill(_id, m) for _id in 1:k]...)
     end
@@ -202,6 +202,7 @@ function ArrowheadJacobian(
     t1sF = zeros(Float64, n_cons) |> VD
 
     map_device = blk_map |> VI
+    block_id = block_id |> VI
 
     jac = ArrowheadJacobian(
         polar, func, map_device, stack, coloring, ncolors, t1sF, J, nx, nu, k, block_id,
@@ -226,6 +227,20 @@ end
     end
 end
 
+@kernel function _arrowhead_partials_csr_kernelll!(J_rowptr, J_colval, J_nzval, duals, coloring, nx, nu, nblock)
+    i = @index(Global, Linear)
+
+    for c in J_rowptr[i]:J_rowptr[i+1]-1
+        j = J_colval[c]
+        if j <= nblock * nx
+            jk = (j-1) % nx + 1
+        else
+            jk = j - nblock * nx + nx
+        end
+        J_nzval[c] = duals[coloring[jk]+1, i]
+    end
+end
+
 # Adapt partials extraction for block structure
 function AutoDiff.partials!(jac::ArrowheadJacobian)
     J = jac.J
@@ -237,11 +252,19 @@ function AutoDiff.partials!(jac::ArrowheadJacobian)
     n = length(duals)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
-    ndrange = (size(J, 2), )
-    ev = _arrowhead_partials_csc_kernel!(device)(
-        J.colptr, J.rowval, J.nzval, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
-        ndrange=ndrange, dependencies=Event(device),
-    )
+    if isa(J, SparseMatrixCSC)
+        ndrange = (size(J, 2), )
+        ev = _arrowhead_partials_csc_kernel!(device)(
+            J.colptr, J.rowval, J.nzval, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
+            ndrange=ndrange, dependencies=Event(device),
+        )
+    elseif isa(J, CuSparseMatrixCSR)
+        ndrange = (size(J, 1), )
+        ev = _arrowhead_partials_csr_kernelll!(device)(
+            J.rowPtr, J.colVal, J.nzVal, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
+            ndrange=ndrange, dependencies=Event(device),
+        )
+    end
     wait(ev)
 end
 
