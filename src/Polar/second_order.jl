@@ -250,7 +250,17 @@ function ArrowheadHessian(
     ncolors = length(unique(coloring))
     VD = A{ForwardDiff.Dual{Nothing, Float64, ncolors}}
 
-    H_blk = repeat(H_host, k)
+    i_hess, j_hess = Int[], Int[]
+    i, j, _ = findnz(H_host)
+    shift = 0
+    for kk in 1:k
+        append!(i_hess, i .+ shift)
+        append!(j_hess, j)
+        shift += size(H_host, 1)
+    end
+
+    nnzh = length(i_hess)
+    H_blk = sparse(i_hess, j_hess, ones(nnzh))
     i_coo, j_coo = hessian_arrowhead_sparsity(H_blk, nx, nu, k)
     H = sparse(i_coo, j_coo, ones(length(i_coo)), ntot, ntot) |> SMT
 

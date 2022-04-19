@@ -172,7 +172,19 @@ function ArrowheadJacobian(
         shuf = [0; cumslices]
         cumslices .*= k
         jacs_shuf = [J_host[1+shuf[i]:shuf[i+1], :] for i in 1:length(shuf)-1]
-        J_blk = vcat([repeat(j, k) for j in jacs_shuf]...)
+        i_jac = Int[]
+        j_jac = Int[]
+        shift = 0
+        for J in jacs_shuf
+            i, j, _ = findnz(J)
+            for kk in 1:k
+                append!(i_jac, i .+ shift)
+                append!(j_jac, j)
+                shift += size(J, 1)
+            end
+        end
+        nnzJ = length(i_jac)
+        J_blk = sparse(i_jac, j_jac, ones(nnzJ))
         block_id = Int[]
         idk = 1
         for i in 1:n_cons
