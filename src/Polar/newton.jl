@@ -97,11 +97,11 @@ by changing the optional argument `linear_solver`.
 """
 function nlsolve!(
     algo::NewtonRaphson,
-    jac::Jacobian,
-    stack::NetworkStack{VT,Buf};
+    jac::AutoDiff.AbstractJacobian,
+    stack::AbstractNetworkStack{VT};
     linear_solver=DirectSolver(jac.J),
-    nl_buffer=NLBuffer{VT}(size(jac, 2)),
-) where {VT, Buf}
+    nl_buffer=NLBuffer{VT}(size(jac.J, 2)),
+) where {VT}
     iter = 0
     converged = false
     normF = Inf

@@ -159,3 +159,54 @@ function test_polar_powerflow(polar, device, M)
     end
 end
 
+function test_polar_blk_stack(polar, device, M)
+    nblocks = 2
+    stack = ExaPF.NetworkStack(polar)
+    blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)
+
+    for expr in [
+        ExaPF.PowerFlowBalance(polar),
+        ExaPF.PowerGenerationBounds(polar),
+        ExaPF.VoltageMagnitudeBounds(polar),
+        ExaPF.LineFlows(polar),
+        ExaPF.CostFunction(polar),
+    ]
+        pf = expr ∘ ExaPF.PolarBasis(polar)
+        m = length(pf)
+        cons = zeros(m) |> M
+        blk_cons = zeros(m * nblocks) |> M
+        # One evaluation
+        pf(cons, stack)
+        # Block evaluation
+        pf(blk_cons, blk_stack)
+        # Test that results match
+        @test blk_cons ≈ repeat(cons, nblocks)
+    end
+end
+
+# NB: currently tested only with direct linear solver
+function test_block_powerflow(polar, device, M)
+    pf_solver = NewtonRaphson(tol=1e-10)
+    nblocks = 10
+    blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)
+
+    perturb = 0.01 .* rand(length(blk_stack.pload)) |> M
+    blk_stack.pload .*= perturb
+
+    pf = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar)
+
+    mapx = ExaPF.mapping(polar, State())
+    blk_mapx = ExaPF.mapping(polar, State(), nblocks)
+
+    blk_jac = ExaPF.BlockJacobian(polar, pf, mapx, blk_mapx, nblocks)
+    ExaPF.set_params!(blk_jac, blk_stack)
+
+    convergence = ExaPF.nlsolve!(
+        pf_solver,
+        blk_jac,
+        blk_stack;
+    )
+    @test convergence.has_converged
+    @test convergence.norm_residuals < pf_solver.tol
+end
+

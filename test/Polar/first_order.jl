@@ -166,7 +166,7 @@ function test_reduced_gradient(polar, device, MT)
 
     cost_production = ExaPF.CostFunction(polar) ∘ basis
 
-    c = zeros(1)
+    c = zeros(1) |> MT
     cost_production(c, stack)
 
     grad = similar(stack.input, nx+nu)
@@ -192,11 +192,39 @@ function test_reduced_gradient(polar, device, MT)
         stack.input[mapu] .= u_
         ExaPF.nlsolve!(solver, jx, stack)
         cost_production(c, stack)
-        return c[1]
+        return sum(c)
     end
 
     u = stack.input[mapu]
     grad_fd = FiniteDiff.finite_difference_jacobian(reduced_cost, u)
     @test isapprox(grad_fd[:], grad_adjoint, rtol=1e-4)
+end
+
+function test_batch_jacobian(polar, device, MT)
+    nblocks = 3
+    mapx = ExaPF.mapping(polar, State())
+
+    stack = ExaPF.NetworkStack(polar)
+    blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)
+
+    for expr in [
+        ExaPF.PowerFlowBalance(polar),
+        ExaPF.PowerGenerationBounds(polar),
+        ExaPF.VoltageMagnitudeBounds(polar),
+        ExaPF.LineFlows(polar),
+    ]
+        pf = expr ∘ ExaPF.PolarBasis(polar)
+        m = length(pf)
+
+        jac = ExaPF.Jacobian(polar, pf, mapx)
+        blk_jac = ExaPF.ArrowheadJacobian(polar, pf, State(), nblocks)
+
+        ExaPF.jacobian!(jac, stack)
+        ExaPF.jacobian!(blk_jac, blk_stack)
+
+        blk_J_cpu = blk_jac.J |> SparseMatrixCSC
+        J_cpu = jac.J |> SparseMatrixCSC
+        @test blk_J_cpu ≈ blockdiag([J_cpu for i in 1:nblocks]...)
+    end
 end
 
