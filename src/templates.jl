@@ -31,3 +31,5 @@ Independent variables ``u`` used in the reduced-space formulation.
 """
 struct Control <: AbstractVariable end
 
+struct AllVariables <: AbstractVariable end
+

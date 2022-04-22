@@ -99,6 +99,9 @@ Full sparse Hessian ``H`` of any nonlinear constraint ``h(x)``.
 """
 abstract type AbstractFullHessian end
 
+has_multiple_expressions(func::AbstractExpression) = false
+get_slices(func::AbstractExpression) = 1:length(func)
+
 # Seeding
 
 @kernel function _seed_coloring_kernel!(
@@ -107,7 +110,7 @@ abstract type AbstractFullHessian end
     i, j = @index(Global, NTuple)
 
     if coloring[i] == j
-        duals[j+1, map[i]] = 1.0
+        duals[1+j, map[i]] = 1.0
     end
 end
 
@@ -143,6 +146,22 @@ function seed!(
     wait(ev)
 end
 
+function _seed_coloring!(
+    M::Union{AbstractJacobian, AbstractFullHessian},
+    coloring::AbstractVector,
+    dest::AbstractVector{ForwardDiff.Dual{Nothing, T, N}},
+) where {T, N}
+    dest = M.stack.input
+    map = M.map
+    device = M.model.device
+    n = length(dest)
+    dest_ = reshape(reinterpret(T, dest), N+1, n)
+    ndrange = (length(map), N)
+    ev = _seed_coloring_kernel!(device)(
+        dest_, coloring, map, ndrange=ndrange, dependencies=Event(device))
+    wait(ev)
+end
+
 """
     seed_coloring!(
         M::Union{AbstractJacobian, AbstractFullHessian}
@@ -158,22 +177,6 @@ function seed_coloring!(
 )
     dest = M.stack.input
     _seed_coloring!(M, coloring, dest)
-end
-
-function _seed_coloring!(
-    M::Union{AbstractJacobian, AbstractFullHessian},
-    coloring::AbstractVector,
-    dest::AbstractVector{ForwardDiff.Dual{Nothing, T, N}},
-) where {T, N}
-    dest = M.stack.input
-    map = M.map
-    device = M.model.device
-    n = length(dest)
-    dest_ = reshape(reinterpret(T, dest), N+1, n)
-    ndrange = (length(map), N)
-    ev = _seed_coloring_kernel!(device)(
-        dest_, coloring, map, ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
 end
 
 # Get partials
@@ -302,7 +305,6 @@ end
     duals, @Const(primals),
 )
     i = @index(Global, Linear)
-
     duals[1, i] = primals[i]
 end
 
