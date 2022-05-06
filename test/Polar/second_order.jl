@@ -120,10 +120,15 @@ function test_batch_hessian(polar, device, MT)
     # Block evaluation
     blk_hess = ExaPF.ArrowheadHessian(polar, mycons, ExaPF.State(), nblocks)
     blk_H = ExaPF.hessian!(blk_hess, blk_stack, blk_y)
-
     blk_H_cpu = blk_H |> SparseMatrixCSC
     H_cpu = H |> SparseMatrixCSC
-
     @test blk_H_cpu ≈ blockdiag([H_cpu for i in 1:nblocks]...)
+
+    # Multivariables
+    for X in [State(), Control(), AllVariables()]
+        blk_hess = ExaPF.ArrowheadHessian(polar, mycons, X, nblocks)
+        blk_H = ExaPF.hessian!(blk_hess, blk_stack, blk_y)
+        @test isa(blk_H, AbstractMatrix)
+    end
 end
 
