@@ -6,6 +6,7 @@ function test_polar_stack(polar, device, M)
     mapx = ExaPF.mapping(polar, State()) |> M
     mapu = ExaPF.mapping(polar, Control()) |> M
     u0 = rand(length(mapu)) |> M
+
     stack = ExaPF.NetworkStack(polar)
 
     # Test display
@@ -37,6 +38,56 @@ function test_polar_stack(polar, device, M)
     empty!(stack)
     @test iszero(stack.input)
 
+    return nothing
+end
+
+function test_polar_blockstack(polar, device, M)
+    nblocks = 2
+    ngen = get(polar, PS.NumberOfGenerators())
+    nbus = get(polar, PS.NumberOfBuses())
+    nlines = get(polar, PS.NumberOfLines())
+    nu = ExaPF.number(polar, Control())
+    nx = ExaPF.number(polar, State())
+
+    mapx = ExaPF.mapping(polar, State(), nblocks) |> M
+    @test length(mapx) == nx * nblocks
+    mapu = ExaPF.mapping(polar, Control(), nblocks) |> M
+    mapxu = ExaPF.mapping(polar, AllVariables(), nblocks) |> M
+    u0 = rand(nu) |> M
+
+    x0 = rand(nx * nblocks) |> M
+
+    stack = ExaPF.BlockNetworkStack(polar, nblocks)
+
+    # Test display
+    println(devnull, stack)
+    # By defaut, values are equal to 0
+    @test isa(stack.input, M)
+    @test isa(stack.vmag, M)
+
+    # Copy state x0 inside cache
+    copyto!(stack, mapx, x0)
+    @test stack.input[mapx] == x0
+    # Copy control u0 inside cache
+    ExaPF.blockcopy!(stack, mapu, u0)
+
+    # Test that all attributes have valid length
+    @test length(stack.vang) == length(stack.vmag) == nbus * nblocks
+    @test length(stack.pgen) == ngen * nblocks
+    @test length(stack.input) == (ngen + 2 * nbus) * nblocks
+    @test length(stack.ψ) == (2 * nlines + nbus) * nblocks
+
+    # Bounds
+    b♭, b♯ = ExaPF.bounds(polar, stack)
+    @test myisless(b♭, b♯)
+
+    empty!(stack)
+    @test iszero(stack.input)
+
+    # Test constructor with scenarios
+    pload = rand(nbus, nblocks)
+    qload = rand(nbus, nblocks)
+    stack = ExaPF.BlockNetworkStack(polar, pload, qload)
     return nothing
 end
 
@@ -159,7 +210,7 @@ function test_polar_powerflow(polar, device, M)
     end
 end
 
-function test_polar_blk_stack(polar, device, M)
+function test_polar_blk_expressions(polar, device, M)
     nblocks = 2
     stack = ExaPF.NetworkStack(polar)
     blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)

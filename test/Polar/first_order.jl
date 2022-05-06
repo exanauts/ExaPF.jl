@@ -200,7 +200,7 @@ function test_reduced_gradient(polar, device, MT)
     @test isapprox(grad_fd[:], grad_adjoint, rtol=1e-4)
 end
 
-function test_batch_jacobian(polar, device, MT)
+function test_block_jacobian(polar, device, MT)
     nblocks = 3
     mapx = ExaPF.mapping(polar, State())
 
@@ -225,6 +225,18 @@ function test_batch_jacobian(polar, device, MT)
         blk_J_cpu = blk_jac.J |> SparseMatrixCSC
         J_cpu = jac.J |> SparseMatrixCSC
         @test blk_J_cpu ≈ blockdiag([J_cpu for i in 1:nblocks]...)
+    end
+
+    constraints = [
+        ExaPF.PowerFlowBalance(polar),
+        ExaPF.PowerGenerationBounds(polar),
+        ExaPF.VoltageMagnitudeBounds(polar),
+        ExaPF.LineFlows(polar),
+    ]
+    mycons = ExaPF.MultiExpressions(constraints) ∘ ExaPF.PolarBasis(polar)
+    for X in [State(), Control(), AllVariables()]
+        blk_jac = ExaPF.ArrowheadJacobian(polar, mycons, X, nblocks)
+        ExaPF.jacobian!(blk_jac, blk_stack)
     end
 end
 
