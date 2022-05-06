@@ -140,12 +140,3 @@ function blockmul!(y::AbstractArray, A::AbstractMatrix, x::AbstractArray, alpha,
     end
 end
 
-struct BlockSparseMatrix{SMT}
-    k::Int
-    Js::Vector{SMT}
-end
-
-function BlockSparseMatrix(J::AbstractSparseMatrix, k::Int)
-    return BlockSparseMatrix(k, [copy(J) for _ in 1:k])
-end
-
