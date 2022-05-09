@@ -142,7 +142,9 @@ function seed!(
     dest_ = reshape(reinterpret(T, dest), 2, n)
     ndrange = length(map)
     ev = _seed_kernel!(device)(
-        dest_, v, map, ndrange=ndrange, dependencies=Event(device))
+        dest_, v, map;
+        ndrange=ndrange, dependencies=Event(device),
+    )
     wait(ev)
 end
 
@@ -158,7 +160,9 @@ function _seed_coloring!(
     dest_ = reshape(reinterpret(T, dest), N+1, n)
     ndrange = (length(map), N)
     ev = _seed_coloring_kernel!(device)(
-        dest_, coloring, map, ndrange=ndrange, dependencies=Event(device))
+        dest_, coloring, map;
+        ndrange=ndrange, dependencies=Event(device),
+    )
     wait(ev)
 end
 
@@ -199,8 +203,11 @@ function getpartials_kernel!(hv::AbstractVector, H::AbstractHessianProd)
     device = H.model.device
     map = H.map
     adj_t1sx = H.∂stack.input
-    kernel! = getpartials_hv_kernel!(device)
-    ev = kernel!(hv, adj_t1sx, map, ndrange=length(hv), dependencies=Event(device))
+    kernel! =
+    ev = getpartials_hv_kernel!(device)(
+        hv, adj_t1sx, map;
+        ndrange=length(hv), dependencies=Event(device),
+    )
     wait(ev)
 end
 
@@ -241,11 +248,15 @@ function partials!(jac::AbstractJacobian)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     if isa(device, CPU)
-        kernel! = partials_kernel_csc!(device)
-        ev = kernel!(J.colptr, J.rowval, J.nzval, duals_, coloring, ndrange=size(J,2), dependencies=Event(device))
+        ev = partials_kernel_csc!(device)(
+            J.colptr, J.rowval, J.nzval, duals_, coloring;
+            ndrange=size(J,2), dependencies=Event(device),
+        )
     elseif isa(device, GPU)
-        kernel! = partials_kernel_csr!(device)
-        ev = kernel!(J.rowPtr, J.colVal, J.nzVal, duals_, coloring, ndrange=size(J,1), dependencies=Event(device))
+        ev = partials_kernel_csr!(device)(
+            J.rowPtr, J.colVal, J.nzVal, duals_, coloring;
+            ndrange=size(J,1), dependencies=Event(device),
+        )
     else
         error("Unknown device $device")
     end
@@ -290,11 +301,15 @@ function partials!(hess::AbstractFullHessian)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     if isa(device, CPU)
-        kernel! = partials_kernel_cpu!(device)
-        ev = kernel!(H.colptr, H.rowval, H.nzval, duals_, map, coloring, ndrange=size(H,2), dependencies=Event(device))
+        ev = partials_kernel_cpu!(device)(
+            H.colptr, H.rowval, H.nzval, duals_, map, coloring;
+            ndrange=size(H,2), dependencies=Event(device),
+        )
     elseif isa(device, GPU)
-        kernel! = partials_kernel_gpu!(device)
-        ev = kernel!(H.rowPtr, H.colVal, H.nzVal, duals_, map, coloring, ndrange=size(H,1), dependencies=Event(device))
+        ev = partials_kernel_gpu!(device)(
+            H.rowPtr, H.colVal, H.nzVal, duals_, map, coloring;
+            ndrange=size(H,1), dependencies=Event(device),
+        )
     else
         error("Unknown device $device")
     end
@@ -327,7 +342,9 @@ function set_value!(
     N = jac.ncolors
     duals_ = reshape(reinterpret(T, duals), N+1, n)
     ev = _set_value_kernel!(device)(
-        duals_, primals, ndrange=n, dependencies=Event(device))
+        duals_, primals;
+        ndrange=n, dependencies=Event(device),
+    )
     wait(ev)
 end
 

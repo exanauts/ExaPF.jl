@@ -239,7 +239,7 @@ end
     end
 end
 
-@kernel function _arrowhead_partials_csr_kernelll!(J_rowptr, J_colval, J_nzval, duals, coloring, nx, nu, nblock)
+@kernel function _arrowhead_partials_csr_kernel!(J_rowptr, J_colval, J_nzval, duals, coloring, nx, nu, nblock)
     i = @index(Global, Linear)
 
     for c in J_rowptr[i]:J_rowptr[i+1]-1
@@ -272,7 +272,7 @@ function AutoDiff.partials!(jac::ArrowheadJacobian)
         )
     elseif isa(J, CuSparseMatrixCSR)
         ndrange = (size(J, 1), )
-        ev = _arrowhead_partials_csr_kernelll!(device)(
+        ev = _arrowhead_partials_csr_kernel!(device)(
             J.rowPtr, J.colVal, J.nzVal, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
             ndrange=ndrange, dependencies=Event(device),
         )
