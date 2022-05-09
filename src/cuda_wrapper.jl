@@ -35,14 +35,20 @@ CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = CuSpar
 function Base.copyto!(stack::AutoDiff.AbstractStack, map::AbstractVector{Int}, vals::VT) where {VT <: CuArray}
     @assert length(map) == length(vals)
     ndrange = (length(map),)
-    ev = _transfer_to_input!(CUDADevice())(stack.input, map, vals, ndrange=ndrange)
+    ev = _transfer_to_input!(CUDADevice())(
+        stack.input, map, vals;
+        ndrange=ndrange, dependencies=Event(CUDADevice()),
+    )
     wait(ev)
 end
 
 function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack, map::AbstractVector{Int}) where {VT <: CuArray}
     @assert length(map) == length(dest)
     ndrange = (length(map),)
-    ev = _transfer_fr_input!(CUDADevice())(dest, stack.input, map, ndrange=ndrange)
+    ev = _transfer_fr_input!(CUDADevice())(
+        dest, stack.input, map;
+        ndrange=ndrange, dependencies=Event(CUDADevice()),
+    )
     wait(ev)
 end
 
@@ -81,7 +87,7 @@ function LinearAlgebra.mul!(
 
     ndrange = (n, p)
     ev = _spmv_csr_kernel!(CUDADevice())(
-        Ys, Xs, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
+        Ys, Xs, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
         ndrange=ndrange, dependencies=Event(CUDADevice()),
     )
     wait(ev)
@@ -108,7 +114,7 @@ function LinearAlgebra.mul!(
 
     ndrange = (n, p, k)
     ev = _spmv_blk_csr_kernel!(CUDADevice())(
-        Ys, Xs, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
+        Ys, Xs, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
         ndrange=ndrange, dependencies=Event(CUDADevice()),
     )
     wait(ev)
@@ -132,7 +138,7 @@ function LinearAlgebra.mul!(
 
     ndrange = (n, )
     ev = _spmv_csr_kernel_double!(CUDADevice())(
-        Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
+        Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
         ndrange=ndrange, dependencies=Event(CUDADevice()),
     )
     wait(ev)
@@ -158,7 +164,7 @@ function LinearAlgebra.mul!(
 
     ndrange = (n, k)
     ev = _spmv_blk_csr_kernel_double!(CUDADevice())(
-        Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m,
+        Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
         ndrange=ndrange, dependencies=Event(CUDADevice()),
     )
     wait(ev)
@@ -268,7 +274,10 @@ function blockcopy!(stack::BlockNetworkStack, map::CuArray{Int}, x::CuArray{Floa
     @assert length(map) % nx == 0
     nb = div(length(map), nx)
     ndrange = (nx, nb)
-    ev = _blk_transfer_to_input!(CUDADevice())(stack.input, map, x, nx, ndrange=ndrange)
+    ev = _blk_transfer_to_input!(CUDADevice())(
+        stack.input, map, x, nx;
+        ndrange=ndrange, dependencies=Event(CUDADevice()),
+    )
     wait(ev)
 end
 
