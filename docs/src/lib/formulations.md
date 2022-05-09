@@ -20,6 +20,7 @@ Control
 ```@docs
 PolarForm
 NetworkStack
+BlockNetworkStack
 init!
 
 ```
