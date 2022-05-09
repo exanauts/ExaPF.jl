@@ -1,7 +1,7 @@
 ExaPF release notes
 ==================
 
-Version 0.7.0 (TDB)
+Version 0.7.1 (TDB)
 -------------------------------
 
 - New features
