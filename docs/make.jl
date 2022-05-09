@@ -39,7 +39,7 @@ makedocs(
 deploydocs(
     repo = "github.com/exanauts/ExaPF.jl.git",
     target = "build",
-    devbranch = "develop",
+    devbranch = "master",
     devurl = "dev",
     push_preview = true,
 )
