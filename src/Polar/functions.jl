@@ -253,7 +253,7 @@ function (func::CostFunction)(output::AbstractArray, stack::AbstractNetworkStack
     ndrange = (ngen, nbatches(stack))
     ev = _quadratic_cost_kernel(func.device)(
         costs, stack.pgen, func.c0, func.c1, func.c2, ngen;
-        ndrange=ndrange,
+        ndrange=ndrange, dependencies=Event(func.device),
     )
     wait(ev)
     # Sum costs across all generators
@@ -274,7 +274,7 @@ function adjoint!(func::CostFunction, ∂stack, stack, ∂v)
     ndrange = (ngen, nbatches(stack))
     ev = _adj_quadratic_cost_kernel(func.device)(
         ∂stack.pgen, stack.pgen, ∂v, func.c0, func.c1, func.c2, ngen;
-        ndrange=ndrange,
+        ndrange=ndrange, dependencies=Event(func.device),
     )
     wait(ev)
     blockmul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
@@ -558,7 +558,7 @@ function (func::LineFlows)(cons::AbstractVector, stack::AbstractNetworkStack)
     ndrange = (func.nlines, nbatches(stack))
     ev = _line_flow_kernel(func.device)(
         cons, sfp, sfq, stp, stq, func.nlines;
-        ndrange=ndrange,
+        ndrange=ndrange, dependencies=Event(func.device),
     )
     wait(ev)
     return
@@ -589,7 +589,7 @@ function adjoint!(func::LineFlows, ∂stack, stack, ∂v)
         stack.intermediate.sfp, stack.intermediate.sfq,
         stack.intermediate.stp, stack.intermediate.stq,
         ∂v, nlines;
-        ndrange=ndrange,
+        ndrange=ndrange, dependencies=Event(func.device),
     )
     wait(ev)
 
