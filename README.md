@@ -83,6 +83,6 @@ This research was supported by the Exascale Computing Project (17-SC-20-SC), a j
 [build-url]: https://github.com/exanauts/ExaPF.jl/actions?query=workflow
 [build-latest-img]: https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master
 
-[doi-img]: https://zenodo.org/badge/DOI/10.5281/zenodo.5705457.svg
-[doi-url]: https://doi.org/10.5281/zenodo.5705457
+[doi-img]: https://zenodo.org/badge/DOI/10.5281/zenodo.6536402.svg
+[doi-url]: https://doi.org/10.5281/zenodo.6536402
 
