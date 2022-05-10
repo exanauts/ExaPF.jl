@@ -1,7 +1,20 @@
 ExaPF release notes
 ==================
 
-Version 0.7.0 (TBD)
+Version 0.7.1 (TDB)
+-------------------------------
+
+- New features
+  * Add `BlockNetworkStack` structure for batch evaluation (#241)
+  * Add `ArrowheadJacobian` and `ArrowheadHessian` for stochastic OPF (#241)
+  * define loads as parameters inside `NetworkStack` (#238)
+- Bug fixes & improvements
+  * Migrate to KernelAbstractions 0.8 (#236)
+  * Drop support for Julia 1.6
+  * Migrate to Krylov.jl 0.8 (#239)
+  * Update CI
+
+Version 0.7.0 (March 1st, 2022)
 -------------------
 
 - API changes

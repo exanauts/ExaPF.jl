@@ -16,7 +16,7 @@ function Base.copyto!(dest::AbstractVector, stack::AutoDiff.AbstractStack{VT}, m
 end
 
 """
-    NetworkStack <: AbstractStack
+    NetworkStack{VT,VD,MT} <: AbstractNetworkStack{VT}
     NetworkStack(polar::PolarForm)
     NetworkStack(nbus::Int, ngen::Int, nlines::Int, VT::Type)
 
@@ -141,12 +141,32 @@ voltage(buf::NetworkStack) = buf.vmag .* exp.(im .* buf.vang)
 voltage_host(buf::NetworkStack) = voltage(buf) |> Array
 
 
-#=
-    BlockNetworkStack
+"""
+    BlockNetworkStack{MT,MD,MI} <: AbstractStack{MT}
 
-    Ordering of input:
-    [ vmag^1, ..., vmag^N, vang^1, ..., vang^N, pgen^1, ..., pgen^N]
-=#
+Store the variables of the `N` different scenarios
+associated to the polar formulation. Extend [`NetworkStack`](@ref).
+
+The variables are stored in the field `input`, and
+are ordered as follows
+```
+    input = [ vmag^1, ..., vmag^N, vang^1, ..., vang^N, pgen^1, ..., pgen^N]
+```
+---
+    BlockNetworkStack(polar::PolarForm, k::Int)
+
+Create a `BlockNetworkStack` with `k` different scenarios using the data stored inside `polar`.
+
+---
+    BlockNetworkStack(polar::PolarForm, pload::Array, qload::Array)
+Create a `BlockNetworkStack` using the load scenarios stored
+inside the 2-dimensional arrays `pload` and `qload`.
+
+---
+    BlockNetworkStack(k::Int, nbus::Int, ngen::Int, nlines::Int, VT::Type)
+Create an empty `BlockNetworkStack` with the size needed to stored `k` different scenarios.
+
+"""
 struct BlockNetworkStack{MT,MD,NT} <: AbstractNetworkStack{MT}
     k::Int
     # INPUT
@@ -198,6 +218,28 @@ function BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
 
     return BlockNetworkStack(k, input, vmag, vang, pgen, ψ, intermediate, params, pload, qload)
 end
+function BlockNetworkStack(polar::PolarForm{T,VI,VT,MT}, k::Int) where {T,VI,VT,MT}
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    nlines = get(polar, PS.NumberOfLines())
+    stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VT)
+    init!(polar, stack)
+    return stack
+end
+function BlockNetworkStack(
+    polar::PolarForm,
+    ploads::Array{Float64, 2},
+    qloads::Array{Float64, 2},
+)
+    @assert size(ploads) == size(qloads)
+    k = size(ploads, 2)
+    blk_stack = BlockNetworkStack(polar, k)
+
+    copyto!(blk_stack.pload, ploads)
+    copyto!(blk_stack.qload, qloads)
+    return blk_stack
+end
+
 
 function Base.show(io::IO, stack::BlockNetworkStack)
     print(io, "$(length(stack.input))-elements BlockNetworkStack{$(typeof(stack.input))}")
@@ -230,29 +272,6 @@ function init!(polar::PolarForm, stack::BlockNetworkStack; loads=true)
             copyto!(stack.qload, i, qload, 1, nload)
         end
     end
-end
-
-function BlockNetworkStack(polar::PolarForm{T,VI,VT,MT}, k::Int) where {T,VI,VT,MT}
-    nbus = get(polar, PS.NumberOfBuses())
-    ngen = get(polar, PS.NumberOfGenerators())
-    nlines = get(polar, PS.NumberOfLines())
-    stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VT)
-    init!(polar, stack)
-    return stack
-end
-
-function BlockNetworkStack(
-    polar::PolarForm,
-    ploads::Array{Float64, 2},
-    qloads::Array{Float64, 2},
-)
-    @assert size(ploads) == size(qloads)
-    k = size(ploads, 2)
-    blk_stack = BlockNetworkStack(polar, k)
-
-    copyto!(blk_stack.pload, ploads)
-    copyto!(blk_stack.qload, qloads)
-    return blk_stack
 end
 
 function Base.empty!(stack::BlockNetworkStack)
