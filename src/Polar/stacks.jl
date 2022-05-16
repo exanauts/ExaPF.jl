@@ -74,6 +74,9 @@ function NetworkStack(nbus, ngen, nlines, VT, VD)
         ∂edge_va_fr = VD(undef, nlines), # buffer for basis
         ∂edge_va_to = VD(undef, nlines), # buffer for basis
     )
+    for f in fieldnames(typeof(intermediate))
+        fill!(getfield(intermediate, f), 0.0)
+    end
 
     # Parameters: loads
     params = VT(undef, 2*nbus) ; fill!(params, 0.0)
@@ -208,6 +211,9 @@ function BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
         ∂edge_va_fr = VD(undef, k*nlines), # buffer for basis
         ∂edge_va_to = VD(undef, k*nlines), # buffer for basis
     )
+    for f in fieldnames(typeof(intermediate))
+        fill!(getfield(intermediate, f), 0.0)
+    end
 
     # Parameters: loads
     params = VT(undef, 2*k*nbus) ; fill!(params, 0.0)
