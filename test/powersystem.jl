@@ -29,7 +29,7 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
     nbus = size(bus, 1)
 
     # obtain V0 from raw data
-    V = Array{Complex{Float64}}(undef, nbus)
+    V = zeros(Complex{Float64}, nbus)
     T = Vector
     for i in 1:nbus
         V[i] = bus[i, VM]*exp(1im * pi/180 * bus[i, VA])

@@ -164,7 +164,7 @@ function test_polar_constraints(polar, device, M)
         constraints = expr ∘ basis
         m = length(constraints)
         @test isa(m, Int)
-        g = M{Float64, 1}(undef, m) # TODO: this signature is not great
+        g = M{Float64, 1}(zeros(Float64, m)) # TODO: this signature is not great
         fill!(g, 0)
         constraints(g, stack)
 

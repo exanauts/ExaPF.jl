@@ -19,7 +19,7 @@ function parse_data(lines::Array{String}, pos::Int, info::Array;
     start = last = pos
     last = parse_skipsection(lines, start)
     ndata = last - start
-    data = Array{Any}(undef, ndata, length(info))
+    data = Array{Any}(zeros(Float64, ndata, length(info)))
 
     for i=1:ndata
         # Get rid of the single quotes.

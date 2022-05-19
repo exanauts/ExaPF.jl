@@ -162,7 +162,7 @@ function raw_xfmr(lines::Array{String}, pos::Int, info::Array;
     end
 
     ndata = Int((last - start)/4)
-    data = Array{Any}(undef, ndata, length(info))
+    data = Array{Any}(zeros(Float64, ndata, length(info)+1))
 
     for i=1:ndata
         # Each transformer record consists of 4 lines.

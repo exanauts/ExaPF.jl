@@ -119,9 +119,9 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
         end
         lpartitions = length.(partitions)
         blocksize = maximum(length.(partitions))
-        blocks = AT(undef, blocksize, blocksize, npart)
+        blocks = AT(zeros(eltype(AT), blocksize, blocksize, npart))
         # Get partitions into bit typed structure
-        bpartitions = MI(undef, blocksize, npart)
+        bpartitions = MI(zeros(eltype(MI), blocksize, npart))
         bpartitions .= 0.0
         for i in 1:npart
             bpartitions[1:length(partitions[i]),i] .= VI(partitions[i])
@@ -134,8 +134,8 @@ struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: Abst
         for b in partitions
             nmap += length(b)
         end
-        map = VI(undef, nmap)
-        part = VI(undef, nmap)
+        map = VI(zeros(eltype(VI), nmap))
+        part = VI(zeros(eltype(VI), nmap))
         for b in 1:npart
             for (i,el) in enumerate(partitions[b])
                 map[el] = i
@@ -298,10 +298,7 @@ function _update_gpu(p, j_rowptr, j_colval, j_nzval, device)
     )
     wait(ev)
     # Invert blocks begin
-    blocklist = Array{CuArray{Float64,2}}(undef, nblocks)
-    for b in 1:nblocks
-        blocklist[b] = p.cublocks[:,:,b]
-    end
+    blocklist = [p.cublocks[:,:,b] for b in 1:nblocks]
     CUDA.@sync pivot, info = CUDA.CUBLAS.getrf_batched!(blocklist, true)
     CUDA.@sync pivot, info, blocklist = CUDA.CUBLAS.getri_batched(blocklist, pivot)
     for b in 1:nblocks

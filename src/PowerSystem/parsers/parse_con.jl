@@ -25,7 +25,7 @@ function parse_con(filename::AbstractString; delim=" \t")
         pos += 1
     end
 
-    data = Array{Any}(undef, ndata, 5)
+    data = Array{Any}(zeros(Float64, ndata, 5))
 
     label = ""
     ndata = 0

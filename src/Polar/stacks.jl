@@ -51,7 +51,7 @@ struct NetworkStack{VT,VD,NT} <: AbstractNetworkStack{VT}
 end
 
 function NetworkStack(nbus, ngen, nlines, VT, VD)
-    input = VD(undef, 2*nbus + ngen) ; fill!(input, 0.0)
+    input = VD(zeros(eltype(VD), 2*nbus + ngen))
     # Wrap directly array x to avoid dealing with views
     p0 = pointer(input)
     vmag = unsafe_wrap(VD, p0, nbus)
@@ -61,25 +61,22 @@ function NetworkStack(nbus, ngen, nlines, VT, VD)
     pgen = unsafe_wrap(VD, p2, ngen)
 
     # Basis function
-    ψ = VD(undef, 2*nlines + nbus) ; fill!(ψ, 0.0)
+    ψ = VD(zeros(eltype(VD), 2*nlines + nbus))
     # Intermediate expressions to avoid unecessary allocations
     intermediate = (
-        c = VD(undef, ngen),     # buffer for costs
-        sfp = VD(undef, nlines), # buffer for line-flow
-        sfq = VD(undef, nlines), # buffer for line-flow
-        stp = VD(undef, nlines), # buffer for line-flow
-        stq = VD(undef, nlines), # buffer for line-flow
-        ∂edge_vm_fr = VD(undef, nlines), # buffer for basis
-        ∂edge_vm_to = VD(undef, nlines), # buffer for basis
-        ∂edge_va_fr = VD(undef, nlines), # buffer for basis
-        ∂edge_va_to = VD(undef, nlines), # buffer for basis
+        c = VD(zeros(eltype(VD), ngen)),     # buffer for costs
+        sfp = VD(zeros(eltype(VD), nlines)), # buffer for line-flow
+        sfq = VD(zeros(eltype(VD), nlines)), # buffer for line-flow
+        stp = VD(zeros(eltype(VD), nlines)), # buffer for line-flow
+        stq = VD(zeros(eltype(VD), nlines)), # buffer for line-flow
+        ∂edge_vm_fr = VD(zeros(eltype(VD), nlines)), # buffer for basis
+        ∂edge_vm_to = VD(zeros(eltype(VD), nlines)), # buffer for basis
+        ∂edge_va_fr = VD(zeros(eltype(VD), nlines)), # buffer for basis
+        ∂edge_va_to = VD(zeros(eltype(VD), nlines)), # buffer for basis
     )
-    for f in fieldnames(typeof(intermediate))
-        fill!(getfield(intermediate, f), 0.0)
-    end
 
     # Parameters: loads
-    params = VT(undef, 2*nbus) ; fill!(params, 0.0)
+    params = VT(zeros(eltype(VT), 2*nbus))
     p0 = pointer(params)
     pload = unsafe_wrap(VT, p0, nbus)
     p1 = pointer(params, nbus+1)
@@ -188,7 +185,7 @@ end
 
 function BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
     m = (2*nbus + ngen) * k
-    input = VD(undef, m) ; fill!(input, 0.0)
+    input = VD(zeros(eltype(VD), m))
     # Wrap directly array x to avoid dealing with views
     p0 = pointer(input)
     vmag = unsafe_wrap(VD, p0, k*nbus)
@@ -198,25 +195,22 @@ function BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
     pgen = unsafe_wrap(VD, p2, k*ngen)
 
     # Basis function
-    ψ = VD(undef, k * (2*nlines+nbus)) ; fill!(ψ, 0.0)
+    ψ = VD(zeros(eltype(VD), k * (2*nlines+nbus)))
     # Intermediate expressions to avoid unecessary allocations
     intermediate = (
-        c = VD(undef, k*ngen),     # buffer for costs
-        sfp = VD(undef, k*nlines), # buffer for line-flow
-        sfq = VD(undef, k*nlines), # buffer for line-flow
-        stp = VD(undef, k*nlines), # buffer for line-flow
-        stq = VD(undef, k*nlines), # buffer for line-flow
-        ∂edge_vm_fr = VD(undef, k*nlines), # buffer for basis
-        ∂edge_vm_to = VD(undef, k*nlines), # buffer for basis
-        ∂edge_va_fr = VD(undef, k*nlines), # buffer for basis
-        ∂edge_va_to = VD(undef, k*nlines), # buffer for basis
+        c = VD(zeros(eltype(VD), k*ngen)),     # buffer for costs
+        sfp = VD(zeros(eltype(VD), k*nlines)), # buffer for line-flow
+        sfq = VD(zeros(eltype(VD), k*nlines)), # buffer for line-flow
+        stp = VD(zeros(eltype(VD), k*nlines)), # buffer for line-flow
+        stq = VD(zeros(eltype(VD), k*nlines)), # buffer for line-flow
+        ∂edge_vm_fr = VD(zeros(eltype(VD), k*nlines)), # buffer for basis
+        ∂edge_vm_to = VD(zeros(eltype(VD), k*nlines)), # buffer for basis
+        ∂edge_va_fr = VD(zeros(eltype(VD), k*nlines)), # buffer for basis
+        ∂edge_va_to = VD(zeros(eltype(VD), k*nlines)), # buffer for basis
     )
-    for f in fieldnames(typeof(intermediate))
-        fill!(getfield(intermediate, f), 0.0)
-    end
 
     # Parameters: loads
-    params = VT(undef, 2*k*nbus) ; fill!(params, 0.0)
+    params = VT(zeros(eltype(VT), 2*k*nbus))
     p0 = pointer(params)
     pload = unsafe_wrap(VT, p0, k*nbus)
     p1 = pointer(params, k*nbus+1)

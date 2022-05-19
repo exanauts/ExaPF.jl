@@ -224,6 +224,12 @@ function test_block_jacobian(polar, device, MT)
 
         blk_J_cpu = blk_jac.J |> SparseMatrixCSC
         J_cpu = jac.J |> SparseMatrixCSC
+        blk_diag_J = blockdiag([J_cpu for i in 1:nblocks]...)
+        @test blk_J_cpu.m == blk_diag_J.m
+        @test blk_J_cpu.n == blk_diag_J.n
+        @test all(blk_J_cpu.colptr .== blk_diag_J.colptr)
+        @test all(blk_J_cpu.rowval .== blk_diag_J.rowval)
+        @test all(blk_J_cpu.nzval .≈ blk_diag_J.nzval)
         @test blk_J_cpu ≈ blockdiag([J_cpu for i in 1:nblocks]...)
     end
 

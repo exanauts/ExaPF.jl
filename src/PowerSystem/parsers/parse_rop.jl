@@ -51,7 +51,7 @@ function rop_join_tables(ropdata::Dict{String,Array})
     pwlcost = ropdata["PIECEWISE LINEAR COST"]
 
     ndata = size(gendspt, 1)
-    data = Array{Any}(undef, ndata, 4)
+    data = Array{Any}(zeros(Float64, ndata, 4))
 
     for i=1:ndata
         dsptbl = gendspt[i, 3]
@@ -93,8 +93,8 @@ function rop_pwl(lines::Array{String}, pos::Int, info::Array;
         line = strip(lines[last])
     end
 
-    data = Array{Any}(undef, ndata, length(info)+1)
-    pairs = Array{Float64}(undef, tot_npairs, 2)
+    data = Array{Any}(zeros(Float64, ndata, length(info)+1))
+    pairs = Array{Float64}(zeros(Float64, tot_npairs, 2))
 
     offset = start
     npairs = tot_npairs = 0

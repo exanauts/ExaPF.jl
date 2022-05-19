@@ -54,7 +54,7 @@ struct NLBuffer{VT}
     x::VT
     y::VT
 end
-NLBuffer{VT}(n::Int) where VT = NLBuffer(VT(undef, n), VT(undef, n))
+NLBuffer{VT}(n::Int) where VT = NLBuffer(VT(zeros(eltype(VT), n)), VT(zeros(eltype(VT), n)))
 
 @doc raw"""
     nlsolve!(

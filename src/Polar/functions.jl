@@ -364,7 +364,7 @@ end
 
 function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerFlowBalance) where {T,VI,VT,MT}
     m = length(func)
-    return (fill!(VT(undef, m), zero(T)) , fill!(VT(undef, m), zero(T)))
+    return (VT(zeros(T, m)) , VT(zeros(T, m)))
 end
 
 function Base.show(io::IO, func::PowerFlowBalance)
@@ -661,8 +661,8 @@ end
 
 function bounds(polar::PolarForm{T, VI, VT, MT}, func::MultiExpressions) where {T, VI, VT, MT}
     m = length(func)
-    g_min = VT(undef, m)
-    g_max = VT(undef, m)
+    g_min = VT(zeros(T, m))
+    g_max = VT(zeros(T, m))
     k = 0
     for expr in func.exprs
         m = length(expr)
