@@ -1,8 +1,15 @@
 ExaPF release notes
 ==================
 
-Version 0.7.1 (TDB)
--------------------------------
+Version 0.7.2 (May 31th, 2022)
+------------------------------
+
+- Bug fixes & improvements
+  * Fix unitinialized arrays in `NetworkStack` (#248)
+  * Fix finite-difference checks in tests (#251)
+
+Version 0.7.1 (May 9th, 2022)
+-----------------------------
 
 - New features
   * Add `BlockNetworkStack` structure for batch evaluation (#241)
@@ -15,7 +22,7 @@ Version 0.7.1 (TDB)
   * Update CI
 
 Version 0.7.0 (March 1st, 2022)
--------------------
+-------------------------------
 
 - API changes
     * The interface has been completely revamped to [vectorize all operations](https://frapac.github.io/pages/notes/exapf/) (#217)
