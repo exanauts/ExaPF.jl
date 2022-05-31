@@ -17,6 +17,8 @@ function PolarForm(pf::PS.PowerNetwork, device::KA.CPU)
 end
 # Convenient constructor
 PolarForm(datafile::String, device=CPU()) = PolarForm(PS.PowerNetwork(datafile), device)
+PolarForm(polar::PolarForm, device=CPU()) = PolarForm(polar.network, device)
+
 
 # Getters (bridge to PowerNetwork)
 get(polar::PolarForm, attr::PS.AbstractNetworkAttribute) = get(polar.network, attr)
