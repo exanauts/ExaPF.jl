@@ -7,8 +7,14 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
 
+    # Need to copy structures on the host for FiniteDiff.jl
+    polar_cpu = ExaPF.PolarForm(polar, CPU())
+    stack_cpu = ExaPF.NetworkStack(polar_cpu)
+    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+
     # Solve power flow
-    conv = ExaPF.run_pf(polar, stack)
+    ExaPF.run_pf(polar, stack)
+    copyto!(stack_cpu.input, stack.input)
 
     # Tests all expressions in once with MultiExpressions
     constraints = [
@@ -19,11 +25,19 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     ]
     mycons = ExaPF.MultiExpressions(constraints) ∘ basis
 
+    constraints_cpu = [
+        ExaPF.VoltageMagnitudeBounds(polar_cpu),
+        ExaPF.PowerGenerationBounds(polar_cpu),
+        ExaPF.LineFlows(polar_cpu),
+        ExaPF.PowerFlowBalance(polar_cpu),
+    ]
+    mycons_cpu = ExaPF.MultiExpressions(constraints_cpu) ∘ basis_cpu
+
     # Initiate state and control for FiniteDiff
     # CONSTRAINTS
     m = length(mycons)
-    μ = rand(m) |> MT
-    c = zeros(m) |> MT
+    μ = rand(m)
+    c = zeros(m)
 
     HessianAD = ExaPF.HessianProd(polar, mycons, mymap)
     tgt = rand(nx + nu)
@@ -34,26 +48,31 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     ExaPF.hprod!(HessianAD, dev_projp, stack, dev_μ, dev_tgt)
     projp = Array(dev_projp)
 
-    ∂stack = ExaPF.NetworkStack(polar)
-    empty!(∂stack)
+    ∂stack_cpu = ExaPF.NetworkStack(polar_cpu)
+    empty!(∂stack_cpu)
     function grad_lagr_x(z)
-        stack.input[mymap] .= z
-        mycons(c, stack)
-        empty!(∂stack)
-        ExaPF.adjoint!(mycons, ∂stack, stack, dev_μ)
-        return ∂stack.input[mymap]
+        stack_cpu.input[mymap] .= z
+        mycons_cpu(c, stack_cpu)
+        empty!(∂stack_cpu)
+        ExaPF.adjoint!(mycons_cpu, ∂stack_cpu, stack_cpu, μ)
+        return ∂stack_cpu.input[mymap]
     end
-    x0 = stack.input[mymap]
+    x0 = stack_cpu.input[mymap]
     H_fd = FiniteDiff.finite_difference_jacobian(grad_lagr_x, x0)
-    proj_fd = similar(x0, nx+nu)
-    mul!(proj_fd, H_fd, dev_tgt, 1, 0)
+    proj_fd = zeros(nx+nu)
+    mul!(proj_fd, H_fd, tgt)
 
-    @test myisapprox(projp, Array(proj_fd), rtol=rtol)
+    @test myisapprox(projp, proj_fd, rtol=rtol)
 end
 
 function test_full_space_hessian(polar, device, MT)
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
+
+    # Need to copy structures on the host for FiniteDiff.jl
+    polar_cpu = ExaPF.PolarForm(polar, CPU())
+    stack_cpu = ExaPF.NetworkStack(polar_cpu)
+    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
 
     n = length(stack.input)
     # Hessian / (x, u)
@@ -68,6 +87,15 @@ function test_full_space_hessian(polar, device, MT)
     ]
     mycons = ExaPF.MultiExpressions(constraints) ∘ basis
 
+    constraints_cpu = [
+        ExaPF.CostFunction(polar_cpu),
+        ExaPF.PowerFlowBalance(polar_cpu),
+        ExaPF.VoltageMagnitudeBounds(polar_cpu),
+        ExaPF.PowerGenerationBounds(polar_cpu),
+        ExaPF.LineFlows(polar_cpu),
+    ]
+    mycons_cpu = ExaPF.MultiExpressions(constraints_cpu) ∘ basis_cpu
+
     m = length(mycons)
     y_cpu = rand(m)
     y = y_cpu |> MT
@@ -75,17 +103,17 @@ function test_full_space_hessian(polar, device, MT)
     hess = ExaPF.FullHessian(polar, mycons, mymap)
     H = ExaPF.hessian!(hess, stack, y)
 
-    c = zeros(m) |> MT
-    ∂stack = ExaPF.NetworkStack(polar)
+    c = zeros(m)
+    ∂stack_cpu = ExaPF.NetworkStack(polar_cpu)
 
     function grad_fd_x(x)
-        stack.input[mymap] .= x
-        mycons(c, stack)
-        empty!(∂stack)
-        ExaPF.adjoint!(mycons, ∂stack, stack, y)
-        return ∂stack.input[mymap]
+        stack_cpu.input[mymap] .= x
+        mycons_cpu(c, stack_cpu)
+        empty!(∂stack_cpu)
+        ExaPF.adjoint!(mycons_cpu, ∂stack_cpu, stack_cpu, y_cpu)
+        return ∂stack_cpu.input[mymap]
     end
-    x = stack.input[mymap]
+    x = stack_cpu.input[mymap]
     Hd = FiniteDiff.finite_difference_jacobian(grad_fd_x, x)
 
     # Test that both Hessian match

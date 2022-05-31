@@ -28,7 +28,14 @@ end
 function myisapprox(a, b; options...)
     h_a = a |> Array
     h_b = b |> Array
-    return isapprox(h_a, h_b; options...)
+    istrue = isapprox(h_a, h_b; options...)
+    if istrue
+        return istrue
+    else
+        println(h_a)
+        println(h_b)
+        return istrue
+    end
 end
 
 function runtests(datafile, device, AT)

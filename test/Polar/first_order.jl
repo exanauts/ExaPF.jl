@@ -6,10 +6,16 @@ function test_constraints_jacobian(polar, device, MT)
     ∂stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
 
+    # Need to copy structures on the host for FiniteDiff.jl
+    polar_cpu = ExaPF.PolarForm(polar, CPU())
+    stack_cpu = ExaPF.NetworkStack(polar_cpu)
+    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+
     mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
 
     # Solve power flow
-    conv = ExaPF.run_pf(polar, stack)
+    ExaPF.run_pf(polar, stack)
+    ExaPF.run_pf(polar_cpu, stack_cpu)
     # Get solution in complex form.
     V = ExaPF.voltage_host(stack)
 
@@ -22,8 +28,11 @@ function test_constraints_jacobian(polar, device, MT)
         ExaPF.LineFlows,
     ]
         constraint = expr(polar) ∘ basis
+        constraint_cpu = expr(polar_cpu) ∘ basis_cpu
         m = length(constraint)
 
+        c_ = zeros(m) |> MT
+        constraint(c_, stack)
         # Allocation
         jac = ExaPF.Jacobian(polar, constraint, mymap)
         # Test display
@@ -36,19 +45,18 @@ function test_constraints_jacobian(polar, device, MT)
 
         # Compare with FiniteDiff
         function jac_fd_x(x)
-            stack.input[mymap] .= x
-            c = zeros(m) |> MT
-            constraint(c, stack)
+            stack_cpu.input[mymap] .= x
+            c = zeros(m)
+            constraint_cpu(c, stack_cpu)
             return c
         end
-        x = copy(stack.input[mymap])
-        Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x) |> Array
+        x = copy(stack_cpu.input[mymap])
+        Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x)
         Jx = jac.J |> SparseMatrixCSC |> Array
 
         ## JACOBIAN VECTOR PRODUCT
         tgt_h = rand(m)
         tgt = tgt_h |> MT
-        output = zeros(nx+nu) |> MT
         empty!(∂stack)
         ExaPF.adjoint!(constraint, ∂stack, stack, tgt)
 
@@ -70,7 +78,13 @@ function test_constraints_adjoint(polar, device, MT)
     ∂stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
 
-    conv = ExaPF.run_pf(polar, stack)
+    # Need to copy structures on the host for FiniteDiff.jl
+    polar_cpu = ExaPF.PolarForm(polar, CPU())
+    stack_cpu = ExaPF.NetworkStack(polar_cpu)
+    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+
+    ExaPF.run_pf(polar, stack)
+    ExaPF.run_pf(polar_cpu, stack_cpu)
 
     @testset "Adjoint $(expr)" for expr in [
         ExaPF.PolarBasis,
@@ -81,31 +95,37 @@ function test_constraints_adjoint(polar, device, MT)
         ExaPF.LineFlows,
     ]
         constraint = expr(polar) ∘ basis
+        constraint_cpu = expr(polar_cpu) ∘ basis_cpu
         m = length(constraint)
-        tgt = rand(m) |> MT
-        output = zeros(nx+nu) |> MT
+        tgt_cpu = rand(m)
+        tgt = tgt_cpu |> MT
 
-        c = zeros(m) |> MT
-        constraint(c, stack)
+        c_ = zeros(m) |> MT
+        constraint(c_, stack)
 
         empty!(∂stack)
         ExaPF.adjoint!(constraint, ∂stack, stack, tgt)
+
         function test_fd(x)
-            stack.input[mymap] .= x
-            constraint(c, stack)
-            return dot(c, tgt)
+            stack_cpu.input[mymap] .= x
+            c = zeros(m)
+            constraint_cpu(c, stack_cpu)
+            return dot(c, tgt_cpu)
         end
-        x = copy(stack.input[mymap])
-        adj_fd = FiniteDiff.finite_difference_jacobian(test_fd, x) |> Array
-        # Loosen the tolerance to 1e-5 there (finite_difference_jacobian
-        # is less accurate than finite_difference_gradient)
-        @test myisapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-5)
+        x = copy(stack_cpu.input[mymap])
+        adj_fd = FiniteDiff.finite_difference_gradient(test_fd, x)
+        @test myisapprox(∂stack.input[mymap], adj_fd[:], rtol=1e-6)
     end
 end
 
 function test_full_space_jacobian(polar, device, MT)
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
+
+    # Need to copy structures on the host for FiniteDiff.jl
+    polar_cpu = ExaPF.PolarForm(polar, CPU())
+    stack_cpu = ExaPF.NetworkStack(polar_cpu)
+    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
 
     n = length(stack.input)
     mymap = collect(1:n)
@@ -118,19 +138,27 @@ function test_full_space_jacobian(polar, device, MT)
     ]
     mycons = ExaPF.MultiExpressions(constraints) ∘ basis
 
+    constraints_cpu = [
+        ExaPF.VoltageMagnitudeBounds(polar_cpu),
+        ExaPF.PowerGenerationBounds(polar_cpu),
+        ExaPF.LineFlows(polar_cpu),
+        ExaPF.PowerFlowBalance(polar_cpu),
+    ]
+    mycons_cpu = ExaPF.MultiExpressions(constraints_cpu) ∘ basis_cpu
+
     m = length(mycons)
 
     jac = ExaPF.Jacobian(polar, mycons, mymap)
     J = ExaPF.jacobian!(jac, stack)
 
     function jac_fd_x(x)
-        stack.input .= x
-        c = zeros(m) |> MT
-        mycons(c, stack)
+        stack_cpu.input .= x
+        c = zeros(m)
+        mycons_cpu(c, stack_cpu)
         return c
     end
-    x = copy(stack.input)
-    Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x) |> Array
+    x = copy(stack_cpu.input)
+    Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x)
     @test myisapprox(Jd, J, rtol=1e-5)
 end
 
@@ -139,7 +167,13 @@ function test_reduced_gradient(polar, device, MT)
     basis  = ExaPF.PolarBasis(polar)
     ∂stack = ExaPF.NetworkStack(polar)
 
+    # Need to copy structures on the host for FiniteDiff.jl
+    polar_cpu = ExaPF.PolarForm(polar, CPU())
+    stack_cpu = ExaPF.NetworkStack(polar_cpu)
+    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+
     power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
+    power_balance_cpu = ExaPF.PowerFlowBalance(polar_cpu) ∘ basis_cpu
 
     mapx = ExaPF.mapping(polar, State())
     mapu = ExaPF.mapping(polar, Control())
@@ -149,9 +183,14 @@ function test_reduced_gradient(polar, device, MT)
     jx = ExaPF.Jacobian(polar, power_balance, mapx)
     ju = ExaPF.Jacobian(polar, power_balance, mapu)
 
+    jx_cpu = ExaPF.Jacobian(polar_cpu, power_balance_cpu, mapx)
+
     # Solve power flow
     solver = NewtonRaphson(tol=1e-12)
     ExaPF.nlsolve!(solver, jx, stack)
+
+    copyto!(stack_cpu.input, stack.input)
+
     # No need to recompute ∇gₓ
     ∇gₓ = jx.J
     ∇gᵤ = ExaPF.jacobian!(ju, stack)
@@ -165,6 +204,7 @@ function test_reduced_gradient(polar, device, MT)
     @test isapprox(h∇gᵤ, J[:, mapu])
 
     cost_production = ExaPF.CostFunction(polar) ∘ basis
+    cost_production_cpu = ExaPF.CostFunction(polar_cpu) ∘ basis_cpu
 
     c = zeros(1) |> MT
     cost_production(c, stack)
@@ -189,15 +229,16 @@ function test_reduced_gradient(polar, device, MT)
 
     # Compare with finite difference
     function reduced_cost(u_)
-        stack.input[mapu] .= u_
-        ExaPF.nlsolve!(solver, jx, stack)
-        cost_production(c, stack)
-        return sum(c)
+        stack_cpu.input[mapu] .= u_
+        ExaPF.nlsolve!(solver, jx_cpu, stack_cpu)
+        c_ = zeros(1)
+        cost_production_cpu(c_, stack_cpu)
+        return sum(c_)
     end
 
-    u = stack.input[mapu]
-    grad_fd = FiniteDiff.finite_difference_jacobian(reduced_cost, u)
-    @test isapprox(grad_fd[:], grad_adjoint, rtol=1e-4)
+    u = stack_cpu.input[mapu]
+    grad_fd = FiniteDiff.finite_difference_gradient(reduced_cost, u)
+    @test isapprox(grad_fd[:], grad_adjoint, rtol=1e-6)
 end
 
 function test_block_jacobian(polar, device, MT)
