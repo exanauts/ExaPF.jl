@@ -244,13 +244,14 @@ function benchmark_bicgstab(polar, config, noverlaps, nblocks)
         N=algo.precond,
         atol=algo.atol,
         rtol=algo.rtol,
-        verbose=algo.verbose,
+        verbose=1,
+        itmax=100,
         history=true,
     )
     niters = length(res.stats.residuals)
 
     total_time = 0.0
-    for i in 1:ntrials
+    for i in 1:0
         copyto!(x, b)
         total_time += @elapsed begin
             res = Krylov.bicgstab!(

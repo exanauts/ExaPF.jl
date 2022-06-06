@@ -16,9 +16,11 @@ subset2 contains subset and all of its adjacent vertices.
 """
 function overlap(Graph, subset; level=1)
     @assert level > 0
+    dd = length(subset)
     subset2 = [LightGraphs.neighbors(Graph, v) for v in subset]
     subset2 = reduce(vcat, subset2)
     subset2 = unique(vcat(subset, subset2))
+    subset2 = subset2[1:dd+1]
 
     level -= 1
     if level == 0
@@ -216,7 +218,7 @@ end
 
 function mul!(y, C::BlockJacobiPreconditioner, b::CuVector{T}) where T
     n = size(b, 1)
-    fill!(y, zero(T))
+    fill!(y, one(T))
     max_rlen = maximum(C.rest_size)
     ndrange = (C.nblocks, max_rlen)
     ev = mblock_kernel!(CUDADevice())(
