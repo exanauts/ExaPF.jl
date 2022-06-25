@@ -6,12 +6,11 @@ using CUDA
 using CUDAKernels
 
 using ExaPF
-
 const LS = ExaPF.LinearSolvers
 
 const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
-USEGPU = 1
+USEGPU = 0
 
 
 if USEGPU == 0
@@ -23,8 +22,6 @@ end
 case = "case1354pegase.m"
 casefile = joinpath(INSTANCES_DIR, case)
 
-println("Casefile: ", casefile)
-
 #=
     Load data
 =#
@@ -35,7 +32,7 @@ stack = ExaPF.NetworkStack(polar)
 # Mapping associated to the state
 mapx = ExaPF.mapping(polar, State())
 # Power flow solver
-pf_solver = NewtonRaphson(tol=1e-6, verbose=2)
+pf_solver = NewtonRaphson(tol=1e-6, verbose=0)
 # Expressions
 basis = ExaPF.PolarBasis(polar)
 pflow = ExaPF.PowerFlowBalance(polar)
@@ -46,21 +43,25 @@ jx = ExaPF.Jacobian(polar, pflow ∘ basis, mapx)
 #=
     Build preconditioner
 =#
-npartitions = 700
-noverlap = 1
+npartitions = 64
+# NB: Use noverlap > 0 only on the GPU
+noverlap = 0
 # Get reduced space Jacobian on the CPU
-J = ExaPF.jacobian_sparsity(polar, pflow)
+V = ExaPF.voltage(stack)
+J = ExaPF.matpower_jacobian(polar, pflow, V)
 J = J[:, mapx]
 precond = LS.BlockJacobiPreconditioner(J, npartitions, localdevice, noverlap)
 
 #=
-    Instantiate itertive linear solver
+    Instantiate iterative linear solver
 =#
 lin_solver = ExaPF.LinearSolvers.KrylovBICGSTAB
-algo = LS.KrylovBICGSTAB(J_gpu; P=precond)
+algo = LS.KrylovBICGSTAB(J; P=precond)
 
 #=
     Power flow resolution
 =#
 ExaPF.init!(polar, stack)
 convergence = ExaPF.nlsolve!(pf_solver, jx, stack; linear_solver=algo)
+
+@assert convergence.has_converged
