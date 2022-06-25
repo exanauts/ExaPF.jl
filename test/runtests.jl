@@ -14,6 +14,7 @@ Random.seed!(2713)
 
 const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 const BENCHMARK_DIR = joinpath(dirname(@__FILE__), "..", "benchmark")
+const EXAMPLES_DIR = joinpath(dirname(@__FILE__), "..", "examples")
 const CASES = ["case9.m", "case30.m"]
 
 ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
@@ -76,6 +77,15 @@ init_time = time()
     @testset "Benchmark" begin
         @info("Test benchmark suite")
         ExaBenchmark.benchmark("case30.m", CPU())
+    end
+    @testset "Test example" begin
+        @info("Test example")
+        for file in filter(
+            f -> endswith(f, ".jl"),
+            readdir(EXAMPLES_DIR),
+        )
+            include(joinpath(EXAMPLES_DIR, file))
+        end
     end
     println()
 end
