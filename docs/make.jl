@@ -21,15 +21,15 @@ makedocs(
         "Home" => "index.md",
         "Quick start" => "quickstart.md",
         "Manual" => [
-            "Polar formulation" => "man/formulations.md",
             "PowerSystem" => "man/powersystem.md",
+            "Polar formulation" => "man/formulations.md",
             "AutoDiff" => "man/autodiff.md",
             "Linear Solvers" => "man/linearsolver.md",
             "Benchmark" => "man/benchmark.md",
         ],
         "Library" => [
-            "Polar formulation" => "lib/formulations.md",
             "PowerSystem" => "lib/powersystem.md",
+            "Polar formulation" => "lib/formulations.md",
             "AutoDiff" => "lib/autodiff.md",
             "Linear Solvers" => "lib/linearsolver.md",
         ]
