@@ -212,7 +212,7 @@ linear_solver = LS.DirectSolver(jx_gpu.J)
 Then, solving the powerflow equations on the GPU directly
 translates as
 ```@repl quickstart
-convergence = ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=linear_solver)
+convergence = ExaPF.nlsolve!(pf_algo, jx_gpu, stack_gpu; linear_solver=linear_solver)
 ```
 
 Note that we get exactly the same iterations as when we solve the power
