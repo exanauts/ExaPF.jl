@@ -38,9 +38,8 @@ function myisapprox(a, b; options...)
     end
 end
 
-function runtests(datafile, device, AT)
-    pf = PS.PowerNetwork(datafile)
-    polar = PolarForm(pf, device)
+function runtests(case, device, AT)
+    polar = ExaPF.load_polar(case, device)
     # Test printing
     println(devnull, polar)
 

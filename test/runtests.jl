@@ -8,11 +8,9 @@ using CUDA
 using KernelAbstractions
 
 using ExaPF
-using LazyArtifacts
 
 Random.seed!(2713)
 
-const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 const BENCHMARK_DIR = joinpath(dirname(@__FILE__), "..", "benchmark")
 const CASES = ["case9.m", "case30.m"]
 
@@ -64,8 +62,7 @@ init_time = time()
         println("Test PolarForm ...")
         tic = time()
         @testset "ExaPF.PolarForm ($case)" for case in CASES
-            datafile = joinpath(INSTANCES_DIR, case)
-            TestPolarFormulation.runtests(datafile, device, AT)
+            TestPolarFormulation.runtests(case, device, AT)
         end
         println("Took $(round(time() - tic; digits=1)) seconds.")
     end

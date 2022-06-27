@@ -7,17 +7,14 @@ using ExaPF
 import ExaPF: AutoDiff
 const PS = ExaPF.PowerSystem
 const LS = ExaPF.LinearSolvers
-const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
 # Test quickstart guide in docs/src/quickstart.md
 # If one test is broken, please update the documentation.
 
 @testset "Documentation: quickstart" begin
-    pglib_instance = "case1354.m"
-    datafile = joinpath(INSTANCES_DIR, pglib_instance)
-
+    case = "case1354.m"
     # Short version
-    polar = ExaPF.PolarForm(datafile, CPU())
+    polar = ExaPF.load_polar(case, CPU())
     # Initial values
     stack = ExaPF.NetworkStack(polar)
     convergence = run_pf(polar, stack; rtol=1e-10)
@@ -26,7 +23,7 @@ const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
     @test convergence.norm_residuals <= 1e-10
 
     # Long version
-    pf = PS.PowerNetwork(datafile)
+    pf = PS.load_case(case)
     nbus = PS.get(pf, PS.NumberOfBuses())
     @test nbus == 1354
 

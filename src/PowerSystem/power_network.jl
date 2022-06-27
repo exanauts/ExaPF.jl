@@ -119,6 +119,46 @@ function PowerNetwork(datafile::String; options...)
     return PowerNetwork(data; options...)
 end
 
+# Wrap ExaData and PGLIB's artifacts
+@enum(PowerNetworkLibrary,
+    EXADATA=1,
+    PGLIB=2,
+)
+
+"""
+    load_case(case_name, lib::PowerNetworkLibrary=EXADATA)
+
+Convenient function to load a [`PowerNetwork`](@ref) instance
+from one of the benchmark library (`dir=EXADATA` for
+[MATPOWER](https://matpower.org/),
+`dir=PGLIB` for [PGLIB-OPF](https://github.com/power-grid-lib/pglib-opf/)).
+Default library is `lib=EXADATA`.
+
+## Examples
+```jldoctest; setup=:(using ExaPF; PS=ExaPF.PowerSystem)
+julia> net = PS.load_case("case118") # default is MATPOWER
+PowerNetwork object with:
+    Buses: 118 (Slack: 1. PV: 53. PQ: 64)
+    Generators: 54.
+
+julia> net = PS.load_case("case1354_pegase", PS.PGLIB)
+PowerNetwork object with:
+    Buses: 1354 (Slack: 1. PV: 259. PQ: 1094)
+    Generators: 260.
+```
+
+"""
+function load_case(case_name, lib::PowerNetworkLibrary=EXADATA)
+    src = endswith(case_name, ".m") ? case_name : "$(case_name).m"
+    if lib == EXADATA
+        src_dir = joinpath(artifact"ExaData", "ExaData")
+    elseif lib == PGLIB
+        src_dir = joinpath(artifact"PGLib_opf", "pglib-opf-21.07")
+        src = startswith(src, "pglib_opf") ? src : "pglib_opf_$(src)"
+    end
+    return PowerNetwork(joinpath(src_dir, src))
+end
+
 # Getters
 ## Network attributes
 get(pf::PowerNetwork, ::NumberOfBuses) = pf.nbus
@@ -181,7 +221,7 @@ function Base.show(io::IO, pf::PowerNetwork)
     println(io, "PowerNetwork object with:")
     @printf(io, "    Buses: %d (Slack: %d. PV: %d. PQ: %d)\n", pf.nbus, length(pf.ref),
             length(pf.pv), length(pf.pq))
-    println(io, "    Generators: ", pf.ngen, ".")
+    print(io, "    Generators: ", pf.ngen, ".")
 end
 
 # Some utils function

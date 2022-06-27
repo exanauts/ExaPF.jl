@@ -5,6 +5,7 @@ using Test
 using ExaPF
 import ExaPF: PowerSystem
 import ExaPF.PowerSystem: ParsePSSE
+using LazyArtifacts
 
 const PS = PowerSystem
 const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")

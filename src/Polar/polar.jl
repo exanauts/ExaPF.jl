@@ -19,11 +19,38 @@ end
 PolarForm(datafile::String, device=CPU()) = PolarForm(PS.PowerNetwork(datafile), device)
 PolarForm(polar::PolarForm, device=CPU()) = PolarForm(polar.network, device)
 
+"""
+    load_polar(case, device=CPU(); dir=PS.EXADATA)
+
+Load a [`PolarForm`](@ref) instance from the specified
+benchmark library `dir` on the target `device` (default is `CPU`).
+ExaPF uses two different benchmark libraries: MATPOWER (`dir=EXADATA`)
+and PGLIB-OPF (`dir=PGLIB`).
+
+## Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9")
+Polar formulation model (instantiated on device CPU())
+Network characteristics:
+    #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
+    #generators: 3
+    #lines:      9
+giving a mathematical formulation with:
+    #controls:   5
+    #states  :   14
+
+```
+
+"""
+function load_polar(case, device=CPU(); dir=PS.EXADATA)
+    return PolarForm(PS.load_case(case, dir), device)
+end
 
 # Getters (bridge to PowerNetwork)
 get(polar::PolarForm, attr::PS.AbstractNetworkAttribute) = get(polar.network, attr)
 
 number(polar::PolarForm, v::AbstractVariable) = length(mapping(polar, v))
+
 
 # Default ordering in NetworkStack: [vmag, vang, pgen]
 

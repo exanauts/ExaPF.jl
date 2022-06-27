@@ -4,3 +4,10 @@ lazy = true
     [[ExaData.download]]
     url = "https://web.cels.anl.gov/~mschanen/ExaData-e1b6123.tar.gz"
     sha256 = "f6e22f26fbf273e97625a25b1b55f07d0eb0e15283483c545dda6eda84c48fdd"
+
+[PGLib_opf]
+git-tree-sha1 = "91f3110e356432d4e093502e8fa60d6dc97104d2"
+lazy=true
+    [[PGLib_opf.download]]
+    sha256 = "9c53214a8b74d921a662235faeea234e3e2bfa7cf62619410e9ec52f4277c797"
+    url = "https://github.com/power-grid-lib/pglib-opf/archive/refs/tags/v21.07.tar.gz"
