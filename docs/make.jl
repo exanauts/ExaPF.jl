@@ -22,6 +22,7 @@ makedocs(
         "Quick start" => "quickstart.md",
         "Tutorials" => [
             "Power flow: direct solver" => "tutorials/direct_solver.md",
+            "Power flow: batch evaluation" => "tutorials/batch_evaluation.md",
         ],
         "Manual" => [
             "Polar formulation" => "man/formulations.md",
