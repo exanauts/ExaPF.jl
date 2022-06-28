@@ -1,7 +1,7 @@
 ```@meta
 CurrentModule = ExaPF.AutoDiff
 ```
-# AutoDiff
+# [AutoDiff](@id AutoDiffAPI)
 
 ## Variables
 ```@docs

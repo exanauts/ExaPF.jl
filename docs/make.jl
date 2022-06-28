@@ -20,6 +20,9 @@ makedocs(
     pages = [
         "Home" => "index.md",
         "Quick start" => "quickstart.md",
+        "Tutorials" => [
+            "Power flow: direct solver" => "tutorials/direct_solver.md",
+        ],
         "Manual" => [
             "PowerSystem" => "man/powersystem.md",
             "Polar formulation" => "man/formulations.md",

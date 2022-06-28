@@ -39,6 +39,7 @@ mapping
 
 ```@docs
 run_pf
+nlsolve!
 NewtonRaphson
 
 ```
