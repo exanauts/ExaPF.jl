@@ -90,12 +90,12 @@ routines implementing the two routines `LinearAlgebra.lu!` and `LinearAlgebra.ld
 
 Before comparing with other linear solvers, we solve a large scale
 power flow instance with UMFPACK to give us a reference.
-```@repl direct_solver
-polar = ExaPF.load_polar("case9241pegase.m");
-stack = ExaPF.NetworkStack(polar);
-pf_solver = NewtonRaphson(tol=1e-10, verbose=2);  # power flow solver
-func = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar); # power flow func
-jx = ExaPF.Jacobian(polar, func, State()); # init AD
+```@example direct_solver
+polar = ExaPF.load_polar("case9241pegase.m")
+stack = ExaPF.NetworkStack(polar)
+pf_solver = NewtonRaphson(tol=1e-10, verbose=2)  # power flow solver
+func = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar) # power flow func
+jx = ExaPF.Jacobian(polar, func, State()) # init AD
 ExaPF.nlsolve!(pf_solver, jx, stack)
 ```
 
@@ -108,20 +108,20 @@ to solve power flow problems. Conveniently, KLU is wrapped in Julia
 with the package [KLU.jl](https://github.com/JuliaSparse/KLU.jl).
 KLU.jl implements a proper interface to use KLU. We just have to implement
 a forgiving function for `LinearAlgebra.lu!`
-```@repl direct_solver
-LinearAlgebra.lu!(K::KLU.KLUFactorization, J) = KLU.klu!(K, J);
+```@example direct_solver
+LinearAlgebra.lu!(K::KLU.KLUFactorization, J) = KLU.klu!(K, J)
 
 ```
 Then, we are ready to solve a power flow with KLU using our current
 abstraction. One has just to create a new instance of [`LS.DirectSolver`](@ref):
-```@repl direct_solver
-klu_factorization = KLU.klu(jx.J);
-klu_solver = LS.DirectSolver(klu_factorization);
+```@example direct_solver
+klu_factorization = KLU.klu(jx.J)
+klu_solver = LS.DirectSolver(klu_factorization)
 
 ```
 and pass it to [`nlsolve!`](@ref):
-```@repl direct_solver
-ExaPF.init!(polar, stack); # reinit stack
+```@example direct_solver
+ExaPF.init!(polar, stack) # reinit stack
 ExaPF.nlsolve!(pf_solver, jx, stack; linear_solver=klu_solver)
 
 ```
@@ -133,7 +133,7 @@ We observe KLU reduces considerably the time spent in the linear solver.
 [cusolverRF](https://docs.nvidia.com/cuda/cusolver/index.html#cuSolverRF-reference)
 is an efficient LU refactorization routine implemented in CUDA.
 It is wrapped in Julia inside the package [CUSOLVERRF.jl](https://github.com/exanauts/CUSOLVERRF.jl):
-```@repl direct_solver
+```@example direct_solver
 using CUSOLVERRF
 ```
 
@@ -152,20 +152,20 @@ of choice when it comes to solve the power flow entirely on the GPU.
 CUSOLVERRF.jl follows the LinearAlgebra's interface, so we can use
 it directly in ExaPF.
 We first have to instantiate everything on the GPU:
-```@repl direct_solver
-polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDADevice());
-stack_gpu = ExaPF.NetworkStack(polar_gpu);
-func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu);
-jx_gpu = ExaPF.Jacobian(polar_gpu, func_gpu, State()); # init AD
+```@example direct_solver
+polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDADevice())
+stack_gpu = ExaPF.NetworkStack(polar_gpu)
+func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu)
+jx_gpu = ExaPF.Jacobian(polar_gpu, func_gpu, State()) # init AD
 ```
 We can instantiate a new cusolverRF's instance as
-```@repl direct_solver
+```@example direct_solver
 rf_fac = CUSOLVERRF.RFLU(jx_gpu.J)
 rf_solver = LS.DirectSolver(rf_fac)
 
 ```
 Then, we are able to solve the power flow *entirely on the GPU*, simply as
-```@repl direct_solver
+```@example direct_solver
 ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=rf_solver)
 
 ```
