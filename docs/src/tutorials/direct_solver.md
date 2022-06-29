@@ -11,6 +11,7 @@ DocTestFilters = [r"ExaPF"]
 using ExaPF
 using KLU
 using LinearAlgebra
+using CUDAKernels
 const LS = ExaPF.LinearSolvers
 
 ```
