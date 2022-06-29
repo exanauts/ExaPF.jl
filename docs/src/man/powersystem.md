@@ -11,6 +11,12 @@ DocTestFilters = [r"ExaPF"]
 
 The main goal of ExaPF.jl is the solution of optimization problems for electrical power systems in the steady state. The first step in this process is the creation of an object that describes the physics and topology of the power system which ultimately will be mapped into an abstract mathematical optimization problem. In this section we briefly review the power system in the steady state and describe the tools to create and examine power systems in ExaPF.jl.
 
+We usually load the `PowerSystem` system submodule with the alias `PS`:
+```julia-repl
+julia> PS = ExaPF.PowerSystem
+
+```
+
 ## Description
 
 The electrical power system is represented as a linear, lumped network which has to satisfy the Kirchhoff laws:
@@ -43,46 +49,27 @@ two buses $i$ and $j$, $y_{ij} = g_{ij} + ib_{ij}$.
 
 ## The PowerNetwork Object
 
-Currently we can create a PowerNetwork object by parsing a MATPOWER data file.
+Currently we can create a [`PS.PowerNetwork`](@ref) object by parsing a MATPOWER data file.
 
-```julia-repl
-julia> datafile = joinpath(artifact"ExaData", "ExaData", "case9.raw")
-julia> ps = PowerSystem.PowerNetwork(datafile)
-```
-Apart of MATPOWER data file, PSSE data file are also supported (also contained in the `ExaData` artifact)
-```julia-repl
-julia> datafile = joinpath(artifact"ExaData", "ExaData", "case14.raw")
-julia> ps = PowerSystem.PowerNetwork(datafile)
-```
+```jldoctests
+julia> datafile = "case9.m";
 
-If we print the object, we will obtain bus information, initial voltage, and power that we read from the data file.
-
-```julia-repl
-julia> println(ps)
-Power Network characteristics:
-    Buses: 9. Slack: 1. PV: 2. PQ: 6
+julia> ps = PS.load_case(datafile)
+PowerNetwork object with:
+    Buses: 9 (Slack: 1. PV: 2. PQ: 6)
     Generators: 3.
-    ==============================================
-    BUS      TYPE    VMAG    VANG    P   Q
-    ==============================================
-    1     3      1.000  0.00    0.000   0.000
-    2     2      1.000  0.00    1.630   0.000
-    3     2      1.000  0.00    0.850   0.000
-    4     1      1.000  0.00    0.000   0.000
-    5     1      1.000  0.00    -0.900  -0.300
-    6     1      1.000  0.00    0.000   0.000
-    7     1      1.000  0.00    -1.000  -0.350
-    8     1      1.000  0.00    0.000   0.000
-    9     1      1.000  0.00    -1.250  -0.500
+
 ```
 
-then, using multiple dispatch, we have defined a set of abstract data types and getter functions which allow us to retrieve information from the PowerNetwork object
+Then, using multiple dispatch, we have defined a set of abstract data types and getter functions which allow us to retrieve information from the PowerNetwork object
 
-```julia-repl
-julia> PowerSystem.get(ps, PowerSystem.NumberOfPQBuses())
+```jldoctests
+julia> PS.get(ps, PS.NumberOfPQBuses())
 6
-julia> PowerSystem.get(ps, PowerSystem.NumberOfPVBuses())
+
+julia> PS.get(ps, PS.NumberOfPVBuses())
 2
-julia> PowerSystem.get(ps, PowerSystem.NumberOfSlackBuses())
+
+julia> PS.get(ps, PS.NumberOfSlackBuses())
 1
 ```
