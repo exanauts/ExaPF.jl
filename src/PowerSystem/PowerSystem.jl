@@ -1,6 +1,7 @@
 module PowerSystem
 
 using Printf
+using LazyArtifacts
 using LinearAlgebra
 using SparseArrays
 

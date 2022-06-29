@@ -9,6 +9,7 @@ CurrentModule = ExaPF.PowerSystem
 ```@docs
 AbstractPowerSystem
 PowerNetwork
+load_case
 ```
 
 ## API Reference

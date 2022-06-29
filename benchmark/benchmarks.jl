@@ -9,12 +9,11 @@ using CUDAKernels
 # Algorithms
 using Krylov
 using ExaPF
-using LazyArtifacts
 
 const LS = ExaPF.LinearSolvers
+const PS = ExaPF.PowerSystem
 
 const CONFIG_FILE = joinpath(dirname(@__FILE__), "config.json")
-const BENCHMARK_DIR = joinpath(artifact"ExaData", "ExaData")
 const OUTPUT_DIR = joinpath(dirname(@__FILE__), "results")
 
 DEFAULT_CONFIG = Dict{Symbol, Any}(
@@ -347,8 +346,7 @@ function benchmark(
         mkdir(outputdir)
     end
     println("BENCHMARK $casename on $(device)")
-    casefile = joinpath(BENCHMARK_DIR, casename)
-    polar = PolarForm(casefile, device)
+    polar = PolarForm(PS.load_case(casename), device)
     if isa(device, CPU)
         ext = ".cpu.csv"
     elseif isa(device, CUDADevice)

@@ -1,6 +1,9 @@
 ```@meta
 CurrentModule = ExaPF
 const PS = ExaPF.PowerSystem
+DocTestSetup = quote
+    using ExaPF
+end
 ```
 
 
@@ -19,6 +22,7 @@ Control
 ## Structure and variables
 ```@docs
 PolarForm
+load_polar
 NetworkStack
 BlockNetworkStack
 init!
