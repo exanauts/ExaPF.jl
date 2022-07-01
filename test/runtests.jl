@@ -21,7 +21,7 @@ if CUDA.has_cuda()
     using CUDA.CUSPARSE
     CUDA.allowscalar(false)
     CUDA_ARCH = (CUDADevice(), CuArray, CuSparseMatrixCSR)
-    push!(ARCHS, CUDA_ARCH)
+    # push!(ARCHS, CUDA_ARCH)
 end
 
 # Load test modules
@@ -32,33 +32,33 @@ end
 
 init_time = time()
 @testset "Test ExaPF" begin
-    @testset "ExaPF.PowerSystem" begin
-        @info "Test PowerSystem submodule ..."
-        tic = time()
-        include("powersystem.jl")
-        println("Took $(round(time() - tic; digits=1)) seconds.")
+    # @testset "ExaPF.PowerSystem" begin
+    #     @info "Test PowerSystem submodule ..."
+    #     tic = time()
+    #     include("powersystem.jl")
+    #     println("Took $(round(time() - tic; digits=1)) seconds.")
 
-        @info "Test kernels ..."
-        tic = time()
-        TestKernels.runtests(CPU(), Array, SparseMatrixCSC)
-        println("Took $(round(time() - tic; digits=1)) seconds.")
+    #     @info "Test kernels ..."
+    #     tic = time()
+    #     TestKernels.runtests(CPU(), Array, SparseMatrixCSC)
+    #     println("Took $(round(time() - tic; digits=1)) seconds.")
 
-        @info "Compare power flow with MATPOWER ..."
-        tic = time()
-        include("Polar/matpower.jl")
-        println("Took $(round(time() - tic; digits=1)) seconds.")
-    end
+    #     @info "Compare power flow with MATPOWER ..."
+    #     tic = time()
+    #     include("Polar/matpower.jl")
+    #     println("Took $(round(time() - tic; digits=1)) seconds.")
+    # end
     println()
 
     @testset "Test device specific code on $device" for (device, AT, SMT) in ARCHS
         @info "Test device $device"
 
-        println("Test LinearSolvers submodule ...")
-        tic = time()
-        @testset "ExaPF.LinearSolvers" begin
-            TestLinearSolvers.runtests(device, AT, SMT)
-        end
-        println("Took $(round(time() - tic; digits=1)) seconds.")
+        # println("Test LinearSolvers submodule ...")
+        # tic = time()
+        # @testset "ExaPF.LinearSolvers" begin
+        #     TestLinearSolvers.runtests(device, AT, SMT)
+        # end
+        # println("Took $(round(time() - tic; digits=1)) seconds.")
 
         println("Test PolarForm ...")
         tic = time()
@@ -69,22 +69,22 @@ init_time = time()
     end
     println()
 
-    include("quickstart.jl")
+    # include("quickstart.jl")
 
-    @testset "Benchmark" begin
-        @info("Test benchmark suite")
-        ExaBenchmark.benchmark("case30.m", CPU())
-    end
-    @testset "Test example" begin
-        @info("Test example")
-        for file in filter(
-            f -> endswith(f, ".jl"),
-            readdir(EXAMPLES_DIR),
-        )
-            include(joinpath(EXAMPLES_DIR, file))
-        end
-    end
-    println()
+    # @testset "Benchmark" begin
+    #     @info("Test benchmark suite")
+    #     ExaBenchmark.benchmark("case30.m", CPU())
+    # end
+    # @testset "Test example" begin
+    #     @info("Test example")
+    #     for file in filter(
+    #         f -> endswith(f, ".jl"),
+    #         readdir(EXAMPLES_DIR),
+    #     )
+    #         include(joinpath(EXAMPLES_DIR, file))
+    #     end
+    # end
+    # println()
 end
 println("TOTAL RUNNING TIME: $(round(time() - init_time; digits=1)) seconds.")
 

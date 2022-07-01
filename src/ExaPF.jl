@@ -11,6 +11,8 @@ import CUDA.CUSPARSE
 import ForwardDiff
 using KernelAbstractions
 const KA = KernelAbstractions
+using KernelGradients
+using Enzyme
 
 import Base: show, get
 

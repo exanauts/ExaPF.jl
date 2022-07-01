@@ -56,7 +56,7 @@ Base.length(func::PolarBasis) = func.nbus + 2 * func.nlines
 
 # update basis
 @kernel function basis_kernel!(
-    cons, @Const(vmag), @Const(vang), @Const(f), @Const(t), nlines, nbus,
+    cons, vmag, vang, f, t, nlines, nbus,
 )
     i, j = @index(Global, NTuple)
     shift_cons = (j-1) * (nbus + 2*nlines)
@@ -137,33 +137,21 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
     f = func.f
     t = func.t
 
-    fill!(∂stack.intermediate.∂edge_vm_fr , 0.0)
-    fill!(∂stack.intermediate.∂edge_vm_to , 0.0)
-    fill!(∂stack.intermediate.∂edge_va_fr , 0.0)
-    fill!(∂stack.intermediate.∂edge_va_to , 0.0)
+    fill!(∂stack.vmag, zero(eltype(∂stack.vmag)))
+    fill!(∂stack.vang, zero(eltype(∂stack.vang)))
 
     # Accumulate on edges
-    ndrange = (nl+nb, nbatches(stack))
-    ev = adj_basis_kernel!(func.device)(
-        ∂v,
-        ∂stack.vmag,
-        ∂stack.intermediate.∂edge_vm_fr,
-        ∂stack.intermediate.∂edge_vm_to,
-        ∂stack.intermediate.∂edge_va_fr,
-        ∂stack.intermediate.∂edge_va_to,
-        stack.vmag, stack.vang, f, t, nl, nb,
-        ndrange=ndrange, dependencies=Event(func.device),
+    ndrange = (length(func), nbatches(stack))
+    output = copy(∂v)
+    fill!(output, zero(eltype(output)))
+    ev = autodiff(basis_kernel!(func.device))(
+        Duplicated(output, ∂v),
+        Duplicated(stack.vmag, ∂stack.vmag),
+        Duplicated(stack.vang, ∂stack.vang),
+        func.f, func.t, func.nlines, func.nbus,
+        ndrange=ndrange, dependencies=Event(func.device)
     )
     wait(ev)
-
-    # Accumulate on nodes
-    Cf = func.Cf
-    Ct = func.Ct
-    blockmul!(∂stack.vmag, Cf, ∂stack.intermediate.∂edge_vm_fr, 1.0, 1.0)
-    blockmul!(∂stack.vmag, Ct, ∂stack.intermediate.∂edge_vm_to, 1.0, 1.0)
-    blockmul!(∂stack.vang, Cf, ∂stack.intermediate.∂edge_va_fr, 1.0, 1.0)
-    blockmul!(∂stack.vang, Ct, ∂stack.intermediate.∂edge_va_to, 1.0, 1.0)
-    return
 end
 
 function Base.show(io::IO, func::PolarBasis)
