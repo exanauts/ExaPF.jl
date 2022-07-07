@@ -33,7 +33,27 @@ in the expression tree, such as the LKMR basis `ψ`.
 The NetworkStack can be instantiated on the host or on
 the target device.
 
+### Examples
 
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> stack = ExaPF.NetworkStack(polar)
+21-elements NetworkStack{Vector{Float64}}
+
+julia> stack.vmag
+9-element Vector{Float64}:
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+
+```
 """
 struct NetworkStack{VT,VD,NT} <: AbstractNetworkStack{VT}
     # INPUT

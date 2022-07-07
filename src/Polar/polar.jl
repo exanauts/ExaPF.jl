@@ -6,6 +6,23 @@
 Wrap a [`PS.PowerNetwork`](@ref) network to load the data on
 the target device (`CPU()` and `CUDADevice()` are currently supported).
 
+## Example
+```jldoctest; setup=:(using ExaPF)
+julia> const PS = ExaPF.PowerSystem;
+
+julia> network_data = PS.load_case("case9.m");
+
+julia> polar = PolarForm(network_data, ExaPF.CPU())
+Polar formulation model (instantiated on device CPU())
+Network characteristics:
+    #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
+    #generators: 3
+    #lines:      9
+giving a mathematical formulation with:
+    #controls:   5
+    #states  :   14
+
+```
 """
 struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
     network::PS.PowerNetwork
@@ -59,6 +76,21 @@ number(polar::PolarForm, v::AbstractVariable) = length(mapping(polar, v))
 
 Return the mapping associated to the `Control()` in [`NetworkStack`](@ref)
 according to the polar formulation `PolarForm`.
+
+## Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> mapu = ExaPF.mapping(polar, Control())
+5-element Vector{Int64}:
+  1
+  2
+  3
+ 20
+ 21
+
+```
+
 """
 function mapping(polar::PolarForm, ::Control, k::Int=1)
     pf = polar.network
@@ -99,6 +131,30 @@ end
 
 Return the mapping associated to the `State()` in [`NetworkStack`](@ref)
 according to the polar formulation `PolarForm`.
+
+## Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> mapu = ExaPF.mapping(polar, State())
+14-element Vector{Int64}:
+ 11
+ 12
+ 13
+ 14
+ 15
+ 16
+ 17
+ 18
+  4
+  5
+  6
+  7
+  8
+  9
+
+```
+
 """
 function mapping(polar::PolarForm, ::State, k::Int=1)
     pf = polar.network

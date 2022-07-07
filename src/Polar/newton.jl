@@ -86,7 +86,7 @@ By default, the linear system ``(∇g_k)^{-1} g(x_k)`` is solved
 using a LU factorization. You can specify a different linear solver
 by changing the optional argument `linear_solver`.
 
-## Arguments
+### Arguments
 
 * `algo::NewtonRaphon`: Newton-Raphson object, storing the options of the algorithm
 * `jac::Jacobian`: Stores the function ``g`` and its Jacobian ``∇g``. The Jacobian is updated with automatic differentiation.
@@ -94,6 +94,27 @@ by changing the optional argument `linear_solver`.
 * `linear_solver::AbstractLinearSolver`: linear solver used to compute the Newton step
 * `nl_buffer::NLBuffer`: buffer storing the residual vector and the descent direction `Δx`. Can be reused to avoid unecessary allocations.
 
+### Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar);
+
+julia> jx = ExaPF.Jacobian(polar, powerflow, State());
+
+julia> stack = ExaPF.NetworkStack(polar);
+
+julia> conv = ExaPF.nlsolve!(NewtonRaphson(verbose=1), jx, stack);
+#it 0: 2.64764e+00
+#it 1: 2.03366e-01
+#it 2: 2.94166e-03
+#it 3: 8.85300e-07
+#it 4: 7.52102e-14
+
+julia> conv.has_converged
+true
+
+```
 """
 function nlsolve!(
     algo::NewtonRaphson,
@@ -165,11 +186,28 @@ formulation. The object `stack` is modified inplace in the function.
 The algorithm stops when a tolerance `rtol` or a maximum number of
 iterations `maxiter` is reached.
 
-## Arguments
+### Arguments
 
 * `polar::AbstractFormulation`: formulation of the power flow equation
 * `stack::NetworkStack`: initial values in the network
 
+### Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> stack = ExaPF.NetworkStack(polar);
+
+julia> conv = run_pf(polar, stack; verbose=1);
+#it 0: 2.64764e+00
+#it 1: 2.03366e-01
+#it 2: 2.94166e-03
+#it 3: 8.85300e-07
+#it 4: 7.52102e-14
+
+julia> conv.has_converged
+true
+
+```
 """
 function run_pf(
     polar::PolarForm, stack::NetworkStack;

@@ -23,6 +23,39 @@ angles `vang` and returns
 ### Complexity
 `3 n_lines + n_bus` mul, `n_lines` `cos` and `n_lines` `sin`
 
+### Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> stack = ExaPF.NetworkStack(polar);
+
+julia> basis = ExaPF.PolarBasis(polar)
+PolarBasis (AbstractExpression)
+
+julia> basis(stack)
+27-element Vector{Float64}:
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 0.0
+ ⋮
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+
+```
 """
 struct PolarBasis{VI, MT} <: AutoDiff.AbstractExpression
     nbus::Int
@@ -183,12 +216,27 @@ Implement the quadratic cost function for OPF
 ```math
     ∑_{g=1}^{n_g} c_{2,g} p_g^2 + c_{1,g} p_g + c_{0,g}
 ```
+Require composition with [`PolarBasis`](@ref) to evaluate
+the cost of the reference generator.
 
 **Dimension:** `1`
 
 ### Complexity
 `1` SpMV, `1` `sum`
 
+### Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> stack = ExaPF.NetworkStack(polar);
+
+julia> cost = ExaPF.CostFunction(polar) ∘ ExaPF.PolarBasis(polar);
+
+julia> cost(stack)
+1-element Vector{Float64}:
+ 4509.0275
+
+```
 """
 struct CostFunction{VT, MT} <: AutoDiff.AbstractExpression
     ref::Vector{Int}
@@ -307,10 +355,59 @@ PV and PQ nodes, and the reactive balance equations at PQ nodes:
 \end{aligned}
 ```
 
-**Dimension:** `n_{pv} + 2 * n_{pq}`
+Require composition with [`PolarBasis`](@ref).
+
+**Dimension:** `n_pv + 2 * n_pq`
 
 ### Complexity
 `2` SpMV
+
+### Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> stack = ExaPF.NetworkStack(polar);
+
+julia> powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar);
+
+julia> powerflow(stack)
+14-element Vector{Float64}:
+ -1.63
+ -0.85
+  0.0
+  0.9000000000000004
+  0.0
+  1.0
+  0.0
+  1.2499999999999998
+ -0.1670000000000016
+  0.04200000000000159
+ -0.28349999999999653
+  0.17099999999999937
+ -0.22749999999999915
+  0.2590000000000039
+
+julia> run_pf(polar, stack); # solve powerflow equations
+
+julia> powerflow(stack)
+14-element Vector{Float64}:
+ -2.6645352591003757e-15
+ -2.220446049250313e-16
+ -3.419486915845482e-14
+  8.43769498715119e-15
+ -1.3322676295501878e-15
+  8.43769498715119e-15
+ -2.4424906541753444e-14
+  5.3734794391857577e-14
+  1.4210854715202004e-14
+  1.7763568394002505e-15
+  7.105427357601002e-15
+  3.552713678800501e-15
+  7.105427357601002e-15
+  2.3092638912203256e-14
+
+
+```
 
 """
 struct PowerFlowBalance{VT, MT} <: AutoDiff.AbstractExpression
@@ -392,6 +489,25 @@ v_{pq}^♭ ≤ v_{pq} ≤ v_{pq}^♯ .
 In the reduced space, the constraints on the voltage magnitudes at PV nodes ``v_{pv}``
 are taken into account when bounding the control ``u``.
 
+### Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> stack = ExaPF.NetworkStack(polar);
+
+julia> voltage_pq = ExaPF.VoltageMagnitudeBounds(polar);
+
+julia> voltage_pq(stack)
+6-element Vector{Float64}:
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+
+```
+
 """
 struct VoltageMagnitudeBounds{SMT} <: AutoDiff.AbstractExpression
     Cpq::SMT
@@ -437,11 +553,31 @@ In the reduced space, that amounts to
 p_{g,ref}^♭ ≤ p_{g,ref} ≤ p_{g,ref}^♯  ;
 C_g q_g^♭ ≤ C_g q_g ≤ C_g q_g^♯  .
 ```
+Require composition with [`PolarBasis`](@ref).
 
 **Dimension:** `n_pv + 2 n_ref`
 
 ### Complexity
 `1` copyto, `1` SpMV
+
+### Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> stack = ExaPF.NetworkStack(polar);
+
+julia> run_pf(polar, stack); # solve powerflow equations
+
+julia> power_generators = ExaPF.PowerGenerationBounds(polar) ∘ ExaPF.PolarBasis(polar);
+
+julia> power_generators(stack)
+4-element Vector{Float64}:
+  0.7195470158922199
+  0.24068957772759347
+  0.1446011953112496
+ -0.03649025534209471
+
+```
 
 """
 struct PowerGenerationBounds{VT, MT} <: AutoDiff.AbstractExpression
@@ -514,10 +650,45 @@ end
 
 Implement thermal limit constraints on the lines of the network.
 
+Require composition with [`PolarBasis`](@ref).
+
 **Dimension:** `2 * n_lines`
 
 ### Complexity
 `4` SpMV, `4 * n_lines` quadratic, `2 * n_lines` add
+
+### Examples
+```jldoctest; setup=:(using ExaPF)
+julia> polar = ExaPF.load_polar("case9");
+
+julia> stack = ExaPF.NetworkStack(polar);
+
+julia> run_pf(polar, stack); # solve powerflow equations
+
+julia> line_flows = ExaPF.LineFlows(polar) ∘ ExaPF.PolarBasis(polar);
+
+julia> line_flows(stack)
+18-element Vector{Float64}:
+ 0.5756793809060858
+ 0.09445704301364506
+ 0.379982836801101
+ 0.7238315387349309
+ 0.06016881786985958
+ 0.5886725487812785
+ 2.6574181040367035
+ 0.7489430586779533
+ 0.29535076072865407
+ 0.560816793842092
+ 0.11209487984261841
+ 0.3862504895005101
+ 0.7287262804842036
+ 0.1171908414455606
+ 0.5851637022788402
+ 2.677809505685433
+ 0.7266677622404694
+ 0.21549662692309735
+
+```
 
 """
 struct LineFlows{VT, MT} <: AutoDiff.AbstractExpression
