@@ -243,40 +243,41 @@ end
 
 function test_block_jacobian(polar, device, MT)
     nblocks = 3
-    mapx = ExaPF.mapping(polar, State())
 
     stack = ExaPF.NetworkStack(polar)
-    blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)
+
+    blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
+    blk_stack = ExaPF.BlockNetworkStack(blk_polar)
 
     for expr in [
-        ExaPF.PowerFlowBalance(polar),
-        ExaPF.PowerGenerationBounds(polar),
-        ExaPF.VoltageMagnitudeBounds(polar),
-        ExaPF.LineFlows(polar),
+        ExaPF.PowerFlowBalance,
+        ExaPF.PowerGenerationBounds,
+        ExaPF.VoltageMagnitudeBounds,
+        ExaPF.LineFlows,
     ]
-        pf = expr ∘ ExaPF.PolarBasis(polar)
-        m = length(pf)
-
-        jac = ExaPF.Jacobian(polar, pf, mapx)
-        blk_jac = ExaPF.ArrowheadJacobian(polar, pf, State(), nblocks)
-
+        # Single eval
+        pf = expr(polar) ∘ ExaPF.PolarBasis(polar)
+        jac = ExaPF.Jacobian(polar, pf, State())
         ExaPF.jacobian!(jac, stack)
+        # Block eval
+        pf_blk = expr(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
+        blk_jac = ExaPF.ArrowheadJacobian(blk_polar, pf_blk, State())
         ExaPF.jacobian!(blk_jac, blk_stack)
-
+        # Test results match
         blk_J_cpu = blk_jac.J |> SparseMatrixCSC
         J_cpu = jac.J |> SparseMatrixCSC
         @test blk_J_cpu ≈ blockdiag([J_cpu for i in 1:nblocks]...)
     end
 
     constraints = [
-        ExaPF.PowerFlowBalance(polar),
-        ExaPF.PowerGenerationBounds(polar),
-        ExaPF.VoltageMagnitudeBounds(polar),
-        ExaPF.LineFlows(polar),
+        ExaPF.PowerFlowBalance(blk_polar),
+        ExaPF.PowerGenerationBounds(blk_polar),
+        ExaPF.VoltageMagnitudeBounds(blk_polar),
+        ExaPF.LineFlows(blk_polar),
     ]
-    mycons = ExaPF.MultiExpressions(constraints) ∘ ExaPF.PolarBasis(polar)
+    mycons = ExaPF.MultiExpressions(constraints) ∘ ExaPF.PolarBasis(blk_polar)
     for X in [State(), Control(), AllVariables()]
-        blk_jac = ExaPF.ArrowheadJacobian(polar, mycons, X, nblocks)
+        blk_jac = ExaPF.ArrowheadJacobian(blk_polar, mycons, X)
         ExaPF.jacobian!(blk_jac, blk_stack)
     end
 end

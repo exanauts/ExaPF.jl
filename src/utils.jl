@@ -140,3 +140,31 @@ function blockmul!(y::AbstractArray, A::AbstractMatrix, x::AbstractArray, alpha,
     end
 end
 
+function _blockdiag(A::SparseMatrixCSC{Tv, Ti}, k::Int) where {Tv, Ti}
+    n, m = size(A)
+    nnzA = nnz(A)
+    Ai, Ap, Az = A.rowval, A.colptr, A.nzval
+
+    Bp = zeros(Ti, m * k + 1)
+    Bi = zeros(Ti, nnzA * k)
+    Bz = zeros(Tv, nnzA * k)
+
+    cnt = 1
+    for b in 1:k
+        for j in 1:m
+            Bp[j + (b - 1) * m] = cnt
+            for c in Ap[j]:Ap[j+1]-1
+                i = Ai[c]
+                Bi[cnt] = i + (b-1) * n
+                Bz[cnt] = Az[c]
+                cnt += 1
+            end
+        end
+    end
+    Bp[end] = cnt
+
+    @assert cnt == nnzA * k + 1
+
+    return SparseMatrixCSC{Tv, Ti}(n * k, m * k, Bp, Bi, Bz)
+end
+

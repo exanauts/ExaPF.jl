@@ -112,7 +112,7 @@ function Base.show(io::IO, stack::NetworkStack)
     print(io, "$(length(stack.input))-elements NetworkStack{$(typeof(stack.input))}")
 end
 
-nbatches(stack::NetworkStack) = 1
+nblocks(stack::NetworkStack) = 1
 
 """
     init!(polar::PolarForm, stack::NetworkStack)
@@ -244,22 +244,22 @@ function BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
 
     return BlockNetworkStack(k, input, vmag, vang, pgen, ψ, intermediate, params, pload, qload)
 end
-function BlockNetworkStack(polar::PolarForm{T,VI,VT,MT}, k::Int) where {T,VI,VT,MT}
+function BlockNetworkStack(polar::BlockPolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
     nlines = get(polar, PS.NumberOfLines())
-    stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VT)
+    stack = BlockNetworkStack(nblocks(polar), nbus, ngen, nlines, VT, VT)
     init!(polar, stack)
     return stack
 end
 function BlockNetworkStack(
-    polar::PolarForm,
+    polar::BlockPolarForm,
     ploads::Array{Float64, 2},
     qloads::Array{Float64, 2},
 )
     @assert size(ploads) == size(qloads)
     k = size(ploads, 2)
-    blk_stack = BlockNetworkStack(polar, k)
+    blk_stack = BlockNetworkStack(polar)
 
     copyto!(blk_stack.pload, ploads)
     copyto!(blk_stack.qload, qloads)
@@ -271,9 +271,9 @@ function Base.show(io::IO, stack::BlockNetworkStack)
     print(io, "$(length(stack.input))-elements BlockNetworkStack{$(typeof(stack.input))}")
 end
 
-nbatches(stack::BlockNetworkStack) = stack.k
+nblocks(stack::BlockNetworkStack) = stack.k
 
-function init!(polar::PolarForm, stack::BlockNetworkStack; loads=true)
+function init!(polar::BlockPolarForm, stack::BlockNetworkStack; loads=true)
     vmag = get(polar.network, PS.VoltageMagnitude())
     vang = get(polar.network, PS.VoltageAngle())
     pgen = get(polar.network, PS.ActivePower())

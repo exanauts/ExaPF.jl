@@ -121,40 +121,48 @@ function test_full_space_hessian(polar, device, MT)
     return
 end
 
-function test_batch_hessian(polar, device, MT)
+function test_block_hessian(polar, device, MT)
     nblocks = 3
     mapx = ExaPF.mapping(polar, State())
 
+    # Single evaluation
     stack = ExaPF.NetworkStack(polar)
-    blk_stack = ExaPF.BlockNetworkStack(polar, nblocks)
-
-    basis  = ExaPF.PolarBasis(polar)
-    constraints = [
+    mycons = ExaPF.MultiExpressions([
         ExaPF.CostFunction(polar),
         ExaPF.PowerFlowBalance(polar),
         ExaPF.VoltageMagnitudeBounds(polar),
         ExaPF.PowerGenerationBounds(polar),
         ExaPF.LineFlows(polar),
-    ]
-    mycons = ExaPF.MultiExpressions(constraints) ∘ basis
-
+    ]) ∘ ExaPF.PolarBasis(polar)
     m = length(mycons)
     y = ones(m) |> MT
-    blk_y = repeat(ones(m), nblocks) |> MT
-
-    # Evaluate reference Hessian
     hess = ExaPF.FullHessian(polar, mycons, mapx)
+    # Eval!
     H = ExaPF.hessian!(hess, stack, y)
+
     # Block evaluation
-    blk_hess = ExaPF.ArrowheadHessian(polar, mycons, ExaPF.State(), nblocks)
+    blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
+    blk_stack = ExaPF.BlockNetworkStack(blk_polar)
+    blk_cons = ExaPF.MultiExpressions([
+        ExaPF.CostFunction(blk_polar),
+        ExaPF.PowerFlowBalance(blk_polar),
+        ExaPF.VoltageMagnitudeBounds(blk_polar),
+        ExaPF.PowerGenerationBounds(blk_polar),
+        ExaPF.LineFlows(blk_polar),
+    ]) ∘ ExaPF.PolarBasis(blk_polar)
+    blk_y = repeat(ones(m), nblocks) |> MT
+    blk_hess = ExaPF.ArrowheadHessian(blk_polar, blk_cons, ExaPF.State())
+    # Eval!
     blk_H = ExaPF.hessian!(blk_hess, blk_stack, blk_y)
+
+    # Test results match
     blk_H_cpu = blk_H |> SparseMatrixCSC
     H_cpu = H |> SparseMatrixCSC
     @test blk_H_cpu ≈ blockdiag([H_cpu for i in 1:nblocks]...)
 
     # Multivariables
     for X in [State(), Control(), AllVariables()]
-        blk_hess = ExaPF.ArrowheadHessian(polar, mycons, X, nblocks)
+        blk_hess = ExaPF.ArrowheadHessian(blk_polar, blk_cons, X)
         blk_H = ExaPF.hessian!(blk_hess, blk_stack, blk_y)
         @test isa(blk_H, AbstractMatrix)
     end
