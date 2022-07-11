@@ -439,8 +439,8 @@ function PowerFlowBalance(polar::AbstractPolarFormulation{T, VI, VT, MT}) where 
     M_tot = PS.get_basis_matrix(polar.network)
     M = -M_tot[[pf.pv; pf.pq; nbus .+ pf.pq], :]
     # constant term
-    Cdp = [Cd_tot[[pf.pv ; pf.pq], :]; spzeros(npq, nbus)] |> SMT
-    Cdq = [spzeros(npq+npv, nbus) ; Cd_tot[pf.pq, :]] |> SMT
+    Cdp = [Cd_tot[[pf.pv ; pf.pq], :]; spzeros(npq, nbus)]
+    Cdq = [spzeros(npq+npv, nbus) ; Cd_tot[pf.pq, :]]
 
     M   = _blockdiag(M, k)
     Cg  = _blockdiag(Cg, k)

@@ -11,6 +11,9 @@ export CUDAKernels
 function PolarForm(pf::PS.PowerNetwork, device::CUDADevice)
     return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device)
 end
+function BlockPolarForm(pf::PS.PowerNetwork, device::CUDADevice, k::Int)
+    return BlockPolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k)
+end
 
 default_sparse_matrix(::CUDADevice) = CuSparseMatrixCSR{Float64, Int32}
 xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)

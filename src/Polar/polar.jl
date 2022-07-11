@@ -52,11 +52,11 @@ struct BlockPolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     device::KA.Device
     k::Int
 end
-function BlockPolarForm(pf::PS.PowerNetwork, device::KA.CPU, k::Int)
+function BlockPolarForm(pf::PS.PowerNetwork, device, k::Int)
     return BlockPolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, k)
 end
 BlockPolarForm(datafile::String, k::Int, device=CPU()) = BlockPolarForm(PS.PowerNetwork(datafile), device, k)
-BlockPolarForm(polar::PolarForm, k::Int, device=CPU()) = BlockPolarForm(polar.network, device, k)
+BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.device, k)
 
 name(polar::BlockPolarForm) = "Block-polar formulation ($(polar.k) blocks)"
 nblocks(polar::BlockPolarForm) = polar.k
