@@ -22,7 +22,7 @@ julia> const PS = ExaPF.PowerSystem;
 julia> network_data = PS.load_case("case9.m");
 
 julia> polar = PolarForm(network_data, ExaPF.CPU())
-Polar formulation model (instantiated on device CPU())
+Polar formulation (instantiated on device CPU())
 Network characteristics:
     #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
     #generators: 3

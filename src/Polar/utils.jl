@@ -11,7 +11,7 @@ and PGLIB-OPF (`dir=PGLIB`).
 ## Examples
 ```jldoctest; setup=:(using ExaPF)
 julia> polar = ExaPF.load_polar("case9")
-Polar formulation model (instantiated on device CPU())
+Polar formulation (instantiated on device CPU())
 Network characteristics:
     #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
     #generators: 3

@@ -96,7 +96,7 @@ powerflow = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.PolarBasis(blk_polar);
 ```
 A block evaluation takes as input the [`NetworkStack`](@ref) `blk_stack` structure:
 ```@example batch_pf
-m = length(powerflow);
+m = div(length(powerflow), nscen);
 blk_output = zeros(m * nscen);
 powerflow(blk_output, blk_stack); # inplace evaluation
 reshape(blk_output, m, nscen)
@@ -142,16 +142,18 @@ reshape(blk_stack.vmag, nbus, nscen)
 
 ## Solve power flow in batch on the GPU
 
-When the [`BlockNetworkStack`](@ref) is instantiated on the GPU,
+When the [`BlockPolarForm`](@ref) model is instantiated on the GPU,
 the expressions are evaluated in batch.
 The syntax to solve the power flow equations is exactly the same as on the
 CPU, using `cusolverRF` to solve the different linear systems:
 ```@example batch_pf
 using CUSOLVERRF, CUDAKernels
-polar_gpu = PolarForm(polar, CUDADevice()); # load model on GPU
-blk_stack_gpu = ExaPF.BlockNetworkStack(polar_gpu, ploads, qloads);
-powerflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu);
-blk_jx_gpu = ExaPF.ArrowheadJacobian(polar_gpu, powerflow_gpu, State(), nscen);
+polar_gpu = ExaPF.load_polar("case9.m", CUDADevice());
+blk_polar_gpu = ExaPF.BlockPolarForm(polar_gpu, nscen); # load model on GPU
+blk_stack_gpu = ExaPF.NetworkStack(blk_polar_gpu);
+ExaPF.set_params!(blk_stack_gpu, ploads, qloads);
+powerflow_gpu = ExaPF.PowerFlowBalance(blk_polar_gpu) ∘ ExaPF.PolarBasis(blk_polar_gpu);
+blk_jx_gpu = ExaPF.ArrowheadJacobian(blk_polar_gpu, powerflow_gpu, State());
 ExaPF.set_params!(blk_jx_gpu, blk_stack_gpu);
 ExaPF.jacobian!(blk_jx_gpu, blk_stack_gpu);
 rf_fac = CUSOLVERRF.RFLU(blk_jx_gpu.J)
