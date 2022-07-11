@@ -193,10 +193,10 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
     # Accumulate on nodes
     Cf = func.Cf
     Ct = func.Ct
-    blockmul!(∂stack.vmag, Cf, ∂stack.intermediate.∂edge_vm_fr, 1.0, 1.0)
-    blockmul!(∂stack.vmag, Ct, ∂stack.intermediate.∂edge_vm_to, 1.0, 1.0)
-    blockmul!(∂stack.vang, Cf, ∂stack.intermediate.∂edge_va_fr, 1.0, 1.0)
-    blockmul!(∂stack.vang, Ct, ∂stack.intermediate.∂edge_va_to, 1.0, 1.0)
+    mul!(∂stack.vmag, Cf, ∂stack.intermediate.∂edge_vm_fr, 1.0, 1.0)
+    mul!(∂stack.vmag, Ct, ∂stack.intermediate.∂edge_vm_to, 1.0, 1.0)
+    mul!(∂stack.vang, Cf, ∂stack.intermediate.∂edge_va_fr, 1.0, 1.0)
+    mul!(∂stack.vang, Ct, ∂stack.intermediate.∂edge_va_to, 1.0, 1.0)
     return
 end
 
@@ -298,9 +298,9 @@ function (func::CostFunction)(output::AbstractArray, stack::AbstractNetworkStack
     pgen_m = reshape(stack.pgen, ngen, nblocks(stack))
     pgen_m[func.gen_ref, :] .= 0.0
     # Add load to pgen_ref
-    blockmul!(stack.pgen, func.N, stack.pload, 1.0, 1.0)
+    mul!(stack.pgen, func.N, stack.pload, 1.0, 1.0)
     # Recompute power injection at ref node
-    blockmul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
+    mul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
     # Compute quadratic costs
     ndrange = (ngen, nblocks(stack))
     ev = _quadratic_cost_kernel(func.device)(
@@ -329,7 +329,7 @@ function adjoint!(func::CostFunction, ∂stack, stack, ∂v)
         ndrange=ndrange, dependencies=Event(func.device),
     )
     wait(ev)
-    blockmul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
+    mul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
     return
 end
 
@@ -455,17 +455,17 @@ Base.length(func::PowerFlowBalance) = size(func.M, 1)
 function (func::PowerFlowBalance)(cons::AbstractArray, stack::AbstractNetworkStack)
     fill!(cons, 0.0)
     # Constant terms
-    blockmul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
-    blockmul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
+    mul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
+    mul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
     # Variable terms
-    blockmul!(cons, func.M, stack.ψ, 1.0, 1.0)
-    blockmul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
+    mul!(cons, func.M, stack.ψ, 1.0, 1.0)
+    mul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
     return
 end
 
 function adjoint!(func::PowerFlowBalance, ∂stack, stack, ∂v)
-    blockmul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
-    blockmul!(∂stack.pgen, func.Cg', ∂v, 1.0, 1.0)
+    mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
+    mul!(∂stack.pgen, func.Cg', ∂v, 1.0, 1.0)
     return
 end
 
@@ -535,11 +535,11 @@ end
 Base.length(func::VoltageMagnitudeBounds) = size(func.Cpq, 1)
 
 function (func::VoltageMagnitudeBounds)(cons::AbstractArray, stack::AbstractNetworkStack)
-    blockmul!(cons, func.Cpq, stack.vmag, 1.0, 0.0)
+    mul!(cons, func.Cpq, stack.vmag, 1.0, 0.0)
 end
 
 function adjoint!(func::VoltageMagnitudeBounds, ∂stack, stack, ∂v)
-    blockmul!(∂stack.vmag, func.Cpq', ∂v, 1.0, 1.0)
+    mul!(∂stack.vmag, func.Cpq', ∂v, 1.0, 1.0)
 end
 
 function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::VoltageMagnitudeBounds) where {T,VI,VT,MT}
@@ -622,15 +622,15 @@ Base.length(func::PowerGenerationBounds) = size(func.M, 1)
 function (func::PowerGenerationBounds)(cons::AbstractArray, stack::AbstractNetworkStack)
     fill!(cons, 0.0)
     # Constant terms
-    blockmul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
-    blockmul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
+    mul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
+    mul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
     # Variable terms
-    blockmul!(cons, func.M, stack.ψ, 1.0, 1.0)
+    mul!(cons, func.M, stack.ψ, 1.0, 1.0)
     return
 end
 
 function adjoint!(func::PowerGenerationBounds, ∂stack, stack, ∂v)
-    blockmul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
+    mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
     return
 end
 
@@ -745,10 +745,10 @@ function (func::LineFlows)(cons::AbstractVector, stack::AbstractNetworkStack)
     stp = stack.intermediate.stp
     stq = stack.intermediate.stq
 
-    blockmul!(sfp, func.Lfp, stack.ψ, 1.0, 0.0)
-    blockmul!(sfq, func.Lfq, stack.ψ, 1.0, 0.0)
-    blockmul!(stp, func.Ltp, stack.ψ, 1.0, 0.0)
-    blockmul!(stq, func.Ltq, stack.ψ, 1.0, 0.0)
+    mul!(sfp, func.Lfp, stack.ψ, 1.0, 0.0)
+    mul!(sfq, func.Lfq, stack.ψ, 1.0, 0.0)
+    mul!(stp, func.Ltp, stack.ψ, 1.0, 0.0)
+    mul!(stq, func.Ltq, stack.ψ, 1.0, 0.0)
     ndrange = (func.nlines, nblocks(stack))
     ev = _line_flow_kernel(func.device)(
         cons, sfp, sfq, stp, stq, func.nlines;
@@ -788,10 +788,10 @@ function adjoint!(func::LineFlows, ∂stack, stack, ∂v)
     wait(ev)
 
     # Accumulate adjoint
-    blockmul!(∂stack.ψ, func.Lfp', sfp, 1.0, 1.0)
-    blockmul!(∂stack.ψ, func.Lfq', sfq, 1.0, 1.0)
-    blockmul!(∂stack.ψ, func.Ltp', stp, 1.0, 1.0)
-    blockmul!(∂stack.ψ, func.Ltq', stq, 1.0, 1.0)
+    mul!(∂stack.ψ, func.Lfp', sfp, 1.0, 1.0)
+    mul!(∂stack.ψ, func.Lfq', sfq, 1.0, 1.0)
+    mul!(∂stack.ψ, func.Ltp', stp, 1.0, 1.0)
+    mul!(∂stack.ψ, func.Ltq', stq, 1.0, 1.0)
 
     return
 end

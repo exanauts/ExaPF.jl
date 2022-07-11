@@ -97,33 +97,6 @@ function LinearAlgebra.mul!(
 end
 
 function LinearAlgebra.mul!(
-    Y::CuArray{T, 2},
-    A::CUSPARSE.CuSparseMatrixCSR,
-    X::AbstractArray{T, 2},
-    alpha::Number, beta::Number,
-) where {T <: ForwardDiff.Dual}
-    n, m = size(A)
-    @assert size(Y, 1) == n
-    @assert size(X, 1) == m
-    @assert size(Y, 2) == size(X, 2)
-
-    k = size(Y, 2)
-    N = ForwardDiff.npartials(Y)
-    p = 1 + N
-
-    # Reinterpret duals as double.
-    Ys = reshape(reinterpret(Float64, Y), p, n, k)
-    Xs = reshape(reinterpret(Float64, X), p, m, k)
-
-    ndrange = (n, p, k)
-    ev = _spmv_blk_csr_kernel!(CUDADevice())(
-        Ys, Xs, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
-        ndrange=ndrange, dependencies=Event(CUDADevice()),
-    )
-    wait(ev)
-end
-
-function LinearAlgebra.mul!(
     Y::CuArray{T, 1},
     A::CUSPARSE.CuSparseMatrixCSR,
     X::AbstractArray{Float64, 1},
@@ -141,32 +114,6 @@ function LinearAlgebra.mul!(
 
     ndrange = (n, )
     ev = _spmv_csr_kernel_double!(CUDADevice())(
-        Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
-        ndrange=ndrange, dependencies=Event(CUDADevice()),
-    )
-    wait(ev)
-end
-
-function LinearAlgebra.mul!(
-    Y::CuArray{T, 2},
-    A::CUSPARSE.CuSparseMatrixCSR,
-    X::AbstractArray{Float64, 2},
-    alpha::Number, beta::Number,
-) where {T <: ForwardDiff.Dual}
-    n, m = size(A)
-    @assert size(Y, 1) == n
-    @assert size(X, 1) == m
-    @assert size(Y, 2) == size(X, 2)
-
-    k = size(Y, 2)
-    N = ForwardDiff.npartials(Y)
-    p = 1 + N
-
-    # Reinterpret duals as double.
-    Ys = reshape(reinterpret(Float64, Y), p, n, k)
-
-    ndrange = (n, k)
-    ev = _spmv_blk_csr_kernel_double!(CUDADevice())(
         Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
         ndrange=ndrange, dependencies=Event(CUDADevice()),
     )
@@ -218,52 +165,6 @@ function LinearAlgebra.mul!(
     Ys .*= beta
     @cuda threads=threads blocks=blocks _spmm_csc_kernel_T!(
         Ys, Xs, B.rowPtr, B.colVal, B.nzVal, alpha, beta, m, p,
-    )
-end
-
-function _spmm_blk_csc_kernel_T!(Y, X, colPtr, rowVal, nzVal, alpha, beta, m, p, nblk)
-    I = threadIdx().x + (blockDim().x * (blockIdx().x - 1))
-    J = threadIdx().y + (blockDim().y * (blockIdx().y - 1))
-    K = threadIdx().z + (blockDim().z * (blockIdx().z - 1))
-    if I <= m && J <= p  && K <= nblk
-        @inbounds for c in colPtr[I]:colPtr[I+1]-1
-            j = rowVal[c]
-            CUDA.@atomic Y[J, j, K] += alpha * nzVal[c] * X[J, I, K]
-        end
-    end
-end
-
-function LinearAlgebra.mul!(
-    Y::AbstractArray{D, 2},
-    A::Adjoint{T, CuSparseMatrixCSR{T, I}},
-    X::AbstractArray{D, 2},
-    alpha::Number, beta::Number,
-) where {N, I, T, S, D <: ForwardDiff.Dual{S, T, N}}
-    n, m = size(A)
-    p = N + 1
-    @assert size(Y, 1) == n
-    @assert size(X, 1) == m
-    @assert size(X, 2) == size(Y, 2)
-    k = size(X, 2)
-
-    B = A.parent
-
-    nthreads = 256
-    threads_y = p
-    threads_x = div(nthreads, threads_y)
-    threads_z = div(nthreads, threads_y * threads_x)
-    threads = (threads_x, threads_y, threads_z)
-
-    blocks = ceil.(Int, (m, p, k) ./ threads)
-
-    # Reinterpret duals as double.
-    # (Needed to work with atomic_add)
-    Ys = reshape(reinterpret(Float64, Y), p, n, k)
-    Xs = reshape(reinterpret(Float64, X), p, m, k)
-
-    Ys .*= beta
-    @cuda threads=threads blocks=blocks _spmm_blk_csc_kernel_T!(
-        Ys, Xs, B.rowPtr, B.colVal, B.nzVal, alpha, beta, m, p, k,
     )
 end
 
