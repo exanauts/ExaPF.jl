@@ -75,7 +75,7 @@ function Jacobian(
     J = J_host |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, 1, VT, VD)
     init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 
@@ -209,7 +209,7 @@ function ArrowheadJacobian(
     coloring = repeat(coloring, k) |> VI
 
     # Structures
-    stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
     init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 

@@ -142,7 +142,7 @@ function test_block_hessian(polar, device, MT)
 
     # Block evaluation
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
-    blk_stack = ExaPF.BlockNetworkStack(blk_polar)
+    blk_stack = ExaPF.NetworkStack(blk_polar)
     blk_cons = ExaPF.MultiExpressions([
         ExaPF.CostFunction(blk_polar),
         ExaPF.PowerFlowBalance(blk_polar),

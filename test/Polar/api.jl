@@ -58,7 +58,7 @@ function test_polar_blockstack(polar, device, M)
 
     x0 = rand(nx * nblocks) |> M
 
-    stack = ExaPF.BlockNetworkStack(blk_polar)
+    stack = ExaPF.NetworkStack(blk_polar)
 
     # Test display
     println(devnull, stack)
@@ -88,7 +88,8 @@ function test_polar_blockstack(polar, device, M)
     # Test constructor with scenarios
     pload = rand(nbus, nblocks)
     qload = rand(nbus, nblocks)
-    stack = ExaPF.BlockNetworkStack(blk_polar, pload, qload)
+    stack = ExaPF.NetworkStack(blk_polar)
+    ExaPF.set_params!(stack, pload, qload)
     return nothing
 end
 
@@ -215,7 +216,7 @@ function test_polar_blk_expressions(polar, device, M)
     nblocks = 2
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
     stack = ExaPF.NetworkStack(polar)
-    blk_stack = ExaPF.BlockNetworkStack(blk_polar)
+    blk_stack = ExaPF.NetworkStack(blk_polar)
 
     for expr in [
         ExaPF.PowerFlowBalance,
@@ -245,7 +246,7 @@ function test_block_powerflow(polar, device, M)
     nblocks = 10
 
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
-    blk_stack = ExaPF.BlockNetworkStack(blk_polar)
+    blk_stack = ExaPF.NetworkStack(blk_polar)
 
     perturb = 0.01 .* rand(length(blk_stack.pload)) |> M
     blk_stack.pload .*= perturb

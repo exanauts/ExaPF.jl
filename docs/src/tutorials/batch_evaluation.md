@@ -24,7 +24,7 @@ polar = ExaPF.load_polar("case9.m")
 ExaPF provides a way to evaluate the expressions by blocks,
 opening the way to introduce more parallelism in the code.
 
-## BlockNetworkStack
+## BlockPolarForm
 
 We recall that a given [`NetworkStack`](@ref) `stack` stores the different
 variables and parameters (power generations, voltages, loads) required to
@@ -42,24 +42,38 @@ pd = stack.params[1:nbus]
 qd = stack.params[nbus+1:2*nbus]
 
 ```
-In short, a [`NetworkStack`](@ref) stores one set of loads $$p_0$$.
-On its side, the [`BlockNetworkStack`](@ref) extends the `NetworkStack` structure
-to store $$N$$ different set of parameters (=scenarios) $$p_1, \cdots, p_N$$.
-As an illustration, the syntax to instantiate a [`BlockNetworkStack`](@ref)
-with $$N=10$$ different scenarios is:
+By default, a [`NetworkStack`](@ref) stores one set of loads $$p_0$$.
+
+Suppose now we want to evaluate the model associated to the polar
+formulation for $$N$$ different set of parameters (=scenarios) $$p_1, \cdots, p_N$$.
+ExaPF allows to streamline the polar formulation with a [`BlockPolarForm`](@ref)
+structure:
 ```@example batch_pf
 nscen = 10;
-ploads = rand(nbus, nscen);
-qloads = rand(nbus, nscen);
-blk_stack = ExaPF.BlockNetworkStack(polar, ploads, qloads)
+blk_polar = ExaPF.BlockPolarForm(polar, nscen)
 
 ```
-For each scenario $$i=1, \cdots, N$$, a `BlockNetworkStack` structure
-stores the associated set of variables. As a consequence,
-we get $$N$$ different realizations for the variables stored in the field `input`
+Then, ExaPF can also instantiate a [`NetworkStack`](@ref)
+object, with the memory required to store the variables on
+the different scenarios:
+```@example batch_pf
+blk_stack = ExaPF.NetworkStack(blk_polar)
+
+```
+We can pass the scenarios manually using the function
+`set_params!`:
+```@example batch_pf
+
+ploads = rand(nbus, nscen);
+qloads = rand(nbus, nscen);
+ExaPF.set_params!(blk_stack, ploads, qloads)
+
+```
+The structure `blk_stack` stores
+$$N$$ different realizations for the variables stored in the field `input`
 (`vmag`, `vang` and `pgen`).
 By default, the initial values are set according to the values
-specified in `polar` (usually defined when importing the data from the instance file):
+specified in `blk_polar` (usually defined when importing the data from the instance file):
 ```@example batch_pf
 reshape(blk_stack.vmag, nbus, nscen)
 ```
@@ -72,24 +86,15 @@ reshape(blk_stack.pload, nbus, nscen)
 
 ## Evaluate expressions in block
 
-A [`BlockNetworkStack`](@ref) has the same behavior as a
-[`NetworkStack`](@ref) structure, and any
-[`AutoDiff.AbstractExpression`](@ref) can take a [`BlockNetworkStack`](@ref)
-as input. ExaPF can takes advantage of the block structure
-when using a [`BlockNetworkStack`](@ref).
+ExaPF can takes advantage of the block structure when using a [`BlockPolarForm`](@ref).
 
 As an example, suppose we want to evaluate the power flow
 balances in block with a [`PowerFlowBalance`](@ref) expression:
 ```@example batch_pf
-powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar);
+powerflow = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.PolarBasis(blk_polar);
 
 ```
-A single evaluation takes as input the [`NetworkStack`](@ref) `stack` structure:
-```@example batch_pf
-output = powerflow(stack)
-
-```
-A block evaluation takes as input the [`BlockNetworkStack`](@ref) `blk_stack` structure:
+A block evaluation takes as input the [`NetworkStack`](@ref) `blk_stack` structure:
 ```@example batch_pf
 m = length(powerflow);
 blk_output = zeros(m * nscen);
@@ -107,7 +112,7 @@ one is able to solve the power flow in block on the CPU using
 the same function [`nlsolve!`](@ref). The block Jacobian is evaluated
 with automatic differentiation using a `ArrowheadJacobian` structure:
 ```@example batch_pf
-blk_jx = ExaPF.ArrowheadJacobian(polar, powerflow, State(), nscen);
+blk_jx = ExaPF.ArrowheadJacobian(blk_polar, powerflow, State());
 blk_jx.J
 ```
 We notice that the `ArrowheadJacobian` computes the resulting Jacobian

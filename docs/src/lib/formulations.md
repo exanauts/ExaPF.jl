@@ -22,9 +22,9 @@ Control
 ## Structure and variables
 ```@docs
 PolarForm
+BlockPolarForm
 load_polar
 NetworkStack
-BlockNetworkStack
 init!
 
 ```

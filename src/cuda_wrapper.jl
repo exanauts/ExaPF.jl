@@ -173,7 +173,7 @@ end
     input[map[i + (k-1)*nx]] = src[i]
 end
 
-function blockcopy!(stack::BlockNetworkStack, map::CuArray{Int}, x::CuArray{Float64})
+function blockcopy!(stack::NetworkStack, map::CuArray{Int}, x::CuArray{Float64})
     nx = length(x)
     @assert length(map) % nx == 0
     nb = div(length(map), nx)

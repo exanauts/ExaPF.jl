@@ -8,7 +8,9 @@ get(polar::AbstractPolarFormulation, attr::PS.AbstractNetworkAttribute) = get(po
 number(polar::AbstractPolarFormulation, v::AbstractVariable) = length(mapping(polar, v))
 
 """
-    PolarForm{T, IT, VT, MT} <: AbstractFormulation
+    PolarForm{T, IT, VT, MT} <: AbstractPolarFormulation
+
+Implement the polar formulation associated to the network's equations.
 
 Wrap a [`PS.PowerNetwork`](@ref) network to load the data on
 the target device (`CPU()` and `CUDADevice()` are currently supported).
@@ -47,6 +49,13 @@ name(polar::PolarForm) = "Polar formulation"
 nblocks(polar::PolarForm) = 1
 
 
+"""
+    BlockPolarForm{T, IT, VT, MT} <: AbstractFormulation
+
+Block polar formulation: duplicates `k` different polar models
+to evaluate them in parallel.
+
+"""
 struct BlockPolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
     device::KA.Device
@@ -58,9 +67,8 @@ end
 BlockPolarForm(datafile::String, k::Int, device=CPU()) = BlockPolarForm(PS.PowerNetwork(datafile), device, k)
 BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.device, k)
 
-name(polar::BlockPolarForm) = "Block-polar formulation ($(polar.k) blocks)"
+name(polar::BlockPolarForm) = "$(polar.k)-BlockPolar formulation"
 nblocks(polar::BlockPolarForm) = polar.k
-
 
 function Base.show(io::IO, polar::AbstractPolarFormulation)
     # Network characteristics

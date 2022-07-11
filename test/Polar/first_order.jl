@@ -247,7 +247,7 @@ function test_block_jacobian(polar, device, MT)
     stack = ExaPF.NetworkStack(polar)
 
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
-    blk_stack = ExaPF.BlockNetworkStack(blk_polar)
+    blk_stack = ExaPF.NetworkStack(blk_polar)
 
     for expr in [
         ExaPF.PowerFlowBalance,
