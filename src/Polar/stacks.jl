@@ -132,7 +132,7 @@ Set `stack.input` with the initial values specified
 in the base [`PS.PowerNetwork`](@ref) object.
 
 """
-function init!(polar::AbstractPolarFormulation, stack::NetworkStack)
+function init!(polar::AbstractPolarFormulation, stack::NetworkStack; update_loads=true)
     vmag = get(polar.network, PS.VoltageMagnitude())
     vang = get(polar.network, PS.VoltageAngle())
     pgen = get(polar.network, PS.ActivePower())
@@ -151,9 +151,11 @@ function init!(polar::AbstractPolarFormulation, stack::NetworkStack)
         i = (s - 1) * ngen  + 1
         copyto!(stack.pgen, i, pgen, 1, ngen)
 
-        i = (s - 1) * nload  + 1
-        copyto!(stack.pload, i, pload, 1, nload)
-        copyto!(stack.qload, i, qload, 1, nload)
+        if update_loads
+            i = (s - 1) * nload  + 1
+            copyto!(stack.pload, i, pload, 1, nload)
+            copyto!(stack.qload, i, qload, 1, nload)
+        end
     end
 end
 
@@ -163,7 +165,7 @@ function Base.empty!(stack::NetworkStack)
     return
 end
 
-function bounds(polar::PolarForm{T, VI, VT, MT}, stack::NetworkStack) where {T, VI, VT, MT}
+function bounds(polar::AbstractPolarFormulation{T, VI, VT, MT}, stack::NetworkStack) where {T, VI, VT, MT}
     nbus = polar.network.nbus
     vmag_min, vmag_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
     vang_min, vang_max = fill(-Inf, nbus), fill(Inf, nbus)

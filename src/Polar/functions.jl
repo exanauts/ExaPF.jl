@@ -544,7 +544,9 @@ end
 
 function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::VoltageMagnitudeBounds) where {T,VI,VT,MT}
     v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude()) .|> VT
-    return func.Cpq * v_min, func.Cpq * v_max
+    lb = func.Cpq * v_min
+    ub =  func.Cpq * v_max
+    return repeat(lb, nblocks(polar)), repeat(ub, nblocks(polar))
 end
 
 function Base.show(io::IO, func::VoltageMagnitudeBounds)
@@ -650,8 +652,8 @@ function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::PowerGenerati
     lb = [Cgp * p_min; Cgq * q_min]
     ub = [Cgp * p_max; Cgq * q_max]
     return (
-        convert(VT, lb),
-        convert(VT, ub),
+        convert(VT, repeat(lb, nblocks(polar))),
+        convert(VT, repeat(ub, nblocks(polar))),
     )
 end
 
@@ -798,7 +800,12 @@ end
 
 function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::LineFlows) where {T,VI,VT,MT}
     f_min, f_max = PS.bounds(polar.network, PS.Lines(), PS.ActivePower())
-    return convert(VT, [f_min; f_min]), convert(VT, [f_max; f_max])
+    lb = [f_min; f_min]
+    ub = [f_max; f_max]
+    return (
+        convert(VT, repeat(lb, nblocks(polar))),
+        convert(VT, repeat(ub, nblocks(polar))),
+    )
 end
 
 function Base.show(io::IO, func::LineFlows)

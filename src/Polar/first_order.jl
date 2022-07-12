@@ -170,7 +170,6 @@ function ArrowheadJacobian(
         slices = AutoDiff.get_slices(func)
         cumslices = cumsum(slices)
         shuf = convert(Vector{Int}, [0; cumslices] ./ k)
-        # cumslices .*= k
         jacs_shuf = [J_host[1+shuf[i]:shuf[i+1], :] for i in 1:length(shuf)-1]
         i_jac = Int[]
         j_jac = Int[]
@@ -187,6 +186,7 @@ function ArrowheadJacobian(
         J_blk = sparse(i_jac, j_jac, ones(nnzJ))
         block_id = Int[]
         idk = 1
+        slices ./= k
         for i in 1:n_cons
             if i > cumslices[idk]
                 idk += 1
