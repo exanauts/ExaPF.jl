@@ -44,7 +44,7 @@ qd = stack.params[nbus+1:2*nbus]
 ```
 By default, a [`NetworkStack`](@ref) stores one set of loads $$p_0$$.
 
-Suppose now we want to evaluate the model associated to the polar
+Suppose now we want to evaluate the model associated with the polar
 formulation for $$N$$ different set of parameters (=scenarios) $$p_1, \cdots, p_N$$.
 ExaPF allows to streamline the polar formulation with a [`BlockPolarForm`](@ref)
 structure:
@@ -54,7 +54,7 @@ blk_polar = ExaPF.BlockPolarForm(polar, nscen)
 
 ```
 Then, ExaPF can also instantiate a [`NetworkStack`](@ref)
-object, with the memory required to store the variables on
+object, with the memory required to store the variables of
 the different scenarios:
 ```@example batch_pf
 blk_stack = ExaPF.NetworkStack(blk_polar)
@@ -86,10 +86,10 @@ reshape(blk_stack.pload, nbus, nscen)
 
 ## Evaluate expressions in block
 
-ExaPF can takes advantage of the block structure when using a [`BlockPolarForm`](@ref).
+ExaPF takes advantage of the block structure when using a [`BlockPolarForm`](@ref).
 
 As an example, suppose we want to evaluate the power flow
-balances in block with a [`PowerFlowBalance`](@ref) expression:
+balances in block form with a [`PowerFlowBalance`](@ref) expression:
 ```@example batch_pf
 powerflow = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.PolarBasis(blk_polar);
 

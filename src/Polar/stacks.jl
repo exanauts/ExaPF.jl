@@ -71,7 +71,7 @@ struct NetworkStack{VT,VD,NT} <: AbstractNetworkStack{VT}
     nblocks::Int
 end
 
-function NetworkStack(nbus, ngen, nlines, k, VT, VD)
+function NetworkStack(nbus::Int, ngen::Int, nlines::Int, k::Int, VT::Type, VD::Type)
     m = (2 * nbus + ngen) * k
     input = VD(undef, m) ; fill!(input, 0.0)
     # Wrap directly array x to avoid dealing with views
@@ -108,6 +108,9 @@ function NetworkStack(nbus, ngen, nlines, k, VT, VD)
     qload = unsafe_wrap(VT, p1, k*nbus)
 
     return NetworkStack(input, vmag, vang, pgen, ψ, intermediate, params, pload, qload, k)
+end
+function NetworkStack(nbus::Int, ngen::Int, nlines::Int, VT::Type, VD::Type)
+    return NetworkStack(nbus, ngen, nlines, 1, VT, VD)
 end
 
 function NetworkStack(polar::AbstractPolarFormulation{T,VI,VT,MT}) where {T,VI,VT,MT}

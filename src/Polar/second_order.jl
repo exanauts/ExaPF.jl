@@ -47,10 +47,10 @@ function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     VD = A{t1s{1}}
 
-    stack = NetworkStack(nbus, ngen, nlines, 1, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
     init!(polar, stack)
 
-    ∂stack = NetworkStack(nbus, ngen, nlines, 1, VT, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, VT, VD)
 
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
@@ -133,10 +133,10 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     H = H_host |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, 1, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
     init!(polar, stack)
 
-    ∂stack = NetworkStack(nbus, ngen, nlines, 1, VT, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, VT, VD)
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
 
