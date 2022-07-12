@@ -83,7 +83,7 @@ function hprod!(
     return
 end
 
-function _hessian_sparsity(polar::PolarForm, func)
+function _hessian_sparsity(polar::AbstractPolarFormulation, func)
     m = length(func)
     nbus = get(polar, PS.NumberOfBuses())
     Vre = Float64[i for i in 1:nbus]
@@ -91,6 +91,13 @@ function _hessian_sparsity(polar::PolarForm, func)
     V = Vre .+ im .* Vim
     y = rand(m)
     return matpower_hessian(polar, func, V, y)
+end
+
+function _get_hessian_colors(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, map::Vector{Int})
+    H = _hessian_sparsity(polar, func)::SparseMatrixCSC
+    Hsub = H[map, map] # reorder
+    colors = AutoDiff.SparseDiffTools.matrix_colors(Hsub)
+    return (Hsub, colors)
 end
 
 struct FullHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFullHessian
@@ -104,13 +111,6 @@ struct FullHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFullHess
     t1sF::VD
     ∂t1sF::VD
     H::SMT
-end
-
-function _get_hessian_colors(polar::PolarForm, func::AutoDiff.AbstractExpression, map::Vector{Int})
-    H = _hessian_sparsity(polar, func)::SparseMatrixCSC
-    Hsub = H[map, map] # reorder
-    colors = AutoDiff.SparseDiffTools.matrix_colors(Hsub)
-    return (Hsub, colors)
 end
 
 function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
@@ -204,14 +204,14 @@ function hessian_arrowhead_sparsity(H, nx, nu, nscen)
 end
 
 function ArrowheadHessian(
-    polar::PolarForm{T, VI, VT, MT},
+    polar::BlockPolarForm{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
     X::AbstractVariable,
-    k::Int,
 ) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
     nx = number(polar, State())
     nu = number(polar, Control())
+    k = nblocks(polar)
     if isa(X, Control)
         nu = nu
         nx = 0
@@ -242,7 +242,7 @@ function ArrowheadHessian(
     nlines = PS.get(pf, PS.NumberOfLines())
     ngen = PS.get(pf, PS.NumberOfGenerators())
 
-    n_cons = length(func) * k
+    n_cons = length(func)
 
     nmap = length(map)
 
@@ -265,10 +265,10 @@ function ArrowheadHessian(
     H = sparse(i_coo, j_coo, ones(length(i_coo)), ntot, ntot) |> SMT
 
     # Structures
-    stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
     init!(polar, stack)
 
-    ∂stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
 

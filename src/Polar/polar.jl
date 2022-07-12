@@ -1,7 +1,16 @@
 # Polar formulation
 
+abstract type AbstractPolarFormulation{T, IT, VT, MT} <: AbstractFormulation end
+
+# Getters (bridge to PowerNetwork)
+get(polar::AbstractPolarFormulation, attr::PS.AbstractNetworkAttribute) = get(polar.network, attr)
+
+number(polar::AbstractPolarFormulation, v::AbstractVariable) = length(mapping(polar, v))
+
 """
-    PolarForm{T, IT, VT, MT} <: AbstractFormulation
+    PolarForm{T, IT, VT, MT} <: AbstractPolarFormulation
+
+Implement the polar formulation associated to the network's equations.
 
 Wrap a [`PS.PowerNetwork`](@ref) network to load the data on
 the target device (`CPU()` and `CUDADevice()` are currently supported).
@@ -13,7 +22,7 @@ julia> const PS = ExaPF.PowerSystem;
 julia> network_data = PS.load_case("case9.m");
 
 julia> polar = PolarForm(network_data, ExaPF.CPU())
-Polar formulation model (instantiated on device CPU())
+Polar formulation (instantiated on device CPU())
 Network characteristics:
     #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
     #generators: 3
@@ -24,7 +33,7 @@ giving a mathematical formulation with:
 
 ```
 """
-struct PolarForm{T, IT, VT, MT} <: AbstractFormulation where {T, IT, VT, MT}
+struct PolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
     device::KA.Device
 end
@@ -35,6 +44,55 @@ end
 # Convenient constructor
 PolarForm(datafile::String, device=CPU()) = PolarForm(PS.PowerNetwork(datafile), device)
 PolarForm(polar::PolarForm, device=CPU()) = PolarForm(polar.network, device)
+
+name(polar::PolarForm) = "Polar formulation"
+nblocks(polar::PolarForm) = 1
+
+
+"""
+    BlockPolarForm{T, IT, VT, MT} <: AbstractFormulation
+
+Block polar formulation: duplicates `k` different polar models
+to evaluate them in parallel.
+
+"""
+struct BlockPolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
+    network::PS.PowerNetwork
+    device::KA.Device
+    k::Int
+end
+function BlockPolarForm(pf::PS.PowerNetwork, device, k::Int)
+    return BlockPolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, k)
+end
+BlockPolarForm(datafile::String, k::Int, device=CPU()) = BlockPolarForm(PS.PowerNetwork(datafile), device, k)
+BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.device, k)
+
+name(polar::BlockPolarForm) = "$(polar.k)-BlockPolar formulation"
+nblocks(polar::BlockPolarForm) = polar.k
+
+function Base.show(io::IO, polar::AbstractPolarFormulation)
+    # Network characteristics
+    nbus = PS.get(polar.network, PS.NumberOfBuses())
+    npv = PS.get(polar.network, PS.NumberOfPVBuses())
+    npq = PS.get(polar.network, PS.NumberOfPQBuses())
+    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
+    ngen = PS.get(polar.network, PS.NumberOfGenerators())
+    nlines = PS.get(polar.network, PS.NumberOfLines())
+    # Polar formulation characteristics
+    n_states = 2*npq + npv
+    n_controls = nref + npv + ngen - 1
+    print(io,   name(polar))
+    println(io, " (instantiated on device $(polar.device))")
+    println(io, "Network characteristics:")
+    @printf(io, "    #buses:      %d  (#slack: %d  #PV: %d  #PQ: %d)\n", nbus, nref, npv, npq)
+    println(io, "    #generators: ", ngen)
+    println(io, "    #lines:      ", nlines)
+    println(io, "giving a mathematical formulation with:")
+    println(io, "    #controls:   ", n_controls)
+    print(io,   "    #states  :   ", n_states)
+end
+
+# Default ordering in NetworkStack: [vmag, vang, pgen]
 
 """
     load_polar(case, device=CPU(); dir=PS.EXADATA)
@@ -47,7 +105,7 @@ and PGLIB-OPF (`dir=PGLIB`).
 ## Examples
 ```jldoctest; setup=:(using ExaPF)
 julia> polar = ExaPF.load_polar("case9")
-Polar formulation model (instantiated on device CPU())
+Polar formulation (instantiated on device CPU())
 Network characteristics:
     #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
     #generators: 3
@@ -62,14 +120,6 @@ giving a mathematical formulation with:
 function load_polar(case, device=CPU(); dir=PS.EXADATA)
     return PolarForm(PS.load_case(case, dir), device)
 end
-
-# Getters (bridge to PowerNetwork)
-get(polar::PolarForm, attr::PS.AbstractNetworkAttribute) = get(polar.network, attr)
-
-number(polar::PolarForm, v::AbstractVariable) = length(mapping(polar, v))
-
-
-# Default ordering in NetworkStack: [vmag, vang, pgen]
 
 """
     mapping(polar::PolarForm, ::Control)
@@ -92,7 +142,7 @@ julia> mapu = ExaPF.mapping(polar, Control())
 ```
 
 """
-function mapping(polar::PolarForm, ::Control, k::Int=1)
+function mapping(polar::AbstractPolarFormulation, ::Control, k::Int=1)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ngen = polar.network.ngen
@@ -156,7 +206,7 @@ julia> mapu = ExaPF.mapping(polar, State())
 ```
 
 """
-function mapping(polar::PolarForm, ::State, k::Int=1)
+function mapping(polar::AbstractPolarFormulation, ::State, k::Int=1)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ref, pv, pq = pf.ref, pf.pv, pf.pq
@@ -179,7 +229,7 @@ function mapping(polar::PolarForm, ::State, k::Int=1)
     return mapx
 end
 
-function mapping(polar::PolarForm, ::AllVariables, k::Int=1)
+function mapping(polar::AbstractPolarFormulation, ::AllVariables, k::Int=1)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ngen = polar.network.ngen
@@ -219,28 +269,6 @@ function mapping(polar::PolarForm, ::AllVariables, k::Int=1)
         end
     end
     return mapxu
-end
-
-function Base.show(io::IO, polar::PolarForm)
-    # Network characteristics
-    nbus = PS.get(polar.network, PS.NumberOfBuses())
-    npv = PS.get(polar.network, PS.NumberOfPVBuses())
-    npq = PS.get(polar.network, PS.NumberOfPQBuses())
-    nref = PS.get(polar.network, PS.NumberOfSlackBuses())
-    ngen = PS.get(polar.network, PS.NumberOfGenerators())
-    nlines = PS.get(polar.network, PS.NumberOfLines())
-    # Polar formulation characteristics
-    n_states = 2*npq + npv
-    n_controls = nref + npv + ngen - 1
-    print(io,   "Polar formulation model")
-    println(io, " (instantiated on device $(polar.device))")
-    println(io, "Network characteristics:")
-    @printf(io, "    #buses:      %d  (#slack: %d  #PV: %d  #PQ: %d)\n", nbus, nref, npv, npq)
-    println(io, "    #generators: ", ngen)
-    println(io, "    #lines:      ", nlines)
-    println(io, "giving a mathematical formulation with:")
-    println(io, "    #controls:   ", n_controls)
-    print(io,   "    #states  :   ", n_states)
 end
 
 include("stacks.jl")

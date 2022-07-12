@@ -35,13 +35,13 @@ end
 Base.size(jac::Jacobian, n::Int) = size(jac.J, n)
 
 # Coloring
-function _jacobian_sparsity(polar::PolarForm, func::AutoDiff.AbstractExpression)
+function _jacobian_sparsity(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression)
     nbus = get(polar, PS.NumberOfBuses())
     v = PS.voltage(polar.network) .+ 0.01 .* rand(ComplexF64, nbus)
     return matpower_jacobian(polar, func, v)
 end
 
-function _get_jacobian_colors(polar::PolarForm, func::AutoDiff.AbstractExpression, map::Vector{Int})
+function _get_jacobian_colors(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, map::Vector{Int})
     # Sparsity pattern
     J = _jacobian_sparsity(polar, func)
     Jsub = J[:, map]
@@ -129,13 +129,13 @@ function jacobian_arrowhead_sparsity(J, block_id, nx, nu, nblocks)
 end
 
 function ArrowheadJacobian(
-    polar::PolarForm{T, VI, VT, MT},
+    polar::BlockPolarForm{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
     X::AbstractVariable,
-    k::Int,
 ) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
+    k = nblocks(polar)
     nx = number(polar, State())
     nu = number(polar, Control())
     if isa(X, Control)
@@ -158,7 +158,7 @@ function ArrowheadJacobian(
     nlines = PS.get(pf, PS.NumberOfLines())
     ngen = PS.get(pf, PS.NumberOfGenerators())
 
-    n_cons = length(func) * k
+    n_cons = length(func)
 
     J_host, coloring = _get_jacobian_colors(polar, func, map)
     ncolors = length(unique(coloring))
@@ -169,8 +169,7 @@ function ArrowheadJacobian(
     if AutoDiff.has_multiple_expressions(func)
         slices = AutoDiff.get_slices(func)
         cumslices = cumsum(slices)
-        shuf = [0; cumslices]
-        cumslices .*= k
+        shuf = convert(Vector{Int}, [0; cumslices] ./ k)
         jacs_shuf = [J_host[1+shuf[i]:shuf[i+1], :] for i in 1:length(shuf)-1]
         i_jac = Int[]
         j_jac = Int[]
@@ -187,6 +186,7 @@ function ArrowheadJacobian(
         J_blk = sparse(i_jac, j_jac, ones(nnzJ))
         block_id = Int[]
         idk = 1
+        slices ./= k
         for i in 1:n_cons
             if i > cumslices[idk]
                 idk += 1
@@ -199,7 +199,7 @@ function ArrowheadJacobian(
         end
     else
         J_blk = repeat(J_host, k)
-        m = length(func)
+        m = div(length(func), k)
         block_id = vcat([fill(_id, m) for _id in 1:k]...)
     end
 
@@ -209,7 +209,7 @@ function ArrowheadJacobian(
     coloring = repeat(coloring, k) |> VI
 
     # Structures
-    stack = BlockNetworkStack(k, nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
     init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 

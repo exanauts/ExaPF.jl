@@ -1,6 +1,6 @@
 # Matpower Jacobian (order of columns: [vmag, vang, pgen])
 
-function matpower_jacobian(polar::PolarForm, func::PowerFlowBalance, V)
+function matpower_jacobian(polar::AbstractPolarFormulation, func::PowerFlowBalance, V)
     pf = polar.network
     nbus = pf.nbus
     ngen = pf.ngen
@@ -29,7 +29,7 @@ function matpower_jacobian(polar::PolarForm, func::PowerFlowBalance, V)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_jacobian(polar::PolarForm, func::VoltageMagnitudeBounds, V)
+function matpower_jacobian(polar::AbstractPolarFormulation, func::VoltageMagnitudeBounds, V)
     pf = polar.network
     ngen = pf.ngen
     nbus = pf.nbus
@@ -41,7 +41,7 @@ function matpower_jacobian(polar::PolarForm, func::VoltageMagnitudeBounds, V)
     return [j11 j12]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_jacobian(polar::PolarForm, func::PowerGenerationBounds, V)
+function matpower_jacobian(polar::AbstractPolarFormulation, func::PowerGenerationBounds, V)
     pf = polar.network
     nbus = pf.nbus
     ngen = pf.ngen
@@ -67,7 +67,7 @@ function matpower_jacobian(polar::PolarForm, func::PowerGenerationBounds, V)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_jacobian(polar::PolarForm, func::LineFlows, V)
+function matpower_jacobian(polar::AbstractPolarFormulation, func::LineFlows, V)
     nbus = get(polar, PS.NumberOfBuses())
     nlines = get(polar, PS.NumberOfLines())
     pf = polar.network
@@ -89,7 +89,7 @@ function matpower_jacobian(polar::PolarForm, func::LineFlows, V)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_jacobian(polar::PolarForm, func::PolarBasis, V)
+function matpower_jacobian(polar::AbstractPolarFormulation, func::PolarBasis, V)
     pf = polar.network
     nbus = pf.nbus
     ngen = pf.ngen
@@ -114,13 +114,13 @@ function matpower_jacobian(polar::PolarForm, func::PolarBasis, V)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_jacobian(polar::PolarForm, func::MultiExpressions, V)
+function matpower_jacobian(polar::AbstractPolarFormulation, func::MultiExpressions, V)
     return vcat([matpower_jacobian(polar, expr, V) for expr in func.exprs]...)
 end
-matpower_jacobian(polar::PolarForm, func::ComposedExpressions, V) = matpower_jacobian(polar, func.outer, V)
+matpower_jacobian(polar::AbstractPolarFormulation, func::ComposedExpressions, V) = matpower_jacobian(polar, func.outer, V)
 
 # Return full-space Hessian
-function matpower_hessian(polar::PolarForm, func::CostFunction, V, λ)
+function matpower_hessian(polar::AbstractPolarFormulation, func::CostFunction, V, λ)
     pf = polar.network
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
@@ -150,7 +150,7 @@ function matpower_hessian(polar::PolarForm, func::CostFunction, V, λ)
     return H + Href
 end
 
-function matpower_hessian(polar::PolarForm, func::PowerFlowBalance, V, λ)
+function matpower_hessian(polar::AbstractPolarFormulation, func::PowerFlowBalance, V, λ)
     pf = polar.network
     Ybus = pf.Ybus
     nbus = get(polar, PS.NumberOfBuses())
@@ -185,7 +185,7 @@ function matpower_hessian(polar::PolarForm, func::PowerFlowBalance, V, λ)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_hessian(polar::PolarForm, func::PowerGenerationBounds, V, λ)
+function matpower_hessian(polar::AbstractPolarFormulation, func::PowerGenerationBounds, V, λ)
     pf = polar.network
     Ybus = pf.Ybus
     nbus = get(polar, PS.NumberOfBuses())
@@ -220,7 +220,7 @@ function matpower_hessian(polar::PolarForm, func::PowerGenerationBounds, V, λ)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_hessian(polar::PolarForm, func::VoltageMagnitudeBounds, V, λ)
+function matpower_hessian(polar::AbstractPolarFormulation, func::VoltageMagnitudeBounds, V, λ)
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
     n = 2*nbus + ngen
@@ -228,14 +228,14 @@ function matpower_hessian(polar::PolarForm, func::VoltageMagnitudeBounds, V, λ)
 end
 
 # TODO: not implemented yet
-function matpower_hessian(polar::PolarForm, func::LineFlows, V, λ)
+function matpower_hessian(polar::AbstractPolarFormulation, func::LineFlows, V, λ)
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
     n = 2*nbus + ngen
     return spzeros(n, n)
 end
 
-function matpower_hessian(polar::PolarForm, func::MultiExpressions, V, λ)
+function matpower_hessian(polar::AbstractPolarFormulation, func::MultiExpressions, V, λ)
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
     n = 2*nbus + ngen
@@ -250,5 +250,5 @@ function matpower_hessian(polar::PolarForm, func::MultiExpressions, V, λ)
     end
     return H
 end
-matpower_hessian(polar::PolarForm, func::ComposedExpressions, V, y) = matpower_hessian(polar, func.outer, V, y)
+matpower_hessian(polar::AbstractPolarFormulation, func::ComposedExpressions, V, y) = matpower_hessian(polar, func.outer, V, y)
 

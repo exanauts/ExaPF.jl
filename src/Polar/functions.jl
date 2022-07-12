@@ -5,7 +5,7 @@
 
 @doc raw"""
     PolarBasis{VI, MT} <: AbstractExpression
-    PolarBasis(polar::PolarForm)
+    PolarBasis(polar::AbstractPolarFormulation)
 
 Implement the LKMR nonlinear basis. Takes as
 input the voltage magnitudes `vmag` and the voltage
@@ -67,8 +67,9 @@ struct PolarBasis{VI, MT} <: AutoDiff.AbstractExpression
     device::KA.Device
 end
 
-function PolarBasis(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+function PolarBasis(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
     SMT = default_sparse_matrix(polar.device)
+    k = nblocks(polar)
     nlines = PS.get(polar.network, PS.NumberOfLines())
     # Assemble matrix
     pf = polar.network
@@ -79,13 +80,13 @@ function PolarBasis(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
 
     Cf = sparse(f, 1:nlines, ones(nlines), nbus, nlines)
     Ct = sparse(t, 1:nlines, ones(nlines), nbus, nlines)
-    Cf = Cf |> SMT
-    Ct = Ct |> SMT
+    Cf = _blockdiag(Cf, k) |> SMT
+    Ct = _blockdiag(Ct, k) |> SMT
 
     return PolarBasis{VI, SMT}(nbus, nlines, f, t, Cf, Ct, polar.device)
 end
 
-Base.length(func::PolarBasis) = func.nbus + 2 * func.nlines
+Base.length(func::PolarBasis) = (func.nbus + 2 * func.nlines) * div(size(func.Cf, 1), func.nbus)
 
 # update basis
 @kernel function basis_kernel!(
@@ -118,7 +119,7 @@ Base.length(func::PolarBasis) = func.nbus + 2 * func.nlines
 end
 
 function (func::PolarBasis)(output, stack::AbstractNetworkStack)
-    ndrange = (length(func), nbatches(stack))
+    ndrange = (func.nbus + 2 * func.nlines, nblocks(stack))
     ev = basis_kernel!(func.device)(
         output, stack.vmag, stack.vang,
         func.f, func.t, func.nlines, func.nbus,
@@ -176,7 +177,7 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
     fill!(∂stack.intermediate.∂edge_va_to , 0.0)
 
     # Accumulate on edges
-    ndrange = (nl+nb, nbatches(stack))
+    ndrange = (nl+nb, nblocks(stack))
     ev = adj_basis_kernel!(func.device)(
         ∂v,
         ∂stack.vmag,
@@ -192,10 +193,10 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
     # Accumulate on nodes
     Cf = func.Cf
     Ct = func.Ct
-    blockmul!(∂stack.vmag, Cf, ∂stack.intermediate.∂edge_vm_fr, 1.0, 1.0)
-    blockmul!(∂stack.vmag, Ct, ∂stack.intermediate.∂edge_vm_to, 1.0, 1.0)
-    blockmul!(∂stack.vang, Cf, ∂stack.intermediate.∂edge_va_fr, 1.0, 1.0)
-    blockmul!(∂stack.vang, Ct, ∂stack.intermediate.∂edge_va_to, 1.0, 1.0)
+    mul!(∂stack.vmag, Cf, ∂stack.intermediate.∂edge_vm_fr, 1.0, 1.0)
+    mul!(∂stack.vmag, Ct, ∂stack.intermediate.∂edge_vm_to, 1.0, 1.0)
+    mul!(∂stack.vang, Cf, ∂stack.intermediate.∂edge_va_fr, 1.0, 1.0)
+    mul!(∂stack.vang, Ct, ∂stack.intermediate.∂edge_va_to, 1.0, 1.0)
     return
 end
 
@@ -249,10 +250,11 @@ struct CostFunction{VT, MT} <: AutoDiff.AbstractExpression
     device::KA.Device
 end
 
-function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+function CostFunction(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
+    SMT = default_sparse_matrix(polar.device)
+    k = nblocks(polar)
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
-    SMT = default_sparse_matrix(polar.device)
     # Load indexing
     ref = polar.network.ref
     gen2bus = polar.network.gen2bus
@@ -265,9 +267,11 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     Cg = sparse(ref_gen, ref, ones(1), ngen, 2 * nbus)
     # Assemble matrix
     M_tot = PS.get_basis_matrix(polar.network)
-    M = - Cg * M_tot |> SMT
+    M = - Cg * M_tot
+    M = _blockdiag(M, k)
 
     N = sparse(ref_gen, ref, ones(1), ngen, nbus)
+    N = _blockdiag(N, k)
 
     # coefficients
     coefs = PS.get_costs_coefficients(polar.network)
@@ -278,7 +282,7 @@ function CostFunction(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     return CostFunction{VT, SMT}(ref, ref_gen, M, N, c0, c1, c2, polar.device)
 end
 
-Base.length(::CostFunction) = 1
+Base.length(func::CostFunction) = div(size(func.N, 1), length(func.c0))
 
 @kernel function _quadratic_cost_kernel(cost, pgen, c0, c1, c2, ngen)
     i, j = @index(Global, NTuple)
@@ -291,22 +295,22 @@ function (func::CostFunction)(output::AbstractArray, stack::AbstractNetworkStack
     ngen = length(func.c0)
     costs = stack.intermediate.c
     # Update pgen_ref
-    pgen_m = reshape(stack.pgen, ngen, nbatches(stack))
+    pgen_m = reshape(stack.pgen, ngen, nblocks(stack))
     pgen_m[func.gen_ref, :] .= 0.0
     # Add load to pgen_ref
-    blockmul!(stack.pgen, func.N, stack.pload, 1.0, 1.0)
+    mul!(stack.pgen, func.N, stack.pload, 1.0, 1.0)
     # Recompute power injection at ref node
-    blockmul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
+    mul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
     # Compute quadratic costs
-    ndrange = (ngen, nbatches(stack))
+    ndrange = (ngen, nblocks(stack))
     ev = _quadratic_cost_kernel(func.device)(
         costs, stack.pgen, func.c0, func.c1, func.c2, ngen;
         ndrange=ndrange, dependencies=Event(func.device),
     )
     wait(ev)
     # Sum costs across all generators
-    # sum!(output, reshape(costs, ngen, nbatches(stack))')
-    output .= sum(reshape(costs, ngen, nbatches(stack))', dims=2)
+    # sum!(output, reshape(costs, ngen, nblocks(stack))')
+    output .= sum(reshape(costs, ngen, nblocks(stack))', dims=2)
     return
 end
 
@@ -319,13 +323,13 @@ end
 
 function adjoint!(func::CostFunction, ∂stack, stack, ∂v)
     ngen = length(func.c0)
-    ndrange = (ngen, nbatches(stack))
+    ndrange = (ngen, nblocks(stack))
     ev = _adj_quadratic_cost_kernel(func.device)(
         ∂stack.pgen, stack.pgen, ∂v, func.c0, func.c1, func.c2, ngen;
         ndrange=ndrange, dependencies=Event(func.device),
     )
     wait(ev)
-    blockmul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
+    mul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
     return
 end
 
@@ -417,8 +421,9 @@ struct PowerFlowBalance{VT, MT} <: AutoDiff.AbstractExpression
     Cdq::MT
 end
 
-function PowerFlowBalance(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+function PowerFlowBalance(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
     SMT = default_sparse_matrix(polar.device)
+    k = nblocks(polar)
 
     pf = polar.network
     ngen = pf.ngen
@@ -430,13 +435,18 @@ function PowerFlowBalance(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
     # Assemble matrices
     Cg_tot = sparse(gen, 1:ngen, ones(ngen), nbus, ngen)
     Cd_tot = spdiagm(nbus, nbus, ones(nbus)) # Identity matrix
-    Cg = -[Cg_tot[pf.pv, :] ; spzeros(2*npq, ngen)] |> SMT
+    Cg = -[Cg_tot[pf.pv, :] ; spzeros(2*npq, ngen)]
     M_tot = PS.get_basis_matrix(polar.network)
-    M = -M_tot[[pf.pv; pf.pq; nbus .+ pf.pq], :] |> SMT
-
+    M = -M_tot[[pf.pv; pf.pq; nbus .+ pf.pq], :]
     # constant term
-    Cdp = [Cd_tot[[pf.pv ; pf.pq], :]; spzeros(npq, nbus)] |> SMT
-    Cdq = [spzeros(npq+npv, nbus) ; Cd_tot[pf.pq, :]] |> SMT
+    Cdp = [Cd_tot[[pf.pv ; pf.pq], :]; spzeros(npq, nbus)]
+    Cdq = [spzeros(npq+npv, nbus) ; Cd_tot[pf.pq, :]]
+
+    M   = _blockdiag(M, k)
+    Cg  = _blockdiag(Cg, k)
+    Cdp = _blockdiag(Cdp, k)
+    Cdq = _blockdiag(Cdq, k)
+
     return PowerFlowBalance{VT, SMT}(M, Cg, Cdp, Cdq)
 end
 
@@ -445,21 +455,21 @@ Base.length(func::PowerFlowBalance) = size(func.M, 1)
 function (func::PowerFlowBalance)(cons::AbstractArray, stack::AbstractNetworkStack)
     fill!(cons, 0.0)
     # Constant terms
-    blockmul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
-    blockmul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
+    mul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
+    mul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
     # Variable terms
-    blockmul!(cons, func.M, stack.ψ, 1.0, 1.0)
-    blockmul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
+    mul!(cons, func.M, stack.ψ, 1.0, 1.0)
+    mul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
     return
 end
 
 function adjoint!(func::PowerFlowBalance, ∂stack, stack, ∂v)
-    blockmul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
-    blockmul!(∂stack.pgen, func.Cg', ∂v, 1.0, 1.0)
+    mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
+    mul!(∂stack.pgen, func.Cg', ∂v, 1.0, 1.0)
     return
 end
 
-function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerFlowBalance) where {T,VI,VT,MT}
+function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::PowerFlowBalance) where {T,VI,VT,MT}
     m = length(func)
     return (fill!(VT(undef, m), zero(T)) , fill!(VT(undef, m), zero(T)))
 end
@@ -512,28 +522,34 @@ julia> voltage_pq(stack)
 struct VoltageMagnitudeBounds{SMT} <: AutoDiff.AbstractExpression
     Cpq::SMT
 end
-function VoltageMagnitudeBounds(polar::PolarForm)
+function VoltageMagnitudeBounds(polar::AbstractPolarFormulation)
     SMT = default_sparse_matrix(polar.device)
     nbus = polar.network.nbus
     pq = polar.network.pq
     C = spdiagm(ones(nbus))
-    Cpq = C[pq, :] |> SMT
+    Cpq = C[pq, :]
+    Cpq = _blockdiag(Cpq, nblocks(polar)) |> SMT
     return VoltageMagnitudeBounds(Cpq)
 end
 
 Base.length(func::VoltageMagnitudeBounds) = size(func.Cpq, 1)
 
 function (func::VoltageMagnitudeBounds)(cons::AbstractArray, stack::AbstractNetworkStack)
-    blockmul!(cons, func.Cpq, stack.vmag, 1.0, 0.0)
+    mul!(cons, func.Cpq, stack.vmag, 1.0, 0.0)
 end
 
 function adjoint!(func::VoltageMagnitudeBounds, ∂stack, stack, ∂v)
-    blockmul!(∂stack.vmag, func.Cpq', ∂v, 1.0, 1.0)
+    mul!(∂stack.vmag, func.Cpq', ∂v, 1.0, 1.0)
 end
 
-function bounds(polar::PolarForm{T,VI,VT,MT}, func::VoltageMagnitudeBounds) where {T,VI,VT,MT}
-    v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude()) .|> VT
-    return func.Cpq * v_min, func.Cpq * v_max
+function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::VoltageMagnitudeBounds) where {T,VI,VT,MT}
+    v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
+    v_min = v_min |> VT
+    v_max = v_max |> VT
+
+    lb = func.Cpq * repeat(v_min, nblocks(polar))
+    ub =  func.Cpq * repeat(v_max, nblocks(polar))
+    return lb, ub
 end
 
 function Base.show(io::IO, func::VoltageMagnitudeBounds)
@@ -586,7 +602,7 @@ struct PowerGenerationBounds{VT, MT} <: AutoDiff.AbstractExpression
     Cdq::MT
 end
 
-function PowerGenerationBounds(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT, MT}
+function PowerGenerationBounds(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
     SMT = default_sparse_matrix(polar.device)
     pf = polar.network
     nbus = pf.nbus
@@ -598,6 +614,11 @@ function PowerGenerationBounds(polar::PolarForm{T, VI, VT, MT}) where {T, VI, VT
 
     Cdp = [Cd_tot[pf.ref, :] ; spzeros(ns, nbus)]
     Cdq = [spzeros(length(pf.ref), nbus) ; Cd_tot[[pf.ref ; pf.pv], :]]
+
+    M = _blockdiag(M, nblocks(polar))
+    Cdp = _blockdiag(Cdp, nblocks(polar))
+    Cdq = _blockdiag(Cdq, nblocks(polar))
+
     return PowerGenerationBounds{VT, SMT}(M, Cdp, Cdq)
 end
 
@@ -606,19 +627,19 @@ Base.length(func::PowerGenerationBounds) = size(func.M, 1)
 function (func::PowerGenerationBounds)(cons::AbstractArray, stack::AbstractNetworkStack)
     fill!(cons, 0.0)
     # Constant terms
-    blockmul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
-    blockmul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
+    mul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
+    mul!(cons, func.Cdq, stack.qload, 1.0, 1.0)
     # Variable terms
-    blockmul!(cons, func.M, stack.ψ, 1.0, 1.0)
+    mul!(cons, func.M, stack.ψ, 1.0, 1.0)
     return
 end
 
 function adjoint!(func::PowerGenerationBounds, ∂stack, stack, ∂v)
-    blockmul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
+    mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
     return
 end
 
-function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where {T,VI,VT,MT}
+function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::PowerGenerationBounds) where {T,VI,VT,MT}
     pf = polar.network
     ngen = pf.ngen
     nbus = pf.nbus
@@ -634,8 +655,8 @@ function bounds(polar::PolarForm{T,VI,VT,MT}, func::PowerGenerationBounds) where
     lb = [Cgp * p_min; Cgq * q_min]
     ub = [Cgp * p_max; Cgq * q_max]
     return (
-        convert(VT, lb),
-        convert(VT, ub),
+        convert(VT, repeat(lb, nblocks(polar))),
+        convert(VT, repeat(ub, nblocks(polar))),
     )
 end
 
@@ -700,14 +721,21 @@ struct LineFlows{VT, MT} <: AutoDiff.AbstractExpression
     device::KA.Device
 end
 
-function LineFlows(polar::PolarForm{T,VI,VT,MT}) where {T,VI,VT,MT}
+function LineFlows(polar::AbstractPolarFormulation{T,VI,VT,MT}) where {T,VI,VT,MT}
     SMT = default_sparse_matrix(polar.device)
     nlines = get(polar, PS.NumberOfLines())
     Lfp, Lfq, Ltp, Ltq = PS.get_line_flow_matrices(polar.network)
-    return LineFlows{VT,SMT}(nlines, Lfp, Lfq, Ltp, Ltq, polar.device)
+    return LineFlows{VT,SMT}(
+        nlines,
+        _blockdiag(Lfp, nblocks(polar)),
+        _blockdiag(Lfq, nblocks(polar)),
+        _blockdiag(Ltp, nblocks(polar)),
+        _blockdiag(Ltq, nblocks(polar)),
+        polar.device,
+    )
 end
 
-Base.length(func::LineFlows) = 2 * func.nlines
+Base.length(func::LineFlows) = 2 * size(func.Lfp, 1)
 
 @kernel function _line_flow_kernel(output, sfp, sfq, stp, stq, nlines)
     i, j = @index(Global, NTuple)
@@ -722,11 +750,11 @@ function (func::LineFlows)(cons::AbstractVector, stack::AbstractNetworkStack)
     stp = stack.intermediate.stp
     stq = stack.intermediate.stq
 
-    blockmul!(sfp, func.Lfp, stack.ψ, 1.0, 0.0)
-    blockmul!(sfq, func.Lfq, stack.ψ, 1.0, 0.0)
-    blockmul!(stp, func.Ltp, stack.ψ, 1.0, 0.0)
-    blockmul!(stq, func.Ltq, stack.ψ, 1.0, 0.0)
-    ndrange = (func.nlines, nbatches(stack))
+    mul!(sfp, func.Lfp, stack.ψ, 1.0, 0.0)
+    mul!(sfq, func.Lfq, stack.ψ, 1.0, 0.0)
+    mul!(stp, func.Ltp, stack.ψ, 1.0, 0.0)
+    mul!(stq, func.Ltq, stack.ψ, 1.0, 0.0)
+    ndrange = (func.nlines, nblocks(stack))
     ev = _line_flow_kernel(func.device)(
         cons, sfp, sfq, stp, stq, func.nlines;
         ndrange=ndrange, dependencies=Event(func.device),
@@ -754,7 +782,7 @@ function adjoint!(func::LineFlows, ∂stack, stack, ∂v)
     stp = ∂stack.intermediate.stp
     stq = ∂stack.intermediate.stq
 
-    ndrange = (func.nlines, nbatches(stack))
+    ndrange = (func.nlines, nblocks(stack))
     ev = _adj_line_flow_kernel(func.device)(
         sfp, sfq, stp, stq,
         stack.intermediate.sfp, stack.intermediate.sfq,
@@ -765,17 +793,22 @@ function adjoint!(func::LineFlows, ∂stack, stack, ∂v)
     wait(ev)
 
     # Accumulate adjoint
-    blockmul!(∂stack.ψ, func.Lfp', sfp, 1.0, 1.0)
-    blockmul!(∂stack.ψ, func.Lfq', sfq, 1.0, 1.0)
-    blockmul!(∂stack.ψ, func.Ltp', stp, 1.0, 1.0)
-    blockmul!(∂stack.ψ, func.Ltq', stq, 1.0, 1.0)
+    mul!(∂stack.ψ, func.Lfp', sfp, 1.0, 1.0)
+    mul!(∂stack.ψ, func.Lfq', sfq, 1.0, 1.0)
+    mul!(∂stack.ψ, func.Ltp', stp, 1.0, 1.0)
+    mul!(∂stack.ψ, func.Ltq', stq, 1.0, 1.0)
 
     return
 end
 
-function bounds(polar::PolarForm{T,VI,VT,MT}, func::LineFlows) where {T,VI,VT,MT}
+function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::LineFlows) where {T,VI,VT,MT}
     f_min, f_max = PS.bounds(polar.network, PS.Lines(), PS.ActivePower())
-    return convert(VT, [f_min; f_min]), convert(VT, [f_max; f_max])
+    lb = [f_min; f_min]
+    ub = [f_max; f_max]
+    return (
+        convert(VT, repeat(lb, nblocks(polar))),
+        convert(VT, repeat(ub, nblocks(polar))),
+    )
 end
 
 function Base.show(io::IO, func::LineFlows)
@@ -809,28 +842,26 @@ AutoDiff.has_multiple_expressions(func::MultiExpressions) = true
 AutoDiff.get_slices(func::MultiExpressions) = length.(func.exprs)
 
 function (func::MultiExpressions)(output::AbstractArray, stack::AutoDiff.AbstractStack)
-    nb = nbatches(stack)
     k = 0
     for expr in func.exprs
         m = length(expr)
-        y = view(output, k+1:k+nb*m)
+        y = view(output, k+1:k+m)
         expr(y, stack)
-        k += nb*m
+        k += m
     end
 end
 
 function adjoint!(func::MultiExpressions, ∂stack, stack, ∂v)
-    nb = nbatches(stack)
     k = 0
     for expr in func.exprs
         m = length(expr)
-        y = view(∂v, k+1:k+nb*m)
+        y = view(∂v, k+1:k+m)
         adjoint!(expr, ∂stack, stack, y)
-        k += nb*m
+        k += m
     end
 end
 
-function bounds(polar::PolarForm{T, VI, VT, MT}, func::MultiExpressions) where {T, VI, VT, MT}
+function bounds(polar::AbstractPolarFormulation{T, VI, VT, MT}, func::MultiExpressions) where {T, VI, VT, MT}
     m = length(func)
     g_min = VT(undef, m)
     g_max = VT(undef, m)

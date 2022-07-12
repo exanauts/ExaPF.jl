@@ -36,30 +36,12 @@ end
     end
 end
 
-@kernel function _spmv_blk_csr_kernel!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
-    i, k, l = @index(Global, NTuple)
-    Y[k, i, l] *= beta
-    @inbounds for c in rowPtr[i]:rowPtr[i+1]-1
-        j = colVal[c]
-        Y[k, i, l] += alpha * nzVal[c] * X[k, j, l]
-    end
-end
-
 @kernel function _spmv_csr_kernel_double!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
     i = @index(Global, Linear)
     Y[1, i] *= beta
     @inbounds for c in rowPtr[i]:rowPtr[i+1]-1
         j = colVal[c]
         Y[1, i] += alpha * nzVal[c] * X[j]
-    end
-end
-
-@kernel function _spmv_blk_csr_kernel_double!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
-    i, l = @index(Global, NTuple)
-    Y[1, i, l] *= beta
-    @inbounds for c in rowPtr[i]:rowPtr[i+1]-1
-        j = colVal[c]
-        Y[1, i, l] += alpha * nzVal[c] * X[j, l]
     end
 end
 
@@ -118,25 +100,31 @@ function convert2csr(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
     return Bp, Bj, Bx
 end
 
-
-#=
-    Linear algebra wrappers
-=#
-
-function blockmul!(y::AbstractArray, A::AbstractMatrix, x::AbstractArray, alpha, beta)
+function _blockdiag(A::SparseMatrixCSC{Tv, Ti}, k::Int) where {Tv, Ti}
     n, m = size(A)
-    ny = length(y)
-    mx = length(x)
+    nnzA = nnz(A)
+    Ai, Ap, Az = A.rowval, A.colptr, A.nzval
 
-    # check consistency
-    @assert div(ny, n) == div(mx, m)
-    k = div(ny, n)
-    if k == 1
-        mul!(y, A, x, alpha, beta)
-    else
-        y_mat = reshape(y, n, k)
-        x_mat = reshape(x, m, k)
-        mul!(y_mat, A, x_mat, alpha, beta)
+    Bp = zeros(Ti, m * k + 1)
+    Bi = zeros(Ti, nnzA * k)
+    Bz = zeros(Tv, nnzA * k)
+
+    cnt = 1
+    for b in 1:k
+        for j in 1:m
+            Bp[j + (b - 1) * m] = cnt
+            for c in Ap[j]:Ap[j+1]-1
+                i = Ai[c]
+                Bi[cnt] = i + (b-1) * n
+                Bz[cnt] = Az[c]
+                cnt += 1
+            end
+        end
     end
+    Bp[end] = cnt
+
+    @assert cnt == nnzA * k + 1
+
+    return SparseMatrixCSC{Tv, Ti}(n * k, m * k, Bp, Bi, Bz)
 end
 
