@@ -544,8 +544,11 @@ end
 
 function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::VoltageMagnitudeBounds) where {T,VI,VT,MT}
     v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
-    lb = func.Cpq * repeat(v_min, nblocks(polar)) |> VT
-    ub =  func.Cpq * repeat(v_max, nblocks(polar)) |> VT
+    v_min = v_min |> VT
+    v_max = v_max |> VT
+
+    lb = func.Cpq * repeat(v_min, nblocks(polar))
+    ub =  func.Cpq * repeat(v_max, nblocks(polar))
     return lb, ub
 end
 
