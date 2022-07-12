@@ -543,10 +543,10 @@ function adjoint!(func::VoltageMagnitudeBounds, ∂stack, stack, ∂v)
 end
 
 function bounds(polar::AbstractPolarFormulation{T,VI,VT,MT}, func::VoltageMagnitudeBounds) where {T,VI,VT,MT}
-    v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude()) .|> VT
-    lb = func.Cpq * v_min
-    ub =  func.Cpq * v_max
-    return repeat(lb, nblocks(polar)), repeat(ub, nblocks(polar))
+    v_min, v_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
+    lb = func.Cpq * repeat(v_min, nblocks(polar)) |> VT
+    ub =  func.Cpq * repeat(v_max, nblocks(polar)) |> VT
+    return lb, ub
 end
 
 function Base.show(io::IO, func::VoltageMagnitudeBounds)

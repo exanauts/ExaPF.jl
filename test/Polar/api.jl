@@ -218,6 +218,7 @@ function test_polar_blk_expressions(polar, device, M)
     stack = ExaPF.NetworkStack(polar)
     blk_stack = ExaPF.NetworkStack(blk_polar)
 
+    # Test single expressions
     for expr in [
         ExaPF.PowerFlowBalance,
         ExaPF.PowerGenerationBounds,
@@ -238,6 +239,28 @@ function test_polar_blk_expressions(polar, device, M)
         @test length(pf_blk) == m * nblocks
         @test blk_cons ≈ repeat(cons, nblocks)
     end
+    # Test bounds
+    for expr in [
+        ExaPF.PowerFlowBalance,
+        ExaPF.PowerGenerationBounds,
+        ExaPF.VoltageMagnitudeBounds,
+        ExaPF.LineFlows,
+    ]
+        pf_blk = expr(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
+        lb, ub = ExaPF.bounds(blk_polar, pf_blk)
+        @test length(lb) == length(ub) == length(pf_blk)
+    end
+    # Test multi-expressions
+    constraints = [
+        ExaPF.PowerFlowBalance(blk_polar),
+        ExaPF.PowerGenerationBounds(blk_polar),
+        ExaPF.VoltageMagnitudeBounds(blk_polar),
+        ExaPF.LineFlows(blk_polar),
+    ]
+    multiblk = ExaPF.MultiExpressions(constraints) ∘ ExaPF.PolarBasis(blk_polar)
+    lb, ub = ExaPF.bounds(blk_polar, multiblk)
+    @test length(multiblk) == sum(length.(constraints))
+    @test length(lb) == length(ub) == length(multiblk)
 end
 
 # NB: currently tested only with direct linear solver
