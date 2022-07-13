@@ -271,7 +271,7 @@ function test_block_jacobian(polar, device, MT)
 
     # Duplicate to run FiniteDiff on CPU
     polar_cpu = ExaPF.PolarForm(polar, CPU())
-    blk_polar_cpu = ExaPF.BlockPolarForm(polar, nblocks)
+    blk_polar_cpu = ExaPF.BlockPolarForm(polar_cpu, nblocks)
     blk_stack_cpu = ExaPF.NetworkStack(blk_polar_cpu)
     mycons_cpu = ExaPF.MultiExpressions([
         ExaPF.PowerFlowBalance(blk_polar_cpu),
