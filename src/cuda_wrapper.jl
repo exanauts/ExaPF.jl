@@ -71,10 +71,46 @@ function ForwardDiff.npartials(vec::CuArray{ForwardDiff.Dual{T, V, N}}) where {T
     return N
 end
 
+function _tranpose_descriptor(x::DenseCuMatrix)
+    desc_ref = Ref{CUSPARSE.cusparseDnMatDescr_t}()
+    n, m = size(x)
+    CUSPARSE.cusparseCreateDnMat(desc_ref, n, m, m, x, eltype(x), CUSPARSE.CUSPARSE_ORDER_ROW)
+    return desc_ref[]
+end
+
+function _mm_transposed!(
+    transa::CUSPARSE.SparseChar, transb::CUSPARSE.SparseChar,
+    alpha::Number, A::CuSparseMatrixCSR{T},
+    B::DenseCuMatrix{T}, beta::Number, C::DenseCuMatrix{T},
+    index::CUSPARSE.SparseChar, algo=CUSPARSE.CUSPARSE_MM_ALG_DEFAULT,
+) where {T}
+    m,k = size(A)
+    n = size(C)[2]
+
+    descA = CUSPARSE.CuSparseMatrixDescriptor(A, index)
+    descB = _tranpose_descriptor(B)
+    descC = _tranpose_descriptor(C)
+
+    function bufferSize()
+        out = Ref{Csize_t}()
+        CUSPARSE.cusparseSpMM_bufferSize(
+            CUSPARSE.handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
+            descC, T, algo, out)
+        return out[]
+    end
+    CUSPARSE.with_workspace(bufferSize) do buffer
+        CUSPARSE.cusparseSpMM(
+            CUSPARSE.handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
+            descC, T, algo, buffer)
+    end
+
+    return C
+end
+
 function LinearAlgebra.mul!(
     Y::CuArray{T, 1},
     A::CUSPARSE.CuSparseMatrixCSR,
-    X::AbstractArray{T, 1},
+    X::CuArray{T, 1},
     alpha::Number, beta::Number,
 ) where {T <: ForwardDiff.Dual}
     n, m = size(A)
@@ -85,15 +121,10 @@ function LinearAlgebra.mul!(
     p = 1 + N
 
     # Reinterpret duals as double.
-    Ys = reshape(reinterpret(Float64, Y), p, n)
-    Xs = reshape(reinterpret(Float64, X), p, m)
+    Xs = reshape(reinterpret(Float64, X), m, p)
+    Ys = reshape(reinterpret(Float64, Y), n, p)
 
-    ndrange = (n, p)
-    ev = _spmv_csr_kernel!(CUDADevice())(
-        Ys, Xs, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
-        ndrange=ndrange, dependencies=Event(CUDADevice()),
-    )
-    wait(ev)
+    _mm_transposed!('N', 'N', alpha, A, Xs, beta, Ys, 'O')
 end
 
 function LinearAlgebra.mul!(
@@ -124,27 +155,14 @@ end
     Generic SpMV for CuSparseMatrixCSC
 =#
 
-# Write a CUDA kernel directly as KernelAbstractions does not
-# supports atomic_add.
-function _spmm_csc_kernel_T!(Y, X, colPtr, rowVal, nzVal, alpha, beta, m, p)
-    I = threadIdx().x + (blockDim().x * (blockIdx().x - 1))
-    J = threadIdx().y + (blockDim().y * (blockIdx().y - 1))
-    if I <= m && J <= p
-        @inbounds for c in colPtr[I]:colPtr[I+1]-1
-            j = rowVal[c]
-            CUDA.@atomic Y[J, j] += alpha * nzVal[c] * X[J, I]
-        end
-    end
-end
-
 function LinearAlgebra.mul!(
-    Y::AbstractArray{D, 1},
+    Y::AbstractArray{Td, 1},
     A::Adjoint{T, CuSparseMatrixCSR{T, I}},
-    X::AbstractArray{D, 1},
+    X::AbstractArray{Td, 1},
     alpha::Number, beta::Number,
-) where {N, I, T, S, D <: ForwardDiff.Dual{S, T, N}}
+) where {N, I, T, Td <: ForwardDiff.Dual}
     n, m = size(A)
-    p = N + 1
+    p = ForwardDiff.npartials(Y) + 1
     @assert size(Y, 1) == n
     @assert size(X, 1) == m
 
@@ -158,14 +176,9 @@ function LinearAlgebra.mul!(
     blocks = ceil.(Int, (m, p) ./ threads)
 
     # Reinterpret duals as double.
-    # (Needed to work with atomic_add)
-    Ys = reshape(reinterpret(Float64, Y), p, n)
-    Xs = reshape(reinterpret(Float64, X), p, m)
-
-    Ys .*= beta
-    @cuda threads=threads blocks=blocks _spmm_csc_kernel_T!(
-        Ys, Xs, B.rowPtr, B.colVal, B.nzVal, alpha, beta, m, p,
-    )
+    Ys = reshape(reinterpret(Float64, Y), n, p)
+    Xs = reshape(reinterpret(Float64, X), m, p)
+    _mm_transposed!('T', 'N', alpha, A.parent, Xs, beta, Ys, 'O')
 end
 
 @kernel function _blk_transfer_to_input!(input, map, src, nx)
