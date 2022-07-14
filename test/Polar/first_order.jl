@@ -269,16 +269,53 @@ function test_block_jacobian(polar, device, MT)
         @test blk_J_cpu ≈ blockdiag([J_cpu for i in 1:nblocks]...)
     end
 
-    constraints = [
+    # Duplicate to run FiniteDiff on CPU
+    polar_cpu = ExaPF.PolarForm(polar, CPU())
+    blk_polar_cpu = ExaPF.BlockPolarForm(polar_cpu, nblocks)
+    blk_stack_cpu = ExaPF.NetworkStack(blk_polar_cpu)
+    mycons_cpu = ExaPF.MultiExpressions([
+        ExaPF.PowerFlowBalance(blk_polar_cpu),
+        ExaPF.PowerGenerationBounds(blk_polar_cpu),
+        ExaPF.VoltageMagnitudeBounds(blk_polar_cpu),
+        ExaPF.LineFlows(blk_polar_cpu),
+    ]) ∘ ExaPF.PolarBasis(blk_polar_cpu)
+
+    mycons = ExaPF.MultiExpressions([
         ExaPF.PowerFlowBalance(blk_polar),
         ExaPF.PowerGenerationBounds(blk_polar),
         ExaPF.VoltageMagnitudeBounds(blk_polar),
         ExaPF.LineFlows(blk_polar),
-    ]
-    mycons = ExaPF.MultiExpressions(constraints) ∘ ExaPF.PolarBasis(blk_polar)
-    for X in [State(), Control(), AllVariables()]
+    ]) ∘ ExaPF.PolarBasis(blk_polar)
+
+    m = length(mycons)
+
+    # FiniteDiff code
+    function jac_fd_x(x)
+        blk_stack_cpu.input .= x
+        c = zeros(m)
+        mycons_cpu(c, blk_stack_cpu)
+        return c
+    end
+    x = copy(blk_stack_cpu.input)
+    Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x)
+
+    nu = ExaPF.number(blk_polar, Control())
+    mapx = ExaPF.mapping(blk_polar, State(), nblocks)
+    mapu = ExaPF.mapping(blk_polar, Control(), nblocks)
+
+    Jd_x = Jd[:, mapx]
+    # Note: controls are shared across all scenarios
+    Jd_u = sum(Jd[:, mapu[1+(i-1)*nu:i*nu]] for i in 1:nblocks)
+    Jd_xu = [Jd_x Jd_u]
+
+    for (X, JJd) in zip(
+        [State(), Control(), AllVariables()],
+        [Jd_x, Jd_u, Jd_xu],
+    )
         blk_jac = ExaPF.ArrowheadJacobian(blk_polar, mycons, X)
         ExaPF.jacobian!(blk_jac, blk_stack)
+        Jx = blk_jac.J |> SparseMatrixCSC
+        @test Jx ≈ JJd rtol=1e-5
     end
 end
 
