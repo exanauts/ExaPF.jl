@@ -26,16 +26,6 @@ end
     dest[i] = input[map[i]]
 end
 
-# Differentiable LinearAlgebra.mul! for ForwardDiff
-@kernel function _spmv_csr_kernel!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
-    i, k = @index(Global, NTuple)
-    Y[k, i] *= beta
-    @inbounds for c in rowPtr[i]:rowPtr[i+1]-1
-        j = colVal[c]
-        Y[k, i] += alpha * nzVal[c] * X[k, j]
-    end
-end
-
 @kernel function _spmv_csr_kernel_double!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
     i = @index(Global, Linear)
     Y[1, i] *= beta

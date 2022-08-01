@@ -103,26 +103,6 @@ function test_autodiff_kernel(device, AT, SMT)
     @test Ax == J.nzval
 end
 
-function test_sparse_mul_kernel(device, AT, SMT)
-    n, m = 10, 20
-    p = 2
-    J = sprandn(n, m, .2)
-    x = rand(m, p)
-    y_ref = zeros(n, p)
-    mul!(y_ref, J, x, 1.0, 0.0)
-
-    # Convert to CSR
-    Bp, Bj, Bx = ExaPF.convert2csr(J)
-    # Kernel is transposing the input and the output
-    x = Array(x')
-    y = zeros(p, n)
-    ndrange = (n, p)
-    ev = ExaPF._spmv_csr_kernel!(device)(y, x, Bj, Bp, Bx, 1.0, 0.0, n, m; ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
-
-    @test y' ≈ y_ref
-end
-
 function runtests(device, AT, SMT)
     for name_sym in names(@__MODULE__; all = true)
         name = string(name_sym)
