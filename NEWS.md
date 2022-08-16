@@ -1,5 +1,18 @@
 ExaPF release notes
-==================
+===================
+
+Version 0.8.0 (August 16th, 2022)
+---------------------------------
+
+- API changes
+  * Add new `BlockPolarForm` structure encoding block-structured power grid model
+- Bug fixes & improvements
+  * add function `load_case` to import data directly from ExaData (#257)
+  * test `ArrowheadJacobian` correctness with FiniteDiff (#263)
+  * remove all custom SpMM kernels (#264)
+- Documentation
+  * Add new tutorials in ExaPF for batch power flow and linear solver (#258)
+  * Add doctests in expressionsn (#256 #261)
 
 Version 0.7.2 (May 31th, 2022)
 ------------------------------
