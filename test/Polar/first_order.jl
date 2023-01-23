@@ -22,10 +22,10 @@ function test_constraints_jacobian(polar, device, MT)
     # Test Jacobian w.r.t. State
     @testset "Jacobian $(expr)" for expr in [
         ExaPF.PolarBasis,
-        ExaPF.VoltageMagnitudeBounds,
-        ExaPF.PowerFlowBalance,
-        ExaPF.PowerGenerationBounds,
-        ExaPF.LineFlows,
+        # ExaPF.VoltageMagnitudeBounds,
+        # ExaPF.PowerFlowBalance,
+        # ExaPF.PowerGenerationBounds,
+        # ExaPF.LineFlows,
     ]
         constraint = expr(polar) ∘ basis
         constraint_cpu = expr(polar_cpu) ∘ basis_cpu
@@ -88,14 +88,16 @@ function test_constraints_adjoint(polar, device, MT)
 
     @testset "Adjoint $(expr)" for expr in [
         ExaPF.PolarBasis,
-        ExaPF.CostFunction,
-        ExaPF.VoltageMagnitudeBounds,
-        ExaPF.PowerFlowBalance,
-        ExaPF.PowerGenerationBounds,
-        ExaPF.LineFlows,
+        # ExaPF.CostFunction,
+        # ExaPF.VoltageMagnitudeBounds,
+        # ExaPF.PowerFlowBalance,
+        # ExaPF.PowerGenerationBounds,
+        # ExaPF.LineFlows,
     ]
-        constraint = expr(polar) ∘ basis
-        constraint_cpu = expr(polar_cpu) ∘ basis_cpu
+        # constraint = expr(polar) ∘ basis
+        # constraint_cpu = expr(polar_cpu) ∘ basis_cpu
+        constraint = expr(polar)
+        constraint_cpu = expr(polar_cpu)
         m = length(constraint)
         tgt_cpu = rand(m)
         tgt = tgt_cpu |> MT

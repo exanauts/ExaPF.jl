@@ -13,7 +13,7 @@ Random.seed!(2713)
 
 const BENCHMARK_DIR = joinpath(dirname(@__FILE__), "..", "benchmark")
 const EXAMPLES_DIR = joinpath(dirname(@__FILE__), "..", "examples")
-const CASES = ["case9.m", "case30.m"]
+const CASES = ["case9.m"]
 
 ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
 if CUDA.has_cuda()

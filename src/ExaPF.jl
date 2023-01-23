@@ -13,6 +13,7 @@ using KernelAbstractions
 const KA = KernelAbstractions
 using KernelGradients
 using Enzyme
+using Infiltrator
 
 import Base: show, get
 

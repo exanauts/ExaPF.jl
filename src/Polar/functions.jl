@@ -95,42 +95,6 @@ function (func::PolarBasis)(output, stack::AbstractNetworkStack)
     return
 end
 
-@kernel function adj_basis_kernel!(
-    ∂cons, adj_vmag, adj_vmag_fr, adj_vmag_to,
-    adj_vang_fr, adj_vang_to,
-    @Const(vmag), @Const(vang), @Const(f), @Const(t), nlines, nbus,
-)
-    i, j = @index(Global, NTuple)
-    shift_cons = (j-1) * (nbus + 2*nlines)
-    shift_bus  = (j-1) * nbus
-    shift_lines  = (j-1) * nlines
-
-    @inbounds begin
-        if i <= nlines
-            ℓ = i
-            fr_bus = f[ℓ]
-            to_bus = t[ℓ]
-            Δθ = vang[fr_bus + shift_bus] - vang[to_bus + shift_bus]
-            cosθ = cos(Δθ)
-            sinθ = sin(Δθ)
-
-            adj_vang_fr[i + shift_lines] -= vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
-            adj_vang_fr[i + shift_lines] += vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift_cons]
-            adj_vang_to[i + shift_lines] += vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ + shift_cons]
-            adj_vang_to[i + shift_lines] -= vmag[fr_bus + shift_bus] * vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ+nlines + shift_cons]
-
-            adj_vmag_fr[i + shift_lines] += vmag[to_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
-            adj_vmag_fr[i + shift_lines] += vmag[to_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
-
-            adj_vmag_to[i + shift_lines] += vmag[fr_bus + shift_bus] * cosθ * ∂cons[ℓ + shift_cons]
-            adj_vmag_to[i + shift_lines] += vmag[fr_bus + shift_bus] * sinθ * ∂cons[ℓ+nlines + shift_cons]
-        else i <= nlines + nbus
-            b = i - nlines
-            adj_vmag[b + shift_bus] += 2.0 * vmag[b + shift_bus] * ∂cons[b+2*nlines + shift_cons]
-        end
-    end
-end
-
 function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::AbstractNetworkStack, ∂v)
     nl = func.nlines
     nb = func.nbus
@@ -152,6 +116,7 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
         ndrange=ndrange, dependencies=Event(func.device)
     )
     wait(ev)
+    return
 end
 
 function Base.show(io::IO, func::PolarBasis)
