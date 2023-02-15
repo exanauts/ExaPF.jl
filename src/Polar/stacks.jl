@@ -61,6 +61,7 @@ struct NetworkStack{VT,VD,NT} <: AbstractNetworkStack{VT}
     vmag::VD # voltage magnitudes
     vang::VD # voltage angles
     pgen::VD # active power generations
+    vuser::VD # custom variables defined by user
     # INTERMEDIATE
     ψ::VD    # nonlinear basis ψ(vmag, vang)
     intermediate::NT
@@ -71,8 +72,8 @@ struct NetworkStack{VT,VD,NT} <: AbstractNetworkStack{VT}
     nblocks::Int
 end
 
-function NetworkStack(nbus::Int, ngen::Int, nlines::Int, k::Int, VT::Type, VD::Type)
-    m = (2 * nbus + ngen) * k
+function NetworkStack(nbus::Int, ngen::Int, nlines::Int, nuser::Int, k::Int, VT::Type, VD::Type)
+    m = (2 * nbus + ngen) * k + nuser
     input = VD(undef, m) ; fill!(input, 0.0)
     # Wrap directly array x to avoid dealing with views
     p0 = pointer(input)
@@ -81,6 +82,12 @@ function NetworkStack(nbus::Int, ngen::Int, nlines::Int, k::Int, VT::Type, VD::T
     vang = unsafe_wrap(VD, p1, k * nbus)
     p2 = pointer(input, 2*k*nbus+1)
     pgen = unsafe_wrap(VD, p2, k * ngen)
+    p3 = pointer(input, 2*k*nbus+k*ngen+1)
+    vuser = if nuser > 0
+        unsafe_wrap(VD, p3, nuser)
+    else
+        similar(VD, 0)
+    end
 
     # Basis function
     ψ = VD(undef, k*(2*nlines + nbus)) ; fill!(ψ, 0.0)
@@ -107,17 +114,17 @@ function NetworkStack(nbus::Int, ngen::Int, nlines::Int, k::Int, VT::Type, VD::T
     p1 = pointer(params, k*nbus+1)
     qload = unsafe_wrap(VT, p1, k*nbus)
 
-    return NetworkStack(input, vmag, vang, pgen, ψ, intermediate, params, pload, qload, k)
+    return NetworkStack(input, vmag, vang, pgen, vuser, ψ, intermediate, params, pload, qload, k)
 end
-function NetworkStack(nbus::Int, ngen::Int, nlines::Int, VT::Type, VD::Type)
-    return NetworkStack(nbus, ngen, nlines, 1, VT, VD)
+function NetworkStack(nbus::Int, ngen::Int, nlines::Int, ncustoms::Int, VT::Type, VD::Type)
+    return NetworkStack(nbus, ngen, nlines, ncustoms, 1, VT, VD)
 end
 
 function NetworkStack(polar::AbstractPolarFormulation{T,VI,VT,MT}) where {T,VI,VT,MT}
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
     nlines = get(polar, PS.NumberOfLines())
-    stack = NetworkStack(nbus, ngen, nlines, nblocks(polar), VT, VT)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, nblocks(polar), VT, VT)
     init!(polar, stack)
     return stack
 end
