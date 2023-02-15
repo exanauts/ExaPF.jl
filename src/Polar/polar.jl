@@ -36,14 +36,15 @@ giving a mathematical formulation with:
 struct PolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
     device::KA.Device
+    ncustoms::Int  # custom variables defined by user
 end
 
-function PolarForm(pf::PS.PowerNetwork, device::KA.CPU)
-    return PolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device)
+function PolarForm(pf::PS.PowerNetwork, device::KA.CPU, ncustoms::Int)
+    return PolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, ncustoms)
 end
 # Convenient constructor
-PolarForm(datafile::String, device=CPU()) = PolarForm(PS.PowerNetwork(datafile), device)
-PolarForm(polar::PolarForm, device=CPU()) = PolarForm(polar.network, device)
+PolarForm(datafile::String, device=CPU(); ncustoms=0) = PolarForm(PS.PowerNetwork(datafile), device, ncustoms)
+PolarForm(polar::PolarForm, device=CPU(); ncustoms=0) = PolarForm(polar.network, device, ncustoms)
 
 name(polar::PolarForm) = "Polar formulation"
 nblocks(polar::PolarForm) = 1
@@ -117,8 +118,8 @@ giving a mathematical formulation with:
 ```
 
 """
-function load_polar(case, device=CPU(); dir=PS.EXADATA)
-    return PolarForm(PS.load_case(case, dir), device)
+function load_polar(case, device=CPU(); ncustoms=0, dir=PS.EXADATA)
+    return PolarForm(PS.load_case(case, dir), device, ncustoms)
 end
 
 """

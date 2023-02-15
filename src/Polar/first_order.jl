@@ -75,7 +75,7 @@ function Jacobian(
     J = J_host |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
     init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 

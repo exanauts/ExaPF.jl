@@ -29,6 +29,38 @@ function matpower_jacobian(polar::AbstractPolarFormulation, func::PowerFlowBalan
     ]::SparseMatrixCSC{Float64, Int}
 end
 
+function matpower_jacobian(polar::AbstractPolarFormulation, func::PowerFlowRecourse, V)
+    pf = polar.network
+    nbus = pf.nbus
+    ngen = pf.ngen
+    ref, pv, pq = pf.ref, pf.pv, pf.pq
+    gen2bus = pf.gen2bus
+    nref = length(ref)
+    npv = length(pv)
+    npq = length(pq)
+    Ybus = pf.Ybus
+
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
+
+    Cg_tot = sparse(gen2bus, 1:ngen, ones(ngen), nbus, ngen)
+    Cg = Cg_tot[[ref; pv; pq], :]
+
+    j11 = real(dSbus_dVm[[ref; pv; pq], :])
+    j12 = real(dSbus_dVa[[ref; pv; pq], :])
+    j13 = -Cg
+    j21 = imag(dSbus_dVm[pq, :])
+    j22 = imag(dSbus_dVa[pq, :])
+    j23 = spzeros(npq, ngen)
+
+    j14 = -Cg * func.alpha
+    j24 = spzeros(npq, 1)
+
+    return [
+        j11 j12 j13 j14;
+        j21 j22 j23 j24
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
 function matpower_jacobian(polar::AbstractPolarFormulation, func::VoltageMagnitudeBounds, V)
     pf = polar.network
     ngen = pf.ngen
