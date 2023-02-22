@@ -165,6 +165,9 @@ function nlsolve!(
 
         iter += 1
     end
+    # Final evaluation to refresh all values in stack
+    jac.func(residual, stack)
+
     time_total = time() - tic
     return ConvergenceStatus(
         converged, iter, normF, sum(linsol_iters), time_jacobian, time_linear_solver, time_total,

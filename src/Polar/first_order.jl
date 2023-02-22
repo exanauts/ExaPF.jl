@@ -90,7 +90,7 @@ function Jacobian(
 
     return jac
 end
-Jacobian(polar::PolarForm, func::AutoDiff.AbstractExpression, x::AbstractVariable) = Jacobian(polar, func, mapping(polar, x))
+Jacobian(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, x::AbstractVariable) = Jacobian(polar, func, mapping(polar, x))
 
 
 struct ArrowheadJacobian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractJacobian
@@ -129,7 +129,7 @@ function jacobian_arrowhead_sparsity(J, block_id, nx, nu, nblocks)
 end
 
 function ArrowheadJacobian(
-    polar::BlockPolarForm{T, VI, VT, MT},
+    polar::AbstractPolarFormulation{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
     X::AbstractVariable,
 ) where {T, VI, VT, MT}
