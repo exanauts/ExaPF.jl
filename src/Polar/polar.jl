@@ -39,12 +39,12 @@ struct PolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     ncustoms::Int  # custom variables defined by user
 end
 
-function PolarForm(pf::PS.PowerNetwork, device::KA.CPU, ncustoms::Int)
+function PolarForm(pf::PS.PowerNetwork, device::KA.CPU, ncustoms::Int=0)
     return PolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, ncustoms)
 end
 # Convenient constructor
 PolarForm(datafile::String, device=CPU(); ncustoms=0) = PolarForm(PS.PowerNetwork(datafile), device, ncustoms)
-PolarForm(polar::PolarForm, device=CPU(); ncustoms=0) = PolarForm(polar.network, device, ncustoms)
+PolarForm(polar::PolarForm, device=CPU()) = PolarForm(polar.network, device, polar.ncustoms)
 
 name(polar::PolarForm) = "Polar formulation"
 nblocks(polar::PolarForm) = 1
@@ -61,12 +61,13 @@ struct BlockPolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
     device::KA.Device
     k::Int
+    ncustoms::Int  # custom variables defined by user
 end
-function BlockPolarForm(pf::PS.PowerNetwork, device, k::Int)
-    return BlockPolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, k)
+function BlockPolarForm(pf::PS.PowerNetwork, device, k::Int, ncustoms::Int=0)
+    return BlockPolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, k, ncustoms)
 end
-BlockPolarForm(datafile::String, k::Int, device=CPU()) = BlockPolarForm(PS.PowerNetwork(datafile), device, k)
-BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.device, k)
+BlockPolarForm(datafile::String, k::Int, device=CPU(); ncustoms=0) = BlockPolarForm(PS.PowerNetwork(datafile), device, k, ncustoms)
+BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.device, k, polar.ncustoms)
 
 name(polar::BlockPolarForm) = "$(polar.k)-BlockPolar formulation"
 nblocks(polar::BlockPolarForm) = polar.k
@@ -274,6 +275,7 @@ end
 
 include("stacks.jl")
 include("functions.jl")
+include("recourse.jl")
 include("first_order.jl")
 include("second_order.jl")
 include("newton.jl")

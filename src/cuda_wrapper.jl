@@ -8,11 +8,11 @@ using CUDAKernels
 
 export CUDAKernels
 
-function PolarForm(pf::PS.PowerNetwork, device::CUDADevice)
-    return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device)
+function PolarForm(pf::PS.PowerNetwork, device::CUDADevice, ncustoms::Int=0)
+    return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, ncustoms)
 end
-function BlockPolarForm(pf::PS.PowerNetwork, device::CUDADevice, k::Int)
-    return BlockPolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k)
+function BlockPolarForm(pf::PS.PowerNetwork, device::CUDADevice, k::Int, ncustoms::Int=0)
+    return BlockPolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k, ncustoms)
 end
 
 default_sparse_matrix(::CUDADevice) = CuSparseMatrixCSR{Float64, Int32}

@@ -83,7 +83,11 @@ function NetworkStack(nbus::Int, ngen::Int, nlines::Int, nuser::Int, k::Int, VT:
     p2 = pointer(input, 2*k*nbus+1)
     pgen = unsafe_wrap(VD, p2, k * ngen)
     p3 = pointer(input, 2*k*nbus+k*ngen+1)
-    vuser = unsafe_wrap(VD, p3, k * nuser)
+    vuser = if nuser > 0
+        unsafe_wrap(VD, p3, k * nuser)
+    else
+        similar(VD, 0)
+    end
 
     # Basis function
     ψ = VD(undef, k*(2*nlines + nbus)) ; fill!(ψ, 0.0)

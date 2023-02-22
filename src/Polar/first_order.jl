@@ -51,7 +51,7 @@ function _get_jacobian_colors(polar::AbstractPolarFormulation, func::AutoDiff.Ab
 end
 
 function Jacobian(
-    polar::PolarForm{T, VI, VT, MT},
+    polar::AbstractPolarFormulation{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
     map::Vector{Int},
 ) where {T, VI, VT, MT}
@@ -209,7 +209,7 @@ function ArrowheadJacobian(
     coloring = repeat(coloring, k) |> VI
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, k, VT, VD)
     init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 

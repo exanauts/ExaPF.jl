@@ -47,10 +47,10 @@ function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     VD = A{t1s{1}}
 
-    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
     init!(polar, stack)
 
-    ∂stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
 
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
@@ -133,10 +133,10 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     H = H_host |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
     init!(polar, stack)
 
-    ∂stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
 
@@ -265,10 +265,10 @@ function ArrowheadHessian(
     H = sparse(i_coo, j_coo, ones(length(i_coo)), ntot, ntot) |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, k, VT, VD)
     init!(polar, stack)
 
-    ∂stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, k, VT, VD)
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
 
