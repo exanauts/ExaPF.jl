@@ -29,7 +29,9 @@ function matpower_jacobian(polar::AbstractPolarFormulation, func::PowerFlowBalan
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_jacobian(polar::AbstractPolarFormulation, func::PowerFlowRecourse, V)
+# Warning: this method is specialized for PolarFormRecourse as it has
+# an additional state Δ
+function matpower_jacobian(polar::PolarFormRecourse, func::PowerFlowRecourse, V)
     pf = polar.network
     nbus = pf.nbus
     ngen = pf.ngen
@@ -118,6 +120,28 @@ function matpower_jacobian(polar::AbstractPolarFormulation, func::LineFlows, V)
 
     return [
         j11 j12 j13;
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
+function matpower_jacobian(polar::AbstractPolarFormulation, func::ReactivePowerBounds, V)
+    pf = polar.network
+    nbus = pf.nbus
+    ngen = pf.ngen
+    gen2bus = pf.gen2bus
+    ref, pv, pq = pf.ref, pf.pv, pf.pq
+    nref = length(ref)
+    npv = length(pv)
+    npq = length(pq)
+    Ybus = pf.Ybus
+
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
+
+    j1 = imag(dSbus_dVm[[ref; pv], :])
+    j2 = imag(dSbus_dVa[[ref; pv], :])
+    j3 = spzeros(nref + npv, ngen)
+    # w.r.t. control
+    return [
+        j1 j2 j3
     ]::SparseMatrixCSC{Float64, Int}
 end
 

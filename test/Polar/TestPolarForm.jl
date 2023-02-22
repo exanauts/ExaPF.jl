@@ -18,6 +18,7 @@ const LS = LinearSolvers
 include("api.jl")
 include("first_order.jl")
 include("second_order.jl")
+include("recourse.jl")
 
 function myisless(a, b)
     h_a = a |> Array

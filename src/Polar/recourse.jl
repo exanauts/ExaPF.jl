@@ -13,6 +13,7 @@ function PolarFormRecourse(pf::PS.PowerNetwork, device::KA.CPU, k::Int)
 end
 # Convenient constructor
 PolarFormRecourse(datafile::String, k::Int, device=CPU()) = PolarFormRecourse(PS.PowerNetwork(datafile), device, k)
+PolarFormRecourse(polar::PolarForm, k::Int) = PolarFormRecourse(polar.network, polar.device, k)
 
 name(polar::PolarFormRecourse) = "Polar formulation with recourse"
 nblocks(polar::PolarFormRecourse) = polar.k
@@ -79,9 +80,7 @@ end
 Base.length(func::PowerFlowRecourse) = size(func.M, 1)
 
 function _softmin(x1, x2, ϵ)
-    xmax = max(x1, x2)
-    xmin = min(x1, x2)
-    return (xmin - ϵ * log1p(exp((xmin - xmax) / ϵ)))
+    return (x1 - ϵ * log1p(exp((x1 - x2) / ϵ)))
 end
 
 # Smooth approximation of max(pmin, min(p, pmax))
@@ -100,9 +99,19 @@ function smooth_response(p, pmin, pmax, ϵ)
     end
 end
 
+function smooth_pgen!(pgen, setpoint, delta, alpha, pgmin, pgmax, epsilon, ngen, nblocks)
+    for j in 1:nblocks
+        for i in 1:ngen
+            idx = i + (j-1) * ngen
+            p = setpoint[idx] + delta[j] * alpha[i]
+            pgen[idx] = smooth_response(p, pgmin[idx], pgmax[idx], epsilon)
+        end
+    end
+end
+
 function (func::PowerFlowRecourse)(cons::AbstractArray, stack::AbstractNetworkStack)
     k = nblocks(stack)
-    ngen = length(stack.pgen)
+    ngen = div(length(stack.pgen), k)
     fill!(cons, 0.0)
     # Constant terms
     mul!(cons, func.Cdp, stack.pload, 1.0, 1.0)
@@ -111,14 +120,60 @@ function (func::PowerFlowRecourse)(cons::AbstractArray, stack::AbstractNetworkSt
     mul!(cons, func.M, stack.ψ, 1.0, 1.0)
 
     Δ = view(stack.vuser, 1:k)
-    pgen_setpoint = view(stack.vuser, k+1:k+ngen)
-    p1 = reshape(pgen_setpoint, div(ngen, k), k)
-    p2 = reshape(stack.pgen, div(ngen, k), k)
-    # raw recourse
-    p2 .= p1 .+ Δ' .* func.alpha
-    # smoothened recourse
-    stack.pgen .= smooth_response.(stack.pgen, func.pgmin, func.pgmax, Ref(func.epsilon))
+    setpoint = view(stack.vuser, k+1:k+k*ngen)
+    smooth_pgen!(stack.pgen, setpoint, Δ, func.alpha, func.pgmin, func.pgmax, func.epsilon, ngen, k)
+
     mul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
+    return
+end
+
+# adjoint
+function adjoint_smooth_response(p, pmin, pmax, ϵ)
+    @assert pmax - ϵ >= pmin
+    threshold = 100.0
+    if p >= pmax + threshold * ϵ
+        return 0.0
+    elseif p >= 0.5 * (pmax + pmin)
+        X = 1.0 / ϵ * (p - pmax)
+        return 1.0 - 1.0 / (1.0 + exp(-X))
+    elseif p >= (pmin - threshold * ϵ)
+        X = 1.0 / ϵ * (p - pmin)
+        return 1.0 - 1.0 / (1.0 + exp(X))
+    else
+        return 0.0
+    end
+end
+
+function adjoint_smooth_pgen!(
+    ∂setpoint, ∂delta,
+    setpoint, delta, ∂pgen,
+    alpha, pgmin, pgmax, epsilon, ngen, nblocks,
+)
+    for j in 1:nblocks
+        for i in 1:ngen
+            idx = i + (j-1) * ngen
+            p = setpoint[idx] + delta[j] * alpha[i]
+            ∂p = adjoint_smooth_response(p, pgmin[idx], pgmax[idx], epsilon) * ∂pgen[idx]
+            ∂delta[j] += alpha[i] * ∂p
+            ∂setpoint[idx] += ∂p
+        end
+    end
+end
+
+function adjoint!(func::PowerFlowRecourse, ∂stack, stack, ∂v)
+    k = nblocks(stack)
+    ngen = div(length(stack.pgen), k)
+    Δ = view(stack.vuser, 1:k)
+    setpoint = view(stack.vuser, k+1:k+k*ngen)
+    ∂Δ = view(∂stack.vuser, 1:k)
+    ∂setpoint = view(∂stack.vuser, k+1:k+k*ngen)
+
+    mul!(∂stack.pgen, func.Cg', ∂v, 1.0, 1.0)
+    adjoint_smooth_pgen!(
+        ∂setpoint, ∂Δ, setpoint, Δ, ∂stack.pgen,
+        func.alpha, func.pgmin, func.pgmax, func.epsilon, ngen, k,
+    )
+    mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
     return
 end
 
@@ -212,7 +267,7 @@ function mapping(polar::PolarFormRecourse, ::Control, k::Int=1)
     mapu = zeros(Int, nu)
 
     shift_mag = 0
-    shift_pgen = (2 * nbus + 1) * k
+    shift_pgen = (2 * nbus + ngen + 1) * k
     index = 1
     for i in 1:k
         for j in ref
@@ -267,13 +322,14 @@ function mapping(polar::PolarFormRecourse, ::AllVariables, k::Int=1)
     ndelta = 1
     ref, pv, pq = pf.ref, pf.pv, pf.pq
     genidx = collect(1:ngen)
-    nx = (length(pv) + 2*length(pq)) * k
+    nx = (length(pv) + 2*length(pq) + ndelta) * k
     nu = (length(pv) + length(ref) + length(genidx)) * k
     mapxu = zeros(Int, nx+nu)
 
     shift_mag = 0
     shift_ang = k * nbus
     shift_pgen = (2 * nbus + ngen + ndelta) * k
+    shift_delta = (2 * nbus + ngen) * k
     index = 1
     for i in 1:k
         # / x
@@ -286,7 +342,7 @@ function mapping(polar::PolarFormRecourse, ::AllVariables, k::Int=1)
             index += 1
         end
         # delta
-        mapx[index] = j + (i-1) * ndelta + shift_delta
+        mapxu[index] = 1 + (i-1) * ndelta + shift_delta
         index += 1
         # / u
         for j in [ref; pv]

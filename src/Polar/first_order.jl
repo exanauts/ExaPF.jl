@@ -41,6 +41,22 @@ function _jacobian_sparsity(polar::AbstractPolarFormulation, func::AutoDiff.Abst
     return matpower_jacobian(polar, func, v)
 end
 
+function _jacobian_sparsity(polar::PolarFormRecourse, func::AutoDiff.AbstractExpression)
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    v = PS.voltage(polar.network) .+ 0.01 .* rand(ComplexF64, nbus)
+    J1 =  matpower_jacobian(polar, func, v)
+    m, n = size(J1)
+    index_gen = (2nbus+1):(2nbus+ngen)
+    if n == 2nbus + ngen + 1
+        return [J1 J1[:, index_gen]]
+    elseif n == 2nbus + ngen
+        return [J1 spzeros(m, 1) J1[:, index_gen]]
+    else
+        error("Jacobian has wrong input dimension")
+    end
+end
+
 function _get_jacobian_colors(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, map::Vector{Int})
     # Sparsity pattern
     J = _jacobian_sparsity(polar, func)
