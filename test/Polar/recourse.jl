@@ -2,6 +2,7 @@
 function test_recourse_powerflow(polar, device, M)
     k = 2
     polar_ext = ExaPF.PolarFormRecourse(polar, k)
+    stack = ExaPF.NetworkStack(polar_ext)
 
     pf_recourse = ExaPF.PowerFlowRecourse(polar_ext) ∘ ExaPF.PolarBasis(polar_ext)
     jac_recourse = ExaPF.ArrowheadJacobian(polar_ext, pf_recourse, State())
@@ -30,7 +31,7 @@ function test_recourse_expression(polar, device, M)
     stack = ExaPF.NetworkStack(polar_ext)
 
     ngen = PS.get(polar, PS.NumberOfGenerators())
-    @test polar_ext.ncustoms == (ngen + 1)
+    @test polar_ext.ncustoms == k * (ngen + 1)
     @test length(stack.vuser) == k * (ngen + 1)
 
     for expr in [
@@ -72,12 +73,12 @@ function test_recourse_jacobian(polar, device, M)
         m = length(ev)
 
         # Compute ref with finite-diff
-        function jac_fd_x(x)
+        function _fd_func(x)
             stack_fd.input .= x
             return ev(stack_fd)
         end
         x0 = copy(stack.input)
-        Jd = FiniteDiff.finite_difference_jacobian(jac_fd_x, x0)
+        Jd = FiniteDiff.finite_difference_jacobian(_fd_func, x0)
         Jd_x = Jd[:, mapx]
         Jd_u = sum(Jd[:, mapu[1+(i-1)*nu:i*nu]] for i in 1:k)
         Jd_xu = [Jd_x Jd_u]
@@ -105,5 +106,90 @@ function test_recourse_jacobian(polar, device, M)
         @test myisapprox(∂stack.input[mapxu], Jd[:, mapxu]' * tgt_h, rtol=1e-6)
     end
     return
+end
+
+function test_recourse_hessian(polar, device, M)
+    k = 1
+    polar_ext = ExaPF.PolarFormRecourse(polar, k)
+    stack = ExaPF.NetworkStack(polar_ext)
+    stack_fd = ExaPF.NetworkStack(polar_ext)
+    ∂stack = ExaPF.NetworkStack(polar_ext)
+
+    basis  = ExaPF.PolarBasis(polar_ext)
+
+    mapxu = ExaPF.mapping(polar_ext, AllVariables())
+
+    constraints = [
+        ExaPF.QuadraticCost(polar_ext),
+        ExaPF.PowerFlowRecourse(polar_ext),
+        ExaPF.ReactivePowerBounds(polar_ext),
+        ExaPF.LineFlows(polar_ext),
+    ]
+    ev = ExaPF.MultiExpressions(constraints) ∘ basis
+
+    m = length(ev)
+    c = zeros(m)
+    y = rand(m)
+
+    # Evaluate Hessian
+    hess = ExaPF.FullHessian(polar_ext, ev, mapxu)
+    H = ExaPF.hessian!(hess, stack, y)
+
+    # Evaluate Hessian with finite-diff
+    function _fd_grad(x)
+        stack_fd.input[mapxu] .= x
+        ev(c, stack_fd)
+        empty!(∂stack)
+        ExaPF.adjoint!(ev, ∂stack, stack_fd, y)
+        return ∂stack.input[mapxu]
+    end
+    x0 = stack.input[mapxu]
+    Hd = FiniteDiff.finite_difference_jacobian(_fd_grad, x0)
+
+    # Test evaluation matches with finite-diff
+    @test myisapprox(H, Hd, rtol=1e-5)
+    return
+end
+
+function test_recourse_block_hessian(polar, device, M)
+    k = 2
+    polar_ext = ExaPF.PolarFormRecourse(polar, k)
+    stack = ExaPF.NetworkStack(polar_ext)
+    stack_fd = ExaPF.NetworkStack(polar_ext)
+    ∂stack = ExaPF.NetworkStack(polar_ext)
+
+    basis  = ExaPF.PolarBasis(polar_ext)
+    mapxu = ExaPF.mapping(polar_ext, State(), k)
+
+    constraints = [
+        ExaPF.PowerFlowRecourse(polar_ext),
+        ExaPF.ReactivePowerBounds(polar_ext),
+        ExaPF.LineFlows(polar_ext),
+    ]
+    ev = ExaPF.MultiExpressions(constraints) ∘ basis
+
+    m = length(ev)
+    c = zeros(m)
+    y = rand(m)
+
+    # Evaluate Hessian
+    hess = ExaPF.ArrowheadHessian(polar_ext, ev, AllVariables())
+    H = ExaPF.hessian!(hess, stack, y)
+
+    # Evaluate Hessian with finite-diff
+    function _fd_grad(x)
+        stack_fd.input[mapxu] .= x
+        ev(c, stack_fd)
+        empty!(∂stack)
+        ExaPF.adjoint!(ev, ∂stack, stack_fd, y)
+        return ∂stack.input[mapxu]
+    end
+    x0 = stack.input[mapxu]
+    Hd = FiniteDiff.finite_difference_jacobian(_fd_grad, x0)
+
+    # Test evaluation matches with finite-diff
+    # TODO
+    # @test myisapprox(H, Hd, rtol=1e-5)
+    return H, Hd
 end
 

@@ -57,6 +57,13 @@ function _jacobian_sparsity(polar::PolarFormRecourse, func::AutoDiff.AbstractExp
     end
 end
 
+function _jacobian_sparsity(polar::PolarFormRecourse, func::MultiExpressions)
+    return vcat([_jacobian_sparsity(polar, expr) for expr in func.exprs]...)
+end
+function _jacobian_sparsity(polar::PolarFormRecourse, func::ComposedExpressions)
+    return _jacobian_sparsity(polar, func.outer)
+end
+
 function _get_jacobian_colors(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, map::Vector{Int})
     # Sparsity pattern
     J = _jacobian_sparsity(polar, func)

@@ -73,7 +73,7 @@ struct NetworkStack{VT,VD,NT} <: AbstractNetworkStack{VT}
 end
 
 function NetworkStack(nbus::Int, ngen::Int, nlines::Int, nuser::Int, k::Int, VT::Type, VD::Type)
-    m = (2 * nbus + ngen + nuser) * k
+    m = (2 * nbus + ngen) * k + nuser
     input = VD(undef, m) ; fill!(input, 0.0)
     # Wrap directly array x to avoid dealing with views
     p0 = pointer(input)
@@ -84,7 +84,7 @@ function NetworkStack(nbus::Int, ngen::Int, nlines::Int, nuser::Int, k::Int, VT:
     pgen = unsafe_wrap(VD, p2, k * ngen)
     p3 = pointer(input, 2*k*nbus+k*ngen+1)
     vuser = if nuser > 0
-        unsafe_wrap(VD, p3, k * nuser)
+        unsafe_wrap(VD, p3, nuser)
     else
         similar(VD, 0)
     end

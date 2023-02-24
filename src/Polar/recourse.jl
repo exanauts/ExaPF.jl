@@ -8,7 +8,7 @@ end
 
 function PolarFormRecourse(pf::PS.PowerNetwork, device::KA.CPU, k::Int)
     ngen = PS.get(pf, PS.NumberOfGenerators())
-    ncustoms = (ngen + 1)
+    ncustoms = (ngen + 1) * k
     return PolarFormRecourse{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, k, ncustoms)
 end
 # Convenient constructor
@@ -135,10 +135,13 @@ function adjoint_smooth_response(p, pmin, pmax, ϵ)
         return 0.0
     elseif p >= 0.5 * (pmax + pmin)
         X = 1.0 / ϵ * (p - pmax)
-        return 1.0 - 1.0 / (1.0 + exp(-X))
+        eX = exp(X)
+        return 1.0 - eX / (eX + 1.0)
+        return p2
     elseif p >= (pmin - threshold * ϵ)
         X = 1.0 / ϵ * (p - pmin)
-        return 1.0 - 1.0 / (1.0 + exp(X))
+        eX = exp(-X)
+        return 1.0 - eX / (1.0 + eX)
     else
         return 0.0
     end
@@ -403,15 +406,64 @@ function bounds(polar::PolarFormRecourse{T, VI, VT, MT}, stack::NetworkStack) wh
         repeat(vang_min, nblocks(polar));
         repeat(pgen_min, nblocks(polar));
         fill(delta_min, nblocks(polar));
-        repeat(pgen_min, nblocks(polar));
+        pgen_min;
     ]
     ub = [
         repeat(vmag_max, nblocks(polar));
         repeat(vang_max, nblocks(polar));
         repeat(pgen_max, nblocks(polar));
         fill(delta_max, nblocks(polar));
-        repeat(pgen_max, nblocks(polar));
+        pgen_max;
     ]
     return convert(VT, lb), convert(VT, ub)
+end
+
+struct QuadraticCost{VT, MT} <: AutoDiff.AbstractExpression
+    c0::VT
+    c1::VT
+    c2::VT
+    k::Int
+    device::KA.Device
+end
+
+function QuadraticCost(polar::PolarFormRecourse{T, VI, VT, MT}) where {T, VI, VT, MT}
+    coefs = PS.get_costs_coefficients(polar.network)
+    c0 = @view coefs[:, 2]
+    c1 = @view coefs[:, 3]
+    c2 = @view coefs[:, 4]
+    return QuadraticCost{VT, Nothing}(c0, c1, c2, nblocks(polar), polar.device)
+end
+
+Base.length(func::QuadraticCost) = func.k
+
+function (func::QuadraticCost)(output::AbstractArray, stack::AbstractNetworkStack)
+    k = nblocks(stack)
+    ngen = length(func.c0)
+    costs = stack.intermediate.c
+    setpoint = view(stack.vuser, k+1:k+k*ngen)
+    # Compute quadratic costs
+    ndrange = (ngen, k)
+    ev = _quadratic_cost_kernel(func.device)(
+        costs, setpoint, func.c0, func.c1, func.c2, ngen;
+        ndrange=ndrange, dependencies=Event(func.device),
+    )
+    wait(ev)
+    output .= sum(reshape(costs, ngen, nblocks(stack))', dims=2)
+    return
+end
+
+function adjoint!(func::QuadraticCost, ∂stack, stack, ∂v)
+    k = nblocks(stack)
+    ngen = length(func.c0)
+    setpoint = view(stack.vuser, k+1:k+k*ngen)
+    ∂setpoint = view(∂stack.vuser, k+1:k+k*ngen)
+
+    ndrange = (ngen, nblocks(stack))
+    ev = _adj_quadratic_cost_kernel(func.device)(
+        ∂setpoint, setpoint, ∂v, func.c0, func.c1, func.c2, ngen;
+        ndrange=ndrange, dependencies=Event(func.device),
+    )
+    wait(ev)
+    return
 end
 
