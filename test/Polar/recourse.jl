@@ -98,11 +98,18 @@ function test_recourse_jacobian(polar, device, M)
         Jxu = ExaPF.jacobian!(jac_xu, stack) |> SparseMatrixCSC
         @test Jxu ≈ Jd_xu rtol=1e-5
 
-        # Compare with adjoint
+        # Test adjoint
         tgt_h = rand(m)
         tgt = tgt_h |> M
         empty!(∂stack)
         ExaPF.adjoint!(ev, ∂stack, stack, tgt)
+        # Compare with finite diff
+        function _fd_adj(x)
+            stack_fd.input .= x
+            return dot(tgt_h, ev(stack_fd))
+        end
+        adj_fd = FiniteDiff.finite_difference_gradient(_fd_adj, x0)
+        @test myisapprox(∂stack.input[mapxu], adj_fd[mapxu], rtol=1e-6)
         @test myisapprox(∂stack.input[mapxu], Jd[:, mapxu]' * tgt_h, rtol=1e-6)
     end
     return
@@ -116,7 +123,6 @@ function test_recourse_hessian(polar, device, M)
     ∂stack = ExaPF.NetworkStack(polar_ext)
 
     basis  = ExaPF.PolarBasis(polar_ext)
-
     mapxu = ExaPF.mapping(polar_ext, AllVariables())
 
     constraints = [
@@ -136,17 +142,12 @@ function test_recourse_hessian(polar, device, M)
     H = ExaPF.hessian!(hess, stack, y)
 
     # Evaluate Hessian with finite-diff
-    function _fd_grad(x)
+    function _fd_hess(x)
         stack_fd.input[mapxu] .= x
-        ev(c, stack_fd)
-        empty!(∂stack)
-        ExaPF.adjoint!(ev, ∂stack, stack_fd, y)
-        return ∂stack.input[mapxu]
+        return dot(y, ev(stack_fd))
     end
     x0 = stack.input[mapxu]
-    Hd = FiniteDiff.finite_difference_jacobian(_fd_grad, x0)
-
-    # Test evaluation matches with finite-diff
+    Hd = FiniteDiff.finite_difference_hessian(_fd_hess, x0)
     @test myisapprox(H, Hd, rtol=1e-5)
     return
 end

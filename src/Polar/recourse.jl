@@ -34,7 +34,7 @@ end
 
 function PowerFlowRecourse(
     polar::PolarFormRecourse{T, VI, VT, MT};
-    epsilon=1e-4,
+    epsilon=1e-2,
     alpha=nothing,
 ) where {T, VI, VT, MT}
     @assert polar.ncustoms > 0
@@ -128,20 +128,17 @@ function (func::PowerFlowRecourse)(cons::AbstractArray, stack::AbstractNetworkSt
 end
 
 # adjoint
-function adjoint_smooth_response(p, pmin, pmax, ϵ)
+function adjoint_smooth_response(p::T, pmin, pmax, ϵ) where T
     @assert pmax - ϵ >= pmin
     threshold = 100.0
     if p >= pmax + threshold * ϵ
         return 0.0
     elseif p >= 0.5 * (pmax + pmin)
         X = 1.0 / ϵ * (p - pmax)
-        eX = exp(X)
-        return 1.0 - eX / (eX + 1.0)
-        return p2
+        return 1.0 / (exp(X) + 1.0)
     elseif p >= (pmin - threshold * ϵ)
         X = 1.0 / ϵ * (p - pmin)
-        eX = exp(-X)
-        return 1.0 - eX / (1.0 + eX)
+        return 1.0 / (exp(-X) + 1.0)
     else
         return 0.0
     end
@@ -149,7 +146,7 @@ end
 
 function adjoint_smooth_pgen!(
     ∂setpoint, ∂delta,
-    setpoint, delta, ∂pgen,
+    setpoint, delta, pgen, ∂pgen,
     alpha, pgmin, pgmax, epsilon, ngen, nblocks,
 )
     for j in 1:nblocks
@@ -173,7 +170,7 @@ function adjoint!(func::PowerFlowRecourse, ∂stack, stack, ∂v)
 
     mul!(∂stack.pgen, func.Cg', ∂v, 1.0, 1.0)
     adjoint_smooth_pgen!(
-        ∂setpoint, ∂Δ, setpoint, Δ, ∂stack.pgen,
+        ∂setpoint, ∂Δ, setpoint, Δ, stack.pgen, ∂stack.pgen,
         func.alpha, func.pgmin, func.pgmax, func.epsilon, ngen, k,
     )
     mul!(∂stack.ψ, func.M', ∂v, 1.0, 1.0)
@@ -396,23 +393,26 @@ end
 
 function bounds(polar::PolarFormRecourse{T, VI, VT, MT}, stack::NetworkStack) where {T, VI, VT, MT}
     nbus = polar.network.nbus
+    ngen = polar.network.ngen
     vmag_min, vmag_max = PS.bounds(polar.network, PS.Buses(), PS.VoltageMagnitude())
     vang_min, vang_max = fill(-Inf, nbus), fill(Inf, nbus)
     pgen_min, pgen_max = PS.bounds(polar.network, PS.Generators(), PS.ActivePower())
     delta_min, delta_max = -Inf, Inf
 
+    # NB: we set delta_min, delta_max = 0, 0 for the first scenario
+    # to ensure it is set to the reference value (no adjustment)
     lb = [
         repeat(vmag_min, nblocks(polar));
         repeat(vang_min, nblocks(polar));
         repeat(pgen_min, nblocks(polar));
-        fill(delta_min, nblocks(polar));
+        [0.0; fill(delta_min, nblocks(polar)-1)];
         pgen_min;
     ]
     ub = [
         repeat(vmag_max, nblocks(polar));
         repeat(vang_max, nblocks(polar));
         repeat(pgen_max, nblocks(polar));
-        fill(delta_max, nblocks(polar));
+        [0.0; fill(delta_max, nblocks(polar)-1)];
         pgen_max;
     ]
     return convert(VT, lb), convert(VT, ub)

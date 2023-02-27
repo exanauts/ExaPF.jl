@@ -107,8 +107,8 @@ function _hessian_sparsity(polar::PolarFormRecourse, func)
     # Hessian is dimensioned without additional variables, pad it
     H21 = spzeros(n, ngen+1)
     H22 = [
-           spzeros(1, 1)   spzeros(1, ngen)
-           spzeros(ngen, 1) H[gen, gen]
+           ones(1, 1)   ones(1, ngen)
+           ones(ngen, 1) H[gen, gen]
     ]
 
     return [
