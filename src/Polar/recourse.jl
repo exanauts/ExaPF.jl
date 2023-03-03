@@ -494,7 +494,7 @@ function TrackingCost(
     )
 end
 
-Base.length(func::TrackingCost) = 1
+Base.length(func::TrackingCost) = func.k
 
 function (func::TrackingCost)(output::AbstractArray, stack::AbstractNetworkStack)
     k = func.k
@@ -518,17 +518,17 @@ function adjoint!(func::TrackingCost, ∂stack, stack, ∂v)
     k = func.k
     vm = view(stack.vmag, 1:func.nbus)
     ∂vm = view(∂stack.vmag, 1:func.nbus)
-    ∂vm .+= func.πv .* (vm .- func.vmag_ref) .* ∂v
+    ∂vm .+= func.πv .* (vm .- func.vmag_ref) .* ∂v[1]
 
     va = view(stack.vang, 1:func.nbus)
     ∂va = view(∂stack.vang, 1:func.nbus)
-    ∂va .+= func.πa .* (va .- func.vang_ref) .* ∂v
+    ∂va .+= func.πa .* (va .- func.vang_ref) .* ∂v[1]
 
-    pg = view(stack.vuser, k+1:k+k*func.ngen)
+    pg = view(stack.vuser, k+1:k+func.ngen)
     shift = k
     for i in 1:k
         ∂pg = view(∂stack.vuser, shift+1:shift+func.ngen)
-        ∂pg .+= func.πp .* (pg .- func.pgen_ref) .* ∂v
+        ∂pg .+= func.πp .* (pg .- func.pgen_ref) .* ∂v[1]
         shift += func.ngen
     end
     return
