@@ -290,6 +290,12 @@ function matpower_hessian(polar::PolarFormRecourse, func::QuadraticCost, V, λ)
     ]::SparseMatrixCSC{Float64, Int}
 end
 
+function matpower_hessian(polar::PolarFormRecourse, func::TrackingCost, V, λ)
+    pf = polar.network
+    nbus, ngen = get(polar, PS.NumberOfBuses()), get(polar, PS.NumberOfGenerators())
+    return spdiagm(ones(2nbus+ngen))
+end
+
 function matpower_hessian(polar::AbstractPolarFormulation, func::PowerGenerationBounds, V, λ)
     pf = polar.network
     Ybus = pf.Ybus

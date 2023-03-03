@@ -467,3 +467,70 @@ function adjoint!(func::QuadraticCost, ∂stack, stack, ∂v)
     return
 end
 
+
+struct TrackingCost{VT, MT} <: AutoDiff.AbstractExpression
+    πv::Float64
+    πa::Float64
+    πp::Float64
+    vmag_ref::VT
+    vang_ref::VT
+    pgen_ref::VT
+    nbus::Int
+    ngen::Int
+    k::Int
+end
+
+function TrackingCost(
+    polar::PolarFormRecourse{T, VI, VT, MT},
+    stack_ref::AbstractNetworkStack;
+    weight_vmag=1.0, weight_vang=1.0, weight_pgen=1.0,
+)  where {T, VI, VT, MT}
+    nbus = PS.get(polar, PS.NumberOfBuses())
+    ngen = PS.get(polar, PS.NumberOfGenerators())
+    return TrackingCost{VT, MT}(
+        weight_vmag, weight_vang, weight_pgen,
+        stack_ref.vmag[1:nbus], stack_ref.vang[1:nbus], stack_ref.pgen[1:ngen],
+        nbus, ngen, nblocks(polar),
+    )
+end
+
+Base.length(func::TrackingCost) = 1
+
+function (func::TrackingCost)(output::AbstractArray, stack::AbstractNetworkStack)
+    k = func.k
+    vm = view(stack.vmag, 1:func.nbus)
+    dvm = vm .- func.vmag_ref
+    q1 = 0.5 * func.πv * dot(dvm, dvm)
+
+    va = view(stack.vang, 1:func.nbus)
+    dva = va .- func.vang_ref
+    q2 = 0.5 * func.πa * dot(dva, dva)
+
+    pg = view(stack.vuser, k+1:k+func.ngen)
+    dpg = pg .- func.pgen_ref
+    q3 = 0.5 * func.πp * dot(dpg, dpg)
+
+    output[1] = q1 + q2 + q3
+    return
+end
+
+function adjoint!(func::TrackingCost, ∂stack, stack, ∂v)
+    k = func.k
+    vm = view(stack.vmag, 1:func.nbus)
+    ∂vm = view(∂stack.vmag, 1:func.nbus)
+    ∂vm .+= func.πv .* (vm .- func.vmag_ref) .* ∂v
+
+    va = view(stack.vang, 1:func.nbus)
+    ∂va = view(∂stack.vang, 1:func.nbus)
+    ∂va .+= func.πa .* (va .- func.vang_ref) .* ∂v
+
+    pg = view(stack.vuser, k+1:k+k*func.ngen)
+    shift = k
+    for i in 1:k
+        ∂pg = view(∂stack.vuser, shift+1:shift+func.ngen)
+        ∂pg .+= func.πp .* (pg .- func.pgen_ref) .* ∂v
+        shift += func.ngen
+    end
+    return
+end
+
