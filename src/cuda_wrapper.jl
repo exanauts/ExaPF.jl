@@ -160,7 +160,7 @@ function LinearAlgebra.mul!(
     A::Adjoint{T, CuSparseMatrixCSR{T, I}},
     X::AbstractArray{Td, 1},
     alpha::Number, beta::Number,
-) where {N, I, T, Td <: ForwardDiff.Dual}
+) where {I, T, Td <: ForwardDiff.Dual}
     n, m = size(A)
     p = ForwardDiff.npartials(Y) + 1
     @assert size(Y, 1) == n

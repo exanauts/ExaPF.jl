@@ -37,8 +37,10 @@ const LS = LinearSolvers
 include("Polar/polar.jl")
 
 # CUDA extension
-if CUDA.has_cuda()
-    include("cuda_wrapper.jl")
+function __init__()
+    if CUDA.has_cuda()
+        include(joinpath(@__DIR__, "cuda_wrapper.jl"))
+    end
 end
 
 end

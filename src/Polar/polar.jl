@@ -45,7 +45,7 @@ end
 PolarForm(datafile::String, device=CPU()) = PolarForm(PS.PowerNetwork(datafile), device)
 PolarForm(polar::PolarForm, device=CPU()) = PolarForm(polar.network, device)
 
-name(polar::PolarForm) = "Polar formulation"
+introduce(polar::PolarForm) = "Polar formulation"
 nblocks(polar::PolarForm) = 1
 
 
@@ -67,7 +67,7 @@ end
 BlockPolarForm(datafile::String, k::Int, device=CPU()) = BlockPolarForm(PS.PowerNetwork(datafile), device, k)
 BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.device, k)
 
-name(polar::BlockPolarForm) = "$(polar.k)-BlockPolar formulation"
+introduce(polar::BlockPolarForm) = "$(polar.k)-BlockPolar formulation"
 nblocks(polar::BlockPolarForm) = polar.k
 
 function Base.show(io::IO, polar::AbstractPolarFormulation)
@@ -81,7 +81,7 @@ function Base.show(io::IO, polar::AbstractPolarFormulation)
     # Polar formulation characteristics
     n_states = 2*npq + npv
     n_controls = nref + npv + ngen - 1
-    print(io,   name(polar))
+    print(io,   introduce(polar))
     println(io, " (instantiated on device $(polar.device))")
     println(io, "Network characteristics:")
     @printf(io, "    #buses:      %d  (#slack: %d  #PV: %d  #PQ: %d)\n", nbus, nref, npv, npq)
