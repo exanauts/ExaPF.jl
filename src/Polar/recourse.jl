@@ -86,7 +86,6 @@ end
 # Smooth approximation of max(pmin, min(p, pmax))
 # (numerically stable version)
 function smooth_response(p, pmin, pmax, ϵ)
-    @assert pmax - ϵ >= pmin
     threshold = 100.0
     if p >= pmax + threshold * ϵ
         return pmax
@@ -129,7 +128,6 @@ end
 
 # adjoint
 function adjoint_smooth_response(p::T, pmin, pmax, ϵ) where T
-    @assert pmax - ϵ >= pmin
     threshold = 100.0
     if p >= pmax + threshold * ϵ
         return 0.0
