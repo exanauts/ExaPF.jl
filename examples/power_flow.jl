@@ -3,7 +3,6 @@ using SparseArrays
 
 using KernelAbstractions
 using CUDA
-using CUDAKernels
 
 using ExaPF
 const LS = ExaPF.LinearSolvers
@@ -16,7 +15,7 @@ USEGPU = 0
 if USEGPU == 0
     localdevice = CPU()
 else
-    localdevice = CUDADevice()
+    localdevice = CUDABackend()
 end
 
 case = "case1354pegase.m"

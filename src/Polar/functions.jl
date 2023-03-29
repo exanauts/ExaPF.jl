@@ -64,7 +64,7 @@ struct PolarBasis{VI, MT} <: AutoDiff.AbstractExpression
     t::VI
     Cf::MT
     Ct::MT
-    device::KA.Device
+    device::KA.Backend
 end
 
 function PolarBasis(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
@@ -120,12 +120,12 @@ end
 
 function (func::PolarBasis)(output, stack::AbstractNetworkStack)
     ndrange = (func.nbus + 2 * func.nlines, nblocks(stack))
-    ev = basis_kernel!(func.device)(
+    basis_kernel!(func.device)(
         output, stack.vmag, stack.vang,
         func.f, func.t, func.nlines, func.nbus,
-        ndrange=ndrange, dependencies=Event(func.device)
+        ndrange=ndrange
     )
-    wait(ev)
+    KernelAbstractions.synchronize(func.device)
     return
 end
 
@@ -178,7 +178,7 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
 
     # Accumulate on edges
     ndrange = (nl+nb, nblocks(stack))
-    ev = adj_basis_kernel!(func.device)(
+    adj_basis_kernel!(func.device)(
         ∂v,
         ∂stack.vmag,
         ∂stack.intermediate.∂edge_vm_fr,
@@ -186,9 +186,9 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
         ∂stack.intermediate.∂edge_va_fr,
         ∂stack.intermediate.∂edge_va_to,
         stack.vmag, stack.vang, f, t, nl, nb,
-        ndrange=ndrange, dependencies=Event(func.device),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KernelAbstractions.synchronize(func.device)
 
     # Accumulate on nodes
     Cf = func.Cf
@@ -247,7 +247,7 @@ struct CostFunction{VT, MT} <: AutoDiff.AbstractExpression
     c0::VT
     c1::VT
     c2::VT
-    device::KA.Device
+    device::KA.Backend
 end
 
 function CostFunction(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
@@ -303,11 +303,11 @@ function (func::CostFunction)(output::AbstractArray, stack::AbstractNetworkStack
     mul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
     # Compute quadratic costs
     ndrange = (ngen, nblocks(stack))
-    ev = _quadratic_cost_kernel(func.device)(
+    _quadratic_cost_kernel(func.device)(
         costs, stack.pgen, func.c0, func.c1, func.c2, ngen;
-        ndrange=ndrange, dependencies=Event(func.device),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KernelAbstractions.synchronize(func.device)
     # Sum costs across all generators
     # sum!(output, reshape(costs, ngen, nblocks(stack))')
     output .= sum(reshape(costs, ngen, nblocks(stack))', dims=2)
@@ -324,11 +324,11 @@ end
 function adjoint!(func::CostFunction, ∂stack, stack, ∂v)
     ngen = length(func.c0)
     ndrange = (ngen, nblocks(stack))
-    ev = _adj_quadratic_cost_kernel(func.device)(
+    _adj_quadratic_cost_kernel(func.device)(
         ∂stack.pgen, stack.pgen, ∂v, func.c0, func.c1, func.c2, ngen;
-        ndrange=ndrange, dependencies=Event(func.device),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KernelAbstractions.synchronize(func.device)
     mul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
     return
 end
@@ -718,7 +718,7 @@ struct LineFlows{VT, MT} <: AutoDiff.AbstractExpression
     Lfq::MT
     Ltp::MT
     Ltq::MT
-    device::KA.Device
+    device::KA.Backend
 end
 
 function LineFlows(polar::AbstractPolarFormulation{T,VI,VT,MT}) where {T,VI,VT,MT}
@@ -757,9 +757,9 @@ function (func::LineFlows)(cons::AbstractVector, stack::AbstractNetworkStack)
     ndrange = (func.nlines, nblocks(stack))
     ev = _line_flow_kernel(func.device)(
         cons, sfp, sfq, stp, stq, func.nlines;
-        ndrange=ndrange, dependencies=Event(func.device),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KernelAbstractions.synchronize(func.device)
     return
 end
 
@@ -783,14 +783,14 @@ function adjoint!(func::LineFlows, ∂stack, stack, ∂v)
     stq = ∂stack.intermediate.stq
 
     ndrange = (func.nlines, nblocks(stack))
-    ev = _adj_line_flow_kernel(func.device)(
+    _adj_line_flow_kernel(func.device)(
         sfp, sfq, stp, stq,
         stack.intermediate.sfp, stack.intermediate.sfq,
         stack.intermediate.stp, stack.intermediate.stq,
         ∂v, nlines;
-        ndrange=ndrange, dependencies=Event(func.device),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KernelAbstractions.synchronize(func.device)
 
     # Accumulate adjoint
     mul!(∂stack.ψ, func.Lfp', sfp, 1.0, 1.0)

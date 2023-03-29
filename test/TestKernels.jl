@@ -20,17 +20,18 @@ function test_utils_kernel(device, AT, SMT)
     dest = zeros(n)
     src = rand(m)
     ndrange = (n, )
-    ev = ExaPF._transfer_fr_input!(device)(dest, src, mapping; ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
+    ExaPF._transfer_fr_input!(device)(dest, src, mapping; ndrange=ndrange)
+    KernelAbstractions.synchronize(device)
     @test dest == src[mapping]
 
     # TO
     src = rand(n)
     dest = zeros(m)
     ndrange = (n, )
-    ev = ExaPF._transfer_to_input!(device)(dest, mapping, src; ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
+    ExaPF._transfer_to_input!(device)(dest, mapping, src; ndrange=ndrange)
+    KernelAbstractions.synchronize(device)
     @test src == dest[mapping]
+    return
 end
 
 function test_polar_kernel(device, AT, SMT)
@@ -43,13 +44,14 @@ function test_polar_kernel(device, AT, SMT)
     f = rand(1:nb, nl)
     t = rand(1:nb, nl)
     ndrange = (m, 1)
-    ev = ExaPF.basis_kernel!(device)(output, vmag, vang, f, t, nl, nb; ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
+    ExaPF.basis_kernel!(device)(output, vmag, vang, f, t, nl, nb; ndrange=ndrange)
+    KernelAbstractions.synchronize(device)
 
     Δθ = vang[f] .- vang[t]
     vl2 = vmag[f] .* vmag[t]
     res = [vl2 .* cos.(Δθ);  vl2 .* sin.(Δθ); vmag .* vmag]
     @test res == output
+    return
 end
 
 function test_autodiff_kernel(device, AT, SMT)
@@ -62,8 +64,8 @@ function test_autodiff_kernel(device, AT, SMT)
     x = rand(n)
     duals = zeros(p+1, n)
     ndrange = (n, )
-    ev = AD._set_value_kernel!(device)(duals, x; ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
+    AD._set_value_kernel!(device)(duals, x; ndrange=ndrange)
+    KernelAbstractions.synchronize(device)
     @test duals[1, :] == x
 
     # Seed with coloring for Jacobian/Hessian
@@ -71,29 +73,29 @@ function test_autodiff_kernel(device, AT, SMT)
     duals = zeros(p+1, n)
     map = randperm(n)
     ndrange = (n, p)
-    ev = AD._seed_coloring_kernel!(device)(duals, coloring, map; ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
+    AD._seed_coloring_kernel!(device)(duals, coloring, map; ndrange=ndrange)
+    KernelAbstractions.synchronize(device)
 
     # Seed for Hessian-vector products
     v = rand(n)
     duals = zeros(2, n)
     ndrange = (n, )
-    ev = AD._seed_kernel!(device)(duals, v, map; ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
+    AD._seed_kernel!(device)(duals, v, map; ndrange=ndrange)
+    KernelAbstractions.synchronize(device)
     @test duals[2, map] == v
 
     # Partials extraction
     duals = rand(p+1, m)
     ## CSC
     ndrange = (m, ) # columns oriented
-    ev = AD.partials_kernel_csc!(device)(J.colptr, J.rowval, J.nzval, duals, colors; ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
+    AD.partials_kernel_csc!(device)(J.colptr, J.rowval, J.nzval, duals, colors; ndrange=ndrange)
+    KernelAbstractions.synchronize(device)
 
     ## CSR
     Bp, Bj, Bx = ExaPF.convert2csr(J)
     ndrange = (n, ) # rows oriented
-    ev = AD.partials_kernel_csr!(device)(Bp, Bj, Bx, duals, colors; ndrange=ndrange, dependencies=Event(device))
-    wait(ev)
+    AD.partials_kernel_csr!(device)(Bp, Bj, Bx, duals, colors; ndrange=ndrange)
+    KernelAbstractions.synchronize(device)
 
     # Convert back to CSC and check results
     Ap = zeros(Int, m+1)
@@ -101,6 +103,7 @@ function test_autodiff_kernel(device, AT, SMT)
     Ax = zeros(nnz(J))
     ExaPF.csr2csc(n, m, Bp, Bj, Bx, Ap, Ai, Ax)
     @test Ax == J.nzval
+    return
 end
 
 function runtests(device, AT, SMT)

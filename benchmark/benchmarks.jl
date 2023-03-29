@@ -4,7 +4,6 @@ using Printf
 # GPU
 using CUDA
 using KernelAbstractions
-using CUDAKernels
 
 # Algorithms
 using Krylov
@@ -349,7 +348,7 @@ function benchmark(
     polar = PolarForm(PS.load_case(casename), device)
     if isa(device, CPU)
         ext = ".cpu.csv"
-    elseif isa(device, CUDADevice)
+    elseif isa(device, CUDABackend)
         ext = ".cuda.csv"
     end
 
@@ -375,7 +374,7 @@ end
 function default_benchmark(config::Dict)
     iterator = Any[("cpu", CPU())]
     if CUDA.has_cuda_gpu()
-        push!(iterator, ("cuda", CUDADevice()))
+        push!(iterator, ("cuda", CUDABackend()))
     end
 
     for (kdev, device) in iterator

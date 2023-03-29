@@ -9,7 +9,6 @@ We start by importing CUDA and KernelAbstractions:
 ```@julia
 using CUDA
 using KernelAbstractions
-using CUDAKernels
 ```
 
 Then, we load ExaPF and its submodules with
@@ -34,7 +33,6 @@ using LazyArtifacts
 using ExaPF
 using CUDA
 using KernelAbstractions
-using CUDAKernels
 using ExaPF
 import ExaPF: AutoDiff
 const PS = ExaPF.PowerSystem
@@ -119,7 +117,7 @@ polar = ExaPF.PolarForm(pf, CPU())
 Note that the constructor [`ExaPF.PolarForm`](@ref) takes as input a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object
 and a `KernelAbstractions.jl` device (here set to `CPU()` by default). We
 will explain in the next section how to load a [`ExaPF.PolarForm`](@ref) object on
-the GPU with the help of a `CUDADevice()`.
+the GPU with the help of a `CUDABackend()`.
 
 The Newton-Raphson solves the equation $g(x, u) = 0$ in an iterative fashion.
 The algorithm solves at each step the linear equation:
@@ -194,7 +192,7 @@ Now, how can we deport the resolution on the GPU?
 The procedure looks exactly the same. It suffices to initiate
 a new [`ExaPF.PolarForm`](@ref) object, but on the GPU:
 ```@repl quickstart
-polar_gpu = ExaPF.PolarForm(pf, CUDADevice())
+polar_gpu = ExaPF.PolarForm(pf, CUDABackend())
 
 ```
 `polar_gpu` will load all the structures it needs on the GPU, to
@@ -232,7 +230,7 @@ for GPU usage. To build an instance with 8 blocks, just write
 ```@repl quickstart
 npartitions = 8;
 jac_gpu = jx_gpu.J;
-precond = LS.BlockJacobiPreconditioner(jac_gpu, npartitions, CUDADevice());
+precond = LS.BlockJacobiPreconditioner(jac_gpu, npartitions, CUDABackend());
 ```
 You can attach the preconditioner to an BICGSTAB algorithm simply as
 ```@repl quickstart

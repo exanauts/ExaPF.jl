@@ -13,7 +13,7 @@ number(polar::AbstractPolarFormulation, v::AbstractVariable) = length(mapping(po
 Implement the polar formulation associated to the network's equations.
 
 Wrap a [`PS.PowerNetwork`](@ref) network to load the data on
-the target device (`CPU()` and `CUDADevice()` are currently supported).
+the target device (`CPU()` and `CUDABackend()` are currently supported).
 
 ## Example
 ```jldoctest; setup=:(using ExaPF)
@@ -35,7 +35,7 @@ giving a mathematical formulation with:
 """
 struct PolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
-    device::KA.Device
+    device::KA.Backend
 end
 
 function PolarForm(pf::PS.PowerNetwork, device::KA.CPU)
@@ -58,7 +58,7 @@ to evaluate them in parallel.
 """
 struct BlockPolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
-    device::KA.Device
+    device::KA.Backend
     k::Int
 end
 function BlockPolarForm(pf::PS.PowerNetwork, device, k::Int)

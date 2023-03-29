@@ -382,17 +382,17 @@ function AutoDiff.partials!(hess::ArrowheadHessian)
 
     if isa(H, SparseMatrixCSC)
         ndrange = (size(H, 2), )
-        ev = _arrowhead_hess_partials_csc_kernel!(device)(
+        _arrowhead_hess_partials_csc_kernel!(device)(
             H.colptr, H.rowval, H.nzval, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
-            ndrange=ndrange, dependencies=Event(device),
+            ndrange=ndrange,
         )
     elseif isa(H, CuSparseMatrixCSR)
         ndrange = (size(H, 1), )
-        ev = _arrowhead_hess_partials_csr_kernel!(device)(
+        _arrowhead_hess_partials_csr_kernel!(device)(
             H.rowPtr, H.colVal, H.nzVal, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
-            ndrange=ndrange, dependencies=Event(device),
+            ndrange=ndrange,
         )
     end
-    wait(ev)
+    KernelAbstractions.synchronize(device)
 end
 
