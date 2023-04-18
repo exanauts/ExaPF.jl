@@ -7,3 +7,6 @@ KLU = "ef3ab10e-7fda-4108-b977-705223b18434"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+
+[extras]
+CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
