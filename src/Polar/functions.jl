@@ -125,7 +125,7 @@ function (func::PolarBasis)(output, stack::AbstractNetworkStack)
         func.f, func.t, func.nlines, func.nbus,
         ndrange=ndrange
     )
-    KernelAbstractions.synchronize(func.device)
+    KA.synchronize(func.device)
     return
 end
 
@@ -188,7 +188,7 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
         stack.vmag, stack.vang, f, t, nl, nb,
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(func.device)
+    KA.synchronize(func.device)
 
     # Accumulate on nodes
     Cf = func.Cf
@@ -307,7 +307,7 @@ function (func::CostFunction)(output::AbstractArray, stack::AbstractNetworkStack
         costs, stack.pgen, func.c0, func.c1, func.c2, ngen;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(func.device)
+    KA.synchronize(func.device)
     # Sum costs across all generators
     # sum!(output, reshape(costs, ngen, nblocks(stack))')
     output .= sum(reshape(costs, ngen, nblocks(stack))', dims=2)
@@ -328,7 +328,7 @@ function adjoint!(func::CostFunction, ∂stack, stack, ∂v)
         ∂stack.pgen, stack.pgen, ∂v, func.c0, func.c1, func.c2, ngen;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(func.device)
+    KA.synchronize(func.device)
     mul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
     return
 end
@@ -759,7 +759,7 @@ function (func::LineFlows)(cons::AbstractVector, stack::AbstractNetworkStack)
         cons, sfp, sfq, stp, stq, func.nlines;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(func.device)
+    KA.synchronize(func.device)
     return
 end
 
@@ -790,7 +790,7 @@ function adjoint!(func::LineFlows, ∂stack, stack, ∂v)
         ∂v, nlines;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(func.device)
+    KA.synchronize(func.device)
 
     # Accumulate adjoint
     mul!(∂stack.ψ, func.Lfp', sfp, 1.0, 1.0)

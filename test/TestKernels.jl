@@ -8,6 +8,7 @@ using Test
 
 using ExaPF
 using KernelAbstractions
+const KA = KernelAbstractions
 
 const AD = ExaPF.AutoDiff
 
@@ -21,7 +22,7 @@ function test_utils_kernel(device, AT, SMT)
     src = rand(m)
     ndrange = (n, )
     ExaPF._transfer_fr_input!(device)(dest, src, mapping; ndrange=ndrange)
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
     @test dest == src[mapping]
 
     # TO
@@ -29,7 +30,7 @@ function test_utils_kernel(device, AT, SMT)
     dest = zeros(m)
     ndrange = (n, )
     ExaPF._transfer_to_input!(device)(dest, mapping, src; ndrange=ndrange)
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
     @test src == dest[mapping]
     return
 end
@@ -45,7 +46,7 @@ function test_polar_kernel(device, AT, SMT)
     t = rand(1:nb, nl)
     ndrange = (m, 1)
     ExaPF.basis_kernel!(device)(output, vmag, vang, f, t, nl, nb; ndrange=ndrange)
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 
     Δθ = vang[f] .- vang[t]
     vl2 = vmag[f] .* vmag[t]
@@ -65,7 +66,7 @@ function test_autodiff_kernel(device, AT, SMT)
     duals = zeros(p+1, n)
     ndrange = (n, )
     AD._set_value_kernel!(device)(duals, x; ndrange=ndrange)
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
     @test duals[1, :] == x
 
     # Seed with coloring for Jacobian/Hessian
@@ -74,14 +75,14 @@ function test_autodiff_kernel(device, AT, SMT)
     map = randperm(n)
     ndrange = (n, p)
     AD._seed_coloring_kernel!(device)(duals, coloring, map; ndrange=ndrange)
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 
     # Seed for Hessian-vector products
     v = rand(n)
     duals = zeros(2, n)
     ndrange = (n, )
     AD._seed_kernel!(device)(duals, v, map; ndrange=ndrange)
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
     @test duals[2, map] == v
 
     # Partials extraction
@@ -89,13 +90,13 @@ function test_autodiff_kernel(device, AT, SMT)
     ## CSC
     ndrange = (m, ) # columns oriented
     AD.partials_kernel_csc!(device)(J.colptr, J.rowval, J.nzval, duals, colors; ndrange=ndrange)
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 
     ## CSR
     Bp, Bj, Bx = ExaPF.convert2csr(J)
     ndrange = (n, ) # rows oriented
     AD.partials_kernel_csr!(device)(Bp, Bj, Bx, duals, colors; ndrange=ndrange)
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 
     # Convert back to CSC and check results
     Ap = zeros(Int, m+1)

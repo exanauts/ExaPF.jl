@@ -7,6 +7,7 @@ using CUDA
 import ForwardDiff
 import SparseDiffTools
 using KernelAbstractions
+KA = KernelAbstractions
 
 using ..ExaPF: State, Control
 
@@ -145,7 +146,7 @@ function seed!(
         dest_, v, map;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 end
 
 function _seed_coloring!(
@@ -163,7 +164,7 @@ function _seed_coloring!(
         dest_, coloring, map;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 end
 
 """
@@ -208,7 +209,7 @@ function getpartials_kernel!(hv::AbstractVector, H::AbstractHessianProd)
         hv, adj_t1sx, map;
         ndrange=length(hv),
     )
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 end
 
 # Sparse Jacobian partials
@@ -260,7 +261,7 @@ function partials!(jac::AbstractJacobian)
     else
         error("Unknown device $device")
     end
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 end
 
 # Sparse Hessian partials
@@ -313,7 +314,7 @@ function partials!(hess::AbstractFullHessian)
     else
         error("Unknown device $device")
     end
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 end
 
 @kernel function _set_value_kernel!(
@@ -345,7 +346,7 @@ function set_value!(
         duals_, primals;
         ndrange=n,
     )
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 end
 
 end

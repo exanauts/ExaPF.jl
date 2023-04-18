@@ -38,7 +38,7 @@ function Base.copyto!(stack::AutoDiff.AbstractStack, map::AbstractVector{Int}, v
         stack.input, map, vals;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(CUDABackend())
+    KA.synchronize(CUDABackend())
 end
 
 function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack, map::AbstractVector{Int}) where {VT <: CuArray}
@@ -48,7 +48,7 @@ function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack, map::AbstractVect
         dest, stack.input, map;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(CUDABackend())
+    KA.synchronize(CUDABackend())
 end
 
 # By default, no factorization routine is available
@@ -144,7 +144,7 @@ function LinearAlgebra.mul!(
         Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(CUDABackend())
+    KA.synchronize(CUDABackend())
 end
 
 #=
@@ -191,6 +191,6 @@ function blockcopy!(stack::NetworkStack, map::CuArray{Int}, x::CuArray{Float64})
         stack.input, map, x, nx;
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(CUDABackend())
+    KA.synchronize(CUDABackend())
 end
 

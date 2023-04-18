@@ -393,6 +393,6 @@ function AutoDiff.partials!(hess::ArrowheadHessian)
             ndrange=ndrange,
         )
     end
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 end
 

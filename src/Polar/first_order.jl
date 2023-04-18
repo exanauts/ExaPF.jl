@@ -277,6 +277,6 @@ function AutoDiff.partials!(jac::ArrowheadJacobian)
             ndrange=ndrange,
         )
     end
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
 end
 

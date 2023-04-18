@@ -224,7 +224,7 @@ function mul!(y, C::BlockJacobiPreconditioner, b::CuVector{T}) where T
         C.cupartitions, C.cublocks,
         ndrange=ndrange,
     )
-    KernelAbstractions.synchronize(CUDABackend())
+    KA.synchronize(CUDABackend())
 end
 
 """
@@ -295,7 +295,7 @@ function _update_gpu(p, j_rowptr, j_colval, j_nzval, device)
         p.cupart, p.culpartitions, p.id,
         ndrange=nblocks,
     )
-    KernelAbstractions.synchronize(device)
+    KA.synchronize(device)
     # Invert blocks begin
     blocklist = Array{CuArray{Float64,2}}(undef, nblocks)
     for b in 1:nblocks
