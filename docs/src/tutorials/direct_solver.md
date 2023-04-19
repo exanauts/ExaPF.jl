@@ -11,7 +11,6 @@ DocTestFilters = [r"ExaPF"]
 using ExaPF
 using KLU
 using LinearAlgebra
-using CUDAKernels
 const LS = ExaPF.LinearSolvers
 
 ```
@@ -154,7 +153,8 @@ CUSOLVERRF.jl follows the LinearAlgebra's interface, so we can use
 it directly in ExaPF.
 We first have to instantiate everything on the GPU:
 ```@example direct_solver
-polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDADevice())
+using CUDA
+polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDABackend())
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
 func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu)
 jx_gpu = ExaPF.Jacobian(polar_gpu, func_gpu, State()) # init AD

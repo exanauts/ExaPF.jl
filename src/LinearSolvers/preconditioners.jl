@@ -219,13 +219,12 @@ function mul!(y, C::BlockJacobiPreconditioner, b::CuVector{T}) where T
     fill!(y, zero(T))
     max_rlen = maximum(C.rest_size)
     ndrange = (C.nblocks, max_rlen)
-    ev = mblock_kernel!(CUDADevice())(
+    mblock_kernel!(CUDABackend())(
         y, b, C.culpartitions, C.curest_size,
         C.cupartitions, C.cublocks,
         ndrange=ndrange,
-        dependencies=Event(CUDADevice()),
     )
-    wait(ev)
+    KA.synchronize(CUDABackend())
 end
 
 """
@@ -289,14 +288,14 @@ function _update_gpu(p, j_rowptr, j_colval, j_nzval, device)
     nblocks = p.nblocks
     fillblock_gpu_kernel! = fillblock_gpu!(device)
     # Fill Block Jacobi" begin
-    ev = fillblock_gpu_kernel!(
+    fillblock_gpu_kernel!(
         p.cublocks, size(p.id,1),
         p.cupartitions, p.cumap,
         j_rowptr, j_colval, j_nzval,
         p.cupart, p.culpartitions, p.id,
-        ndrange=nblocks, dependencies=Event(device),
+        ndrange=nblocks,
     )
-    wait(ev)
+    KA.synchronize(device)
     # Invert blocks begin
     blocklist = Array{CuArray{Float64,2}}(undef, nblocks)
     for b in 1:nblocks

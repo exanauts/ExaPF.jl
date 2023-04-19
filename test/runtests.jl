@@ -17,10 +17,9 @@ const CASES = ["case9.m", "case30.m"]
 
 ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
 if CUDA.has_cuda()
-    using CUDAKernels
     using CUDA.CUSPARSE
     CUDA.allowscalar(false)
-    CUDA_ARCH = (CUDADevice(), CuArray, CuSparseMatrixCSR)
+    CUDA_ARCH = (CUDABackend(), CuArray, CuSparseMatrixCSR)
     push!(ARCHS, CUDA_ARCH)
 end
 

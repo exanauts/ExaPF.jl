@@ -4,21 +4,17 @@ import CUDA.CUBLAS
 import CUDA.CUSPARSE: CuSparseMatrixCSR, CuSparseMatrixCSC
 import CUDA.CUSOLVER
 
-using CUDAKernels
-
-export CUDAKernels
-
-function PolarForm(pf::PS.PowerNetwork, device::CUDADevice)
+function PolarForm(pf::PS.PowerNetwork, device::CUDABackend)
     return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device)
 end
-function BlockPolarForm(pf::PS.PowerNetwork, device::CUDADevice, k::Int)
+function BlockPolarForm(pf::PS.PowerNetwork, device::CUDABackend, k::Int)
     return BlockPolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k)
 end
 
-default_sparse_matrix(::CUDADevice) = CuSparseMatrixCSR{Float64, Int32}
+default_sparse_matrix(::CUDABackend) = CuSparseMatrixCSR{Float64, Int32}
 xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)
 
-function get_jacobian_types(::CUDADevice)
+function get_jacobian_types(::CUDABackend)
     SMT = CuSparseMatrixCSR{Float64, Int32}
     A = CUDA.CuVector
     return SMT, A
@@ -38,21 +34,21 @@ CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = CuSpar
 function Base.copyto!(stack::AutoDiff.AbstractStack, map::AbstractVector{Int}, vals::VT) where {VT <: CuArray}
     @assert length(map) == length(vals)
     ndrange = (length(map),)
-    ev = _transfer_to_input!(CUDADevice())(
+    _transfer_to_input!(CUDABackend())(
         stack.input, map, vals;
-        ndrange=ndrange, dependencies=Event(CUDADevice()),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KA.synchronize(CUDABackend())
 end
 
 function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack, map::AbstractVector{Int}) where {VT <: CuArray}
     @assert length(map) == length(dest)
     ndrange = (length(map),)
-    ev = _transfer_fr_input!(CUDADevice())(
+    _transfer_fr_input!(CUDABackend())(
         dest, stack.input, map;
-        ndrange=ndrange, dependencies=Event(CUDADevice()),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KA.synchronize(CUDABackend())
 end
 
 # By default, no factorization routine is available
@@ -82,7 +78,7 @@ function _mm_transposed!(
     transa::CUSPARSE.SparseChar, transb::CUSPARSE.SparseChar,
     alpha::Number, A::CuSparseMatrixCSR{T},
     B::DenseCuMatrix{T}, beta::Number, C::DenseCuMatrix{T},
-    index::CUSPARSE.SparseChar, algo=CUSPARSE.CUSPARSE_MM_ALG_DEFAULT,
+    index::CUSPARSE.SparseChar, algo=CUSPARSE.CUSPARSE_SPMM_ALG_DEFAULT,
 ) where {T}
     m,k = size(A)
     n = size(C)[2]
@@ -144,11 +140,11 @@ function LinearAlgebra.mul!(
     Ys = reshape(reinterpret(Float64, Y), p, n)
 
     ndrange = (n, )
-    ev = _spmv_csr_kernel_double!(CUDADevice())(
+    _spmv_csr_kernel_double!(CUDABackend())(
         Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
-        ndrange=ndrange, dependencies=Event(CUDADevice()),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KA.synchronize(CUDABackend())
 end
 
 #=
@@ -191,10 +187,10 @@ function blockcopy!(stack::NetworkStack, map::CuArray{Int}, x::CuArray{Float64})
     @assert length(map) % nx == 0
     nb = div(length(map), nx)
     ndrange = (nx, nb)
-    ev = _blk_transfer_to_input!(CUDADevice())(
+    _blk_transfer_to_input!(CUDABackend())(
         stack.input, map, x, nx;
-        ndrange=ndrange, dependencies=Event(CUDADevice()),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KA.synchronize(CUDABackend())
 end
 

@@ -266,17 +266,17 @@ function AutoDiff.partials!(jac::ArrowheadJacobian)
 
     if isa(J, SparseMatrixCSC)
         ndrange = (size(J, 2), )
-        ev = _arrowhead_partials_csc_kernel!(device)(
+        _arrowhead_partials_csc_kernel!(device)(
             J.colptr, J.rowval, J.nzval, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
-            ndrange=ndrange, dependencies=Event(device),
+            ndrange=ndrange,
         )
     elseif isa(J, CuSparseMatrixCSR)
         ndrange = (size(J, 1), )
-        ev = _arrowhead_partials_csr_kernel!(device)(
+        _arrowhead_partials_csr_kernel!(device)(
             J.rowPtr, J.colVal, J.nzVal, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
-            ndrange=ndrange, dependencies=Event(device),
+            ndrange=ndrange,
         )
     end
-    wait(ev)
+    KA.synchronize(device)
 end
 

@@ -9,7 +9,6 @@ import Base: show
 
 using CUDA
 using KernelAbstractions
-using CUDAKernels
 import CUDA.CUBLAS
 import CUDA.CUSOLVER
 import CUDA.CUSPARSE
@@ -132,7 +131,7 @@ function update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC)
     update(solver.precond, J, CPU())
 end
 function update!(solver::AbstractIterativeLinearSolver, J::CUSPARSE.CuSparseMatrixCSR)
-    update(solver.precond, J, CUDADevice())
+    update(solver.precond, J, CUDABackend())
 end
 
 """

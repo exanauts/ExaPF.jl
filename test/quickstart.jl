@@ -1,7 +1,6 @@
 using Test
 using CUDA
 using KernelAbstractions
-using CUDAKernels
 
 using ExaPF
 import ExaPF: AutoDiff
@@ -73,7 +72,7 @@ const LS = ExaPF.LinearSolvers
     @test convergence.norm_residuals <= pf_algo.tol
 
     if CUDA.has_cuda_gpu()
-        polar_gpu = ExaPF.PolarForm(pf, CUDADevice())
+        polar_gpu = ExaPF.PolarForm(pf, CUDABackend())
         stack_gpu = ExaPF.NetworkStack(polar_gpu)
 
         basis_gpu = ExaPF.PolarBasis(polar_gpu)
@@ -92,7 +91,7 @@ const LS = ExaPF.LinearSolvers
 
         npartitions = 8
         jac = jx_gpu.J # we need to take the Jacobian on the CPU for partitioning!
-        precond = LS.BlockJacobiPreconditioner(jac, npartitions, CUDADevice())
+        precond = LS.BlockJacobiPreconditioner(jac, npartitions, CUDABackend())
 
         # Reinit buffer
         ExaPF.init!(polar_gpu, stack_gpu)

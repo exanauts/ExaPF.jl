@@ -7,6 +7,7 @@ using CUDA
 import ForwardDiff
 import SparseDiffTools
 using KernelAbstractions
+KA = KernelAbstractions
 
 using ..ExaPF: State, Control
 
@@ -141,11 +142,11 @@ function seed!(
     n = length(dest)
     dest_ = reshape(reinterpret(T, dest), 2, n)
     ndrange = length(map)
-    ev = _seed_kernel!(device)(
+    _seed_kernel!(device)(
         dest_, v, map;
-        ndrange=ndrange, dependencies=Event(device),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KA.synchronize(device)
 end
 
 function _seed_coloring!(
@@ -159,11 +160,11 @@ function _seed_coloring!(
     n = length(dest)
     dest_ = reshape(reinterpret(T, dest), N+1, n)
     ndrange = (length(map), N)
-    ev = _seed_coloring_kernel!(device)(
+    _seed_coloring_kernel!(device)(
         dest_, coloring, map;
-        ndrange=ndrange, dependencies=Event(device),
+        ndrange=ndrange,
     )
-    wait(ev)
+    KA.synchronize(device)
 end
 
 """
@@ -204,11 +205,11 @@ function getpartials_kernel!(hv::AbstractVector, H::AbstractHessianProd)
     map = H.map
     adj_t1sx = H.∂stack.input
     kernel! =
-    ev = getpartials_hv_kernel!(device)(
+    getpartials_hv_kernel!(device)(
         hv, adj_t1sx, map;
-        ndrange=length(hv), dependencies=Event(device),
+        ndrange=length(hv),
     )
-    wait(ev)
+    KA.synchronize(device)
 end
 
 # Sparse Jacobian partials
@@ -248,19 +249,19 @@ function partials!(jac::AbstractJacobian)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     if isa(device, CPU)
-        ev = partials_kernel_csc!(device)(
+        partials_kernel_csc!(device)(
             J.colptr, J.rowval, J.nzval, duals_, coloring;
-            ndrange=size(J,2), dependencies=Event(device),
+            ndrange=size(J,2),
         )
     elseif isa(device, GPU)
-        ev = partials_kernel_csr!(device)(
+        partials_kernel_csr!(device)(
             J.rowPtr, J.colVal, J.nzVal, duals_, coloring;
-            ndrange=size(J,1), dependencies=Event(device),
+            ndrange=size(J,1),
         )
     else
         error("Unknown device $device")
     end
-    wait(ev)
+    KA.synchronize(device)
 end
 
 # Sparse Hessian partials
@@ -301,19 +302,19 @@ function partials!(hess::AbstractFullHessian)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     if isa(device, CPU)
-        ev = partials_kernel_cpu!(device)(
+        partials_kernel_cpu!(device)(
             H.colptr, H.rowval, H.nzval, duals_, map, coloring;
-            ndrange=size(H,2), dependencies=Event(device),
+            ndrange=size(H,2),
         )
     elseif isa(device, GPU)
-        ev = partials_kernel_gpu!(device)(
+        partials_kernel_gpu!(device)(
             H.rowPtr, H.colVal, H.nzVal, duals_, map, coloring;
-            ndrange=size(H,1), dependencies=Event(device),
+            ndrange=size(H,1),
         )
     else
         error("Unknown device $device")
     end
-    wait(ev)
+    KA.synchronize(device)
 end
 
 @kernel function _set_value_kernel!(
@@ -341,11 +342,11 @@ function set_value!(
     n = length(duals)
     N = jac.ncolors
     duals_ = reshape(reinterpret(T, duals), N+1, n)
-    ev = _set_value_kernel!(device)(
+    _set_value_kernel!(device)(
         duals_, primals;
-        ndrange=n, dependencies=Event(device),
+        ndrange=n,
     )
-    wait(ev)
+    KA.synchronize(device)
 end
 
 end

@@ -147,8 +147,8 @@ the expressions are evaluated in batch.
 The syntax to solve the power flow equations is exactly the same as on the
 CPU, using `cusolverRF` to solve the different linear systems:
 ```@example batch_pf
-using CUSOLVERRF, CUDAKernels
-polar_gpu = ExaPF.load_polar("case9.m", CUDADevice());
+using CUDA, CUSOLVERRF
+polar_gpu = ExaPF.load_polar("case9.m", CUDABackend());
 blk_polar_gpu = ExaPF.BlockPolarForm(polar_gpu, nscen); # load model on GPU
 blk_stack_gpu = ExaPF.NetworkStack(blk_polar_gpu);
 ExaPF.set_params!(blk_stack_gpu, ploads, qloads);
