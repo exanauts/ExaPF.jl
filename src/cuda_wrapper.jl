@@ -14,6 +14,11 @@ end
 function BlockPolarForm(pf::PS.PowerNetwork, device::CUDADevice, k::Int, ncustoms::Int=0)
     return BlockPolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k, ncustoms)
 end
+function PolarFormRecourse(pf::PS.PowerNetwork, device::CUDADevice, k::Int)
+    ngen = PS.get(pf, PS.NumberOfGenerators())
+    ncustoms = (ngen + 1) * k
+    return PolarFormRecourse{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k, ncustoms)
+end
 
 default_sparse_matrix(::CUDADevice) = CuSparseMatrixCSR{Float64, Int32}
 xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)

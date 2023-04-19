@@ -64,11 +64,15 @@ function runtests(case, device, AT)
     end
 
     @testset "BlockPolarForm" begin
-        test_polar_blockstack(polar, device, AT)
-        test_polar_blk_expressions(polar, device, AT)
+        test_block_stack(polar, device, AT)
+        test_block_expressions(polar, device, AT)
         test_block_powerflow(polar, device, AT)
         test_block_jacobian(polar, device, AT)
         test_block_hessian(polar, device, AT)
+    end
+
+    @testset "Contingency" begin
+        test_contingency_powerflow(polar, device, AT)
     end
 
     @testset "PolarFormRecourse" begin

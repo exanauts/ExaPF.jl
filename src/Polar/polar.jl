@@ -276,6 +276,7 @@ end
 include("stacks.jl")
 include("functions.jl")
 include("recourse.jl")
+include("contingencies.jl")
 include("first_order.jl")
 include("second_order.jl")
 include("newton.jl")
