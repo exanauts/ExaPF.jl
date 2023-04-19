@@ -1,6 +1,11 @@
 ExaPF release notes
 ===================
 
+Version 0.9.0 (April 19th, 2023)
+---------------------------------
+- Update to KernelAbstractions 0.9 with respective API changes
+- Update to Krylov.jl 0.9, and CUDA.jl 4.1
+
 Version 0.8.0 (August 16th, 2022)
 ---------------------------------
 
