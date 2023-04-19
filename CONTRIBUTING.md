@@ -16,10 +16,9 @@ new issue ticket!
 ### Workflow
 Our development workflow is based on a mildly simplified version of [gitflow](https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow). Thus, we have at least two active branches
 
-- `master` which is the lastest stable release of ExaPF,
-- and `develop` which is the current development branch, and as is, could be unstable.
+- `main` which is the lastest stable release of ExaPF,
 
-At each release, the `develop` branch is merged into `master` through a `release` branch
+At each release, a `release` branch is created
 before tagging the next release. While in the `release` branch we check that
 
 - the unit tests passed,

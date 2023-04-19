@@ -3,7 +3,7 @@
 This page introduces the first steps to set up `ExaPF.jl`.
 We show how to load a power network instance and how to solve
 the power flow equations both on the CPU and on the GPU.
-The full script is implemented in [test/quickstart.jl](https://github.com/exanauts/ExaPF.jl/tree/master/test/quickstart.jl).
+The full script is implemented in [test/quickstart.jl](https://github.com/exanauts/ExaPF.jl/tree/main/test/quickstart.jl).
 
 We start by importing CUDA and KernelAbstractions:
 ```@julia

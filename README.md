@@ -68,7 +68,7 @@ We welcome any contribution to ExaPF! Bug fixes or feature requests
 can be reported with the [issue tracker](https://github.com/exanauts/ExaPF.jl/issues),
 and new contributions can be made by opening a pull request on the `develop`
 branch. For more information about development guidelines, please
-refer to [CONTRIBUTING.md](https://github.com/exanauts/ExaPF.jl/blob/master/CONTRIBUTING.md)
+refer to [CONTRIBUTING.md](https://github.com/exanauts/ExaPF.jl/blob/main/CONTRIBUTING.md)
 
 ## Funding
 This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy’s Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation’s exascale computing imperative.
@@ -77,12 +77,11 @@ This research was supported by the Exascale Computing Project (17-SC-20-SC), a j
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
 [docs-stable-url]: https://exanauts.github.io/ExaPF.jl/stable
 
-[codecov-latest-img]: https://codecov.io/gh/exanauts/ExaPF.jl/branch/master/graphs/badge.svg?branch=master
-[codecov-latest-url]: https://codecov.io/github/exanauts/ExaPF.jl?branch=master
+[codecov-latest-img]: https://codecov.io/gh/exanauts/ExaPF.jl/branch/main/graphs/badge.svg?branch=main
+[codecov-latest-url]: https://codecov.io/github/exanauts/ExaPF.jl?branch=main
 
 [build-url]: https://github.com/exanauts/ExaPF.jl/actions?query=workflow
-[build-latest-img]: https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=master
+[build-latest-img]: https://github.com/exanauts/ExaPF.jl/workflows/Run%20tests/badge.svg?branch=main
 
 [doi-img]: https://zenodo.org/badge/DOI/10.5281/zenodo.6536402.svg
 [doi-url]: https://doi.org/10.5281/zenodo.6536402
-
