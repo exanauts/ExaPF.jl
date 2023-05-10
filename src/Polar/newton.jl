@@ -109,7 +109,7 @@ julia> conv = ExaPF.nlsolve!(NewtonRaphson(verbose=1), jx, stack);
 #it 1: 2.03366e-01
 #it 2: 2.94166e-03
 #it 3: 8.85300e-07
-#it 4: 7.52102e-14
+#it 4: 7.53857e-14
 
 julia> conv.has_converged
 true
@@ -202,7 +202,7 @@ julia> conv = run_pf(polar, stack; verbose=1);
 #it 1: 2.03366e-01
 #it 2: 2.94166e-03
 #it 3: 8.85300e-07
-#it 4: 7.52102e-14
+#it 4: 7.53857e-14
 
 julia> conv.has_converged
 true
