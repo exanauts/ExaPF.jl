@@ -374,42 +374,27 @@ julia> stack = ExaPF.NetworkStack(polar);
 
 julia> powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar);
 
-julia> powerflow(stack)
+julia> round.(powerflow(stack); digits=6)
 14-element Vector{Float64}:
  -1.63
  -0.85
   0.0
-  0.9000000000000004
+  0.9
   0.0
   1.0
   0.0
-  1.2499999999999998
- -0.1670000000000016
-  0.04200000000000159
- -0.28349999999999653
-  0.17099999999999937
- -0.22749999999999915
-  0.2590000000000039
+  1.25
+ -0.167
+  0.042
+ -0.2835
+  0.171
+ -0.2275
+  0.259
 
 julia> run_pf(polar, stack); # solve powerflow equations
 
-julia> powerflow(stack)
-14-element Vector{Float64}:
- -2.6645352591003757e-15
- -2.220446049250313e-16
- -3.419486915845482e-14
-  8.43769498715119e-15
- -1.3322676295501878e-15
-  8.43769498715119e-15
- -2.4424906541753444e-14
-  5.3734794391857577e-14
-  1.4210854715202004e-14
-  1.7763568394002505e-15
-  7.105427357601002e-15
-  3.552713678800501e-15
-  7.105427357601002e-15
-  2.3092638912203256e-14
-
+julia> isapprox(powerflow(stack), zeros(14); atol=1e-8)
+true
 
 ```
 
@@ -586,12 +571,12 @@ julia> run_pf(polar, stack); # solve powerflow equations
 
 julia> power_generators = ExaPF.PowerGenerationBounds(polar) ∘ ExaPF.PolarBasis(polar);
 
-julia> power_generators(stack)
+julia> round.(power_generators(stack); digits=6)
 4-element Vector{Float64}:
-  0.7195470158922199
-  0.24068957772759347
-  0.1446011953112496
- -0.03649025534209471
+  0.719547
+  0.24069
+  0.144601
+ -0.03649
 
 ```
 
@@ -688,26 +673,26 @@ julia> run_pf(polar, stack); # solve powerflow equations
 
 julia> line_flows = ExaPF.LineFlows(polar) ∘ ExaPF.PolarBasis(polar);
 
-julia> line_flows(stack)
+julia> round.(line_flows(stack); digits=6)
 18-element Vector{Float64}:
- 0.5756793809060858
- 0.09445704301364506
- 0.379982836801101
- 0.7238315387349309
- 0.06016881786985958
- 0.5886725487812785
- 2.6574181040367035
- 0.7489430586779533
- 0.29535076072865407
- 0.560816793842092
- 0.11209487984261841
- 0.3862504895005101
- 0.7287262804842036
- 0.1171908414455606
- 0.5851637022788402
- 2.677809505685433
- 0.7266677622404694
- 0.21549662692309735
+ 0.575679
+ 0.094457
+ 0.379983
+ 0.723832
+ 0.060169
+ 0.588673
+ 2.657418
+ 0.748943
+ 0.295351
+ 0.560817
+ 0.112095
+ 0.38625
+ 0.728726
+ 0.117191
+ 0.585164
+ 2.67781
+ 0.726668
+ 0.215497
 
 ```
 

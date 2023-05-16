@@ -22,7 +22,7 @@ julia> const PS = ExaPF.PowerSystem;
 julia> network_data = PS.load_case("case9.m");
 
 julia> polar = PolarForm(network_data, ExaPF.CPU())
-Polar formulation (instantiated on device CPU())
+Polar formulation (instantiated on device CPU(false))
 Network characteristics:
     #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
     #generators: 3
@@ -105,7 +105,7 @@ and PGLIB-OPF (`dir=PGLIB`).
 ## Examples
 ```jldoctest; setup=:(using ExaPF)
 julia> polar = ExaPF.load_polar("case9")
-Polar formulation (instantiated on device CPU())
+Polar formulation (instantiated on device CPU(false))
 Network characteristics:
     #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
     #generators: 3
