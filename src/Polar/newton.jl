@@ -104,16 +104,13 @@ julia> jx = ExaPF.Jacobian(polar, powerflow, State());
 
 julia> stack = ExaPF.NetworkStack(polar);
 
-julia> conv = ExaPF.nlsolve!(NewtonRaphson(verbose=1), jx, stack);
-#it 0: 2.64764e+00
-#it 1: 2.03366e-01
-#it 2: 2.94166e-03
-#it 3: 8.85300e-07
-#it 4: 7.53857e-14
+julia> conv = ExaPF.nlsolve!(NewtonRaphson(), jx, stack);
 
 julia> conv.has_converged
 true
 
+julia> conv.n_iterations
+4
 ```
 """
 function nlsolve!(
@@ -197,16 +194,13 @@ julia> polar = ExaPF.load_polar("case9");
 
 julia> stack = ExaPF.NetworkStack(polar);
 
-julia> conv = run_pf(polar, stack; verbose=1);
-#it 0: 2.64764e+00
-#it 1: 2.03366e-01
-#it 2: 2.94166e-03
-#it 3: 8.85300e-07
-#it 4: 7.53857e-14
+julia> conv = run_pf(polar, stack);
 
 julia> conv.has_converged
 true
 
+julia> conv.n_iterations
+4
 ```
 """
 function run_pf(

@@ -346,22 +346,22 @@ The function `pflow` follows the same API, as any regular
 julia> n_balance = length(pflow)
 14
 
-julia> pflow(stack) # evaluate the power flow balance
+julia> round.(pflow(stack); digits=6) # evaluate the power flow balance
 14-element Vector{Float64}:
  -1.63
  -0.85
   0.0
-  0.9000000000000004
+  0.9
   0.0
   1.0
   0.0
-  1.2499999999999998
- -0.1670000000000016
-  0.04200000000000159
- -0.28349999999999653
-  0.17099999999999937
- -0.22749999999999915
-  0.2590000000000039
+  1.25
+ -0.167
+  0.042
+ -0.2835
+  0.171
+ -0.2275
+  0.259
 
 ```
 When we evaluate a [`ComposedExpressions`](@ref), ExaPF
