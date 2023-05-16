@@ -393,22 +393,8 @@ julia> round.(powerflow(stack); digits=6)
 
 julia> run_pf(polar, stack); # solve powerflow equations
 
-julia> round.(powerflow(stack); digits=6)
-14-element Vector{Float64}:
- -0.0
- -0.0
- -0.0
-  0.0
-  0.0
-  0.0
- -0.0
-  0.0
-  0.0
-  0.0
-  0.0
-  0.0
-  0.0
-  0.0
+julia> isapprox(powerflow(stack), zeros(14); atol=1e-8)
+true
 
 ```
 
