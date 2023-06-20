@@ -19,6 +19,7 @@ we leverage the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and
 ```@contents
 Pages = [
     "quickstart.md",
+    "contrib.md",
 ]
 Depth=1
 ```
