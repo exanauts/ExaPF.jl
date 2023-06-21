@@ -120,3 +120,87 @@ function LineFlows(
     )
 end
 
+function PowerFlowRecourse(
+    polar::PolarFormRecourse{T, VI, VT, MT},
+    contingencies::Vector{LineContingency};
+    epsilon=1e-2,
+    alpha=nothing,
+) where {T, VI, VT, MT}
+    @assert polar.ncustoms > 0
+    SMT = default_sparse_matrix(polar.device)
+    k = nblocks(polar)
+    @assert k == length(contingencies) + 1
+
+    pf = polar.network
+    ngen = pf.ngen
+    nbus = pf.nbus
+    gen = pf.gen2bus
+    npv = length(pf.pv)
+    npq = length(pf.pq)
+    @assert npv + npq + 1 == nbus
+
+    # Assemble matrices for loads
+    Cd_tot = spdiagm(nbus, nbus, ones(nbus)) # Identity matrix
+    Cdp = [Cd_tot[[pf.ref; pf.pv ; pf.pq], :]; spzeros(npq, nbus)]
+    Cdq = [spzeros(nbus, nbus) ; Cd_tot[pf.pq, :]]
+    Cdp = _blockdiag(Cdp, k)
+    Cdq = _blockdiag(Cdq, k)
+
+    # Assemble matrices for generators
+    Cg_tot = sparse(gen, 1:ngen, ones(ngen), nbus, ngen)
+    Cg = -[Cg_tot[[pf.ref; pf.pv], :] ; spzeros(2*npq, ngen)]
+    Cg  = _blockdiag(Cg, k)
+
+    # Assemble matrices for power flow
+    ## Base case
+    M_b = PS.get_basis_matrix(polar.network)
+    M_ = [-M_b[[pf.ref; pf.pv; pf.pq; nbus .+ pf.pq], :]]
+    ## Contingencies
+    for contingency in contingencies
+        M_c = PS.get_basis_matrix(polar.network; remove_line=contingency.line_id)
+        push!(M_, -M_c[[pf.ref; pf.pv; pf.pq; nbus .+ pf.pq], :])
+    end
+    M = blockdiag(M_...)
+
+    # Response ratio (by default dispatch recourse evenly)
+    if isnothing(alpha)
+        alpha = ones(ngen) ./ ngen
+    end
+    @assert length(alpha) == ngen
+    # Bounds
+    _pgmin, _pgmax = PS.bounds(polar.network, PS.Generators(), PS.ActivePower())
+    pgmin = repeat(_pgmin, k)
+    pgmax = repeat(_pgmax, k)
+
+    return PowerFlowRecourse{VT, SMT}(M, Cg, Cdp, Cdq, pgmin, pgmax, alpha, epsilon)
+end
+
+function ReactivePowerBounds(
+    polar::PolarFormRecourse{T, VI, VT, MT},
+    contingencies::Vector{LineContingency},
+) where {T, VI, VT, MT}
+    SMT = default_sparse_matrix(polar.device)
+    k = nblocks(polar)
+    @assert k == length(contingencies) + 1
+
+    pf = polar.network
+    nbus = pf.nbus
+    ns = length(pf.ref) + length(pf.pv)
+
+    # Assemble matrices for loads
+    Cd_tot = spdiagm(nbus, nbus, ones(nbus)) # Identity matrix
+    Cdq = Cd_tot[[pf.ref ; pf.pv], :]
+    Cdq = _blockdiag(Cdq, nblocks(polar))
+
+    # Assemble matrices for power flow
+    M_b = PS.get_basis_matrix(pf)
+    M_ = [-M_b[[nbus .+ pf.ref; nbus .+ pf.pv], :]]
+    for contingency in contingencies
+        M_c = PS.get_basis_matrix(pf; remove_line=contingency.line_id)
+        push!(M_, -M_c[[nbus .+ pf.ref; nbus .+ pf.pv], :])
+    end
+    M = blockdiag(M_...)
+
+    return ReactivePowerBounds{VT, SMT}(M, Cdq)
+end
+
