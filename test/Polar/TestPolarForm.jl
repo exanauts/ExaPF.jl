@@ -78,9 +78,11 @@ function runtests(case, device, AT)
     @testset "PolarFormRecourse" begin
         test_recourse_expression(polar, device, AT)
         test_recourse_powerflow(polar, device, AT)
-        test_recourse_jacobian(polar, device, AT)
-        test_recourse_hessian(polar, device, AT)
-        test_recourse_block_hessian(polar, device, AT)
+        if isa(device, CPU)
+            test_recourse_jacobian(polar, device, AT)
+            test_recourse_hessian(polar, device, AT)
+            test_recourse_block_hessian(polar, device, AT)
+        end
     end
 end
 

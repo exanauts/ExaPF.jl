@@ -54,7 +54,8 @@ function matpower_jacobian(polar::PolarFormRecourse, func::PowerFlowRecourse, V)
     j22 = imag(dSbus_dVa[pq, :])
     j23 = spzeros(npq, ngen)
 
-    j14 = -Cg * func.alpha
+    α = func.alpha |> Array
+    j14 = -Cg * α
     j24 = spzeros(npq, 1)
 
     return [

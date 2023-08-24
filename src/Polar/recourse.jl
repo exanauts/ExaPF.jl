@@ -79,13 +79,13 @@ end
 
 Base.length(func::PowerFlowRecourse) = size(func.M, 1)
 
-function _softmin(x1, x2, ϵ)
+@inline function _softmin(x1, x2, ϵ)
     return (x1 - ϵ * log1p(exp((x1 - x2) / ϵ)))
 end
 
 # Smooth approximation of max(pmin, min(p, pmax))
 # (numerically stable version)
-function smooth_response(p, pmin, pmax, ϵ)
+@inline function smooth_response(p, pmin, pmax, ϵ)
     threshold = 100.0
     if p >= pmax + threshold * ϵ
         return pmax
@@ -98,13 +98,14 @@ function smooth_response(p, pmin, pmax, ϵ)
     end
 end
 
-function smooth_pgen!(pgen, setpoint, delta, alpha, pgmin, pgmax, epsilon, ngen, nblocks)
-    for j in 1:nblocks
-        for i in 1:ngen
-            idx = i + (j-1) * ngen
-            p = setpoint[idx] + delta[j] * alpha[i]
-            pgen[idx] = smooth_response(p, pgmin[idx], pgmax[idx], epsilon)
-        end
+@kernel function smooth_pgen!(
+    pgen, @Const(setpoint), @Const(delta), @Const(alpha), @Const(pgmin), @Const(pgmax), epsilon, ngen, nblocks,
+)
+    i, j = @index(Global, NTuple)
+    idx = i + (j-1) * ngen
+    @inbounds begin
+        p = setpoint[idx] + delta[j] * alpha[i]
+        pgen[idx] = smooth_response(p, pgmin[idx], pgmax[idx], epsilon)
     end
 end
 
@@ -120,7 +121,15 @@ function (func::PowerFlowRecourse)(cons::AbstractArray, stack::AbstractNetworkSt
 
     Δ = view(stack.vuser, 1:k)
     setpoint = view(stack.vuser, k+1:k+k*ngen)
-    smooth_pgen!(stack.pgen, setpoint, Δ, func.alpha, func.pgmin, func.pgmax, func.epsilon, ngen, k)
+
+    # Kernel evaluation
+    device = KA.get_backend(stack.pgen)
+    ndrange = (ngen, k)
+    smooth_pgen!(device)(
+        stack.pgen, setpoint, Δ, func.alpha, func.pgmin, func.pgmax, func.epsilon, ngen, k,
+        ndrange=ndrange,
+    )
+    KA.synchronize(device)
 
     mul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
     return

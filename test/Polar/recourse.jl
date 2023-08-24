@@ -78,7 +78,7 @@ function test_recourse_jacobian(polar, device, M)
             return ev(stack_fd)
         end
         x0 = copy(stack.input)
-        Jd = FiniteDiff.finite_difference_jacobian(_fd_func, x0)
+        Jd = FiniteDiff.finite_difference_jacobian(_fd_func, x0) |> Array
         Jd_x = Jd[:, mapx]
         Jd_u = sum(Jd[:, mapu[1+(i-1)*nu:i*nu]] for i in 1:k)
         Jd_xu = [Jd_x Jd_u]
