@@ -19,7 +19,7 @@ jobs:
     strategy:
       matrix:
           os: [ubuntu-22.04]
-          julia-version: ['1.8']
+          julia-version: ['1.9']
           julia-arch: [x64]
 
     steps:
@@ -40,7 +40,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04]
-        julia-version: ['1.8']
+        julia-version: ['1.9']
         julia-arch: [x64]
 
     steps:
