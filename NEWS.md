@@ -1,6 +1,14 @@
 ExaPF release notes
 ===================
 
+Version 0.9.3 (September 27th, 2023)
+---------------------------------
+- Add support for SCOPF problem (#274)
+
+Version 0.9.2 (September 25th, 2023)
+---------------------------------
+- Add support to CUDA.jl 5.*
+
 Version 0.9.0 (April 19th, 2023)
 ---------------------------------
 - Update to KernelAbstractions 0.9 with respective API changes
