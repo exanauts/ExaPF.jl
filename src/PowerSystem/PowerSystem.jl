@@ -259,6 +259,23 @@ struct Branches{T}
     to_buses::Vector{Int}
 end
 
+number_lines(b::Branches) = length(b.Yff)
+
+function drop_line(b::Branches, line_id::Int)
+    nl = number_lines(b)
+    @assert 1 <= line_id <= nl
+    # Screening
+    lines_on = ones(nl)
+    lines_on[line_id] = 0
+    return Branches{Complex{Float64}}(
+        b.Yff .* lines_on,
+        b.Yft .* lines_on,
+        b.Ytf .* lines_on,
+        b.Ytt .* lines_on,
+        b.from_buses, b.to_buses,
+    )
+end
+
 # Utils
 function get_bus_id_to_indexes(bus)
     BUS_I = IndexSet.idx_bus()[1]

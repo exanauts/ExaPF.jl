@@ -41,6 +41,29 @@ function _jacobian_sparsity(polar::AbstractPolarFormulation, func::AutoDiff.Abst
     return matpower_jacobian(polar, func, v)
 end
 
+function _jacobian_sparsity(polar::PolarFormRecourse, func::AutoDiff.AbstractExpression)
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    v = PS.voltage(polar.network) .+ 0.01 .* rand(ComplexF64, nbus)
+    J1 =  matpower_jacobian(polar, func, v)
+    m, n = size(J1)
+    index_gen = (2nbus+1):(2nbus+ngen)
+    if n == 2nbus + ngen + 1
+        return [J1 J1[:, index_gen]]
+    elseif n == 2nbus + ngen
+        return [J1 spzeros(m, 1) J1[:, index_gen]]
+    else
+        error("Jacobian has wrong input dimension")
+    end
+end
+
+function _jacobian_sparsity(polar::PolarFormRecourse, func::MultiExpressions)
+    return vcat([_jacobian_sparsity(polar, expr) for expr in func.exprs]...)
+end
+function _jacobian_sparsity(polar::PolarFormRecourse, func::ComposedExpressions)
+    return _jacobian_sparsity(polar, func.outer)
+end
+
 function _get_jacobian_colors(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, map::Vector{Int})
     # Sparsity pattern
     J = _jacobian_sparsity(polar, func)
@@ -51,7 +74,7 @@ function _get_jacobian_colors(polar::AbstractPolarFormulation, func::AutoDiff.Ab
 end
 
 function Jacobian(
-    polar::PolarForm{T, VI, VT, MT},
+    polar::AbstractPolarFormulation{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
     map::Vector{Int},
 ) where {T, VI, VT, MT}
@@ -75,7 +98,7 @@ function Jacobian(
     J = J_host |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
     init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 
@@ -90,7 +113,7 @@ function Jacobian(
 
     return jac
 end
-Jacobian(polar::PolarForm, func::AutoDiff.AbstractExpression, x::AbstractVariable) = Jacobian(polar, func, mapping(polar, x))
+Jacobian(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, x::AbstractVariable) = Jacobian(polar, func, mapping(polar, x))
 
 
 struct ArrowheadJacobian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractJacobian
@@ -129,7 +152,7 @@ function jacobian_arrowhead_sparsity(J, block_id, nx, nu, nblocks)
 end
 
 function ArrowheadJacobian(
-    polar::BlockPolarForm{T, VI, VT, MT},
+    polar::AbstractPolarFormulation{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
     X::AbstractVariable,
 ) where {T, VI, VT, MT}
@@ -209,7 +232,7 @@ function ArrowheadJacobian(
     coloring = repeat(coloring, k) |> VI
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, k, VT, VD)
     init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 

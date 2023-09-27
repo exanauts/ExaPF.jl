@@ -41,7 +41,7 @@ function test_polar_stack(polar, device, M)
     return nothing
 end
 
-function test_polar_blockstack(polar, device, M)
+function test_block_stack(polar, device, M)
     nblocks = 2
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
     ngen = get(polar, PS.NumberOfGenerators())
@@ -212,7 +212,7 @@ function test_polar_powerflow(polar, device, M)
     end
 end
 
-function test_polar_blk_expressions(polar, device, M)
+function test_block_expressions(polar, device, M)
     nblocks = 2
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
     stack = ExaPF.NetworkStack(polar)
@@ -287,5 +287,54 @@ function test_block_powerflow(polar, device, M)
     )
     @test convergence.has_converged
     @test convergence.norm_residuals < pf_solver.tol
+end
+
+function test_contingency_powerflow(polar, device, M)
+    nbus = get(polar, PS.NumberOfBuses())
+    pf_solver = NewtonRaphson(tol=1e-10)
+
+    contingencies = ExaPF.LineContingency[
+        ExaPF.LineContingency(2),
+        ExaPF.LineContingency(8),
+    ]
+    nblocks = length(contingencies) + 1
+
+    blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
+    blk_stack = ExaPF.NetworkStack(blk_polar)
+
+    pf = ExaPF.PowerFlowBalance(blk_polar, contingencies) ∘ ExaPF.PolarBasis(blk_polar)
+
+    blk_jac = ExaPF.ArrowheadJacobian(blk_polar, pf, State())
+    ExaPF.set_params!(blk_jac, blk_stack)
+    ExaPF.jacobian!(blk_jac, blk_stack)
+
+    convergence = ExaPF.nlsolve!(
+        pf_solver,
+        blk_jac,
+        blk_stack;
+    )
+    @test convergence.has_converged
+    @test convergence.norm_residuals < pf_solver.tol
+
+    # Compare with references
+    for (k, contingency) in enumerate(contingencies)
+        line = contingency.line_id
+        network = PS.PowerNetwork(polar.network)
+        # Drop line manually inside model's data
+        network.lines.Yff[line] = 0.0im
+        network.lines.Yft[line] = 0.0im
+        network.lines.Ytf[line] = 0.0im
+        network.lines.Ytt[line] = 0.0im
+        #
+        post_model = ExaPF.PolarForm(network, device)
+
+        stack = ExaPF.NetworkStack(post_model)
+        conv = ExaPF.run_pf(post_model, stack)
+        @test conv.has_converged
+
+        vref = Array(stack.vmag)
+        vmag = Array(blk_stack.vmag[k * nbus + 1:(k+1)*nbus])
+        @test vref ≈ vmag
+    end
 end
 

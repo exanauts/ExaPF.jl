@@ -29,6 +29,41 @@ function matpower_jacobian(polar::AbstractPolarFormulation, func::PowerFlowBalan
     ]::SparseMatrixCSC{Float64, Int}
 end
 
+# Warning: this method is specialized for PolarFormRecourse as it has
+# an additional state Δ
+function matpower_jacobian(polar::PolarFormRecourse, func::PowerFlowRecourse, V)
+    pf = polar.network
+    nbus = pf.nbus
+    ngen = pf.ngen
+    ref, pv, pq = pf.ref, pf.pv, pf.pq
+    gen2bus = pf.gen2bus
+    nref = length(ref)
+    npv = length(pv)
+    npq = length(pq)
+    Ybus = pf.Ybus
+
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
+
+    Cg_tot = sparse(gen2bus, 1:ngen, ones(ngen), nbus, ngen)
+    Cg = Cg_tot[[ref; pv; pq], :]
+
+    j11 = real(dSbus_dVm[[ref; pv; pq], :])
+    j12 = real(dSbus_dVa[[ref; pv; pq], :])
+    j13 = -Cg
+    j21 = imag(dSbus_dVm[pq, :])
+    j22 = imag(dSbus_dVa[pq, :])
+    j23 = spzeros(npq, ngen)
+
+    α = func.alpha |> Array
+    j14 = -Cg * α
+    j24 = spzeros(npq, 1)
+
+    return [
+        j11 j12 j13 j14;
+        j21 j22 j23 j24
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
 function matpower_jacobian(polar::AbstractPolarFormulation, func::VoltageMagnitudeBounds, V)
     pf = polar.network
     ngen = pf.ngen
@@ -86,6 +121,28 @@ function matpower_jacobian(polar::AbstractPolarFormulation, func::LineFlows, V)
 
     return [
         j11 j12 j13;
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
+function matpower_jacobian(polar::AbstractPolarFormulation, func::ReactivePowerBounds, V)
+    pf = polar.network
+    nbus = pf.nbus
+    ngen = pf.ngen
+    gen2bus = pf.gen2bus
+    ref, pv, pq = pf.ref, pf.pv, pf.pq
+    nref = length(ref)
+    npv = length(pv)
+    npq = length(pq)
+    Ybus = pf.Ybus
+
+    dSbus_dVm, dSbus_dVa = PS.matpower_residual_jacobian(V, Ybus)
+
+    j1 = imag(dSbus_dVm[[ref; pv], :])
+    j2 = imag(dSbus_dVa[[ref; pv], :])
+    j3 = spzeros(nref + npv, ngen)
+    # w.r.t. control
+    return [
+        j1 j2 j3
     ]::SparseMatrixCSC{Float64, Int}
 end
 
@@ -185,6 +242,61 @@ function matpower_hessian(polar::AbstractPolarFormulation, func::PowerFlowBalanc
     ]::SparseMatrixCSC{Float64, Int}
 end
 
+function matpower_hessian(polar::PolarFormRecourse, func::PowerFlowRecourse, V, λ)
+    pf = polar.network
+    Ybus = pf.Ybus
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    pq, pv, ref = pf.pq, pf.pv, pf.ref
+    npq, npv, nref = length(pq), length(pv), length(ref)
+
+    yp = zeros(nbus)
+    yp[ref] .= λ[1:nref]
+    yp[pv] .= λ[nref+1:npv+nref]
+    yp[pq] .= λ[1+npv+nref:npv+npq+nref]
+    Hpθθ, Hpvθ, Hpvv = PS._matpower_hessian(V, Ybus, yp)
+
+    yq = zeros(nbus)
+    yq[pq] .= λ[1+npv+npq:npv+2*npq]
+    Hqθθ, Hqvθ, Hqvv = PS._matpower_hessian(V, Ybus, yq)
+
+    H11 = real.(Hpvv) .+ imag.(Hqvv)
+    H12 = real.(Hpvθ) .+ imag.(Hqvθ)
+    H13 = spzeros(nbus, ngen)
+
+    H21 = real.(Hpvθ') .+ imag.(Hqvθ')
+    H22 = real.(Hpθθ) .+ imag.(Hqθθ)
+    H23 = spzeros(nbus, ngen)
+
+    H31 = spzeros(ngen, nbus)
+    H32 = spzeros(ngen, nbus)
+    H33 = spzeros(ngen, ngen)
+    return [
+        H11 H12 H13;
+        H21 H22 H23;
+        H31 H32 H33
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
+function matpower_hessian(polar::PolarFormRecourse, func::QuadraticCost, V, λ)
+    pf = polar.network
+    nbus, ngen = get(polar, PS.NumberOfBuses()), get(polar, PS.NumberOfGenerators())
+    c2 = func.c2 |> Array
+    H11 = spzeros(2* nbus, 2 * nbus + ngen)
+    H21 = spzeros(ngen, 2 * nbus)
+    H22 = spdiagm(2.0 .* c2)
+    return [
+        H11;
+        H21 H22;
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
+function matpower_hessian(polar::PolarFormRecourse, func::TrackingCost, V, λ)
+    pf = polar.network
+    nbus, ngen = get(polar, PS.NumberOfBuses()), get(polar, PS.NumberOfGenerators())
+    return spdiagm(ones(2nbus+ngen))
+end
+
 function matpower_hessian(polar::AbstractPolarFormulation, func::PowerGenerationBounds, V, λ)
     pf = polar.network
     Ybus = pf.Ybus
@@ -208,6 +320,37 @@ function matpower_hessian(polar::AbstractPolarFormulation, func::PowerGeneration
 
     H21 = real.(Hpvθ') .+ imag.(Hqvθ')
     H22 = real.(Hpθθ) .+ imag.(Hqθθ)
+    H23 = spzeros(nbus, ngen)
+
+    H31 = spzeros(ngen, nbus)
+    H32 = spzeros(ngen, nbus)
+    H33 = spzeros(ngen, ngen)
+    return [
+        H11 H12 H13;
+        H21 H22 H23;
+        H31 H32 H33
+    ]::SparseMatrixCSC{Float64, Int}
+end
+
+function matpower_hessian(polar::AbstractPolarFormulation, func::ReactivePowerBounds, V, λ)
+    pf = polar.network
+    Ybus = pf.Ybus
+    nbus = get(polar, PS.NumberOfBuses())
+    ngen = get(polar, PS.NumberOfGenerators())
+    ref, pv = pf.ref, pf.pv
+    nref, npv = length(ref), length(pv)
+
+    yq = zeros(nbus)
+    yq[ref] .= λ[1:nref]
+    yq[pv] .= λ[nref+1:nref+npv]
+    Hqθθ, Hqvθ, Hqvv = PS._matpower_hessian(V, Ybus, yq)
+
+    H11 = imag.(Hqvv)
+    H12 = imag.(Hqvθ)
+    H13 = spzeros(nbus, ngen)
+
+    H21 = imag.(Hqvθ')
+    H22 = imag.(Hqθθ)
     H23 = spzeros(nbus, ngen)
 
     H31 = spzeros(ngen, nbus)

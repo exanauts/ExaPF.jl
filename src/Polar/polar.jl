@@ -36,14 +36,15 @@ giving a mathematical formulation with:
 struct PolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
     device::KA.Backend
+    ncustoms::Int  # custom variables defined by user
 end
 
-function PolarForm(pf::PS.PowerNetwork, device::KA.CPU)
-    return PolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device)
+function PolarForm(pf::PS.PowerNetwork, device::KA.CPU, ncustoms::Int=0)
+    return PolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, ncustoms)
 end
 # Convenient constructor
-PolarForm(datafile::String, device=CPU()) = PolarForm(PS.PowerNetwork(datafile), device)
-PolarForm(polar::PolarForm, device=CPU()) = PolarForm(polar.network, device)
+PolarForm(datafile::String, device=CPU(); ncustoms=0) = PolarForm(PS.PowerNetwork(datafile), device, ncustoms)
+PolarForm(polar::PolarForm, device=CPU()) = PolarForm(polar.network, device, polar.ncustoms)
 
 introduce(polar::PolarForm) = "Polar formulation"
 nblocks(polar::PolarForm) = 1
@@ -60,12 +61,13 @@ struct BlockPolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
     device::KA.Backend
     k::Int
+    ncustoms::Int  # custom variables defined by user
 end
-function BlockPolarForm(pf::PS.PowerNetwork, device, k::Int)
-    return BlockPolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, k)
+function BlockPolarForm(pf::PS.PowerNetwork, device, k::Int, ncustoms::Int=0)
+    return BlockPolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, k, ncustoms)
 end
-BlockPolarForm(datafile::String, k::Int, device=CPU()) = BlockPolarForm(PS.PowerNetwork(datafile), device, k)
-BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.device, k)
+BlockPolarForm(datafile::String, k::Int, device=CPU(); ncustoms=0) = BlockPolarForm(PS.PowerNetwork(datafile), device, k, ncustoms)
+BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.device, k, polar.ncustoms)
 
 introduce(polar::BlockPolarForm) = "$(polar.k)-BlockPolar formulation"
 nblocks(polar::BlockPolarForm) = polar.k
@@ -117,8 +119,8 @@ giving a mathematical formulation with:
 ```
 
 """
-function load_polar(case, device=CPU(); dir=PS.EXADATA)
-    return PolarForm(PS.load_case(case, dir), device)
+function load_polar(case, device=CPU(); ncustoms=0, dir=PS.EXADATA)
+    return PolarForm(PS.load_case(case, dir), device, ncustoms)
 end
 
 """
@@ -273,6 +275,8 @@ end
 
 include("stacks.jl")
 include("functions.jl")
+include("recourse.jl")
+include("contingencies.jl")
 include("first_order.jl")
 include("second_order.jl")
 include("newton.jl")

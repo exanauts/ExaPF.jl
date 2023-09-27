@@ -119,6 +119,16 @@ function PowerNetwork(datafile::String; options...)
     return PowerNetwork(data; options...)
 end
 
+function PowerNetwork(network::PowerNetwork)
+    data = Dict{String, Array}()
+    data["bus"] = copy(network.buses)
+    data["branch"] = copy(network.branches)
+    data["gen"] = copy(network.generators)
+    data["baseMVA"] = Float64[network.baseMVA]
+    data["cost"] = copy(network.costs)
+    return PowerNetwork(data)
+end
+
 # Wrap ExaData and PGLIB's artifacts
 @enum(PowerNetworkLibrary,
     EXADATA=1,
@@ -350,11 +360,16 @@ function get_costs_coefficients(pf::PowerNetwork)
     return coefficients
 end
 
-function get_basis_matrix(pf::PowerNetwork)
-    nb = pf.nbus
-    nl = size(pf.branches, 1)
-    Yff, Yft, Ytf, Ytt = pf.lines.Yff, pf.lines.Yft, pf.lines.Ytf, pf.lines.Ytt
-    f, t = pf.lines.from_buses, pf.lines.to_buses
+function get_basis_matrix(pf::PowerNetwork; remove_line::Int=0)
+    nb, nl = pf.nbus, number_lines(pf.lines)
+    # Screening
+    lines = if 1 <= remove_line <= nl
+        drop_line(pf.lines, remove_line)
+    else
+        pf.lines
+    end
+
+    f, t = lines.from_buses, lines.to_buses
 
     Cf = sparse(f, 1:nl, ones(nl), nb, nl)       # connection matrix for line & from buses
     Ct = sparse(t, 1:nl, ones(nl), nb, nl)       # connection matrix for line & to buses
@@ -363,25 +378,29 @@ function get_basis_matrix(pf::PowerNetwork)
     Ysh = sparse(1:nb, 1:nb, ysh, nb, nb)
 
     # Build matrix
-    Yc = Cf * Diagonal(Yft) + Ct * Diagonal(Ytf)
-    Ys = Cf * Diagonal(Yft) - Ct * Diagonal(Ytf)
-    Yd = Cf * Diagonal(Yff) * Cf' + Ct * Diagonal(Ytt) * Ct' + Ysh
+    Yc = Cf * Diagonal(lines.Yft) + Ct * Diagonal(lines.Ytf)
+    Ys = Cf * Diagonal(lines.Yft) - Ct * Diagonal(lines.Ytf)
+    Yd = Cf * Diagonal(lines.Yff) * Cf' + Ct * Diagonal(lines.Ytt) * Ct' + Ysh
 
-    return [-real(Yc) -imag(Ys) -real(Yd);
+    return [-real(Yc)  -imag(Ys) -real(Yd);
              imag(Yc)  -real(Ys)  imag(Yd)]
 end
 
-function get_line_flow_matrices(pf::PowerNetwork)
-    nb = pf.nbus
-    nl = size(pf.branches, 1)
-    Yff, Yft, Ytf, Ytt = pf.lines.Yff, pf.lines.Yft, pf.lines.Ytf, pf.lines.Ytt
+function get_line_flow_matrices(pf::PowerNetwork; remove_line::Int=0)
+    nb, nl = pf.nbus, number_lines(pf.lines)
+    # Screening
+    lines = if 1 <= remove_line <= nl
+        drop_line(pf.lines, remove_line)
+    else
+        pf.lines
+    end
 
-    yff = Diagonal(Yff)
-    yft = Diagonal(Yft)
-    ytf = Diagonal(Ytf)
-    ytt = Diagonal(Ytt)
+    yff = Diagonal(lines.Yff)
+    yft = Diagonal(lines.Yft)
+    ytf = Diagonal(lines.Ytf)
+    ytt = Diagonal(lines.Ytt)
 
-    f, t = pf.lines.from_buses, pf.lines.to_buses
+    f, t = lines.from_buses, lines.to_buses
 
     Cf = sparse(f, 1:nl, ones(nl), nb, nl)       # connection matrix for line & from buses
     Ct = sparse(t, 1:nl, ones(nl), nb, nl)       # connection matrix for line & to buses

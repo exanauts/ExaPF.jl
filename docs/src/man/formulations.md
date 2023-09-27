@@ -155,7 +155,7 @@ as `[vmag; vang; pgen]`:
 # Define dimension of the problem
 julia> nbus, ngen, nlines = 3, 2, 4;
 
-julia> stack = ExaPF.NetworkStack(nbus, ngen, nlines, 1, Vector{Float64}, Vector{Float64})
+julia> stack = ExaPF.NetworkStack(nbus, ngen, nlines, 0, Vector{Float64}, Vector{Float64})
 8-elements NetworkStack{Vector{Float64}}
 
 julia> stack.input
@@ -206,7 +206,7 @@ the problem):
 ```jldoctests
 julia> nbus, ngen, nlines = 4, 3, 4;
 
-julia> stack = ExaPF.NetworkStack(nbus, ngen, nlines, 1, Vector{Float64}, Vector{Float64});
+julia> stack = ExaPF.NetworkStack(nbus, ngen, nlines, 0, Vector{Float64}, Vector{Float64});
 
 julia> stack.input .= 1:length(stack.input); # index array input
 

@@ -47,10 +47,10 @@ function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     VD = A{t1s{1}}
 
-    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
     init!(polar, stack)
 
-    ∂stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
 
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
@@ -93,6 +93,30 @@ function _hessian_sparsity(polar::AbstractPolarFormulation, func)
     return matpower_hessian(polar, func, V, y)
 end
 
+function _hessian_sparsity(polar::PolarFormRecourse, func)
+    m = length(func)
+    nbus, ngen = get(polar, PS.NumberOfBuses()), get(polar, PS.NumberOfGenerators())
+    gen = 2nbus+1:2nbus+ngen
+    Vre = Float64[i for i in 1:nbus]
+    Vim = Float64[i for i in nbus+1:2*nbus]
+    V = Vre .+ im .* Vim
+    y = rand(m)
+    H = matpower_hessian(polar, func, V, y)
+    n = size(H, 1)
+    @assert n == 2nbus + ngen
+    # Hessian is dimensioned without additional variables, pad it
+    H21 = spzeros(n, ngen+1)
+    H22 = [
+           ones(1, 1)   ones(1, ngen)
+           ones(ngen, 1) H[gen, gen]
+    ]
+
+    return [
+        H    H21
+        H21' H22
+    ]::SparseMatrixCSC
+end
+
 function _get_hessian_colors(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, map::Vector{Int})
     H = _hessian_sparsity(polar, func)::SparseMatrixCSC
     Hsub = H[map, map] # reorder
@@ -113,7 +137,7 @@ struct FullHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFullHess
     H::SMT
 end
 
-function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
+function FullHessian(polar::AbstractPolarFormulation{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
     (SMT, A) = get_jacobian_types(polar.device)
 
     pf = polar.network
@@ -133,10 +157,10 @@ function FullHessian(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     H = H_host |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
     init!(polar, stack)
 
-    ∂stack = NetworkStack(nbus, ngen, nlines, VT, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, VT, VD)
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
 
@@ -204,7 +228,7 @@ function hessian_arrowhead_sparsity(H, nx, nu, nscen)
 end
 
 function ArrowheadHessian(
-    polar::BlockPolarForm{T, VI, VT, MT},
+    polar::AbstractPolarFormulation{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
     X::AbstractVariable,
 ) where {T, VI, VT, MT}
@@ -265,10 +289,10 @@ function ArrowheadHessian(
     H = sparse(i_coo, j_coo, ones(length(i_coo)), ntot, ntot) |> SMT
 
     # Structures
-    stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
+    stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, k, VT, VD)
     init!(polar, stack)
 
-    ∂stack = NetworkStack(nbus, ngen, nlines, k, VT, VD)
+    ∂stack = NetworkStack(nbus, ngen, nlines, polar.ncustoms, k, VT, VD)
     t1sF = zeros(Float64, n_cons) |> VD
     adj_t1sF = similar(t1sF)
 
