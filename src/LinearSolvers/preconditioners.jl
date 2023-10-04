@@ -185,18 +185,21 @@ Base.eltype(::BlockJacobiPreconditioner) = Float64
 # of the blocks, gemm_strided is performing too many unecessary operations,
 # impairing its performance.
 @kernel function mblock_kernel!(y, b, p_len, rp_len, part, blocks)
+    p = size(b, 2)
     i, j = @index(Global, NTuple)
     len = p_len[i]
     rlen = rp_len[i]
 
     if j <= rlen
-        accum = 0.0
-        idxA = @inbounds part[j, i]
-        for k=1:len
-            idxB = @inbounds part[k, i]
-            @inbounds accum = accum + blocks[j, k, i]*b[idxB]
+        for ℓ=1:p
+            accum = 0.0
+            idxA = @inbounds part[j, i]
+            for k=1:len
+                idxB = @inbounds part[k, i]
+                @inbounds accum = accum + blocks[j, k, i]*b[idxB,ℓ]
+            end
+            y[idxA,ℓ] = accum
         end
-        y[idxA] = accum
     end
 end
 
@@ -214,6 +217,22 @@ function mul!(y, C::BlockJacobiPreconditioner, b::Vector{T}) where T
     end
 end
 
+function mul!(Y, C::BlockJacobiPreconditioner, B::Matrix{T}) where T
+    n, p = size(B)
+    fill!(Y, zero(T))
+    for i=1:C.nblocks
+        rlen = C.lpartitions[i]
+        part = C.partitions[1:rlen, i]
+        blck = C.blocks[1:rlen, 1:rlen, i]
+        for rhs=1:p
+            for j=1:C.rest_size[i]
+                idx = part[j]
+                Y[idx,rhs] += dot(blck[j, :], B[part,rhs])
+            end
+        end
+    end
+end
+
 function mul!(y, C::BlockJacobiPreconditioner, b::CuVector{T}) where T
     n = size(b, 1)
     fill!(y, zero(T))
@@ -221,6 +240,19 @@ function mul!(y, C::BlockJacobiPreconditioner, b::CuVector{T}) where T
     ndrange = (C.nblocks, max_rlen)
     mblock_kernel!(CUDABackend())(
         y, b, C.culpartitions, C.curest_size,
+        C.cupartitions, C.cublocks,
+        ndrange=ndrange,
+    )
+    KA.synchronize(CUDABackend())
+end
+
+function mul!(Y, C::BlockJacobiPreconditioner, B::CuMatrix{T}) where T
+    n, p = size(B)
+    fill!(Y, zero(T))
+    max_rlen = maximum(C.rest_size)
+    ndrange = (C.nblocks, max_rlen)
+    mblock_kernel!(CUDABackend())(
+        Y, B, C.culpartitions, C.curest_size,
         C.cupartitions, C.cublocks,
         ndrange=ndrange,
     )
