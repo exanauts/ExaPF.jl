@@ -19,6 +19,28 @@ function generate_random_system(n::Int, m::Int)
     return spA, b, x♯
 end
 
+function test_preconditioners(device, AT, SMT)
+    n, m = 100, 100
+    A, b, x♯ = generate_random_system(n, m)
+    # Transfer data to device
+    A = A |> SMT
+    b = b |> AT
+    x♯ = x♯ |> AT
+    x = similar(b); r = similar(b)
+    nblocks = 2
+    precond = LS.BlockJacobiPreconditioner(A, nblocks, device)
+    LS.update(precond, A, device)
+    Iₙ = Matrix{Float64}(I, n, n) |> AT
+    Y = zeros(Float64, n, n) |> AT
+    Y2 = zeros(Float64, n, n) |> AT
+    mul!(Y, precond, Iₙ)
+    for i=1:n
+        eᵢ = Iₙ[:,i] |> AT
+        mul!(view(Y2,:,i), precond, eᵢ)
+    end
+    @test Y ≈ Y2
+end
+
 function test_custom_bicgstab(device, AT, SMT)
     n, m = 100, 100
     A, b, x♯  = generate_random_system(n, m)
