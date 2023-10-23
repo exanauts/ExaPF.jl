@@ -1,17 +1,14 @@
 module LinearSolvers
 
 using LinearAlgebra
+using Adapt
 
 using Printf
 using SparseArrays
 
 import Base: show
 
-using CUDA
 using KernelAbstractions
-import CUDA.CUBLAS
-import CUDA.CUSOLVER
-import CUDA.CUSPARSE
 import Krylov
 import LightGraphs
 import Metis
@@ -80,6 +77,10 @@ will used directly the factorization stored inside `solver`.
 """
 function rdiv! end
 
+_get_type(J) = error("No handling of sparse Jacobian type defined in LinearSolvers")
+_get_type(J::SparseMatrixCSC) = Vector{Float64}
+_allowscalar(f::Function, J::SparseMatrixCSC) = f()
+
 """
     DirectSolver <: AbstractLinearSolver
 
@@ -94,7 +95,6 @@ struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: Abstrac
 end
 
 DirectSolver(J; options...) = DirectSolver(lu(J))
-DirectSolver(J::CUSPARSE.CuSparseMatrixCSR; options...) = DirectSolver(nothing)
 DirectSolver() = DirectSolver(nothing)
 
 function update!(s::DirectSolver, J::AbstractMatrix)
@@ -129,9 +129,6 @@ end
 
 function update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC)
     update(solver.precond, J, CPU())
-end
-function update!(solver::AbstractIterativeLinearSolver, J::CUSPARSE.CuSparseMatrixCSR)
-    update(solver.precond, J, CUDABackend())
 end
 
 """
@@ -212,7 +209,7 @@ function DQGMRES(J::AbstractSparseMatrix;
     P=BlockJacobiPreconditioner(J), memory=4, verbose=false
 )
     n, m = size(J)
-    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1, CUDA.Mem.DeviceBuffer} : Vector{Float64}
+    S = _get_type(J)
     solver = Krylov.DqgmresSolver(n, m, memory, S)
     return DQGMRES(solver, P, memory, verbose)
 end
@@ -220,7 +217,7 @@ end
 function ldiv!(solver::DQGMRES,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
-    CUDA.allowscalar() do
+    _allowscalar(J) do
         Krylov.dqgmres!(solver.inner, J, x; N=solver.precond)
     end
     copyto!(y, solver.inner.x)
@@ -245,7 +242,7 @@ function KrylovBICGSTAB(J::AbstractSparseMatrix;
     P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10
 )
     n, m = size(J)
-    S = isa(J, CUSPARSE.CuSparseMatrixCSR) ? CuArray{Float64, 1, CUDA.Mem.DeviceBuffer} : Vector{Float64}
+    S = _get_type(J)
     solver = Krylov.BicgstabSolver(n, m, S)
     return KrylovBICGSTAB(solver, P, verbose, atol, rtol)
 end
@@ -253,7 +250,7 @@ end
 function ldiv!(solver::KrylovBICGSTAB,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
 )
-    CUDA.allowscalar() do
+    _allowscalar(J) do
         Krylov.bicgstab!(
             solver.inner, J, x;
             N=solver.precond,

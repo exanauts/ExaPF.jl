@@ -404,18 +404,20 @@ function AutoDiff.partials!(hess::ArrowheadHessian)
     n = length(duals)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
-    if isa(H, SparseMatrixCSC)
+    if _iscsc(H)
         ndrange = (size(H, 2), )
         _arrowhead_hess_partials_csc_kernel!(device)(
             H.colptr, H.rowval, H.nzval, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
             ndrange=ndrange,
         )
-    elseif isa(H, CuSparseMatrixCSR)
+    elseif _iscsr(H)
         ndrange = (size(H, 1), )
         _arrowhead_hess_partials_csr_kernel!(device)(
             H.rowPtr, H.colVal, H.nzVal, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
             ndrange=ndrange,
         )
+    else
+        error("Missing kernel for type $typeof(J)")
     end
     KA.synchronize(device)
 end

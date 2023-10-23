@@ -287,18 +287,20 @@ function AutoDiff.partials!(jac::ArrowheadJacobian)
     n = length(duals)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
-    if isa(J, SparseMatrixCSC)
+    if _iscsc(J)
         ndrange = (size(J, 2), )
         _arrowhead_partials_csc_kernel!(device)(
             J.colptr, J.rowval, J.nzval, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
             ndrange=ndrange,
         )
-    elseif isa(J, CuSparseMatrixCSR)
+    elseif _iscsr(J)
         ndrange = (size(J, 1), )
         _arrowhead_partials_csr_kernel!(device)(
             J.rowPtr, J.colVal, J.nzVal, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
             ndrange=ndrange,
         )
+    else
+        error("Missing kernel for type $typeof(J)")
     end
     KA.synchronize(device)
 end

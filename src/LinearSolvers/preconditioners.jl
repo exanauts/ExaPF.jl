@@ -48,120 +48,90 @@ Overlapping-Schwarz preconditioner.
 * `part`: Partitioning as output by Metis
 * `cupart`: `part` transferred to the GPU
 """
-struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF} <: AbstractPreconditioner
+struct BlockJacobiPreconditioner{AT,GAT,VI,GVI,GMT,MI,GMI} <: AbstractPreconditioner
     nblocks::Int64
     blocksize::Int64
     partitions::MI
-    cupartitions::Union{GMI,Nothing}
+    cupartitions::GMI
     lpartitions::VI
-    culpartitions::Union{GVI,Nothing}
+    culpartitions::GVI
     rest_size::VI
-    curest_size::Union{GVI,Nothing}
+    curest_size::GVI
     blocks::AT
-    cublocks::Union{GAT,Nothing}
+    cublocks::GAT
     map::VI
-    cumap::Union{GVI,Nothing}
+    cumap::GVI
     part::VI
-    cupart::Union{GVI,Nothing}
-    id::Union{GMT,MT}
-    function BlockJacobiPreconditioner(J, npart, device=CPU(), olevel=0) where {}
-        if isa(device, CPU)
-            AT  = Array{Float64,3}
-            GAT = Nothing
-            VI  = Vector{Int64}
-            GVI = Nothing
-            MT  = Matrix{Float64}
-            GMT = Nothing
-            MI  = Matrix{Int64}
-            GMI = Nothing
-            SMT = SparseMatrixCSC{Float64,Int64}
-            VF = Vector{Float64}
-            GVF = Nothing
-        elseif isa(device, GPU)
-            AT  = Array{Float64,3}
-            GAT = CuArray{Float64, 3, CUDA.Mem.DeviceBuffer}
-            VI  = Vector{Int64}
-            GVI = CuArray{Int64, 1, CUDA.Mem.DeviceBuffer}
-            MT  = Matrix{Float64}
-            GMT = CuArray{Float64, 2, CUDA.Mem.DeviceBuffer}
-            MI  = Matrix{Int64}
-            GMI = CuArray{Int64, 2, CUDA.Mem.DeviceBuffer}
-            SMT = CUDA.CUSPARSE.CuSparseMatrixCSR{Float64}
-            VF = Vector{Float64}
-            GVF = CuVector{Float64}
-            J = SparseMatrixCSC(J)
-        else
-            error("Unknown device type")
-        end
-        m, n = size(J)
-        if npart < 2
-            error("Number of partitions `npart` should be at" *
-                  "least 2 for partitioning in Metis")
-        end
-        adj = build_adjmatrix(J)
-        g = LightGraphs.Graph(adj)
-        part = Metis.partition(g, npart)
-        partitions = Vector{Vector{Int64}}()
-        for i in 1:npart
-            push!(partitions, [])
-        end
-        for (i,v) in enumerate(part)
-            push!(partitions[v], i)
-        end
-        # We keep track of the partition size pre-overlap.
-        # This will allow us to implement the RAS update.
-        rest_size = length.(partitions)
-        # overlap
-        if olevel > 0
-            for i in 1:npart
-                partitions[i] = overlap(g, partitions[i], level=olevel)
-            end
-        end
-        lpartitions = length.(partitions)
-        blocksize = maximum(length.(partitions))
-        blocks = AT(undef, blocksize, blocksize, npart)
-        # Get partitions into bit typed structure
-        bpartitions = MI(undef, blocksize, npart)
-        bpartitions .= 0.0
-        for i in 1:npart
-            bpartitions[1:length(partitions[i]),i] .= VI(partitions[i])
-        end
-        id = MT(I, blocksize, blocksize)
-        for i in 1:npart
-            blocks[:,:,i] .= id
-        end
-        nmap = 0
-        for b in partitions
-            nmap += length(b)
-        end
-        map = VI(undef, nmap)
-        part = VI(undef, nmap)
-        for b in 1:npart
-            for (i,el) in enumerate(partitions[b])
-                map[el] = i
-                part[el] = b
-            end
-        end
+    cupart::GVI
+    id::GMT
+end
 
-        if isa(device, GPU)
-            id = GMT(I, blocksize, blocksize)
-            cubpartitions = GMI(bpartitions)
-            culpartitions = GVI(lpartitions)
-            curest_size = GVI(rest_size)
-            cublocks = GAT(blocks)
-            cumap = CUDA.cu(map)
-            cupart = CUDA.cu(part)
-        else
-            cublocks = nothing
-            cubpartitions = nothing
-            cumap = nothing
-            cupart = nothing
-            id = MT(I, blocksize, blocksize)
-            culpartitions = nothing
-            curest_size = nothing
-        end
-        return new{AT,GAT,VI,GVI,MT,GMT,MI,GMI,SMT,VF,GVF}(npart, blocksize, bpartitions, cubpartitions, lpartitions, culpartitions, rest_size, curest_size, blocks, cublocks, map, cumap, part, cupart, id)
+function BlockJacobiPreconditioner(J, npart, device=CPU(), olevel=0) where {}
+    if npart < 2
+        error("Number of partitions `npart` should be at" *
+                "least 2 for partitioning in Metis")
     end
+    adj = build_adjmatrix(SparseMatrixCSC(J))
+    g = LightGraphs.Graph(adj)
+    part = Metis.partition(g, npart)
+    partitions = Vector{Vector{Int64}}()
+    for i in 1:npart
+        push!(partitions, [])
+    end
+    for (i,v) in enumerate(part)
+        push!(partitions[v], i)
+    end
+    # We keep track of the partition size pre-overlap.
+    # This will allow us to implement the RAS update.
+    rest_size = length.(partitions)
+    # overlap
+    if olevel > 0
+        for i in 1:npart
+            partitions[i] = overlap(g, partitions[i], level=olevel)
+        end
+    end
+    lpartitions = length.(partitions)
+    blocksize = maximum(length.(partitions))
+    blocks = zeros(Float64, blocksize, blocksize, npart)
+    # Get partitions into bit typed structure
+    bpartitions = zeros(Int64, blocksize, npart)
+    bpartitions .= 0.0
+    for i in 1:npart
+        bpartitions[1:length(partitions[i]),i] .= Vector{Int64}(partitions[i])
+    end
+    id = Matrix{Float64}(I, blocksize, blocksize)
+    for i in 1:npart
+        blocks[:,:,i] .= id
+    end
+    nmap = 0
+    for b in partitions
+        nmap += length(b)
+    end
+    map = zeros(Int64, nmap)
+    part = zeros(Int64, nmap)
+    for b in 1:npart
+        for (i,el) in enumerate(partitions[b])
+            map[el] = i
+            part[el] = b
+        end
+    end
+
+    id = adapt(device, id)
+    cubpartitions = adapt(device, bpartitions)
+    culpartitions = adapt(device, lpartitions)
+    curest_size = adapt(device, rest_size)
+    cublocks = adapt(device, blocks)
+    cumap = adapt(device, map)
+    cupart = adapt(device, part)
+    return BlockJacobiPreconditioner(
+        npart, blocksize, bpartitions,
+        cubpartitions, lpartitions,
+        culpartitions, rest_size,
+        curest_size, blocks,
+        cublocks, map,
+        cumap, part,
+        cupart, id
+    )
 end
 
 function BlockJacobiPreconditioner(J::SparseMatrixCSC; nblocks=-1, device=CPU(), noverlaps=0)
@@ -173,7 +143,6 @@ function BlockJacobiPreconditioner(J::SparseMatrixCSC; nblocks=-1, device=CPU(),
     end
     return BlockJacobiPreconditioner(J, npartitions, device, noverlaps)
 end
-BlockJacobiPreconditioner(J::CUSPARSE.CuSparseMatrixCSR; options...) = BlockJacobiPreconditioner(SparseMatrixCSC(J); options...)
 
 Base.eltype(::BlockJacobiPreconditioner) = Float64
 
@@ -233,30 +202,32 @@ function mul!(Y, C::BlockJacobiPreconditioner, B::Matrix{T}) where T
     end
 end
 
-function mul!(y, C::BlockJacobiPreconditioner, b::CuVector{T}) where T
+function mul!(y, C::BlockJacobiPreconditioner, b::AbstractVector{T}) where T
+    device = KA.get_backend(b)
     n = size(b, 1)
     fill!(y, zero(T))
     max_rlen = maximum(C.rest_size)
     ndrange = (C.nblocks, max_rlen)
-    mblock_kernel!(CUDABackend())(
+    mblock_kernel!(device)(
         y, b, C.culpartitions, C.curest_size,
         C.cupartitions, C.cublocks,
         ndrange=ndrange,
     )
-    KA.synchronize(CUDABackend())
+    KA.synchronize(device)
 end
 
-function mul!(Y, C::BlockJacobiPreconditioner, B::CuMatrix{T}) where T
+function mul!(Y, C::BlockJacobiPreconditioner, B::AbstractMatrix{T}) where T
+    device = KA.get_backend(B)
     n, p = size(B)
     fill!(Y, zero(T))
     max_rlen = maximum(C.rest_size)
     ndrange = (C.nblocks, max_rlen)
-    mblock_kernel!(CUDABackend())(
+    mblock_kernel!(device)(
         Y, B, C.culpartitions, C.curest_size,
         C.cupartitions, C.cublocks,
         ndrange=ndrange,
     )
-    KA.synchronize(CUDABackend())
+    KA.synchronize(device)
 end
 
 """
@@ -286,12 +257,12 @@ function build_adjmatrix(A)
 end
 
 """
-    fillblock_gpu
+    _fillblock_gpu
 
 Fill the dense blocks of the preconditioner from the sparse CSR matrix arrays
 
 """
-@kernel function fillblock_gpu!(blocks, blocksize, partition, map, rowPtr, colVal, nzVal, part, lpartitions, id)
+@kernel function _fillblock_gpu!(blocks, blocksize, partition, map, rowPtr, colVal, nzVal, part, lpartitions, id)
     b = @index(Global, Linear)
     for i in 1:blocksize
         for j in 1:blocksize
@@ -314,45 +285,6 @@ Fill the dense blocks of the preconditioner from the sparse CSR matrix arrays
             end
         end
     end
-end
-
-function _update_gpu(p, j_rowptr, j_colval, j_nzval, device)
-    nblocks = p.nblocks
-    fillblock_gpu_kernel! = fillblock_gpu!(device)
-    # Fill Block Jacobi" begin
-    fillblock_gpu_kernel!(
-        p.cublocks, size(p.id,1),
-        p.cupartitions, p.cumap,
-        j_rowptr, j_colval, j_nzval,
-        p.cupart, p.culpartitions, p.id,
-        ndrange=nblocks,
-    )
-    KA.synchronize(device)
-    # Invert blocks begin
-    blocklist = Array{CuArray{Float64,2}}(undef, nblocks)
-    for b in 1:nblocks
-        blocklist[b] = p.cublocks[:,:,b]
-    end
-    CUDA.@sync pivot, info = CUDA.CUBLAS.getrf_batched!(blocklist, true)
-    CUDA.@sync pivot, info, blocklist = CUDA.CUBLAS.getri_batched(blocklist, pivot)
-    for b in 1:nblocks
-        p.cublocks[:,:,b] .= blocklist[b]
-    end
-    return
-end
-
-"""
-    function update(J::CuSparseMatrixCSR, p)
-
-Update the preconditioner `p` from the sparse Jacobian `J` in CSR format for the GPU
-
-1) The dense blocks `cuJs` are filled from the sparse Jacobian `J`
-2) To a batch inversion of the dense blocks using CUBLAS
-3) Extract the preconditioner matrix `p.P` from the dense blocks `cuJs`
-
-"""
-function update(p, J::CUSPARSE.CuSparseMatrixCSR, device)
-    _update_gpu(p, J.rowPtr, J.colVal, J.nzVal, device)
 end
 
 """
@@ -389,4 +321,3 @@ function Base.show(precond::BlockJacobiPreconditioner)
             " Mbytes = ", (nblock*nblock*npartitions*8.0)/(1024.0*1024.0))
     println("Block Jacobi block size: $(precond.nJs)")
 end
-
