@@ -26,6 +26,12 @@ end
     dest[i] = input[map[i]]
 end
 
+@kernel function _blk_transfer_to_input!(input, map, src, nx)
+    i, k = @index(Global, NTuple)
+    input[map[i + (k-1)*nx]] = src[i]
+end
+
+
 @kernel function _spmv_csr_kernel_double!(Y, X, colVal, rowPtr, nzVal, alpha, beta, n, m)
     i = @index(Global, Linear)
     Y[1, i] *= beta
@@ -118,3 +124,5 @@ function _blockdiag(A::SparseMatrixCSC{Tv, Ti}, k::Int) where {Tv, Ti}
     return SparseMatrixCSC{Tv, Ti}(n * k, m * k, Bp, Bi, Bz)
 end
 
+_iscsr(::SparseMatrixCSC) = false
+_iscsc(::SparseMatrixCSC) = true

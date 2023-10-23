@@ -4,10 +4,6 @@ module ExaPF
 using Printf
 using LinearAlgebra
 using SparseArrays
-
-import CUDA
-import CUDA.CUSPARSE
-
 import ForwardDiff
 using KernelAbstractions
 const KA = KernelAbstractions
@@ -15,7 +11,7 @@ const KA = KernelAbstractions
 import Base: show, get
 
 export run_pf
-export State, Control, AllVariables, PolarForm
+export State, Control, AllVariables, PolarForm, BlockPolarForm, PolarFormRecourse
 
 # Export KernelAbstractions devices
 export CPU
@@ -35,8 +31,5 @@ const LS = LinearSolvers
 
 # Polar formulation
 include("Polar/polar.jl")
-
-# CUDA extension
-include("cuda_wrapper.jl")
 
 end

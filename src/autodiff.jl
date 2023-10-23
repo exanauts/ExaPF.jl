@@ -3,7 +3,6 @@ module AutoDiff
 
 using SparseArrays
 
-using CUDA
 import ForwardDiff
 import SparseDiffTools
 using KernelAbstractions

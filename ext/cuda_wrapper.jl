@@ -1,25 +1,19 @@
-
-using CUDA
-import CUDA.CUBLAS
-import CUDA.CUSPARSE: CuSparseMatrixCSR, CuSparseMatrixCSC
-import CUDA.CUSOLVER
-
-function PolarForm(pf::PS.PowerNetwork, device::CUDABackend, ncustoms::Int=0)
+function ExaPF.PolarForm(pf::PS.PowerNetwork, device::CUDABackend, ncustoms::Int=0)
     return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, ncustoms)
 end
-function BlockPolarForm(pf::PS.PowerNetwork, device::CUDABackend, k::Int, ncustoms::Int=0)
+function ExaPF.BlockPolarForm(pf::PS.PowerNetwork, device::CUDABackend, k::Int, ncustoms::Int=0)
     return BlockPolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k, ncustoms)
 end
-function PolarFormRecourse(pf::PS.PowerNetwork, device::CUDABackend, k::Int)
+function ExaPF.PolarFormRecourse(pf::PS.PowerNetwork, device::CUDABackend, k::Int)
     ngen = PS.get(pf, PS.NumberOfGenerators())
     ncustoms = (ngen + 1) * k
     return PolarFormRecourse{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k, ncustoms)
 end
 
-default_sparse_matrix(::CUDABackend) = CuSparseMatrixCSR{Float64, Int32}
-xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)
+ExaPF.default_sparse_matrix(::CUDABackend) = CuSparseMatrixCSR{Float64, Int32}
+ExaPF.xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)
 
-function get_jacobian_types(::CUDABackend)
+function ExaPF.get_jacobian_types(::CUDABackend)
     SMT = CuSparseMatrixCSR{Float64, Int32}
     A = CUDA.CuVector
     return SMT, A
@@ -31,25 +25,25 @@ function Base.unsafe_wrap(Atype::Type{CUDA.CuArray{T, 1, CUDA.Mem.DeviceBuffer}}
     unsafe_wrap(CUDA.CuArray{T, 1}, p, (dim,); own, ctx)
 end
 
-CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = CuSparseMatrixCSR(A)
+CUSPARSE.CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = CuSparseMatrixCSR(A)
 
 
 # AbstractStack
 
-function Base.copyto!(stack::AutoDiff.AbstractStack, map::AbstractVector{Int}, vals::VT) where {VT <: CuArray}
+function Base.copyto!(stack::AD.AbstractStack, map::AbstractVector{Int}, vals::VT) where {VT <: CuArray}
     @assert length(map) == length(vals)
     ndrange = (length(map),)
-    _transfer_to_input!(CUDABackend())(
+    ExaPF._transfer_to_input!(CUDABackend())(
         stack.input, map, vals;
         ndrange=ndrange,
     )
     KA.synchronize(CUDABackend())
 end
 
-function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack, map::AbstractVector{Int}) where {VT <: CuArray}
+function Base.copyto!(dest::VT, stack::AD.AbstractStack, map::AbstractVector{Int}) where {VT <: CuArray}
     @assert length(map) == length(dest)
     ndrange = (length(map),)
-    _transfer_fr_input!(CUDABackend())(
+    ExaPF._transfer_fr_input!(CUDABackend())(
         dest, stack.input, map;
         ndrange=ndrange,
     )
@@ -57,8 +51,8 @@ function Base.copyto!(dest::VT, stack::AutoDiff.AbstractStack, map::AbstractVect
 end
 
 # By default, no factorization routine is available
-LinearSolvers.update!(s::DirectSolver{Nothing}, J::CuSparseMatrixCSR) = nothing
-function LinearSolvers.ldiv!(::DirectSolver{Nothing},
+LS.update!(s::LS.DirectSolver{Nothing}, J::CuSparseMatrixCSR) = nothing
+function LS.ldiv!(::LS.DirectSolver{Nothing},
     y::CuVector, J::CuSparseMatrixCSR, x::CuVector,
 )
     CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
@@ -68,7 +62,7 @@ end
 #=
     Generic SpMV for CuSparseMatrixCSR
 =#
-function ForwardDiff.npartials(vec::CuArray{ForwardDiff.Dual{T, V, N}}) where {T, V, N}
+function ExaPF.ForwardDiff.npartials(vec::CuArray{ForwardDiff.Dual{T, V, N}}) where {T, V, N}
     return N
 end
 
@@ -145,7 +139,7 @@ function LinearAlgebra.mul!(
     Ys = reshape(reinterpret(Float64, Y), p, n)
 
     ndrange = (n, )
-    _spmv_csr_kernel_double!(CUDABackend())(
+    ExaPF._spmv_csr_kernel_double!(CUDABackend())(
         Ys, X, A.colVal, A.rowPtr, A.nzVal, alpha, beta, n, m;
         ndrange=ndrange,
     )
@@ -182,20 +176,14 @@ function LinearAlgebra.mul!(
     _mm_transposed!('T', 'N', alpha, A.parent, Xs, beta, Ys, 'O')
 end
 
-@kernel function _blk_transfer_to_input!(input, map, src, nx)
-    i, k = @index(Global, NTuple)
-    input[map[i + (k-1)*nx]] = src[i]
-end
-
-function blockcopy!(stack::NetworkStack, map::CuArray{Int}, x::CuArray{Float64})
+function ExaPF.blockcopy!(stack::ExaPF.NetworkStack, map::CuArray{Int}, x::CuArray{Float64})
     nx = length(x)
     @assert length(map) % nx == 0
     nb = div(length(map), nx)
     ndrange = (nx, nb)
-    _blk_transfer_to_input!(CUDABackend())(
+    ExaPF._blk_transfer_to_input!(CUDABackend())(
         stack.input, map, x, nx;
         ndrange=ndrange,
     )
     KA.synchronize(CUDABackend())
 end
-
