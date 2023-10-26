@@ -217,7 +217,8 @@ function run_pf(
     func = PowerFlowBalance(polar) ∘ basis
     jac = Jacobian(polar, func, mapx)
 
-    conv = nlsolve!(solver, jac, stack)
+    linear_solver = default_linear_solver(jac.J, polar.device)
+    conv = nlsolve!(solver, jac, stack; linear_solver=linear_solver)
     return conv
 end
 

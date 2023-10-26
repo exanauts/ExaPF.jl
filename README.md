@@ -13,8 +13,7 @@ Its main features are:
 
 ExaPF leverages [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl)
 to generate portable kernels working on different backends.
-Right now, only CUDA is fully supported, but in the medium term we have good hope to support
-both [AMD ROCm](https://github.com/JuliaGPU/AMDGPU.jl) and [Intel oneAPI](https://github.com/JuliaGPU/oneAPI.jl).
+Right now, we NVIDA's CUDA and AMD's ROCm with [Intel oneAPI](https://github.com/JuliaGPU/oneAPI.jl) in development.
 
 ## Quick-start
 ### How to install ExaPF?

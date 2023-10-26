@@ -9,8 +9,8 @@ The code has been designed to be:
 ExaPF implements a [vectorized modeler](man/formulations.md) for power systems, which allows
 to manipulate basic expressions. All expressions are fully differentiable :
 their first and second-order derivatives can be extracted efficiently
-using [automatic differentiation](man/autodiff.md). In addition,
-we leverage the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl) and
+using [automatic differentiation](man/autodiff.md). In addition, we provide extensions that
+leverage the packages [`CUDA.jl`](https://github.com/JuliaGPU/CUDA.jl), [`AMDGPU.jl`]((https://github.com/JuliaGPU/AMDGPU.jl), and
 [`KernelAbstractions.jl`](https://github.com/JuliaGPU/KernelAbstractions.jl) to make ExaPF portable across GPU architectures.
 
 

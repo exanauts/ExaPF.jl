@@ -13,7 +13,8 @@ function test_recourse_powerflow(polar, device, M)
     convergence = ExaPF.nlsolve!(
         pf_solver,
         jac_recourse,
-        stack,
+        stack;
+        linear_solver=ExaPF.default_linear_solver(jac_recourse.J, device),
     )
     @test convergence.has_converged
     @test convergence.norm_residuals < pf_solver.tol

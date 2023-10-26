@@ -187,7 +187,9 @@ function test_reduced_gradient(polar, device, MT)
 
     # Solve power flow
     solver = NewtonRaphson(tol=1e-12)
-    ExaPF.nlsolve!(solver, jx, stack)
+    ExaPF.nlsolve!(solver, jx, stack;
+        linear_solver=ExaPF.default_linear_solver(jx.J, device)
+    )
 
     copyto!(stack_cpu.input, stack.input)
 
@@ -230,7 +232,9 @@ function test_reduced_gradient(polar, device, MT)
     # Compare with finite difference
     function reduced_cost(u_)
         stack_cpu.input[mapu] .= u_
-        ExaPF.nlsolve!(solver, jx_cpu, stack_cpu)
+        ExaPF.nlsolve!(solver, jx_cpu, stack_cpu;
+            linear_solver=ExaPF.default_linear_solver(jx_cpu.J, CPU()),
+        )
         c_ = zeros(1)
         cost_production_cpu(c_, stack_cpu)
         return sum(c_)

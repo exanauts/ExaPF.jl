@@ -4,6 +4,7 @@ using Random
 using LinearAlgebra
 using SparseArrays
 
+using AMDGPU
 using CUDA
 using KernelAbstractions
 
@@ -15,12 +16,19 @@ const BENCHMARK_DIR = joinpath(dirname(@__FILE__), "..", "benchmark")
 const EXAMPLES_DIR = joinpath(dirname(@__FILE__), "..", "examples")
 const CASES = ["case9.m", "case30.m"]
 
-ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
+# ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
+ARCHS = []
 if CUDA.has_cuda()
     using CUDA.CUSPARSE
     CUDA.allowscalar(false)
     CUDA_ARCH = (CUDABackend(), CuArray, CuSparseMatrixCSR)
     push!(ARCHS, CUDA_ARCH)
+end
+if AMDGPU.has_rocm_gpu()
+    using AMDGPU.rocSPARSE
+    AMDGPU.allowscalar(false)
+    ROC_ARCH = (ROCBackend(), ROCArray, ROCSparseMatrixCSR)
+    push!(ARCHS, ROC_ARCH)
 end
 
 # Load test modules

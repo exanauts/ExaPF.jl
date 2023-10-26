@@ -1,4 +1,5 @@
 using Test
+using AMDGPU
 using CUDA
 using KernelAbstractions
 
