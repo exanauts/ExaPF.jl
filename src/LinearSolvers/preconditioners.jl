@@ -141,6 +141,9 @@ function BlockJacobiPreconditioner(J::SparseMatrixCSC; nblocks=-1, device=CPU(),
     else
         div(n, 32)
     end
+    if npartitions < 2
+        npartitions = 2
+    end
     return BlockJacobiPreconditioner(J, npartitions, device, noverlaps)
 end
 

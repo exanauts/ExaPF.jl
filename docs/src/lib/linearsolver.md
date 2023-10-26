@@ -43,6 +43,11 @@ Available linear solvers can be queried with
 list_solvers
 
 ```
+A default solver is provided for each vendor backend.
+```@docs
+default_linear_solver
+
+```
 
 ## Preconditioning
 

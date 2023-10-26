@@ -18,7 +18,7 @@ import ..ExaPF: xnorm
 const KA = KernelAbstractions
 
 
-export bicgstab, list_solvers
+export bicgstab, list_solvers, default_linear_solver
 export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
 
 @enum(
@@ -272,9 +272,9 @@ List all linear solvers available solving the power flow on the CPU.
 list_solvers(::KA.CPU) = [DirectSolver, DQGMRES, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB]
 
 """
-    list_solvers(::KA.GPU)
+    default_linear_solver(A, ::KA.CPU)
 
-List all linear solvers available solving the power flow on an NVIDIA GPU.
+Default linear solver on the CPU.
 """
-list_solvers(::KA.GPU) = [DirectSolver, BICGSTAB, DQGMRES, EigenBICGSTAB, KrylovBICGSTAB]
+default_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
 end

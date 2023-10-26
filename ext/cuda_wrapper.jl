@@ -66,7 +66,7 @@ function ExaPF.ForwardDiff.npartials(vec::CuArray{ForwardDiff.Dual{T, V, N}}) wh
     return N
 end
 
-function _tranpose_descriptor(x::DenseCuMatrix)
+function _transpose_descriptor(x::DenseCuMatrix)
     desc_ref = Ref{CUSPARSE.cusparseDnMatDescr_t}()
     n, m = size(x)
     CUSPARSE.cusparseCreateDnMat(desc_ref, n, m, m, x, eltype(x), CUSPARSE.CUSPARSE_ORDER_ROW)
@@ -83,8 +83,8 @@ function _mm_transposed!(
     n = size(C)[2]
 
     descA = CUSPARSE.CuSparseMatrixDescriptor(A, index)
-    descB = _tranpose_descriptor(B)
-    descC = _tranpose_descriptor(C)
+    descB = _transpose_descriptor(B)
+    descC = _transpose_descriptor(C)
 
     function bufferSize()
         out = Ref{Csize_t}()
