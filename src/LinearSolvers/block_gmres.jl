@@ -52,12 +52,12 @@ Solve the linear system AX = B of size n with p right-hand sides using block-GMR
 function block_gmres end
 
 """
-    solver = bilqr!(solver::BilqrSolver, A, b, c; kwargs...)
-    solver = bilqr!(solver::BilqrSolver, A, b, c, x0, y0; kwargs...)
+    solver = block_gmres!(solver::BlockGmresSolver, B; kwargs...)
+    solver = block_gmres!(solver::BlockGmresSolver, B, X0; kwargs...)
 
-where `kwargs` are keyword arguments of [`bilqr`](@ref).
+where `kwargs` are keyword arguments of [`block_gmres`](@ref).
 
-See [`BilqrSolver`](@ref) for more details about the `solver`.
+See [`BlockGmresSolver`](@ref) for more details about the `solver`.
 """
 function block_gmres! end
 
