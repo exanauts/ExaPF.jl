@@ -49,6 +49,18 @@ default_linear_solver
 
 ```
 
+## Block-Krylov solvers
+
+`ExaPF.jl` provides an implementation of block-GMRES to solve linear systems
+with multiple righ-hand sides.
+
+```@docs
+BlockKrylovSolver
+BlockGmresSolver
+block_gmres
+block_gmres!
+```
+
 ## Preconditioning
 
 To solve linear systems with iterative methods, `ExaPF`

@@ -15,8 +15,10 @@ import Metis
 
 import ..ExaPF: xnorm
 
-const KA = KernelAbstractions
+import Base.size, Base.sizeof, Base.format_bytes
+import Krylov: KrylovStats, allocate_if, ksizeof, FloatOrComplex, ktimer, matrix_to_vector, kdisplay
 
+const KA = KernelAbstractions
 
 export bicgstab, list_solvers, default_linear_solver
 export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
@@ -33,6 +35,9 @@ export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
 include("preconditioners.jl")
 include("bicgstab.jl")
 include("bicgstab_eigen.jl")
+
+include("utils.jl")
+include("block_gmres.jl")
 
 abstract type AbstractLinearSolver end
 abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
