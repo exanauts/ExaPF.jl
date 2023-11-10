@@ -16,7 +16,7 @@ import Metis
 import ..ExaPF: xnorm
 
 import Base.size, Base.sizeof, Base.format_bytes
-import Krylov: KrylovStats, allocate_if, ksizeof, FloatOrComplex, ktimer, matrix_to_vector, kdisplay
+import Krylov: KrylovStats, allocate_if, ksizeof, FloatOrComplex, ktimer, matrix_to_vector, kdisplay, mulorldiv!
 
 const KA = KernelAbstractions
 
