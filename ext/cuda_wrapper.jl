@@ -53,7 +53,7 @@ end
 # By default, no factorization routine is available
 LS.update!(s::LS.DirectSolver{Nothing}, J::CuSparseMatrixCSR) = nothing
 function LS.ldiv!(::LS.DirectSolver{Nothing},
-    y::CuVector, J::CuSparseMatrixCSR, x::CuVector,
+    y::CuVector, J::CuSparseMatrixCSR, x::CuVector; options...
 )
     CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
     return 0

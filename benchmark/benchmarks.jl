@@ -230,7 +230,7 @@ function benchmark_bicgstab(polar, config, noverlaps, nblocks)
     n = size(J, 1)
     npartitions = max(ceil(Int, n / nblocks), 2)
     precond = LS.BlockJacobiPreconditioner(J, npartitions, polar.device, noverlaps)
-    algo = LS.KrylovBICGSTAB(J; P=precond)
+    algo = LS.Bicgstab(J; P=precond)
     # Update preconditioner
     LS.update!(algo, J)
     # RHS
@@ -319,7 +319,7 @@ function run_benchmarks_bicgstab(polar, config=DEFAULT_CONFIG)
     nblocks = ref_nblocks[best_time]
     config_pf[:noverlaps] = olevel
     config_pf[:npartitions] = ceil(Int, nx / nblocks)
-    res = benchmark_powerflow(polar, config, LS.KrylovBICGSTAB)
+    res = benchmark_powerflow(polar, config, LS.Bicgstab)
     push!(names, "powerflow_bicgstab_$(nblocks)blk_$(olevel)overlap")
     push!(timings, res.time)
     push!(iters, res.it)

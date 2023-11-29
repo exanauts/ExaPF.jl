@@ -10,19 +10,24 @@ using ForwardDiff
 using LinearAlgebra
 using KernelAbstractions
 using SparseArrays
+using KrylovPreconditioners
 
 const KA = KernelAbstractions
 const LS = ExaPF.LinearSolvers
 const PS = ExaPF.PowerSystem
 const AD = ExaPF.AutoDiff
+const KP = KrylovPreconditioners
 
 LS.DirectSolver(J::CuSparseMatrixCSR; options...) = ExaPF.LS.DirectSolver(nothing)
-LS.update!(solver::ExaPF.LS.AbstractIterativeLinearSolver, J::CuSparseMatrixCSR) = ExaPF.LS.update(solver.precond, J, CUDABackend())
+LS.update!(solver::ExaPF.LS.AbstractIterativeLinearSolver, J::CuSparseMatrixCSR) = KP.update!(solver.precond, J)
+LS.update!(solver::ExaPF.LS.DirectSolver, J::CuSparseMatrixCSR) = lu!(solver.factorization, J)
 LS._get_type(J::CuSparseMatrixCSR) = CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
 LS.default_linear_solver(A::CuSparseMatrixCSR, device::CUDABackend) = ExaPF.LS.DirectSolver(A)
-LS._allowscalar(f::Function, J::CuSparseMatrixCSR) = CUDA.allowscalar(f)
 ExaPF._iscsr(::CuSparseMatrixCSR) = true
 ExaPF._iscsc(::CuSparseMatrixCSR) = false
+function LS.scaling!(::LS.KrylovBICGSTAB,A::CuSparseMatrixCSR,b)
+    KP.scaling_csr!(A,b)
+end
 """
     list_solvers(::CUDABackend)
 
@@ -31,5 +36,4 @@ List all linear solvers available solving the power flow on an NVIDIA GPU.
 ExaPF.list_solvers(::CUDABackend) = [LS.DirectSolver, LS.BICGSTAB, LS.DQGMRES, LS.EigenBICGSTAB, LS.KrylovBICGSTAB]
 
 include("cuda_wrapper.jl")
-include("cuda_preconditioner.jl")
 end

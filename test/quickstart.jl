@@ -2,6 +2,7 @@ using Test
 using AMDGPU
 using CUDA
 using KernelAbstractions
+using KrylovPreconditioners
 
 using ExaPF
 import ExaPF: AutoDiff
@@ -56,7 +57,7 @@ const LS = ExaPF.LinearSolvers
     ExaPF.init!(polar, stack)
     npartitions = 8
     jac = jx.J
-    precond = LS.BlockJacobiPreconditioner(jac, npartitions, CPU())
+    precond = BlockJacobiPreconditioner(jac, npartitions, CPU())
     iterative_linear_solver = ExaPF.KrylovBICGSTAB(jac; P=precond)
     @test isa(iterative_linear_solver, LS.AbstractIterativeLinearSolver)
     # Test default tolerance
@@ -69,7 +70,7 @@ const LS = ExaPF.LinearSolvers
     )
 
     @test convergence.has_converged
-    @test convergence.n_iterations == 5
+    @test convergence.n_iterations == 6
     @test convergence.norm_residuals <= pf_algo.tol
 
     if test_cuda
@@ -92,7 +93,7 @@ const LS = ExaPF.LinearSolvers
 
         npartitions = 8
         jac = jx_gpu.J # we need to take the Jacobian on the CPU for partitioning!
-        precond = LS.BlockJacobiPreconditioner(jac, npartitions, CUDABackend())
+        precond = BlockJacobiPreconditioner(jac, npartitions, CUDABackend())
 
         # Reinit buffer
         ExaPF.init!(polar_gpu, stack_gpu)
@@ -104,7 +105,7 @@ const LS = ExaPF.LinearSolvers
         )
 
         @test convergence.has_converged
-        @test convergence.n_iterations == 5
+        @test convergence.n_iterations == 6
         @test convergence.norm_residuals <= pf_solver.tol
     end
 end

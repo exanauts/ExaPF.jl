@@ -10,15 +10,15 @@ DocTestFilters = [r"ExaPF"]
 # Benchmark
 
 For the purpose of performance regression testing, ExaPF provides a lightweight benchmark script. It allows to test the various configurations for the linear solvers used in the Newton-Raphson algorithm, and run them on a specific hardware. The main julia script [benchmark/benchmarks.jl](https://github.com/exanauts/ExaPF.jl/tree/main/benchmark/benchmarks.jl) takes all its options from the command line.
-The benchmark script takes as input a linear solver (e.g. `KrylovBICGSTAB`), a target architecture as a `KernelAbstractions` object (CPU or CUDABackend), and a case filename which is included in the `ExaData` artifact. An exhaustive list of all available linear solvers can be obtained via [`ExaPF.LinearSolvers.list_solvers`](@ref).
+The benchmark script takes as input a linear solver (e.g. `Bicgstab`), a target architecture as a `KernelAbstractions` object (CPU or CUDABackend), and a case filename which is included in the `ExaData` artifact. An exhaustive list of all available linear solvers can be obtained via [`ExaPF.LinearSolvers.list_solvers`](@ref).
 
 Running
 ```
-julia --project benchmark/benchmarks.jl KrylovBICGSTAB CUDABackend case300.m
+julia --project benchmark/benchmarks.jl Bicgstab CUDABackend case300.m
 ```
 yields
 ```
-KrylovBICGSTAB, CUDABackend, case300.m,  69.0,  3.57,  43.7, true
+Bicgstab, CUDABackend, case300.m,  69.0,  3.57,  43.7, true
 ```
 The first three fields are the settings of the benchmark run. They are followed by three timings in milliseconds:
 1. the time taken by the Newton-Raphson algorithm to solve the power flow,

@@ -62,7 +62,7 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     proj_fd = zeros(nx+nu)
     mul!(proj_fd, H_fd, tgt)
 
-    if isa(device, ROCBackend)
+    if startswith(string(device), "ROCBackend")
         @test_broken myisapprox(projp, proj_fd, rtol=rtol)
     else
         @test myisapprox(projp, proj_fd, rtol=rtol)

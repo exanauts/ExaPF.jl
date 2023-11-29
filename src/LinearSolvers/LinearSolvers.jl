@@ -17,11 +17,14 @@ import ..ExaPF: xnorm
 
 import Base.size, Base.sizeof, Base.format_bytes
 import Krylov: KrylovStats, allocate_if, ksizeof, FloatOrComplex, ktimer, matrix_to_vector, kdisplay, mulorldiv!
+using KrylovPreconditioners
 
 const KA = KernelAbstractions
+const KP = KrylovPreconditioners
 
 export bicgstab, list_solvers, default_linear_solver
 export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
+export do_scaling, scaling!
 
 @enum(
     SolveStatus,
@@ -32,7 +35,6 @@ export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
     Diverged,
 )
 
-include("preconditioners.jl")
 include("bicgstab.jl")
 include("bicgstab_eigen.jl")
 
@@ -84,7 +86,8 @@ function rdiv! end
 
 _get_type(J) = error("No handling of sparse Jacobian type defined in LinearSolvers")
 _get_type(J::SparseMatrixCSC) = Vector{Float64}
-_allowscalar(f::Function, J::SparseMatrixCSC) = f()
+do_scaling(linear_solver) = false
+scaling!(A,b) = nothing
 
 """
     DirectSolver <: AbstractLinearSolver
@@ -107,16 +110,16 @@ function update!(s::DirectSolver, J::AbstractMatrix)
 end
 
 # Reuse factorization in update
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector)
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...)
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
 # Solve system Ax = y
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray; options...)
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray)
+function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray; options...)
     LinearAlgebra.ldiv!(s.factorization, y) # Forward-backward solve
     return 0
 end
@@ -126,15 +129,13 @@ function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray,
     return 0
 end
 
-function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector)
+function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector; options...)
     F = lu(J)
     LinearAlgebra.ldiv!(y, F, x)
     return 0
 end
 
-function update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC)
-    update(solver.precond, J, CPU())
-end
+update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC) = KP.update!(solver.precond, J)
 
 """
     BICGSTAB <: AbstractIterativeLinearSolver
@@ -144,7 +145,7 @@ Custom BICGSTAB implementation to solve iteratively the linear system
 ``A  x = y``.
 """
 struct BICGSTAB <: AbstractIterativeLinearSolver
-    precond::AbstractPreconditioner
+    precond::AbstractKrylovPreconditioner
     maxiter::Int
     tol::Float64
     verbose::Bool
@@ -156,7 +157,7 @@ function BICGSTAB(J::AbstractSparseMatrix;
 end
 
 function ldiv!(solver::BICGSTAB,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...
 )
     y[:], n_iters, status = bicgstab(J, x, solver.precond, y; maxiter=solver.maxiter,
                                      verbose=solver.verbose, tol=solver.tol)
@@ -174,7 +175,7 @@ Julia's port of Eigen's BICGSTAB to solve iteratively the linear system
 ``A x = y``.
 """
 struct EigenBICGSTAB <: AbstractIterativeLinearSolver
-    precond::AbstractPreconditioner
+    precond::AbstractKrylovPreconditioner
     maxiter::Int
     tol::Float64
     verbose::Bool
@@ -186,7 +187,7 @@ function EigenBICGSTAB(J::AbstractSparseMatrix;
 end
 
 function ldiv!(solver::EigenBICGSTAB,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...
 )
     y[:], n_iters, status = bicgstab_eigen(J, x, solver.precond, y; maxiter=solver.maxiter,
                                            verbose=solver.verbose, tol=solver.tol)
@@ -206,7 +207,7 @@ Wrap `Krylov.jl`'s DQGMRES algorithm to solve iteratively the linear system
 """
 struct DQGMRES <: AbstractIterativeLinearSolver
     inner::Krylov.DqgmresSolver
-    precond::AbstractPreconditioner
+    precond::AbstractKrylovPreconditioner
     memory::Int
     verbose::Bool
 end
@@ -220,11 +221,9 @@ function DQGMRES(J::AbstractSparseMatrix;
 end
 
 function ldiv!(solver::DQGMRES,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...
 )
-    _allowscalar(J) do
-        Krylov.dqgmres!(solver.inner, J, x; N=solver.precond)
-    end
+    Krylov.dqgmres!(solver.inner, J, x; N=solver.precond)
     copyto!(y, solver.inner.x)
     return length(solver.inner.stats.residuals)
 end
@@ -238,35 +237,46 @@ Wrap `Krylov.jl`'s BICGSTAB algorithm to solve iteratively the linear system
 """
 struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
     inner::Krylov.BicgstabSolver
-    precond::AbstractPreconditioner
+    precond::AbstractKrylovPreconditioner
     verbose::Int
     atol::Float64
     rtol::Float64
+    ldiv::Bool
+    scaling::Bool
+    maxiter::Int64
 end
+do_scaling(linear_solver::KrylovBICGSTAB) = linear_solver.scaling
 function KrylovBICGSTAB(J::AbstractSparseMatrix;
-    P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10
+    P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10, ldiv=false, scaling=false, maxiter=size(J,1)
 )
     n, m = size(J)
     S = _get_type(J)
     solver = Krylov.BicgstabSolver(n, m, S)
-    return KrylovBICGSTAB(solver, P, verbose, atol, rtol)
+    return KrylovBICGSTAB(solver, P, verbose, atol, rtol, ldiv, scaling, maxiter)
 end
 
 function ldiv!(solver::KrylovBICGSTAB,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector,
+    y::AbstractVector, J::AbstractMatrix, x::AbstractVector;
+    max_atol = solver.atol, max_rtol = solver.rtol, options...
 )
-    _allowscalar(J) do
-        Krylov.bicgstab!(
-            solver.inner, J, x;
-            N=solver.precond,
-            atol=solver.atol,
-            rtol=solver.rtol,
-            verbose=solver.verbose,
-            history=true,
-        )
+
+    atol = max_atol < solver.atol ? solver.atol : max_atol
+    rtol = max_rtol < solver.rtol ? solver.rtol : max_rtol
+    Krylov.bicgstab!(
+        solver.inner, J, x;
+        N=solver.precond,
+        atol=atol,
+        rtol=rtol,
+        verbose=solver.verbose,
+        history=true,
+        ldiv=solver.ldiv,
+        itmax=solver.maxiter,
+    )
+    if solver.inner.stats.status == "breakdown αₖ == 0"
+        @warn("BICGSTAB failed to converge. Final status is $(solver.inner.stats.status)")
     end
     copyto!(y, solver.inner.x)
-    return length(solver.inner.stats.residuals)
+    return solver.inner.stats.niter
 end
 
 """
