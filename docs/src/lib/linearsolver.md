@@ -24,18 +24,8 @@ DirectSolver
 ## Iterative solvers
 
 ```@docs
-KrylovBICGSTAB
-DQGMRES
-BICGSTAB
-EigenBICGSTAB
-```
-
-`ExaPF.jl` is shipped with a custom BICGSTAB implementation.
-However, we highly recommend to use `KrylovBICGSTAB` instead,
-which has proved to be more robust.
-```@docs
-bicgstab
-
+Bicgstab
+Dqgmres
 ```
 
 Available linear solvers can be queried with
@@ -59,21 +49,4 @@ BlockKrylovSolver
 BlockGmresSolver
 block_gmres
 block_gmres!
-```
-
-## Preconditioning
-
-To solve linear systems with iterative methods, `ExaPF`
-provides an implementation of a block-Jacobi preconditioner,
-portable on GPU.
-
-```@docs
-AbstractPreconditioner
-```
-
-### Block-Jacobi preconditioner
-
-```@docs
-BlockJacobiPreconditioner
-update
 ```

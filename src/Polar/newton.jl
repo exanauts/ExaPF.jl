@@ -38,7 +38,8 @@ struct ConvergenceStatus
     norm_residuals::Float64
     n_linear_solves::Int
     time_jacobian::Float64
-    time_linear_solver::Float64
+    time_linear_solver_update::Float64
+    time_linear_solver_ldiv::Float64
     time_total::Float64
 end
 
@@ -46,7 +47,9 @@ function Base.show(io::IO, conv::ConvergenceStatus)
     println(io, "Power flow has converged: ", conv.has_converged)
     @printf(io, "  * #iterations: %d\n", conv.n_iterations)
     @printf(io, "  * Time Jacobian (s) ........: %1.4f\n", conv.time_jacobian)
-    @printf(io, "  * Time linear solver (s) ...: %1.4f\n", conv.time_linear_solver)
+    @printf(io, "  * Time linear solver (s) ...: %1.4f\n", conv.time_linear_solver_ldiv + conv.time_linear_solver_update)
+    @printf(io, "     * update (s) ............: %1.4f\n", conv.time_linear_solver_update)
+    @printf(io, "     * ldiv (s) ..............: %1.4f\n", conv.time_linear_solver_ldiv)
     @printf(io, "  * Time total (s) ...........: %1.4f\n", conv.time_total)
 end
 
@@ -126,7 +129,8 @@ function nlsolve!(
     linsol_iters = Int[]
     time_total = 0.0
     time_jacobian = 0.0
-    time_linear_solver = 0.0
+    time_linear_solver_update = 0.0
+    time_linear_solver_ldiv = 0.0
 
     map = jac.map
     x = view(stack.input, map)
@@ -153,9 +157,18 @@ function nlsolve!(
         end
 
         # Update
-        time_linear_solver += @elapsed begin
+        time_linear_solver_update += @elapsed begin
+            if LS.do_scaling(linear_solver)
+                LS.scaling!(linear_solver, J, residual)
+            end
             LS.update!(linear_solver, J)
-            n_iters = LS.ldiv!(linear_solver, Δx, J, residual)
+        end
+        normF = xnorm(residual)
+        time_linear_solver_ldiv += @elapsed begin
+            n_iters = LS.ldiv!(
+                linear_solver, Δx, J, residual,
+                max_atol=normF*1e-3, max_rtol=normF*1e-3
+            )
         end
         x .= x .- Δx
         push!(linsol_iters, n_iters)
@@ -167,7 +180,8 @@ function nlsolve!(
 
     time_total = time() - tic
     return ConvergenceStatus(
-        converged, iter, normF, sum(linsol_iters), time_jacobian, time_linear_solver, time_total,
+        converged, iter, normF, sum(linsol_iters),
+        time_jacobian, time_linear_solver_update, time_linear_solver_ldiv, time_total,
     )
 end
 

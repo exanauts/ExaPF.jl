@@ -230,11 +230,11 @@ for GPU usage. To build an instance with 8 blocks, just write
 ```@repl quickstart
 npartitions = 8;
 jac_gpu = jx_gpu.J;
-precond = LS.BlockJacobiPreconditioner(jac_gpu, npartitions, CUDABackend());
+precond = BlockJacobiPreconditioner(jac_gpu, npartitions, CUDABackend());
 ```
 You can attach the preconditioner to an BICGSTAB algorithm simply as
 ```@repl quickstart
-linear_solver = ExaPF.KrylovBICGSTAB(jac_gpu; P=precond);
+linear_solver = ExaPF.Bicgstab(jac_gpu; P=precond);
 
 ```
 (this will use the BICGSTAB algorithm implemented in

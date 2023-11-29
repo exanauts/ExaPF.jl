@@ -1,5 +1,4 @@
 ```@meta
-CurrentModule = ExaPF
 DocTestSetup = quote
     using ExaPF
     const AD = ExaPF.AD

@@ -34,6 +34,8 @@ systems. That's why this package comes with a block Jacobi preconditioner
 that is tailored towards GPUs and is proven to work well with power flow
 problems.
 
+The block-Jacobi preconditioner used in ExaPF has been added to [`KrylovPreconditioners.jl`](https://github.com/JuliaSmoothOptimizers/KrylovPreconditioners.jl)
+
 The Jacobian is partitioned into a dense block diagonal structure using `Metis.jl`, where each block is inverted to build our preconditioner `P`.
 
 ![Dense block Jacobi preconditioner \label{fig:preconditioner}](../figures/gpublocks.png)
