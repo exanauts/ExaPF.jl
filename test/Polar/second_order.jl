@@ -62,7 +62,7 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     proj_fd = zeros(nx+nu)
     mul!(proj_fd, H_fd, tgt)
 
-    if startswith(string(device), "ROCBackend")
+    if isa(device, ROCBackend)
         @test_broken myisapprox(projp, proj_fd, rtol=rtol)
     else
         @test myisapprox(projp, proj_fd, rtol=rtol)
@@ -121,7 +121,7 @@ function test_full_space_hessian(polar, device, MT)
     Hd = FiniteDiff.finite_difference_jacobian(grad_fd_x, x)
 
     # Test that both Hessian match
-    if startswith(string(device), "ROCBackend")
+    if isa(device, ROCBackend)
         @test_broken myisapprox(Hd, H, rtol=1e-5)
     else
         @test myisapprox(Hd, H, rtol=1e-5)

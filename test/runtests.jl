@@ -1,9 +1,10 @@
 using LinearAlgebra
-using Pkg
 using Random
 using SparseArrays
 using Test
 
+using AMDGPU
+using CUDA
 using KernelAbstractions
 
 using ExaPF
@@ -18,18 +19,8 @@ is_package_installed(name::String) = !isnothing(Base.find_package(name))
 
 ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
 
-test_cuda = if is_package_installed("CUDA")
-    using CUDA
-    CUDA.has_cuda_gpu()
-else
-    false
-end
-test_rocm = if is_package_installed("AMDGPU")
-    using AMDGPU
-    AMDGPU.has_rocm_gpu()
-else
-    false
-end
+test_cuda = CUDA.functional() && CUDA.has_cuda_gpu()
+test_rocm = AMDGPU.functional() && AMDGPU.has_rocm_gpu()
 
 # Setup CUDA
 if test_cuda
