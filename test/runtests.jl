@@ -1,11 +1,9 @@
+using LinearAlgebra
+using Pkg
+using Random
+using SparseArrays
 using Test
 
-using Random
-using LinearAlgebra
-using SparseArrays
-
-using AMDGPU
-using CUDA
 using KernelAbstractions
 
 using ExaPF
@@ -16,15 +14,31 @@ const BENCHMARK_DIR = joinpath(dirname(@__FILE__), "..", "benchmark")
 const EXAMPLES_DIR = joinpath(dirname(@__FILE__), "..", "examples")
 const CASES = ["case9.m", "case30.m"]
 
-# ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
-ARCHS = []
-if CUDA.has_cuda()
+is_package_installed(name::String) = !isnothing(Base.find_package(name))
+
+ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
+
+test_cuda = if is_package_installed("CUDA")
+    using CUDA
+    CUDA.has_cuda_gpu()
+else
+    false
+end
+test_rocm = if is_package_installed("AMDGPU")
+    using AMDGPU
+    AMDGPU.has_rocm_gpu()
+else
+    false
+end
+
+# Setup CUDA
+if test_cuda
     using CUDA.CUSPARSE
     CUDA.allowscalar(false)
     CUDA_ARCH = (CUDABackend(), CuArray, CuSparseMatrixCSR)
     push!(ARCHS, CUDA_ARCH)
 end
-if AMDGPU.has_rocm_gpu()
+if test_rocm
     using AMDGPU.rocSPARSE
     AMDGPU.allowscalar(false)
     ROC_ARCH = (ROCBackend(), ROCArray, ROCSparseMatrixCSR)

@@ -1,6 +1,4 @@
 using Test
-using AMDGPU
-using CUDA
 using KernelAbstractions
 
 using ExaPF
@@ -72,7 +70,7 @@ const LS = ExaPF.LinearSolvers
     @test convergence.n_iterations == 5
     @test convergence.norm_residuals <= pf_algo.tol
 
-    if CUDA.has_cuda_gpu()
+    if test_cuda
         polar_gpu = ExaPF.PolarForm(pf, CUDABackend())
         stack_gpu = ExaPF.NetworkStack(polar_gpu)
 
