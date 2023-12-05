@@ -21,10 +21,10 @@ const KP = KrylovPreconditioners
 LS.DirectSolver(J::ROCSparseMatrixCSR; options...) = ExaPF.LS.DirectSolver(nothing)
 LS.update!(solver::ExaPF.LS.AbstractIterativeLinearSolver, J::ROCSparseMatrixCSR) = KP.update!(solver.precond, J)
 LS._get_type(J::ROCSparseMatrixCSR) = ROCArray{Float64, 1, AMDGPU.Mem.HIPBuffer}
-LS.default_linear_solver(A::ROCSparseMatrixCSR, device::ROCBackend) = ExaPF.LS.KrylovBICGSTAB(A)
+LS.default_linear_solver(A::ROCSparseMatrixCSR, device::ROCBackend) = ExaPF.LS.Bicgstab(A)
 ExaPF._iscsr(::ROCSparseMatrixCSR) = true
 ExaPF._iscsc(::ROCSparseMatrixCSR) = false
-function LS.scaling!(::LS.KrylovBICGSTAB,A::ROCSparseMatrixCSR,b)
+function LS.scaling!(::LS.Bicgstab, A::ROCSparseMatrixCSR, b)
     KP.scaling_csr!(A,b)
 end
 
@@ -33,7 +33,7 @@ end
 
 List all linear solvers available solving the power flow on an NVIDIA GPU.
 """
-ExaPF.list_solvers(::ROCBackend) = [LS.BICGSTAB, LS.DQGMRES, LS.EigenBICGSTAB, LS.KrylovBICGSTAB]
+ExaPF.list_solvers(::ROCBackend) = [LS.Dqgmres, LS.Bicgstab]
 
 include("amdgpu_wrapper.jl")
 end

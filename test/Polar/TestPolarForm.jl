@@ -2,8 +2,6 @@ module TestPolarFormulation
 
 using Test
 
-using AMDGPU
-using CUDA
 using FiniteDiff
 using KernelAbstractions
 using LinearAlgebra

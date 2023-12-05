@@ -16,6 +16,8 @@ import Metis
 import ..ExaPF: xnorm
 
 import Base.size, Base.sizeof, Base.format_bytes
+
+using KLU
 import Krylov: KrylovStats, allocate_if, ksizeof, FloatOrComplex, ktimer, matrix_to_vector, kdisplay, mulorldiv!
 using KrylovPreconditioners
 
@@ -23,7 +25,7 @@ const KA = KernelAbstractions
 const KP = KrylovPreconditioners
 
 export bicgstab, list_solvers, default_linear_solver
-export DirectSolver, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB
+export DirectSolver, BICGSTAB, EigenBICGSTAB, Bicgstab
 export do_scaling, scaling!
 
 @enum(
@@ -34,9 +36,6 @@ export do_scaling, scaling!
     Converged,
     Diverged,
 )
-
-include("bicgstab.jl")
-include("bicgstab_eigen.jl")
 
 include("utils.jl")
 include("block_gmres.jl")
@@ -102,11 +101,11 @@ struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: Abstrac
     factorization::Fac
 end
 
-DirectSolver(J; options...) = DirectSolver(lu(J))
+DirectSolver(J; options...) = DirectSolver(klu(J))
 DirectSolver() = DirectSolver(nothing)
 
 function update!(s::DirectSolver, J::AbstractMatrix)
-    lu!(s.factorization, J) # Update factorization inplace
+    klu!(s.factorization, J) # Update factorization inplace
 end
 
 # Reuse factorization in update
@@ -138,89 +137,28 @@ end
 update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC) = KP.update!(solver.precond, J)
 
 """
-    BICGSTAB <: AbstractIterativeLinearSolver
-    BICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false)
+    Dqgmres <: AbstractIterativeLinearSolver
+    Dqgmres(precond; verbose=false, memory=4)
 
-Custom BICGSTAB implementation to solve iteratively the linear system
-``A  x = y``.
-"""
-struct BICGSTAB <: AbstractIterativeLinearSolver
-    precond::AbstractKrylovPreconditioner
-    maxiter::Int
-    tol::Float64
-    verbose::Bool
-end
-function BICGSTAB(J::AbstractSparseMatrix;
-    P=BlockJacobiPreconditioner(J), maxiter=2_000, tol=1e-8, verbose=false
-)
-    return BICGSTAB(P, maxiter, tol, verbose)
-end
-
-function ldiv!(solver::BICGSTAB,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...
-)
-    y[:], n_iters, status = bicgstab(J, x, solver.precond, y; maxiter=solver.maxiter,
-                                     verbose=solver.verbose, tol=solver.tol)
-    if status != Converged
-        @warn("BICGSTAB failed to converge. Final status is $(status)")
-    end
-    return n_iters
-end
-
-"""
-    EigenBICGSTAB <: AbstractIterativeLinearSolver
-    EigenBICGSTAB(precond; maxiter=2_000, tol=1e-8, verbose=false)
-
-Julia's port of Eigen's BICGSTAB to solve iteratively the linear system
+Wrap `Krylov.jl`'s Dqgmres algorithm to solve iteratively the linear system
 ``A x = y``.
 """
-struct EigenBICGSTAB <: AbstractIterativeLinearSolver
-    precond::AbstractKrylovPreconditioner
-    maxiter::Int
-    tol::Float64
-    verbose::Bool
-end
-function EigenBICGSTAB(J::AbstractSparseMatrix;
-    P=BlockJacobiPreconditioner(J), maxiter=2_000, tol=1e-8, verbose=false
-)
-    return EigenBICGSTAB(P, maxiter, tol, verbose)
-end
-
-function ldiv!(solver::EigenBICGSTAB,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...
-)
-    y[:], n_iters, status = bicgstab_eigen(J, x, solver.precond, y; maxiter=solver.maxiter,
-                                           verbose=solver.verbose, tol=solver.tol)
-    if status != Converged
-        @warn("EigenBICGSTAB failed to converge. Final status is $(status)")
-    end
-
-    return n_iters
-end
-
-"""
-    DQGMRES <: AbstractIterativeLinearSolver
-    DQGMRES(precond; verbose=false, memory=4)
-
-Wrap `Krylov.jl`'s DQGMRES algorithm to solve iteratively the linear system
-``A x = y``.
-"""
-struct DQGMRES <: AbstractIterativeLinearSolver
+struct Dqgmres <: AbstractIterativeLinearSolver
     inner::Krylov.DqgmresSolver
     precond::AbstractKrylovPreconditioner
     memory::Int
     verbose::Bool
 end
-function DQGMRES(J::AbstractSparseMatrix;
+function Dqgmres(J::AbstractSparseMatrix;
     P=BlockJacobiPreconditioner(J), memory=4, verbose=false
 )
     n, m = size(J)
     S = _get_type(J)
     solver = Krylov.DqgmresSolver(n, m, memory, S)
-    return DQGMRES(solver, P, memory, verbose)
+    return Dqgmres(solver, P, memory, verbose)
 end
 
-function ldiv!(solver::DQGMRES,
+function ldiv!(solver::Dqgmres,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...
 )
     Krylov.dqgmres!(solver.inner, J, x; N=solver.precond)
@@ -229,13 +167,13 @@ function ldiv!(solver::DQGMRES,
 end
 
 """
-    KrylovBICGSTAB <: AbstractIterativeLinearSolver
-    KrylovBICGSTAB(precond; verbose=0, rtol=1e-10, atol=1e-10)
+    Bicgstab <: AbstractIterativeLinearSolver
+    Bicgstab(precond; verbose=0, rtol=1e-10, atol=1e-10)
 
 Wrap `Krylov.jl`'s BICGSTAB algorithm to solve iteratively the linear system
 ``A x = y``.
 """
-struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
+struct Bicgstab <: AbstractIterativeLinearSolver
     inner::Krylov.BicgstabSolver
     precond::AbstractKrylovPreconditioner
     verbose::Int
@@ -245,17 +183,17 @@ struct KrylovBICGSTAB <: AbstractIterativeLinearSolver
     scaling::Bool
     maxiter::Int64
 end
-do_scaling(linear_solver::KrylovBICGSTAB) = linear_solver.scaling
-function KrylovBICGSTAB(J::AbstractSparseMatrix;
+do_scaling(linear_solver::Bicgstab) = linear_solver.scaling
+function Bicgstab(J::AbstractSparseMatrix;
     P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10, ldiv=false, scaling=false, maxiter=size(J,1)
 )
     n, m = size(J)
     S = _get_type(J)
     solver = Krylov.BicgstabSolver(n, m, S)
-    return KrylovBICGSTAB(solver, P, verbose, atol, rtol, ldiv, scaling, maxiter)
+    return Bicgstab(solver, P, verbose, atol, rtol, ldiv, scaling, maxiter)
 end
 
-function ldiv!(solver::KrylovBICGSTAB,
+function ldiv!(solver::Bicgstab,
     y::AbstractVector, J::AbstractMatrix, x::AbstractVector;
     max_atol = solver.atol, max_rtol = solver.rtol, options...
 )
@@ -284,7 +222,7 @@ end
 
 List all linear solvers available solving the power flow on the CPU.
 """
-list_solvers(::KA.CPU) = [DirectSolver, DQGMRES, BICGSTAB, EigenBICGSTAB, KrylovBICGSTAB]
+list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 
 """
     default_linear_solver(A, ::KA.CPU)
