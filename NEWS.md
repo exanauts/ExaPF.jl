@@ -1,6 +1,19 @@
 ExaPF release notes
 ===================
 
+Version 0.11 (December 5th, 2023)
+---------------------------------
+- Remove custom BICGSTAB implementations
+- Using KrylovPreconditioners.jl for the block-Jacobi preconditioner
+- Adding scaling for Krylov methods
+- Use KLU per default
+- Added new benchmark scripts for linear solvers
+
+Version 0.10 (November 1st, 2023)
+---------------------------------
+- Adding extension support for CUDA.jl and AMDGPU.jl
+- Adding block-GMRES implementation
+
 Version 0.9.3 (September 27th, 2023)
 ---------------------------------
 - Add support for SCOPF problem (#274)
