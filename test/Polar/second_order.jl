@@ -121,7 +121,7 @@ function test_full_space_hessian(polar, device, MT)
     Hd = FiniteDiff.finite_difference_jacobian(grad_fd_x, x)
 
     # Test that both Hessian match
-    if isa(device, ROCBackend)
+    if startswith(string(device), "ROCBackend")
         @test_broken myisapprox(Hd, H, rtol=1e-5)
     else
         @test myisapprox(Hd, H, rtol=1e-5)
