@@ -19,8 +19,8 @@ is_package_installed(name::String) = !isnothing(Base.find_package(name))
 
 ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
 
-test_cuda = CUDA.functional() && CUDA.has_cuda_gpu()
-test_rocm = AMDGPU.functional() && AMDGPU.has_rocm_gpu()
+test_cuda = CUDA.functional()
+test_rocm = AMDGPU.functional()
 
 # Setup CUDA
 if test_cuda
