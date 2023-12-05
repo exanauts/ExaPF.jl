@@ -25,7 +25,7 @@ LS._get_type(J::CuSparseMatrixCSR) = CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
 LS.default_linear_solver(A::CuSparseMatrixCSR, device::CUDABackend) = ExaPF.LS.DirectSolver(A)
 ExaPF._iscsr(::CuSparseMatrixCSR) = true
 ExaPF._iscsc(::CuSparseMatrixCSR) = false
-function LS.scaling!(::LS.KrylovBICGSTAB,A::CuSparseMatrixCSR,b)
+function LS.scaling!(::LS.Bicgstab, A::CuSparseMatrixCSR, b)
     KP.scaling_csr!(A,b)
 end
 """
@@ -33,7 +33,7 @@ end
 
 List all linear solvers available solving the power flow on an NVIDIA GPU.
 """
-ExaPF.list_solvers(::CUDABackend) = [LS.DirectSolver, LS.BICGSTAB, LS.DQGMRES, LS.EigenBICGSTAB, LS.KrylovBICGSTAB]
+ExaPF.list_solvers(::CUDABackend) = [LS.DirectSolver, LS.Dqgmres, LS.Bicgstab]
 
 include("cuda_wrapper.jl")
 end

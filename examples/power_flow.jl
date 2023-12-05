@@ -54,8 +54,8 @@ precond = LS.BlockJacobiPreconditioner(J, npartitions, localdevice, noverlap)
 #=
     Instantiate iterative linear solver
 =#
-lin_solver = ExaPF.LinearSolvers.KrylovBICGSTAB
-algo = LS.KrylovBICGSTAB(J; P=precond)
+lin_solver = ExaPF.LinearSolvers.Bicgstab
+algo = LS.Bicgstab(J; P=precond)
 
 #=
     Power flow resolution

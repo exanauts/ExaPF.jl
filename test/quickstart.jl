@@ -58,7 +58,7 @@ const LS = ExaPF.LinearSolvers
     npartitions = 8
     jac = jx.J
     precond = BlockJacobiPreconditioner(jac, npartitions, CPU())
-    iterative_linear_solver = ExaPF.KrylovBICGSTAB(jac; P=precond)
+    iterative_linear_solver = ExaPF.Bicgstab(jac; P=precond)
     @test isa(iterative_linear_solver, LS.AbstractIterativeLinearSolver)
     # Test default tolerance
     @test iterative_linear_solver.atol == 1e-10
@@ -98,7 +98,7 @@ const LS = ExaPF.LinearSolvers
         # Reinit buffer
         ExaPF.init!(polar_gpu, stack_gpu)
 
-        iterative_linear_solver = ExaPF.KrylovBICGSTAB(jac; P=precond)
+        iterative_linear_solver = ExaPF.Bicgstab(jac; P=precond)
 
         convergence = ExaPF.nlsolve!(
             pf_solver, jx_gpu, stack_gpu; linear_solver=iterative_linear_solver,

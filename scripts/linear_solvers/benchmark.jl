@@ -65,7 +65,7 @@ function benchmark_gpu_krylov(datafile, pf_solver; ntrials=3)
     n_partitions = div(n_states, n_blocks)
     jac_gpu = instance.jacobian.J
     precond = BlockJacobiPreconditioner(jac_gpu, n_partitions, CUDABackend(), 0)
-    krylov_solver = ExaPF.KrylovBICGSTAB(
+    krylov_solver = ExaPF.Bicgstab(
         jac_gpu; P=precond, ldiv=false, scaling=true,
         rtol=1e-7, atol=1e-7, verbose=0,
     )
