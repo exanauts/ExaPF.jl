@@ -22,8 +22,8 @@ using KrylovPreconditioners
 const KA = KernelAbstractions
 const KP = KrylovPreconditioners
 
-export bicgstab, list_solvers, default_linear_solver
-export DirectSolver, BICGSTAB, EigenBICGSTAB, Bicgstab
+export list_solvers, default_linear_solver
+export DirectSolver, Bicgstab
 export do_scaling, scaling!
 
 @enum(
