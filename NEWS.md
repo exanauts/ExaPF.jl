@@ -3,9 +3,10 @@ ExaPF release notes
 
 Version 0.11 (December 5th, 2023)
 ---------------------------------
+- Remove the block-GMRES implementation
 - Remove custom BICGSTAB implementations
-- Using KrylovPreconditioners.jl for the block-Jacobi preconditioner
-- Adding scaling for Krylov methods
+- Use KrylovPreconditioners.jl for the block-Jacobi preconditioner
+- Add scaling for Krylov methods
 - Use KLU per default
 - Added new benchmark scripts for linear solvers
 

@@ -16,7 +16,7 @@ import ..ExaPF: xnorm
 import Base.size, Base.sizeof, Base.format_bytes
 
 using KLU
-import Krylov: KrylovStats, allocate_if, ksizeof, FloatOrComplex, ktimer, matrix_to_vector, kdisplay, mulorldiv!
+import Krylov
 using KrylovPreconditioners
 
 const KA = KernelAbstractions
@@ -34,9 +34,6 @@ export do_scaling, scaling!
     Converged,
     Diverged,
 )
-
-include("utils.jl")
-include("block_gmres.jl")
 
 abstract type AbstractLinearSolver end
 abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
