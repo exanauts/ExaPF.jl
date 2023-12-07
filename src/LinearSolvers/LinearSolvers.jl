@@ -10,8 +10,6 @@ import Base: show
 
 using KernelAbstractions
 import Krylov
-import LightGraphs
-import Metis
 
 import ..ExaPF: xnorm
 
