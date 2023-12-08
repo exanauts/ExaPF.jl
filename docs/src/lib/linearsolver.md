@@ -38,15 +38,3 @@ A default solver is provided for each vendor backend.
 default_linear_solver
 
 ```
-
-## Block-Krylov solvers
-
-`ExaPF.jl` provides an implementation of block-GMRES to solve linear systems
-with multiple righ-hand sides.
-
-```@docs
-BlockKrylovSolver
-BlockGmresSolver
-block_gmres
-block_gmres!
-```
