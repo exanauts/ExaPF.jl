@@ -5,6 +5,7 @@ using Printf
 using LinearAlgebra
 using SparseArrays
 import ForwardDiff
+import SparseMatrixColorings
 using KernelAbstractions
 const KA = KernelAbstractions
 
