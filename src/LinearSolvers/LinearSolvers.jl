@@ -139,7 +139,7 @@ Wrap `Krylov.jl`'s Dqgmres algorithm to solve iteratively the linear system
 ``A x = y``.
 """
 struct Dqgmres <: AbstractIterativeLinearSolver
-    inner::Krylov.DqgmresSolver
+    inner::Krylov.DqgmresWorkspace
     precond::AbstractKrylovPreconditioner
     memory::Int
     verbose::Bool
@@ -149,8 +149,8 @@ function Dqgmres(J::AbstractSparseMatrix;
 )
     n, m = size(J)
     S = _get_type(J)
-    solver = Krylov.DqgmresSolver(n, m, memory, S)
-    return Dqgmres(solver, P, memory, verbose)
+    workspace = Krylov.DqgmresWorkspace(n, m, S; memory)
+    return Dqgmres(workspace, P, memory, verbose)
 end
 
 function ldiv!(solver::Dqgmres,
@@ -158,7 +158,7 @@ function ldiv!(solver::Dqgmres,
 )
     Krylov.dqgmres!(solver.inner, J, x; N=solver.precond)
     copyto!(y, solver.inner.x)
-    return length(solver.inner.stats.residuals)
+    return Krylov.iteration_count(solver.inner)
 end
 
 """
@@ -169,7 +169,7 @@ Wrap `Krylov.jl`'s BICGSTAB algorithm to solve iteratively the linear system
 ``A x = y``.
 """
 struct Bicgstab <: AbstractIterativeLinearSolver
-    inner::Krylov.BicgstabSolver
+    inner::Krylov.BicgstabWorkspace
     precond::AbstractKrylovPreconditioner
     verbose::Int
     atol::Float64
@@ -184,8 +184,8 @@ function Bicgstab(J::AbstractSparseMatrix;
 )
     n, m = size(J)
     S = _get_type(J)
-    solver = Krylov.BicgstabSolver(n, m, S)
-    return Bicgstab(solver, P, verbose, atol, rtol, ldiv, scaling, maxiter)
+    workspace = Krylov.BicgstabWorkspace(n, m, S)
+    return Bicgstab(workspace, P, verbose, atol, rtol, ldiv, scaling, maxiter)
 end
 
 function ldiv!(solver::Bicgstab,
@@ -209,7 +209,7 @@ function ldiv!(solver::Bicgstab,
         @warn("BICGSTAB failed to converge. Final status is $(solver.inner.stats.status)")
     end
     copyto!(y, solver.inner.x)
-    return solver.inner.stats.niter
+    return Krylov.iteration_count(solver.inner)
 end
 
 """
