@@ -4,7 +4,7 @@ module AutoDiff
 using SparseArrays
 
 import ForwardDiff
-import SparseDiffTools
+import SparseMatrixColorings
 using KernelAbstractions
 KA = KernelAbstractions
 

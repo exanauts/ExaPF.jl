@@ -69,7 +69,10 @@ function _get_jacobian_colors(polar::AbstractPolarFormulation, func::AutoDiff.Ab
     J = _jacobian_sparsity(polar, func)
     Jsub = J[:, map]
     # Coloring
-    colors = AutoDiff.SparseDiffTools.matrix_colors(Jsub)
+    problem = SparseMatrixColorings.ColoringProblem{:nonsymmetric, :column}()
+    order = SparseMatrixColorings.NaturalOrder()
+    algo = SparseMatrixColorings.GreedyColoringAlgorithm{:direct}(order)
+    colors = SparseMatrixColorings.fast_coloring(Jsub, problem, algo; symmetric_pattern=false)
     return (Jsub, colors)
 end
 
