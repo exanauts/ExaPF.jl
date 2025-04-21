@@ -8,6 +8,7 @@ using Test
 
 using ExaPF
 using KernelAbstractions
+using SparseMatrixColorings
 const KA = KernelAbstractions
 
 const AD = ExaPF.AutoDiff
@@ -58,7 +59,10 @@ end
 function test_autodiff_kernel(device, AT, SMT)
     n, m = 10, 20
     J = sprandn(n, m, .2)
-    colors = AD.SparseDiffTools.matrix_colors(J)
+    problem = SparseMatrixColorings.ColoringProblem{:nonsymmetric, :column}()
+    order = SparseMatrixColorings.NaturalOrder()
+    algo = SparseMatrixColorings.GreedyColoringAlgorithm{:direct}(order)
+    colors = SparseMatrixColorings.fast_coloring(J, problem, algo; symmetric_pattern=false)
     p = length(unique(colors))
 
     # set_value!

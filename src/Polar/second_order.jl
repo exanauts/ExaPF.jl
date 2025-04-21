@@ -120,7 +120,11 @@ end
 function _get_hessian_colors(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, map::Vector{Int})
     H = _hessian_sparsity(polar, func)::SparseMatrixCSC
     Hsub = H[map, map] # reorder
-    colors = AutoDiff.SparseDiffTools.matrix_colors(Hsub)
+    # We should use a star coloring or acyclic coloring (more efficient for symmetric matrices)
+    problem = SparseMatrixColorings.ColoringProblem{:nonsymmetric, :column}()
+    order = SparseMatrixColorings.NaturalOrder()
+    algo = SparseMatrixColorings.GreedyColoringAlgorithm{:direct}(order)
+    colors = SparseMatrixColorings.fast_coloring(Hsub, problem, algo; symmetric_pattern=true)
     return (Hsub, colors)
 end
 

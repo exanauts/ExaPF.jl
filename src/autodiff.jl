@@ -4,7 +4,6 @@ module AutoDiff
 using SparseArrays
 
 import ForwardDiff
-import SparseDiffTools
 using KernelAbstractions
 KA = KernelAbstractions
 

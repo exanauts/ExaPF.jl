@@ -19,11 +19,11 @@ jobs:
     strategy:
       matrix:
           os: [ubuntu-22.04]
-          julia-version: ['1.9']
+          julia-version: ['lts', '1']
           julia-arch: [x64]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@latest
         with:
           version: ${{ matrix.julia-version }}
@@ -40,11 +40,11 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04]
-        julia-version: ['1.9']
+        julia-version: ['lts', '1']
         julia-arch: [x64]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@latest
         with:
           version: ${{ matrix.julia-version }}
