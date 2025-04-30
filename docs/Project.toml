@@ -1,6 +1,6 @@
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-CUSOLVERRF = "a8cc9031-bad2-4722-94f5-40deabb4245c"
+CUDSS = "45b445bb-4962-46a0-9369-b4df9d0f772e"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 ExaPF = "0cf0e50c-a82e-488f-ac7e-41ffdff1b8aa"
 KLU = "ef3ab10e-7fda-4108-b977-705223b18434"
@@ -8,9 +8,6 @@ KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
 OpenSSL_jll = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
-
-[extras]
-CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
 
 [compat]
 OpenSSL_jll = "~3.0"
