@@ -128,13 +128,12 @@ ExaPF.nlsolve!(pf_solver, jx, stack; linear_solver=klu_solver)
 We observe KLU reduces considerably the time spent in the linear solver.
 
 
-## cusolverRF (CUDA)
+## cuDSS (CUDA)
 
-[cusolverRF](https://docs.nvidia.com/cuda/cusolver/index.html#cuSolverRF-reference)
+[cuDSS](https://developer.nvidia.com/cudss)
 is an efficient LU refactorization routine implemented in CUDA.
-It is wrapped in Julia inside the package [CUSOLVERRF.jl](https://github.com/exanauts/CUSOLVERRF.jl):
 ```@example direct_solver
-using CUSOLVERRF
+using CUDSS
 ```
 
 The principle is the following: the initial symbolic factorization
@@ -149,19 +148,18 @@ flow Jacobian doesn't change along the Newton iterations and
 (ii) the Jacobian is super-sparse. In ExaPF, it is the linear solver
 of choice when it comes to solve the power flow entirely on the GPU.
 
-CUSOLVERRF.jl follows the LinearAlgebra's interface, so we can use
-it directly in ExaPF.
 We first have to instantiate everything on the GPU:
 ```@example direct_solver
 using CUDA
+using CUDSS
 polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDABackend())
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
 func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu)
 jx_gpu = ExaPF.Jacobian(polar_gpu, func_gpu, State()) # init AD
 ```
-We can instantiate a new cusolverRF's instance as
+We can instantiate a new cuDSS's instance as
 ```@example direct_solver
-rf_fac = CUSOLVERRF.RFLU(jx_gpu.J)
+rf_fac = CUDSS.lu(jx_gpu.J)
 rf_solver = LS.DirectSolver(rf_fac)
 
 ```
@@ -170,4 +168,3 @@ Then, we are able to solve the power flow *entirely on the GPU*, simply as
 ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=rf_solver)
 
 ```
-

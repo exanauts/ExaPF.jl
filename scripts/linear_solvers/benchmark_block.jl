@@ -10,7 +10,7 @@ using LazyArtifacts
 using LinearAlgebra
 using KrylovPreconditioners
 using KLU
-using CUSOLVERRF
+using CUDSS
 
 const LS = ExaPF.LinearSolvers
 const PS = ExaPF.PowerSystem
@@ -63,10 +63,11 @@ function benchmark_cpu_klu(datafile, n_blocks, pf_solver; ntrials=3, magnitude=0
     return tic / ntrials
 end
 
-function benchmark_gpu_cusolverrf(datafile, n_blocks, pf_solver; ntrials=3, magnitude=0.01)
+function benchmark_gpu_cudss(datafile, n_blocks, pf_solver; ntrials=3, magnitude=0.01)
     instance = build_instance(datafile, n_blocks, CUDABackend(), magnitude)
-    # Initiate CUSOLVERRF
-    rf_factorization = CUSOLVERRF.RFLU(instance.jacobian.J)
+    # Initiate CUDSS
+    J = instance.jacobian.J
+    rf_factorization = CUDSS.lu(J)
     rf_solver = LS.DirectSolver(rf_factorization)
     # Solve power flow
     tic = 0.0
@@ -103,10 +104,10 @@ pf_algo = NewtonRaphson(; verbose=0, tol=1e-7)
 datafile = joinpath(artifact"ExaData", "ExaData", "case1354pegase.m")
 
 time_klu = benchmark_cpu_klu(datafile, n_scenarios, pf_algo)
-time_cusolverf = benchmark_gpu_cusolverrf(datafile, n_scenarios, pf_algo)
+time_cudss = benchmark_gpu_cudss(datafile, n_scenarios, pf_algo)
 time_krylov = benchmark_gpu_krylov(datafile, n_scenarios, pf_algo)
 
 println("Benchmark powerflow with $(basename(datafile)):")
 println("    > KLU (s)           : ", time_klu)
-println("    > CUSOLVERRF (s)    : ", time_cusolverf)
+println("    > CUDSS (s)         : ", time_cudss)
 println("    > KRYLOV (s)        : ", time_krylov)
