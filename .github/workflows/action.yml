@@ -65,6 +65,7 @@ jobs:
       JULIA_DEPOT_PATH: /scratch/github-actions/julia_depot_exapf
       DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      JULIA_DEBUG: Documenter
     runs-on: self-hosted
 
     steps:
