@@ -15,7 +15,7 @@ makedocs(
         mathengine = Documenter.KaTeX(),
     ),
     modules = [ExaPF],
-    repo = Remotes.GitHub("exanauts", "ExaPF.jl"),
+    repo = "github.com/exanauts/ExaPF.jl/blob/{commit}{path}#{line}",
     checkdocs = :exports,
     pages = [
         "Home" => "index.md",
