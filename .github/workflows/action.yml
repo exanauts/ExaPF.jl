@@ -74,4 +74,5 @@ jobs:
         with:
           version: '1'
       - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@latest
       - run: julia --project=docs/ docs/make.jl
