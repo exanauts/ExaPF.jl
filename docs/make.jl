@@ -6,15 +6,17 @@ Pkg.instantiate()
 
 using Documenter
 using ExaPF
+using Documenter.Remotes
 
 makedocs(
     sitename = "ExaPF.jl",
     format = Documenter.HTML(
         prettyurls = Base.get(ENV, "CI", nothing) == "true",
-        mathengine = Documenter.KaTeX()
+        canonical = "https://exanauts.github.io/ExaPF.jl/stable/",
+        mathengine = Documenter.KaTeX(),
     ),
     modules = [ExaPF],
-    repo = "https://github.com/exanauts/ExaPF.jl/blob/{commit}{path}#{line}",
+    repo = "https://github.com/exanauts/ExaPF.jl/blob/{commit}{path}#L{line}",
     checkdocs = :exports,
     pages = [
         "Home" => "index.md",
