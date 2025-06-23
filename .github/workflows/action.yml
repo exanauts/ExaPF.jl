@@ -33,11 +33,9 @@ jobs:
 
   test-moonshot:
     env:
-      CUDA_VISIBLE_DEVICES: 1
-      JULIA_DEPOT_PATH: /scratch/github-actions/julia_depot_exapf
       DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux, gpu, cuda]
     strategy:
       matrix:
         os: [ubuntu-latest]
