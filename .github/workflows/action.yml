@@ -35,7 +35,7 @@ jobs:
     env:
       DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    runs-on: [self-hosted, linux, gpu, cuda]
+    runs-on: [self-hosted, linux, X64, gpu, cuda]
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -59,12 +59,10 @@ jobs:
   docs:
     name: Build documentation
     env:
-      CUDA_VISIBLE_DEVICES: 1
-      JULIA_DEPOT_PATH: /scratch/github-actions/julia_depot_exapf
       DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       JULIA_DEBUG: Documenter
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux, X64, gpu, cuda]
 
     steps:
       - uses: actions/checkout@v4
