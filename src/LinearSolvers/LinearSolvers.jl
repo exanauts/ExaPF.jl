@@ -22,8 +22,10 @@ using KrylovPreconditioners
 const KA = KernelAbstractions
 const KP = KrylovPreconditioners
 
+using CUDA, CUDA.CUSPARSE, CUDSS
+
 export list_solvers, default_linear_solver
-export DirectSolver, Bicgstab
+export DirectSolver, Bicgstab, CuDSSSolver
 export do_scaling, scaling!
 
 @enum(
@@ -225,18 +227,16 @@ list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 Default linear solver on the CPU.
 """
 default_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
-end
-
 
 """
-    CuDSSSolver <: ExaPF.LinearSolvers.AbstractLinearSolver
+    CuDSSSolver <: AbstractLinearSolver
 
 Thin wrapper around a low-level `CudssSolver`. Does:
   - first `ldiv!`:   "analysis" → "factorization" → "solve"
   - next  `ldiv!`:   "refactorization" → "solve"
 `update!` is a no-op on purpose: ExaPF's API isn't the right hook for cuDSS phases.
 """
-mutable struct CuDSSSolver <: LS.AbstractLinearSolver
+mutable struct CuDSSSolver <: AbstractLinearSolver
     solver::CudssSolver   # low-level cuDSS handle created from A (J)
     init::Bool            # whether we've already analyzed/factorized once
 end
@@ -255,7 +255,7 @@ end
 Base.show(io::IO, s::CuDSSSolver) = print(io, "CuDSSSolver(init=", s.init, ")")
 
 # do nothing here.
-LS.update!(s::CuDSSSolver, J) = s
+update!(s::CuDSSSolver, J) = s
 
 """
     ldiv!(s::CuDSSSolver, X, J, B; kwargs...) -> 0
@@ -265,7 +265,7 @@ Solve `J * X = B` using cuDSS. Returns 0 (iteration count) for a direct solver.
 - Afterwards:      refactorization → solve
 If refactorization fails (e.g., pattern changed), we re-run analysis+factorization once.
 """
-function LS.ldiv!(s::CuDSSSolver, X::AbstractVecOrMat, J, B::AbstractVecOrMat; kwargs...)
+function ldiv!(s::CuDSSSolver, X::AbstractVecOrMat, J, B::AbstractVecOrMat; kwargs...)
     if !s.init
         cudss("analysis",       s.solver, X, B)
         cudss("factorization",  s.solver, X, B)
@@ -283,11 +283,13 @@ end
 Variant used by ExaPF when the factorization already carries `J`.
 Delegates to the 4-arg method.
 """
-LS.ldiv!(s::CuDSSSolver, X::AbstractVecOrMat, B::AbstractVecOrMat; kwargs...) =
-    LS.ldiv!(s, X, nothing, B; kwargs...)
+ldiv!(s::CuDSSSolver, X::AbstractVecOrMat, B::AbstractVecOrMat; kwargs...) =
+    ldiv!(s, X, nothing, B; kwargs...)
 
 "Force a fresh analyze/factorize on next solve (e.g., if you know the pattern changed)."
 function reset!(s::CuDSSSolver)
     s.init = false
     return s
+end
+
 end

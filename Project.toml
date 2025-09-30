@@ -5,6 +5,8 @@ authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@an
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CUDSS = "45b445bb-4962-46a0-9369-b4df9d0f772e"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
 KLU = "ef3ab10e-7fda-4108-b977-705223b18434"
@@ -19,7 +21,6 @@ SparseMatrixColorings = "0a514795-09f3-496d-8182-132a7b665d35"
 
 [weakdeps]
 AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
-CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 
 [extensions]
 ExaPFAMDGPUExt = "AMDGPU"
@@ -28,13 +29,11 @@ ExaPFCUDAExt = "CUDA"
 [compat]
 AMDGPU = "2.0"
 Adapt = "4.3"
-CUDA = "5.7.3"
 ForwardDiff = "1.0"
 GPUArraysCore = "0.2.0"
 KLU = "0.6"
 KernelAbstractions = "0.9"
 Krylov = "0.10"
-KrylovPreconditioners = "0.3.2"
 LazyArtifacts = "1.10"
 LinearAlgebra = "1.10"
 Printf = "1.10"
