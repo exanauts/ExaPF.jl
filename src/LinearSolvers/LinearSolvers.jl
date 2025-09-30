@@ -270,10 +270,10 @@ function LS.ldiv!(s::CuDSSSolver, X::AbstractVecOrMat, J, B::AbstractVecOrMat; k
         cudss("analysis",       s.solver, X, B)
         cudss("factorization",  s.solver, X, B)
         cudss("solve",          s.solver, X, B)
-        s.init = true
+        # s.init = true # uncoment when refactorization is implemented
         return 0
     end
-    # TODO refactorization
+    # TODO Change to use unform batching API
     return 0
 end
 
