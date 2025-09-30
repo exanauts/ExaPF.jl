@@ -33,7 +33,7 @@ end
 
 List all linear solvers available solving the power flow on an NVIDIA GPU.
 """
-ExaPF.list_solvers(::CUDABackend) = [LS.DirectSolver, LS.Dqgmres, LS.Bicgstab]
+ExaPF.list_solvers(::CUDABackend) = [LS.DirectSolver, LS.Dqgmres, LS.Bicgstab, LS.CuDSSSolver]
 
 include("cuda_wrapper.jl")
 end
