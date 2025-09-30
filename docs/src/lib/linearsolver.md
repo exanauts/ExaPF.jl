@@ -15,10 +15,11 @@ ldiv!
 ## Direct solvers
 
 `ExaPF` wraps UMFPACK (shipped with `SuiteSparse.jl`) on the CPU,
-and CUSPARSE on CUDA device.
+and CUSPARSE & cuDSS on CUDA device.
 
 ```@docs
 DirectSolver
+CuDSSSolver
 ```
 
 ## Iterative solvers
