@@ -2,7 +2,6 @@ module ExaBenchmark
 
 using Printf
 # GPU
-using CUDA
 using KernelAbstractions
 
 # Algorithms

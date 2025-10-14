@@ -3,8 +3,6 @@ using Random
 using SparseArrays
 using Test
 
-using AMDGPU
-using CUDA
 using KernelAbstractions
 
 using ExaPF
@@ -15,26 +13,8 @@ const BENCHMARK_DIR = joinpath(dirname(@__FILE__), "..", "benchmark")
 const EXAMPLES_DIR = joinpath(dirname(@__FILE__), "..", "examples")
 const CASES = ["case9.m", "case30.m"]
 
-is_package_installed(name::String) = !isnothing(Base.find_package(name))
-
-ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
-
-test_cuda = CUDA.functional()
-test_rocm = AMDGPU.functional()
-
-# Setup CUDA
-if test_cuda
-    using CUDA.CUSPARSE
-    CUDA.allowscalar(false)
-    CUDA_ARCH = (CUDABackend(), CuArray, CuSparseMatrixCSR)
-    push!(ARCHS, CUDA_ARCH)
-end
-if test_rocm
-    using AMDGPU.rocSPARSE
-    AMDGPU.allowscalar(false)
-    ROC_ARCH = (ROCBackend(), ROCArray, ROCSparseMatrixCSR)
-    push!(ARCHS, ROC_ARCH)
-end
+# Load GPU backends dynamically
+include("setup.jl")
 
 # Load test modules
 @isdefined(TestKernels)          || include("TestKernels.jl")

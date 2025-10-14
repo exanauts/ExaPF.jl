@@ -2,21 +2,15 @@ using LazyArtifacts
 using SparseArrays
 
 using KernelAbstractions
-using CUDA
 
 using ExaPF
 const LS = ExaPF.LinearSolvers
 
 const INSTANCES_DIR = joinpath(artifact"ExaData", "ExaData")
 
-USEGPU = 0
-
-
-if USEGPU == 0
-    localdevice = CPU()
-else
-    localdevice = CUDABackend()
-end
+localdevice = CPU()
+# Uncomment to run on GPU
+# localdevice = CUDABackend()
 
 case = "case1354pegase.m"
 casefile = joinpath(INSTANCES_DIR, case)
