@@ -1,3 +1,9 @@
+# Temporary for 1.12 support branch
+using Pkg
+if VERSION >= v"1.12"
+    Pkg.add(url="https://github.com/JuliaGPU/GPUArrays.jl", rev="master")
+end
+
 # Setup GPU backends dynamically
 # This file conditionally loads GPU packages based on availability
 using KernelAbstractions
