@@ -25,7 +25,7 @@ ExaPFAMDGPUExt = "AMDGPU"
 ExaPFCUDAExt = "CUDA"
 
 [compat]
-AMDGPU = "1.0"
+AMDGPU = "2.0"
 Adapt = "4.3"
 CUDA = "5.7.3"
 ForwardDiff = "1.0"
