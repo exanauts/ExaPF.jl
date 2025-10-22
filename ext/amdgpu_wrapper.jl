@@ -21,8 +21,8 @@ end
 
 function Base.unsafe_wrap(Atype::Type{AMDGPU.ROCArray{T, 1}},
                           p::AMDGPU.Ptr{T}, dim::Integer;
-                          own::Bool=false, ctx::AMDGPU.HIPContext=AMDGPU.context()) where {T}
-    unsafe_wrap(AMDGPU.ROCArray, p, (dim,); lock=false)
+                          own::Bool=false) where {T}
+    unsafe_wrap(AMDGPU.ROCArray{T, 1}, p, (dim,); own)
 end
 
 rocSPARSE.ROCSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = ROCSparseMatrixCSR(A)
