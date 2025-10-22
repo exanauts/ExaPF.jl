@@ -32,14 +32,14 @@ const test_cuda = CUDA_AVAILABLE && CUDA.functional()
 const test_rocm = AMDGPU_AVAILABLE && AMDGPU.functional()
 
 # Setup architecture list
-const ARCHS = Any[(CPU(), Array, SparseMatrixCSC)]
+const ARCHS = [(CPU(), Array, SparseMatrixCSC, "cpu")]
 
 if test_cuda
-    CUDA_ARCH = (CUDABackend(), CuArray, CuSparseMatrixCSR)
+    CUDA_ARCH = (CUDABackend(), CuArray, CuSparseMatrixCSR, "cuda")
     push!(ARCHS, CUDA_ARCH)
 end
 
 if test_rocm
-    ROC_ARCH = (ROCBackend(), ROCArray, ROCSparseMatrixCSR)
+    ROC_ARCH = (ROCBackend(), ROCArray, ROCSparseMatrixCSR, "rocm")
     push!(ARCHS, ROC_ARCH)
 end

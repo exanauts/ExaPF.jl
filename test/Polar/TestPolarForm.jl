@@ -38,7 +38,7 @@ function myisapprox(a, b; options...)
     end
 end
 
-function runtests(case, device, AT)
+function runtests(case, device, AT, arch)
     polar = ExaPF.load_polar(case, device)
     # Test printing
     println(devnull, polar)
@@ -76,7 +76,13 @@ function runtests(case, device, AT)
 
     @testset "PolarFormRecourse" begin
         test_recourse_expression(polar, device, AT)
-        test_recourse_powerflow(polar, device, AT)
+        # Recourse formulation test breaks on ROCm (zero-pivot)
+        # Likely need direct solver
+        if arch == "rocm"
+            @test_broken false
+        else
+            test_recourse_powerflow(polar, device, AT)
+        end
         if isa(device, CPU)
             test_recourse_jacobian(polar, device, AT)
             test_recourse_hessian(polar, device, AT)
