@@ -7,6 +7,7 @@ using SparseArrays
 import ForwardDiff
 import SparseMatrixColorings
 using KernelAbstractions
+using GPUArraysCore
 const KA = KernelAbstractions
 
 import Base: show, get

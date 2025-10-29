@@ -1,11 +1,12 @@
 name = "ExaPF"
 uuid = "0cf0e50c-a82e-488f-ac7e-41ffdff1b8aa"
-authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@anl.gov>", "François Pacaud <fpacaud@anl.gov>", "Alexis Montoison <amontoison@anl.gov>"]
 version = "0.12.0"
+authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@anl.gov>", "François Pacaud <fpacaud@anl.gov>", "Alexis Montoison <amontoison@anl.gov>"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
 KLU = "ef3ab10e-7fda-4108-b977-705223b18434"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
@@ -29,6 +30,7 @@ AMDGPU = "2.0"
 Adapt = "4.3"
 CUDA = "5.7.3"
 ForwardDiff = "1.0"
+GPUArraysCore = "0.2.0"
 KLU = "0.6"
 KernelAbstractions = "0.9"
 Krylov = "0.10"
