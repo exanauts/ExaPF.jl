@@ -22,8 +22,6 @@ using KrylovPreconditioners
 const KA = KernelAbstractions
 const KP = KrylovPreconditioners
 
-using CUDA, CUDA.CUSPARSE
-
 export list_solvers, default_linear_solver
 export DirectSolver, Bicgstab
 export do_scaling, scaling!
