@@ -38,7 +38,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        julia-version: ['lts', '1']
+        julia-version: ['lts','1.11',  '1']
         julia-arch: [x64]
         backend: ['cuda', 'amdgpu']
     runs-on: [self-hosted, linux, X64, gpu, '${{ matrix.backend }}']
