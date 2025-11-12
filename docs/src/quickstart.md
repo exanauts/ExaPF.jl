@@ -46,7 +46,6 @@ The powerflow equations can be solved in three lines of code, as
 polar = ExaPF.PolarForm(datafile, CPU())  # Load data
 stack = ExaPF.NetworkStack(polar)         # Load variables
 convergence = run_pf(polar, stack; verbose=1)
-
 ```
 
 Implicitly, ExaPF has just proceed to the following operations:
@@ -149,7 +148,6 @@ jx = ExaPF.Jacobian(polar, powerflow, mapx)
 The (direct) linear solver can be instantiated directly as
 ```@repl quickstart
 linear_solver = LS.DirectSolver(jx.J);
-
 ```
 Let's explain further these three objects.
 
@@ -158,8 +156,7 @@ Let's explain further these three objects.
 - `jx` is a `Jacobian` structure which allows the solver to compute efficiently
   the Jacobian of the powerflow equations $\nabla_x g$ using AutoDiff.
 - `linear_solver` specifies the linear algorithm uses to solve the linear
-  system $(\nabla_x g_k) x_{k+1} = g(x_k, u)$. By default, we use direct linear
-  algebra.
+  system $(\nabla_x g_k) x_{k+1} = g(x_k, u)$. By default, we use direct sparse linear solvers.
 
 In the AutoDiff Jacobian `jx`, the evaluation of the Jacobian ``J``
 is stored in `jx.J`:
@@ -193,8 +190,8 @@ The procedure looks exactly the same. It suffices to initiate
 a new [`ExaPF.PolarForm`](@ref) object, but on the GPU:
 ```@repl quickstart
 polar_gpu = ExaPF.PolarForm(pf, CUDABackend())
-
 ```
+
 `polar_gpu` will load all the structures it needs on the GPU, to
 avoid unnecessary movements between the host and the device.
 We can load the other structures directly on the GPU with:
@@ -207,6 +204,7 @@ jx_gpu = ExaPF.Jacobian(polar_gpu, pflow_gpu, mapx)
 
 linear_solver = LS.DirectSolver(jx_gpu.J)
 ```
+
 Then, solving the powerflow equations on the GPU directly
 translates as
 ```@repl quickstart
@@ -228,9 +226,11 @@ a preconditioner.
 `ExaPF.jl` implements an overlapping Schwarz preconditioner, tailored
 for GPU usage. To build an instance with 8 blocks, just write
 ```@repl quickstart
+import KrylovPreconditioners as KP
+
 npartitions = 8;
 jac_gpu = jx_gpu.J;
-precond = BlockJacobiPreconditioner(jac_gpu, npartitions, CUDABackend());
+precond = KP.BlockJacobiPreconditioner(jac_gpu, npartitions, CUDABackend());
 ```
 You can attach the preconditioner to an BICGSTAB algorithm simply as
 ```@repl quickstart
