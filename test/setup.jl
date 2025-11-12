@@ -13,6 +13,11 @@ if CUDA_AVAILABLE
     CUDA.allowscalar(false)
 end
 
+const CUDSS_AVAILABLE = is_package_installed("CUDSS")
+if CUDSS_AVAILABLE
+    @eval using CUDSS
+end
+
 # Try to load AMDGPU
 const AMDGPU_AVAILABLE = is_package_installed("AMDGPU")
 if AMDGPU_AVAILABLE
@@ -22,7 +27,7 @@ if AMDGPU_AVAILABLE
 end
 
 # Check functionality
-const test_cuda = CUDA_AVAILABLE && CUDA.functional()
+const test_cuda = CUDA_AVAILABLE && CUDSS_AVAILABLE && CUDA.functional()
 const test_rocm = AMDGPU_AVAILABLE && AMDGPU.functional()
 
 # Setup architecture list

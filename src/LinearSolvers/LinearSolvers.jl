@@ -22,10 +22,10 @@ using KrylovPreconditioners
 const KA = KernelAbstractions
 const KP = KrylovPreconditioners
 
-using CUDA, CUDA.CUSPARSE, CUDSS
+using CUDA, CUDA.CUSPARSE
 
 export list_solvers, default_linear_solver
-export DirectSolver, Bicgstab, CuDSSSolver
+export DirectSolver, Bicgstab
 export do_scaling, scaling!
 
 @enum(
@@ -43,7 +43,7 @@ abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
 """
     list_solvers(::KernelAbstractions.Device)
 
-List linear solvers available on current device.
+List linear solvers available on current device (CPU, NVIDIA GPU, AMD GPU).
 
 """
 function list_solvers end
@@ -90,8 +90,8 @@ scaling!(A,b) = nothing
 
 Solve linear system ``A x = y`` with direct linear algebra.
 
-* On the CPU, `DirectSolver` uses UMFPACK to solve the linear system
-* On CUDA GPU, `DirectSolver` redirects the resolution to the method `CUSOLVER.csrlsvqr`
+* On the CPU, `DirectSolver` uses UMFPACK to solve the linear system.
+* On CUDA GPU, `DirectSolver` redirects the resolution to cuDSS.
 
 """
 struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: AbstractLinearSolver
@@ -227,69 +227,5 @@ list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 Default linear solver on the CPU.
 """
 default_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
-
-"""
-    CuDSSSolver <: AbstractLinearSolver
-
-Thin wrapper around a low-level `CudssSolver`. Does:
-  - first `ldiv!`:   "analysis" → "factorization" → "solve"
-  - next  `ldiv!`:   "refactorization" → "solve"
-`update!` is a no-op on purpose: ExaPF's API isn't the right hook for cuDSS phases.
-"""
-mutable struct CuDSSSolver <: AbstractLinearSolver
-    solver::CudssSolver   # low-level cuDSS handle created from A (J)
-    init::Bool            # whether we've already analyzed/factorized once
-end
-
-"""
-    CuDSSSolver(J; fac="G", view="F")
-
-Create a cuDSS-backed linear solver bound to the SAME matrix object `J`
-that ExaPF will update in-place across Newton steps (fixed sparsity).
-"""
-function CuDSSSolver(J; fac::AbstractString="G", view::AbstractString="F")
-    s = CudssSolver(J, fac, view)
-    return CuDSSSolver(s, false)
-end
-
-Base.show(io::IO, s::CuDSSSolver) = print(io, "CuDSSSolver(init=", s.init, ")")
-
-# do nothing here.
-update!(s::CuDSSSolver, J) = s
-
-"""
-    ldiv!(s::CuDSSSolver, X, J, B; kwargs...) -> 0
-
-Solve `J * X = B` using cuDSS. Returns 0 (iteration count) for a direct solver.
-- On first call:   analysis → factorization → solve
-- Afterwards:      refactorization → solve
-If refactorization fails (e.g., pattern changed), we re-run analysis+factorization once.
-"""
-function ldiv!(s::CuDSSSolver, X::AbstractVecOrMat, J, B::AbstractVecOrMat; kwargs...)
-    if !s.init
-        cudss("analysis",       s.solver, X, B)
-        cudss("factorization",  s.solver, X, B)
-        cudss("solve",          s.solver, X, B)
-        # s.init = true # uncoment when refactorization is implemented
-        return 0
-    end
-    # TODO Change to use unform batching API
-    return 0
-end
-
-"""
-    ldiv!(s::CuDSSSolver, X, B; kwargs...) -> 0
-
-Variant used by ExaPF when the factorization already carries `J`.
-Delegates to the 4-arg method.
-"""
-ldiv!(s::CuDSSSolver, X::AbstractVecOrMat, B::AbstractVecOrMat; kwargs...) =
-    ldiv!(s, X, nothing, B; kwargs...)
-
-"Force a fresh analyze/factorize on next solve (e.g., if you know the pattern changed)."
-function reset!(s::CuDSSSolver)
-    s.init = false
-    return s
-end
 
 end
