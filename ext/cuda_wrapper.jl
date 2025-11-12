@@ -19,7 +19,7 @@ function ExaPF.get_jacobian_types(::CUDABackend)
     return SMT, A
 end
 
-function Base.unsafe_wrap(Atype::Type{CUDA.CuArray{T, 1, CUDA.Mem.DeviceBuffer}},
+function Base.unsafe_wrap(Atype::Type{CUDA.CuArray{T, 1, CUDA.DeviceMemory}},
                           p::CUDA.CuPtr{T}, dim::Integer;
                           own::Bool=false, ctx::CUDA.CuContext=CUDA.context()) where {T}
     unsafe_wrap(CUDA.CuArray{T, 1}, p, (dim,); own, ctx)

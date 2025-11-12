@@ -87,14 +87,17 @@ end
 # (numerically stable version)
 @inline function smooth_response(p, pmin, pmax, ϵ)
     threshold = 100.0
-    if p >= pmax + threshold * ϵ
-        return pmax
-    elseif p >= 0.5 * (pmax + pmin)
-        return _softmin(p, pmax, ϵ)
-    elseif p >= (pmin - threshold * ϵ)
-        return -_softmin(-p, -pmin, ϵ)
+    # Extract value for comparisons (handles both regular floats and ForwardDiff.Dual)
+    pval = ForwardDiff.value(p)
+    ϵval = ForwardDiff.value(ϵ)
+    return if pval >= pmax + threshold * ϵval
+        pmax
+    elseif pval >= 0.5 * (pmax + pmin)
+        _softmin(p, pmax, ϵ)
+    elseif pval >= (pmin - threshold * ϵval)
+        -_softmin(-p, -pmin, ϵ)
     else
-        return pmin
+        pmin
     end
 end
 

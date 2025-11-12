@@ -1,4 +1,3 @@
-using CUDA
 using KernelAbstractions
 using Test
 
