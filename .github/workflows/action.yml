@@ -52,7 +52,7 @@ jobs:
       - name: Add CUDA.jl to test environment
         if: matrix.backend == 'cuda'
         run: |
-          julia --project=test -e 'using Pkg; Pkg.add("CUDA")'
+          julia --project=test -e 'using Pkg; Pkg.add("CUDA"); Pkg.add("CUDSS")'
       - name: Add AMDGPU.jl to test environment
         if: matrix.backend == 'amdgpu'
         run: |
