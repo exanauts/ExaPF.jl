@@ -88,9 +88,9 @@ scaling!(A,b) = nothing
 
 Solve linear system ``A x = y`` with direct linear algebra.
 
-* On the CPU, `DirectSolver` uses UMFPACK to solve the linear system.
-* On CUDA GPU, `DirectSolver` redirects the resolution to cuDSS.
-
+* `DirectSolver` uses UMFPACK as a generic fallback to solve the linear system.
+* On `CPU`, `DirectSolver` redirects the resolution to KLU if `A` is a `SparseMatrixCSC`.
+* On CUDA GPU, `DirectSolver` redirects the resolution to cuDSS if `A` is a `CuSparseMatrixCSR`.
 """
 struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: AbstractLinearSolver
     factorization::Fac
@@ -135,7 +135,7 @@ update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC) = KP.update!(
     Dqgmres <: AbstractIterativeLinearSolver
     Dqgmres(precond; verbose=false, memory=4)
 
-Wrap `Krylov.jl`'s Dqgmres algorithm to solve iteratively the linear system
+Wrap `Krylov.jl`'s DQGMRES algorithm to solve iteratively the linear system
 ``A x = y``.
 """
 struct Dqgmres <: AbstractIterativeLinearSolver
