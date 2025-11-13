@@ -181,7 +181,7 @@ function FullHessian(polar::AbstractPolarFormulation{T, VI, VT, MT}, func::AutoD
     return hess
 end
 
-struct ArrowheadHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFullHessian
+struct BatchHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFullHessian
     model::Model
     func::Func
     map::VI
@@ -198,7 +198,7 @@ struct ArrowheadHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFul
     vartype::VI
 end
 
-function hessian_arrowhead_sparsity(H, nx, nu, nscen)
+function hessian_Batch_sparsity(H, nx, nu, nscen)
     i_hess, j_hess, _ = findnz(H)
     nnzh = length(i_hess)
     i_coo, j_coo = Int[], Int[]
@@ -231,7 +231,7 @@ function hessian_arrowhead_sparsity(H, nx, nu, nscen)
     return i_coo, j_coo
 end
 
-function ArrowheadHessian(
+function BatchHessian(
     polar::AbstractPolarFormulation{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
     X::AbstractVariable,
@@ -289,7 +289,7 @@ function ArrowheadHessian(
 
     nnzh = length(i_hess)
     H_blk = sparse(i_hess, j_hess, ones(nnzh))
-    i_coo, j_coo = hessian_arrowhead_sparsity(H_blk, nx, nu, k)
+    i_coo, j_coo = hessian_Batch_sparsity(H_blk, nx, nu, k)
     H = sparse(i_coo, j_coo, ones(length(i_coo)), ntot, ntot) |> SMT
 
     # Structures
@@ -305,7 +305,7 @@ function ArrowheadHessian(
     map_device = blk_map |> VI
     varid = varid |> VI
 
-    hess = ArrowheadHessian(
+    hess = BatchHessian(
         polar, func, map_device, stack, ∂stack,
         coloring, ncolors, t1sF, adj_t1sF, H,
         nx, nu, k, varid,
@@ -316,7 +316,7 @@ function ArrowheadHessian(
     return hess
 end
 
-@kernel function _arrowhead_hess_partials_csc_kernel!(
+@kernel function _Batch_hess_partials_csc_kernel!(
     J_colptr, J_rowval, J_nzval, duals, map, coloring, vartype, nblocks, nx, nu,
 )
     j = @index(Global, Linear)
@@ -357,7 +357,7 @@ end
     end
 end
 
-@kernel function _arrowhead_hess_partials_csr_kernel!(
+@kernel function _Batch_hess_partials_csr_kernel!(
     J_rowptr, J_colval, J_nzval, duals, map, coloring, vartype, nblocks, nx, nu,
 )
     i = @index(Global, Linear)
@@ -398,7 +398,7 @@ end
     end
 end
 
-function AutoDiff.partials!(hess::ArrowheadHessian)
+function AutoDiff.partials!(hess::BatchHessian)
     H = hess.H
     N = hess.ncolors
     T = eltype(H)
@@ -410,13 +410,13 @@ function AutoDiff.partials!(hess::ArrowheadHessian)
 
     if _iscsc(H)
         ndrange = (size(H, 2), )
-        _arrowhead_hess_partials_csc_kernel!(device)(
+        _Batch_hess_partials_csc_kernel!(device)(
             H.colptr, H.rowval, H.nzval, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
             ndrange=ndrange,
         )
     elseif _iscsr(H)
         ndrange = (size(H, 1), )
-        _arrowhead_hess_partials_csr_kernel!(device)(
+        _Batch_hess_partials_csr_kernel!(device)(
             H.rowPtr, H.colVal, H.nzVal, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
             ndrange=ndrange,
         )

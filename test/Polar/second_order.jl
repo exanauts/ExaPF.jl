@@ -159,7 +159,7 @@ function test_block_hessian(polar, device, MT)
         ExaPF.LineFlows(blk_polar),
     ]) ∘ ExaPF.PolarBasis(blk_polar)
     blk_y = repeat(ones(m), nblocks) |> MT
-    blk_hess = ExaPF.ArrowheadHessian(blk_polar, blk_cons, ExaPF.State())
+    blk_hess = ExaPF.BatchHessian(blk_polar, blk_cons, ExaPF.State())
     # Eval!
     blk_H = ExaPF.hessian!(blk_hess, blk_stack, blk_y)
 
@@ -170,7 +170,7 @@ function test_block_hessian(polar, device, MT)
 
     # Multivariables
     for X in [State(), Control(), AllVariables()]
-        blk_hess = ExaPF.ArrowheadHessian(blk_polar, blk_cons, X)
+        blk_hess = ExaPF.BatchHessian(blk_polar, blk_cons, X)
         blk_H = ExaPF.hessian!(blk_hess, blk_stack, blk_y)
         @test isa(blk_H, AbstractMatrix)
     end
