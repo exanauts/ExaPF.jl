@@ -8,6 +8,7 @@ CurrentModule = ExaPF.LinearSolvers
 `ExaPF` allows to solve linear systems with either
 direct and indirect linear algebra, both on CPU and on GPU.
 To solve a linear system $Ax = b$, `ExaPF` uses the function `ldiv!`.
+
 ```@docs
 ldiv!
 ```
@@ -21,6 +22,8 @@ DirectSolver
 ```
 
 ## Iterative solvers
+
+`ExaPF` wraps BICGSTAB and DQGMRES for CPU, NVIDIA GPU, and AMD GPU.
 
 ```@docs
 Bicgstab
