@@ -134,7 +134,7 @@ struct BatchJacobian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractJacobi
     block_id::VI
 end
 
-function jacobian_arrowhead_sparsity(J, block_id, nx, nu, nblocks)
+function jacobian_batch_sparsity(J, block_id, nx, nu, nblocks)
     i_jac, j_jac, _ = findnz(J)
     i_coo, j_coo = Int[], Int[]
 
@@ -229,7 +229,7 @@ function BatchJacobian(
         block_id = vcat([fill(_id, m) for _id in 1:k]...)
     end
 
-    i_coo, j_coo = jacobian_arrowhead_sparsity(J_blk, block_id, nx, nu, k)
+    i_coo, j_coo = jacobian_batch_sparsity(J_blk, block_id, nx, nu, k)
     J = sparse(i_coo, j_coo, ones(length(i_coo)), n_cons, ntot) |> SMT
 
     coloring = repeat(coloring, k) |> VI
@@ -251,7 +251,7 @@ function BatchJacobian(
     return jac
 end
 
-@kernel function _arrowhead_partials_csc_kernel!(J_colptr, J_rowval, J_nzval, duals, coloring, nx, nu, nblock)
+@kernel function _batch_partials_csc_kernel!(J_colptr, J_rowval, J_nzval, duals, coloring, nx, nu, nblock)
     j = @index(Global, Linear)
     if j <= nblock * nx
         jk = (j-1) % nx + 1
@@ -265,7 +265,7 @@ end
     end
 end
 
-@kernel function _arrowhead_partials_csr_kernel!(J_rowptr, J_colval, J_nzval, duals, coloring, nx, nu, nblock)
+@kernel function _batch_partials_csr_kernel!(J_rowptr, J_colval, J_nzval, duals, coloring, nx, nu, nblock)
     i = @index(Global, Linear)
 
     for c in J_rowptr[i]:J_rowptr[i+1]-1
@@ -292,13 +292,13 @@ function AutoDiff.partials!(jac::BatchJacobian)
 
     if _iscsc(J)
         ndrange = (size(J, 2), )
-        _arrowhead_partials_csc_kernel!(device)(
+        _batch_partials_csc_kernel!(device)(
             J.colptr, J.rowval, J.nzval, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
             ndrange=ndrange,
         )
     elseif _iscsr(J)
         ndrange = (size(J, 1), )
-        _arrowhead_partials_csr_kernel!(device)(
+        _batch_partials_csr_kernel!(device)(
             J.rowPtr, J.colVal, J.nzVal, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
             ndrange=ndrange,
         )
@@ -307,4 +307,3 @@ function AutoDiff.partials!(jac::BatchJacobian)
     end
     KA.synchronize(device)
 end
-
