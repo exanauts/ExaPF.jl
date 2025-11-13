@@ -198,7 +198,7 @@ struct BatchHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFullHes
     vartype::VI
 end
 
-function hessian_Batch_sparsity(H, nx, nu, nscen)
+function hessian_batch_sparsity(H, nx, nu, nscen)
     i_hess, j_hess, _ = findnz(H)
     nnzh = length(i_hess)
     i_coo, j_coo = Int[], Int[]
@@ -289,7 +289,7 @@ function BatchHessian(
 
     nnzh = length(i_hess)
     H_blk = sparse(i_hess, j_hess, ones(nnzh))
-    i_coo, j_coo = hessian_Batch_sparsity(H_blk, nx, nu, k)
+    i_coo, j_coo = hessian_batch_sparsity(H_blk, nx, nu, k)
     H = sparse(i_coo, j_coo, ones(length(i_coo)), ntot, ntot) |> SMT
 
     # Structures
@@ -316,7 +316,7 @@ function BatchHessian(
     return hess
 end
 
-@kernel function _Batch_hess_partials_csc_kernel!(
+@kernel function _batch_hess_partials_csc_kernel!(
     J_colptr, J_rowval, J_nzval, duals, map, coloring, vartype, nblocks, nx, nu,
 )
     j = @index(Global, Linear)
@@ -357,7 +357,7 @@ end
     end
 end
 
-@kernel function _Batch_hess_partials_csr_kernel!(
+@kernel function _batch_hess_partials_csr_kernel!(
     J_rowptr, J_colval, J_nzval, duals, map, coloring, vartype, nblocks, nx, nu,
 )
     i = @index(Global, Linear)
@@ -410,13 +410,13 @@ function AutoDiff.partials!(hess::BatchHessian)
 
     if _iscsc(H)
         ndrange = (size(H, 2), )
-        _Batch_hess_partials_csc_kernel!(device)(
+        _batch_hess_partials_csc_kernel!(device)(
             H.colptr, H.rowval, H.nzval, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
             ndrange=ndrange,
         )
     elseif _iscsr(H)
         ndrange = (size(H, 1), )
-        _Batch_hess_partials_csr_kernel!(device)(
+        _batch_hess_partials_csr_kernel!(device)(
             H.rowPtr, H.colVal, H.nzVal, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
             ndrange=ndrange,
         )
