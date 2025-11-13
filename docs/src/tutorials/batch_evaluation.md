@@ -8,6 +8,15 @@ end
 DocTestFilters = [r"ExaPF"]
 ```
 
+```@setup batch_pf
+using ExaPF
+using KLU
+using LinearAlgebra
+const LS = ExaPF.LinearSolvers
+const PS = ExaPF.PowerSystem
+polar = ExaPF.load_polar("case9.m")
+```
+
 # Batch power flow
 
 ExaPF provides a way to evaluate the expressions by blocks,
