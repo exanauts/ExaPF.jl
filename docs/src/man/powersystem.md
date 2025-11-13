@@ -47,9 +47,15 @@ where each bus $i$ has variables $p_i, q_i, v_i, \theta_i$ and the topology
 of the network is defined by a non-negative value of the admittance between
 two buses $i$ and $j$, $y_{ij} = g_{ij} + ib_{ij}$.
 
-## The PowerNetwork Object
+## The PowerNetwork object
 
 Currently we can create a [`PS.PowerNetwork`](@ref) object by parsing a MATPOWER data file.
+
+```@setup artifacts
+using ExaPF
+datafile = "case9.m"
+ExaPF.PowerSystem.load_case(datafile)
+```
 
 ```jldoctests
 julia> datafile = "case9.m";

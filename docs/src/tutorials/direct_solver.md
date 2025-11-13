@@ -12,7 +12,6 @@ using ExaPF
 using KLU
 using LinearAlgebra
 const LS = ExaPF.LinearSolvers
-
 ```
 
 # Direct solvers for power flow
@@ -215,13 +214,13 @@ ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=rf_solver)
 [cuDSS](https://developer.nvidia.com/cudss)
 is collection of sparse direct solvers implemented in CUDA.
 
-```@example direct_solver2
+```@example direct_solver
 using CUDSS
 ```
 
 We first have to instantiate everything on the GPU:
 
-```@example direct_solver2
+```@example direct_solver
 using CUDA
 polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDABackend())
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
@@ -231,13 +230,13 @@ jx_gpu = ExaPF.Jacobian(polar_gpu, func_gpu, State()) # init AD
 
 We can instantiate a new cuDSS's solver as
 
-```@example direct_solver2
+```@example direct_solver
 cudss_fac = CUDSS.lu(jx_gpu.J)
 cudss_solver = LS.DirectSolver(cudss_fac)
 ```
 
 Then, we are able to solve the power flow *entirely on the GPU*, simply as
 
-```@example direct_solver2
+```@example direct_solver
 ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=cudss_solver)
 ```
