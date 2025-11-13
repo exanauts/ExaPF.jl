@@ -189,15 +189,8 @@ func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu)
 jx_gpu = ExaPF.Jacobian(polar_gpu, func_gpu, State()) # init AD
 ```
 
-We can instantiate a new cuDSS's solver as
-
-```@example direct_solver
-cudss_fac = CUDSS.lu(jx_gpu.J)
-cudss_solver = LS.DirectSolver(cudss_fac)
-```
-
 Then, we are able to solve the power flow *entirely on the GPU*, simply as
 
 ```@example direct_solver
-ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=cudss_solver)
+ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu)
 ```
