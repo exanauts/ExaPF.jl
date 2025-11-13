@@ -157,13 +157,13 @@ powerflow_gpu = ExaPF.PowerFlowBalance(blk_polar_gpu) ∘ ExaPF.PolarBasis(blk_p
 blk_jx_gpu = ExaPF.BatchJacobian(blk_polar_gpu, powerflow_gpu, State());
 ExaPF.set_params!(blk_jx_gpu, blk_stack_gpu);
 ExaPF.jacobian!(blk_jx_gpu, blk_stack_gpu);
-rf_fac = CUDSS.lu(blk_jx_gpu.J)
-rf_solver = LS.DirectSolver(rf_fac)
+cudss_fac = CUDSS.lu(blk_jx_gpu.J)
+cudss_solver = LS.DirectSolver(cudss_fac)
 conv = ExaPF.nlsolve!(
     NewtonRaphson(verbose=2),
     blk_jx_gpu,
     blk_stack_gpu;
-    linear_solver=rf_solver,
+    linear_solver=cudss_solver,
 )
 
 ```
