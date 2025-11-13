@@ -16,14 +16,11 @@ to generate portable kernels working on different backends.
 Right now, we support NVIDA's CUDA and AMD's ROCm backends with [Intel oneAPI](https://github.com/JuliaGPU/oneAPI.jl) in development.
 
 ## Quick-start
-### How to install ExaPF?
+### How to install and test ExaPF?
 
 ```julia
+julia> ]
 pkg> add ExaPF
-```
-
-### Test
-```julia
 pkg> test ExaPF
 ```
 
@@ -32,13 +29,17 @@ pkg> test ExaPF
 ExaPF solves the power flow equations of a power network with a Newton-Raphson algorithm:
 
 ```julia
+using ExaPF
+
 # Input file
 case = "case57.m"
-# Instantiate a PolarForm object on the CPU.
-# (Replace CPU() by CUDADevice() to deport computation on a CUDA GPU)
+
+# Instantiate a PolarForm object on CPU
 polar = ExaPF.PolarForm(case, CPU())
+
 # Initial variables
 stack = ExaPF.NetworkStack(polar)
+
 # Solve power flow
 conv = run_pf(polar, stack; verbose=1)
 ```
@@ -46,12 +47,44 @@ conv = run_pf(polar, stack; verbose=1)
 #it 0: 6.18195e-01
 #it 1: 8.19603e-03
 #it 2: 7.24135e-06
-#it 3: 4.68355e-12
+#it 3: 4.67823e-12
 Power flow has converged: true
   * #iterations: 3
-  * Time Jacobian (s) ........: 0.0004
-  * Time linear solver (s) ...: 0.0010
-  * Time total (s) ...........: 0.0014
+  * Time Jacobian (s) ........: 0.0001
+  * Time linear solver (s) ...: 0.0001
+     * update (s) ............: 0.0001
+     * ldiv (s) ..............: 0.0000
+  * Time total (s) ...........: 0.0003
+```
+
+It can also be used on NVIDIA and AMD GPU:
+```julia
+using ExaPF, CUDA, CUDSS
+
+# Input file
+case = "case30.m"
+
+# Instantiate a PolarForm object on NVIDIA GPU
+polar = ExaPF.PolarForm(case, CUDABackend())
+
+# Initial variables
+stack = ExaPF.NetworkStack(polar)
+
+# Solve power flow
+conv = run_pf(polar, stack; verbose=1)
+```
+```shell
+#it 0: 8.97956e-01
+#it 1: 3.07254e-02
+#it 2: 1.12306e-04
+#it 3: 1.60348e-09
+Power flow has converged: true
+  * #iterations: 3
+  * Time Jacobian (s) ........: 0.0021
+  * Time linear solver (s) ...: 0.0006
+     * update (s) ............: 0.0003
+     * ldiv (s) ..............: 0.0003
+  * Time total (s) ...........: 0.0047
 ```
 
 For more information on how to solve power flow on the GPU,
