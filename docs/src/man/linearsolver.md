@@ -19,9 +19,7 @@ dx .= jacobian(x)\f(x)
 
 Our package supports the following linear solvers:
 
-* [UMFPACK](https://github.com/DrTimothyAldenDavis/SuiteSparse) (CPU),
 * [KLU](https://github.com/DrTimothyAldenDavis/SuiteSparse) (CPU),
-* [`cusolverRF`](https://docs.nvidia.com/cuda/cusolver/index.html#cusolverrf-refactorization-reference-deprecated) (NVIDIA GPU),
 * [`cuDSS`](https://developer.nvidia.com/cudss) (NVIDIA GPU),
 * [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) with `dqgmres` and `bicgstab` (CPU, NVIDIA GPU, AMD GPU),
 * Any custom linear solver provided by the user.

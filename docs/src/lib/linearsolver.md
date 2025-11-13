@@ -14,8 +14,7 @@ ldiv!
 
 ## Direct solvers
 
-`ExaPF` wraps UMFPACK (shipped with `SuiteSparse.jl`) and KLU on the CPU, CUSPARSE, CUSOLVERRF and cuDSS on NVIDIA GPU, and ROCSPARSE on AMD GPU.
-
+`ExaPF` wraps KLU on the CPU, and cuDSS on NVIDIA GPU.
 
 ```@docs
 DirectSolver
@@ -33,7 +32,12 @@ Available linear solvers can be queried with
 list_solvers
 ```
 
-A default solver is provided for each vendor backend.
+A default linear solver is provided for each vendor backend.
 ```@docs
 default_linear_solver
+```
+
+A default batch linear solver is provided for each vendor backend.
+```@docs
+default_batch_linear_solver
 ```

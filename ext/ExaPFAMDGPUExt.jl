@@ -18,10 +18,11 @@ const PS = ExaPF.PowerSystem
 const AD = ExaPF.AutoDiff
 const KP = KrylovPreconditioners
 
-LS.DirectSolver(J::ROCSparseMatrixCSR; options...) = ExaPF.LS.DirectSolver(nothing)
+LS.DirectSolver(J::ROCSparseMatrixCSR, nbatch::Int=1; options...) = @error "LS.DirectSolver is not available for ROCSparseMatrixCSR on AMD GPUs."
 LS.update!(solver::ExaPF.LS.AbstractIterativeLinearSolver, J::ROCSparseMatrixCSR) = KP.update!(solver.precond, J)
 LS._get_type(J::ROCSparseMatrixCSR) = ROCArray{Float64, 1, AMDGPU.Mem.HIPBuffer}
 LS.default_linear_solver(A::ROCSparseMatrixCSR, device::ROCBackend) = ExaPF.LS.Bicgstab(A; P=KP.kp_ilu0(A), ldiv=true)
+LS.default_batch_linear_solver(A::ROCSparseMatrixCSR, device::ROCBackend) = ExaPF.LS.Bicgstab(A; P=KP.kp_ilu0(A), ldiv=true)
 ExaPF._iscsr(::ROCSparseMatrixCSR) = true
 ExaPF._iscsc(::ROCSparseMatrixCSR) = false
 function LS.scaling!(::LS.Bicgstab, A::ROCSparseMatrixCSR, b)

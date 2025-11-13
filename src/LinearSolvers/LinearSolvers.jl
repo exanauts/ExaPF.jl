@@ -22,7 +22,7 @@ using KrylovPreconditioners
 const KA = KernelAbstractions
 const KP = KrylovPreconditioners
 
-export list_solvers, default_linear_solver
+export list_solvers, default_linear_solver, default_batch_linear_solver
 export DirectSolver, Bicgstab
 export do_scaling, scaling!
 
@@ -88,7 +88,6 @@ scaling!(A,b) = nothing
 
 Solve linear system ``A x = y`` with direct linear algebra.
 
-* `DirectSolver` uses UMFPACK as a generic fallback to solve the linear system.
 * On `CPU`, `DirectSolver` redirects the resolution to KLU if `A` is a `SparseMatrixCSC`.
 * On CUDA GPU, `DirectSolver` redirects the resolution to cuDSS if `A` is a `CuSparseMatrixCSR`.
 """
@@ -96,8 +95,7 @@ struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: Abstrac
     factorization::Fac
 end
 
-DirectSolver(J; options...) = DirectSolver(klu(J))
-DirectSolver() = DirectSolver(nothing)
+DirectSolver(J, nbatch::Int=1; options...) = DirectSolver(klu(J))
 
 function update!(s::DirectSolver, J::AbstractMatrix)
     klu!(s.factorization, J) # Update factorization inplace
@@ -215,15 +213,22 @@ end
 """
     list_solvers(::KA.CPU)
 
-List all linear solvers available solving the power flow on the CPU.
+List all (batch) linear solvers available for solving the power flow on the CPU.
 """
 list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 
 """
-    default_linear_solver(A, ::KA.CPU)
+    default_linear_solver(A::SparseMatrixCSC, ::KA.CPU)
 
 Default linear solver on the CPU.
 """
 default_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
+
+"""
+    default_linear_solver(A::SparseMatrixCSC, ::KA.CPU)
+
+Default batch linear solver on the CPU.
+"""
+default_batch_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
 
 end
