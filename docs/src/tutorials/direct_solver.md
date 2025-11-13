@@ -153,8 +153,6 @@ CUSOLVERRF.jl follows the LinearAlgebra's interface, so we can use it directly i
 We first have to instantiate everything on the GPU:
 ```@example direct_solver
 using CUDA
-using CUSOLVERRF
-
 polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDABackend())
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
 func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu)
