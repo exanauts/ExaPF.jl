@@ -67,13 +67,13 @@ function benchmark_gpu_cudss(datafile, n_blocks, pf_solver; ntrials=3, magnitude
     instance = build_instance(datafile, n_blocks, CUDABackend(), magnitude)
     # Initiate CUDSS
     J = instance.jacobian.J
-    rf_factorization = CUDSS.lu(J)
-    rf_solver = LS.DirectSolver(rf_factorization)
+    cudss_factorization = CUDSS.lu(J)
+    cudss_solver = LS.DirectSolver(cudss_factorization)
     # Solve power flow
     tic = 0.0
     for _ in 1:ntrials
         ExaPF.init!(instance.model, instance.stack) # reinit stack
-        tic += @elapsed ExaPF.nlsolve!(pf_solver, instance.jacobian, instance.stack; linear_solver=rf_solver)
+        tic += @elapsed ExaPF.nlsolve!(pf_solver, instance.jacobian, instance.stack; linear_solver=cudss_solver)
     end
     return tic / ntrials
 end
