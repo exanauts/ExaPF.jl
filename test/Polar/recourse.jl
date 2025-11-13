@@ -175,7 +175,7 @@ function test_recourse_block_hessian(polar, device, M)
     y = rand(m)
 
     # Evaluate Hessian
-    hess = ExaPF.ArrowheadHessian(polar_ext, ev, AllVariables())
+    hess = ExaPF.BatchHessian(polar_ext, ev, AllVariables())
     H = ExaPF.hessian!(hess, stack, y)
 
     # Evaluate Hessian with finite-diff
