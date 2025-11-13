@@ -5,7 +5,7 @@ function test_recourse_powerflow(polar, device, M)
     stack = ExaPF.NetworkStack(polar_ext)
 
     pf_recourse = ExaPF.PowerFlowRecourse(polar_ext) ∘ ExaPF.PolarBasis(polar_ext)
-    jac_recourse = ExaPF.ArrowheadJacobian(polar_ext, pf_recourse, State())
+    jac_recourse = ExaPF.BatchJacobian(polar_ext, pf_recourse, State())
     ExaPF.set_params!(jac_recourse, stack)
     ExaPF.jacobian!(jac_recourse, stack)
 
@@ -85,17 +85,17 @@ function test_recourse_jacobian(polar, device, M)
         Jd_xu = [Jd_x Jd_u]
 
         # / State
-        jac_x = ExaPF.ArrowheadJacobian(polar_ext, ev, State())
+        jac_x = ExaPF.BatchJacobian(polar_ext, ev, State())
         Jx = ExaPF.jacobian!(jac_x, stack) |> SparseMatrixCSC
         @test Jx ≈ Jd_x rtol=1e-5
 
         # / Control
-        jac_u = ExaPF.ArrowheadJacobian(polar_ext, ev, Control())
+        jac_u = ExaPF.BatchJacobian(polar_ext, ev, Control())
         Ju = ExaPF.jacobian!(jac_u, stack) |> SparseMatrixCSC
         @test Ju ≈ Jd_u rtol=1e-5
 
         # / all
-        jac_xu = ExaPF.ArrowheadJacobian(polar_ext, ev, AllVariables())
+        jac_xu = ExaPF.BatchJacobian(polar_ext, ev, AllVariables())
         Jxu = ExaPF.jacobian!(jac_xu, stack) |> SparseMatrixCSC
         @test Jxu ≈ Jd_xu rtol=1e-5
 

@@ -265,7 +265,7 @@ function test_block_jacobian(polar, device, MT)
         ExaPF.jacobian!(jac, stack)
         # Block eval
         pf_blk = expr(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
-        blk_jac = ExaPF.ArrowheadJacobian(blk_polar, pf_blk, State())
+        blk_jac = ExaPF.BatchJacobian(blk_polar, pf_blk, State())
         ExaPF.jacobian!(blk_jac, blk_stack)
         # Test results match
         blk_J_cpu = blk_jac.J |> SparseMatrixCSC
@@ -316,7 +316,7 @@ function test_block_jacobian(polar, device, MT)
         [State(), Control(), AllVariables()],
         [Jd_x, Jd_u, Jd_xu],
     )
-        blk_jac = ExaPF.ArrowheadJacobian(blk_polar, mycons, X)
+        blk_jac = ExaPF.BatchJacobian(blk_polar, mycons, X)
         ExaPF.jacobian!(blk_jac, blk_stack)
         Jx = blk_jac.J |> SparseMatrixCSC
         @test Jx ≈ JJd rtol=1e-5

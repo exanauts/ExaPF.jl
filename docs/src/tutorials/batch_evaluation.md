@@ -110,13 +110,13 @@ depending on which scenario we are on.
 Once the different structures used for block evaluation instantiated,
 one is able to solve the power flow in block on the CPU using
 the same function [`nlsolve!`](@ref). The block Jacobian is evaluated
-with automatic differentiation using a `ArrowheadJacobian` structure:
+with automatic differentiation using a `BatchJacobian` structure:
 ```@example batch_pf
-blk_jx = ExaPF.ArrowheadJacobian(blk_polar, powerflow, State());
+blk_jx = ExaPF.BatchJacobian(blk_polar, powerflow, State());
 blk_jx.J
 ```
-We notice that the `ArrowheadJacobian` computes the resulting Jacobian
-as a block diagonal matrix. The `ArrowheadJacobian` has a slightly
+We notice that the `BatchJacobian` computes the resulting Jacobian
+as a block diagonal matrix. The `BatchJacobian` has a slightly
 different behavior than its classical counterpart `AutoDiff.Jacobian`,
 in the sense that one has to pass the parameters manually to initiate internally the
 dual numbers:
@@ -154,7 +154,7 @@ blk_polar_gpu = ExaPF.BlockPolarForm(polar_gpu, nscen); # load model on GPU
 blk_stack_gpu = ExaPF.NetworkStack(blk_polar_gpu);
 ExaPF.set_params!(blk_stack_gpu, ploads, qloads);
 powerflow_gpu = ExaPF.PowerFlowBalance(blk_polar_gpu) ∘ ExaPF.PolarBasis(blk_polar_gpu);
-blk_jx_gpu = ExaPF.ArrowheadJacobian(blk_polar_gpu, powerflow_gpu, State());
+blk_jx_gpu = ExaPF.BatchJacobian(blk_polar_gpu, powerflow_gpu, State());
 ExaPF.set_params!(blk_jx_gpu, blk_stack_gpu);
 ExaPF.jacobian!(blk_jx_gpu, blk_stack_gpu);
 rf_fac = CUDSS.lu(blk_jx_gpu.J)
