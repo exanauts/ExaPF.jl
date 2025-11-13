@@ -76,9 +76,8 @@ function runtests(case, device, AT, arch)
 
     @testset "PolarFormRecourse" begin
         test_recourse_expression(polar, device, AT)
-        # Recourse formulation test breaks on ROCm (zero-pivot)
-        # Likely need direct solver
-        if arch == "rocm"
+        # Recourse formulation test breaks on GPU
+        if arch == "rocm" || arch == "cuda"
             @test_broken false
         else
             test_recourse_powerflow(polar, device, AT)

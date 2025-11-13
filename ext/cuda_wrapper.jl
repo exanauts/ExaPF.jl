@@ -22,7 +22,7 @@ end
 function Base.unsafe_wrap(Atype::Type{CUDA.CuArray{T, 1, CUDA.DeviceMemory}},
                           p::CUDA.CuPtr{T}, dim::Integer;
                           own::Bool=false, ctx::CUDA.CuContext=CUDA.context()) where {T}
-    unsafe_wrap(CUDA.CuArray{T, 1}, p, (dim,); own, ctx)
+    unsafe_wrap(CUDA.CuVector{T}, p, (dim,); own, ctx)
 end
 
 CUSPARSE.CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = CuSparseMatrixCSR(A)
@@ -48,15 +48,6 @@ function Base.copyto!(dest::VT, stack::AD.AbstractStack, map::AbstractVector{Int
         ndrange=ndrange,
     )
     KA.synchronize(CUDABackend())
-end
-
-# By default, no factorization routine is available
-LS.update!(s::LS.DirectSolver{Nothing}, J::CuSparseMatrixCSR) = nothing
-function LS.ldiv!(::LS.DirectSolver{Nothing},
-    y::CuVector, J::CuSparseMatrixCSR, x::CuVector; options...
-)
-    CUSOLVER.csrlsvqr!(J, x, y, 1e-8, one(Cint), 'O')
-    return 0
 end
 
 #=
@@ -103,9 +94,9 @@ function _mm_transposed!(
 end
 
 function LinearAlgebra.mul!(
-    Y::CuArray{T, 1},
+    Y::CuVector{T},
     A::CUSPARSE.CuSparseMatrixCSR,
-    X::CuArray{T, 1},
+    X::CuVector{T},
     alpha::Number, beta::Number,
 ) where {T <: ForwardDiff.Dual}
     n, m = size(A)
@@ -123,9 +114,9 @@ function LinearAlgebra.mul!(
 end
 
 function LinearAlgebra.mul!(
-    Y::CuArray{T, 1},
+    Y::CuVector{T},
     A::CUSPARSE.CuSparseMatrixCSR,
-    X::AbstractArray{Float64, 1},
+    X::AbstractVector{Float64},
     alpha::Number, beta::Number,
 ) where {T <: ForwardDiff.Dual}
     n, m = size(A)
@@ -151,9 +142,9 @@ end
 =#
 
 function LinearAlgebra.mul!(
-    Y::AbstractArray{Td, 1},
+    Y::AbstractVector{Td},
     A::Adjoint{T, CuSparseMatrixCSR{T, I}},
-    X::AbstractArray{Td, 1},
+    X::AbstractVector{Td},
     alpha::Number, beta::Number,
 ) where {I, T, Td <: ForwardDiff.Dual}
     n, m = size(A)
