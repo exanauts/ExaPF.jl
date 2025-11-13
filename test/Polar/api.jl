@@ -275,7 +275,7 @@ function test_block_powerflow(polar, device, M)
 
     pf = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
 
-    blk_jac = ExaPF.ArrowheadJacobian(blk_polar, pf, State())
+    blk_jac = ExaPF.BatchJacobian(blk_polar, pf, State())
     ExaPF.set_params!(blk_jac, blk_stack)
     ExaPF.jacobian!(blk_jac, blk_stack)
 
@@ -304,7 +304,7 @@ function test_contingency_powerflow(polar, device, M)
 
     pf = ExaPF.PowerFlowBalance(blk_polar, contingencies) ∘ ExaPF.PolarBasis(blk_polar)
 
-    blk_jac = ExaPF.ArrowheadJacobian(blk_polar, pf, State())
+    blk_jac = ExaPF.BatchJacobian(blk_polar, pf, State())
     ExaPF.set_params!(blk_jac, blk_stack)
     ExaPF.jacobian!(blk_jac, blk_stack)
 

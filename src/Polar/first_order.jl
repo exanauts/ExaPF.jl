@@ -119,7 +119,7 @@ end
 Jacobian(polar::AbstractPolarFormulation, func::AutoDiff.AbstractExpression, x::AbstractVariable) = Jacobian(polar, func, mapping(polar, x))
 
 
-struct ArrowheadJacobian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractJacobian
+struct BatchJacobian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractJacobian
     model::Model
     func::Func
     map::VI
@@ -154,7 +154,7 @@ function jacobian_arrowhead_sparsity(J, block_id, nx, nu, nblocks)
     return i_coo, j_coo
 end
 
-function ArrowheadJacobian(
+function BatchJacobian(
     polar::AbstractPolarFormulation{T, VI, VT, MT},
     func::AutoDiff.AbstractExpression,
     X::AbstractVariable,
@@ -242,7 +242,7 @@ function ArrowheadJacobian(
     map_device = blk_map |> VI
     block_id = block_id |> VI
 
-    jac = ArrowheadJacobian(
+    jac = BatchJacobian(
         polar, func, map_device, stack, coloring, ncolors, t1sF, J, nx, nu, k, block_id,
     )
 
@@ -280,7 +280,7 @@ end
 end
 
 # Adapt partials extraction for block structure
-function AutoDiff.partials!(jac::ArrowheadJacobian)
+function AutoDiff.partials!(jac::BatchJacobian)
     J = jac.J
     N = jac.ncolors
     T = eltype(J)
