@@ -1,6 +1,6 @@
 # ExaPF
 
-[![][docs-stable-img]][docs-stable-url] [![][build-latest-img]][build-url] [![][codecov-latest-img]][codecov-latest-url] [![][doi-img]][doi-url]
+[![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url] [![][build-latest-img]][build-url] [![][codecov-latest-img]][codecov-latest-url] [![][doi-img]][doi-url]
 
 ExaPF is a HPC package implementing a vectorized modeler
 for power systems. It targets primarily GPU architectures, and provides a portable abstraction to model power systems on upcoming HPC architectures.
@@ -105,9 +105,11 @@ refer to [CONTRIBUTING.md](https://github.com/exanauts/ExaPF.jl/blob/main/CONTRI
 ## Funding
 This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy’s Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation’s exascale computing imperative.
 
-
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
 [docs-stable-url]: https://exanauts.github.io/ExaPF.jl/stable
+
+[docs-dev-img]: https://img.shields.io/badge/docs-dev-purple.svg
+[docs-dev-url]: https://exanauts.github.io/ExaPF.jl/dev
 
 [codecov-latest-img]: https://codecov.io/gh/exanauts/ExaPF.jl/branch/main/graphs/badge.svg?branch=main
 [codecov-latest-url]: https://codecov.io/github/exanauts/ExaPF.jl?branch=main
