@@ -191,8 +191,7 @@ flow Jacobian doesn't change along the Newton iterations and
 (ii) the Jacobian is super-sparse. In ExaPF, it is the linear solver
 of choice when it comes to solve the power flow entirely on the GPU.
 
-CUSOLVERRF.jl follows the LinearAlgebra's interface, so we can use
-it directly in ExaPF.
+CUSOLVERRF.jl follows the LinearAlgebra's interface, so we can use it directly in ExaPF.
 We first have to instantiate everything on the GPU:
 ```@example direct_solver
 using CUDA
@@ -205,7 +204,6 @@ We can instantiate a new cusolverRF's instance as
 ```@example direct_solver
 rf_fac = CUSOLVERRF.RFLU(jx_gpu.J)
 rf_solver = LS.DirectSolver(rf_fac)
-
 ```
 Then, we are able to solve the power flow *entirely on the GPU*, simply as
 ```@example direct_solver
@@ -217,42 +215,29 @@ ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=rf_solver)
 [cuDSS](https://developer.nvidia.com/cudss)
 is collection of sparse direct solvers implemented in CUDA.
 
-```@example direct_solver
+```@example direct_solver2
 using CUDSS
 ```
 
-The principle is the following: the initial symbolic factorization
-is computed on the CPU with the routine chosen by the user. Then,
-each time we have to refactorize a matrix **with the same sparsity pattern**,
-we can recompute the numerical factorization entirely on the GPU.
-In practice, this solver is efficient at refactorizing a given matrix
-if the sparsity is significant.
-
-This is of direct relevance for us, as (i) the sparsity of the power
-flow Jacobian doesn't change along the Newton iterations and
-(ii) the Jacobian is super-sparse. In ExaPF, it is the linear solver
-of choice when it comes to solve the power flow entirely on the GPU.
-
 We first have to instantiate everything on the GPU:
 
-```@example direct_solver
+```@example direct_solver2
 using CUDA
-using CUDSS
 polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDABackend())
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
 func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu)
 jx_gpu = ExaPF.Jacobian(polar_gpu, func_gpu, State()) # init AD
 ```
 
-We can instantiate a new cuDSS's instance as
+We can instantiate a new cuDSS's solver as
 
-```@example direct_solver
-rf_fac = CUDSS.lu(jx_gpu.J)
-rf_solver = LS.DirectSolver(rf_fac)
+```@example direct_solver2
+cudss_fac = CUDSS.lu(jx_gpu.J)
+cudss_solver = LS.DirectSolver(cudss_fac)
 ```
 
 Then, we are able to solve the power flow *entirely on the GPU*, simply as
 
-```@example direct_solver
-ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=rf_solver)
+```@example direct_solver2
+ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu; linear_solver=cudss_solver)
 ```
