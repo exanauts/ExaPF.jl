@@ -91,7 +91,7 @@ Solve linear system ``A x = y`` with direct linear algebra.
 * On `CPU`, `DirectSolver` redirects the resolution to KLU if `A` is a `SparseMatrixCSC`.
 * On CUDA GPU, `DirectSolver` redirects the resolution to cuDSS if `A` is a `CuSparseMatrixCSR`.
 """
-struct DirectSolver{Fac<:Union{Nothing, LinearAlgebra.Factorization}} <: AbstractLinearSolver
+struct DirectSolver{Fac<:LinearAlgebra.Factorization} <: AbstractLinearSolver
     factorization::Fac
 end
 
@@ -106,24 +106,21 @@ function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
+
 # Solve system Ax = y
 function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray; options...)
     LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
     return 0
 end
+
 function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray; options...)
     LinearAlgebra.ldiv!(s.factorization, y) # Forward-backward solve
     return 0
 end
+
 # Solve system A'x = y
 function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
     LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
-    return 0
-end
-
-function ldiv!(::DirectSolver{Nothing}, y::Vector, J::AbstractMatrix, x::Vector; options...)
-    F = lu(J)
-    LinearAlgebra.ldiv!(y, F, x)
     return 0
 end
 
@@ -142,6 +139,7 @@ struct Dqgmres <: AbstractIterativeLinearSolver
     memory::Int
     verbose::Bool
 end
+
 function Dqgmres(J::AbstractSparseMatrix;
     P=BlockJacobiPreconditioner(J), memory=4, verbose=false
 )
