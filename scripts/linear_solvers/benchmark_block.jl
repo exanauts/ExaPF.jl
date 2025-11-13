@@ -39,7 +39,7 @@ function build_instance(datafile, n_blocks, device, magnitude)
     ExaPF.set_params!(stack, pload, qload)
     # Instantiate Automatic Differentiation
     pflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar)
-    jx = ExaPF.ArrowheadJacobian(polar, pflow, State())
+    jx = ExaPF.BatchJacobian(polar, pflow, State())
     ExaPF.set_params!(jx, stack)
     ExaPF.jacobian!(jx, stack)
     return (
