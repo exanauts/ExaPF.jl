@@ -64,18 +64,14 @@ Conveniently, KLU is wrapped in Julia with the package [KLU.jl](https://github.c
 We use it by default when `J` is a `SparseMatrixCSC`.
 
 Then, we are ready to solve a power flow with KLU using our current
-abstraction. One has just to create a new instance of [`LS.DirectSolver`](@ref):
-
+abstraction.
 ```@example direct_solver
-klu_factorization = KLU.klu(jx.J)
-klu_solver = LS.DirectSolver(klu_factorization)
-```
-
-and pass it to [`nlsolve!`](@ref):
-
-```@example direct_solver
-ExaPF.init!(polar, stack) # reinit stack
-ExaPF.nlsolve!(pf_solver, jx, stack; linear_solver=klu_solver)
+polar = ExaPF.load_polar("case9241pegase.m")
+stack = ExaPF.NetworkStack(polar)
+pf_solver = NewtonRaphson(tol=1e-10, verbose=2)  # power flow solver
+func = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar) # power flow func
+jx = ExaPF.Jacobian(polar, func, State()) # init AD
+ExaPF.nlsolve!(pf_solver, jx, stack)
 ```
 
 We observe KLU reduces considerably the time spent in the linear solver.
