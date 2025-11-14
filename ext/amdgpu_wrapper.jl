@@ -50,9 +50,6 @@ function Base.copyto!(dest::VT, stack::AD.AbstractStack, map::AbstractVector{Int
     KA.synchronize(ROCBackend())
 end
 
-# By default, no factorization routine is available
-LS.update!(s::LS.DirectSolver{Nothing}, J::ROCSparseMatrixCSR) = nothing
-
 #=
     Generic SpMV for ROCSparseMatrixCSR
 =#
