@@ -40,19 +40,19 @@ function LS.DirectSolver(J::CuSparseMatrixCSR, nbatch::Int=1; options...)
     end
 end
 
-function ldiv!(s::DirectSolver{<:CUDSS.CudssSolver}, y::CuVector, J::AbstractMatrix, x::CuVector; options...)
+function LS.ldiv!(s::DirectSolver{<:CUDSS.CudssSolver}, y::CuVector, J::AbstractMatrix, x::CuVector; options...)
     LinearAlgebra.ldiv!(y, s.factorization, x)
     CUDA.synchronize()
     return 0
 end
 
-function ldiv!(s::DirectSolver{<:CUDSS.CudssSolver}, y::CuArray, x::CuArray; options...)
+function LS.ldiv!(s::DirectSolver{<:CUDSS.CudssSolver}, y::CuArray, x::CuArray; options...)
     LinearAlgebra.ldiv!(y, s.factorization, x)
     CUDA.synchronize()
     return 0
 end
 
-function ldiv!(s::DirectSolver{<:CUDSS.CudssSolver}, y::CuArray; options...)
+function LS.ldiv!(s::DirectSolver{<:CUDSS.CudssSolver}, y::CuArray; options...)
     LinearAlgebra.ldiv!(s.factorization, y)
     CUDA.synchronize()
     return 0
