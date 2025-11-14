@@ -7,6 +7,9 @@ Pkg.instantiate()
 using Documenter
 using ExaPF
 using Documenter.Remotes
+using CUDA
+# For potential debugging
+CUDA.versioninfo()
 
 makedocs(
     sitename = "ExaPF.jl",
