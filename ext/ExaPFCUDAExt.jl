@@ -40,24 +40,6 @@ function LS.DirectSolver(J::CuSparseMatrixCSR, nbatch::Int=1; options...)
     end
 end
 
-function LS.ldiv!(s::DirectSolver{<:CUDSS.CudssSolver}, y::CuVector, J::AbstractMatrix, x::CuVector; options...)
-    LinearAlgebra.ldiv!(y, s.factorization, x)
-    CUDA.synchronize()
-    return 0
-end
-
-function LS.ldiv!(s::DirectSolver{<:CUDSS.CudssSolver}, y::CuArray, x::CuArray; options...)
-    LinearAlgebra.ldiv!(y, s.factorization, x)
-    CUDA.synchronize()
-    return 0
-end
-
-function LS.ldiv!(s::DirectSolver{<:CUDSS.CudssSolver}, y::CuArray; options...)
-    LinearAlgebra.ldiv!(s.factorization, y)
-    CUDA.synchronize()
-    return 0
-end
-
 LS.update!(solver::ExaPF.LS.AbstractIterativeLinearSolver, J::CuSparseMatrixCSR) = KP.update!(solver.precond, J)
 LS.update!(solver::ExaPF.LS.DirectSolver, J::CuSparseMatrixCSR) = lu!(solver.factorization, J); CUDA.synchronize()
 LS._get_type(J::CuSparseMatrixCSR) = CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
