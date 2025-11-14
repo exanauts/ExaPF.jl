@@ -11,6 +11,7 @@ if CUDA_AVAILABLE
     @eval using CUDA
     @eval using CUDA.CUSPARSE
     CUDA.allowscalar(false)
+    CUDA.versioninfo()
 end
 
 const CUDSS_AVAILABLE = is_package_installed("CUDSS")
@@ -24,6 +25,7 @@ if AMDGPU_AVAILABLE
     @eval using AMDGPU
     @eval using AMDGPU.rocSPARSE
     AMDGPU.allowscalar(false)
+    AMDGPU.versioninfo()
 end
 
 # Check functionality
