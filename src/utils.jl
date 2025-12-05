@@ -126,20 +126,3 @@ end
 
 _iscsr(::SparseMatrixCSC) = false
 _iscsc(::SparseMatrixCSC) = true
-
-
-# Julia 1.12 introduced generic_mul! for scalar * array operations
-function LinearAlgebra.generic_mul!(C::AbstractGPUVecOrMat, X::AbstractGPUVecOrMat, s::Number, alpha::Number, beta::Number)
-        if length(C) != length(X)
-            throw(DimensionMismatch(lazy"first array has length $(length(C)) which does not match the length of the second, $(length(X))."))
-        end
-        @. C = X * s * alpha + C * beta
-        return C
-    end
-    function LinearAlgebra.generic_mul!(C::AbstractGPUVecOrMat, s::Number, X::AbstractGPUVecOrMat, alpha::Number, beta::Number)
-        if length(C) != length(X)
-            throw(DimensionMismatch(lazy"first array has length $(length(C)) which does not match the length of the second, $(length(X))."))
-        end
-        @. C = s * X * alpha + C * beta
-        return C
-end
