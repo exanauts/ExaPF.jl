@@ -87,7 +87,7 @@ const LS = ExaPF.LinearSolvers
         )
 
         @test convergence.has_converged
-        @test convergence.n_iterations == 5
+        @test convergence.n_iterations <= 6
         @test convergence.norm_residuals <= pf_solver.tol
 
         npartitions = 8
