@@ -74,7 +74,7 @@ function test_all_linear_solvers(backend, AT, SMT)
     # Init preconditioner
     nblocks = 2
     for olevel in [0, 1]
-        precond = BlockJacobiPreconditioner(A; nblocks=nblocks, backend=backend, noverlaps=olevel)
+        precond = BlockJacobiPreconditioner(A; nblocks=nblocks, device=backend, noverlaps=olevel)
         # Test printing
         println(devnull, precond)
         KP.update!(precond, A)
