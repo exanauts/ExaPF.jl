@@ -101,7 +101,7 @@ by changing the optional argument `linear_solver`.
 ```jldoctest; setup=:(using ExaPF)
 julia> polar = ExaPF.load_polar("case9");
 
-julia> powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar);
+julia> powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.Basis(polar);
 
 julia> jx = ExaPF.Jacobian(polar, powerflow, State());
 
@@ -229,7 +229,7 @@ function run_pf(
     solver = NewtonRaphson(tol=rtol, maxiter=max_iter, verbose=verbose)
     mapx = mapping(polar, State())
 
-    basis = PolarBasis(polar)
+    basis = Basis(polar)
     powerflow = PowerFlowBalance(polar) ∘ basis
     jac = Jacobian(polar, powerflow, mapx)
 
@@ -247,7 +247,7 @@ function run_pf(
     solver = NewtonRaphson(tol=rtol, maxiter=max_iter, verbose=verbose)
     mapx = mapping(polar, State())
 
-    basis = PolarBasis(polar)
+    basis = Basis(polar)
     powerflow = PowerFlowBalance(polar) ∘ basis
     jac = BatchJacobian(polar, powerflow, mapx)
 

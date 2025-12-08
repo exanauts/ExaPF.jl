@@ -4,7 +4,7 @@ function test_recourse_powerflow(polar, backend, M)
     polar_ext = ExaPF.PolarFormRecourse(polar, k)
     stack = ExaPF.NetworkStack(polar_ext)
 
-    pf_recourse = ExaPF.PowerFlowRecourse(polar_ext) ∘ ExaPF.PolarBasis(polar_ext)
+    pf_recourse = ExaPF.PowerFlowRecourse(polar_ext) ∘ ExaPF.Basis(polar_ext)
     jac_recourse = ExaPF.BatchJacobian(polar_ext, pf_recourse, State())
     ExaPF.set_params!(jac_recourse, stack)
     ExaPF.jacobian!(jac_recourse, stack)
@@ -39,7 +39,7 @@ function test_recourse_expression(polar, backend, M)
         ExaPF.PowerFlowRecourse,
         ExaPF.ReactivePowerBounds,
     ]
-        ev = expr(polar_ext) ∘ ExaPF.PolarBasis(polar_ext)
+        ev = expr(polar_ext) ∘ ExaPF.Basis(polar_ext)
         res = ev(stack)
         @test isa(res, M)
         @test length(res) == length(ev)
@@ -70,7 +70,7 @@ function test_recourse_jacobian(polar, backend, M)
         ExaPF.PowerFlowRecourse,
         ExaPF.ReactivePowerBounds,
     ]
-        ev = expr(polar_ext) ∘ ExaPF.PolarBasis(polar_ext)
+        ev = expr(polar_ext) ∘ ExaPF.Basis(polar_ext)
         m = length(ev)
 
         # Compute ref with finite-diff
@@ -123,7 +123,7 @@ function test_recourse_hessian(polar, backend, M)
     stack_fd = ExaPF.NetworkStack(polar_ext)
     ∂stack = ExaPF.NetworkStack(polar_ext)
 
-    basis  = ExaPF.PolarBasis(polar_ext)
+    basis  = ExaPF.Basis(polar_ext)
     mapxu = ExaPF.mapping(polar_ext, AllVariables())
 
     constraints = [
@@ -160,7 +160,7 @@ function test_recourse_block_hessian(polar, backend, M)
     stack_fd = ExaPF.NetworkStack(polar_ext)
     ∂stack = ExaPF.NetworkStack(polar_ext)
 
-    basis  = ExaPF.PolarBasis(polar_ext)
+    basis  = ExaPF.Basis(polar_ext)
     mapxu = ExaPF.mapping(polar_ext, State(), k)
 
     constraints = [

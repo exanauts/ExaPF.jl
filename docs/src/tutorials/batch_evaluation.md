@@ -98,7 +98,7 @@ As an example, suppose we want to evaluate the power flow
 balances in block form with a [`PowerFlowBalance`](@ref) expression:
 
 ```@example batch_pf
-powerflow = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.PolarBasis(blk_polar);
+powerflow = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.Basis(blk_polar);
 ```
 A block evaluation takes as input the [`NetworkStack`](@ref) `blk_stack` structure:
 
@@ -162,7 +162,7 @@ polar_gpu = ExaPF.load_polar("case9.m", CUDABackend());
 blk_polar_gpu = ExaPF.BlockPolarForm(polar_gpu, nscen); # load model on GPU
 blk_stack_gpu = ExaPF.NetworkStack(blk_polar_gpu);
 ExaPF.set_params!(blk_stack_gpu, ploads, qloads);
-powerflow_gpu = ExaPF.PowerFlowBalance(blk_polar_gpu) ∘ ExaPF.PolarBasis(blk_polar_gpu);
+powerflow_gpu = ExaPF.PowerFlowBalance(blk_polar_gpu) ∘ ExaPF.Basis(blk_polar_gpu);
 blk_jx_gpu = ExaPF.BatchJacobian(blk_polar_gpu, powerflow_gpu, State());
 ExaPF.set_params!(blk_jx_gpu, blk_stack_gpu);
 ExaPF.jacobian!(blk_jx_gpu, blk_stack_gpu);

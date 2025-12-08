@@ -46,7 +46,7 @@ function benchmark_expressions(polar, config)
     ntrials = config[:ntrials_callbacks]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     # Build expressions tree
     expr = ExaPF.MultiExpressions([
         ExaPF.PowerFlowBalance(polar),
@@ -74,7 +74,7 @@ function benchmark_adjoint(polar, config)
     # Init
     stack = ExaPF.NetworkStack(polar)
     ∂stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     # Build expressions tree
     expr = ExaPF.MultiExpressions([
         ExaPF.PowerFlowBalance(polar),
@@ -102,7 +102,7 @@ function benchmark_jacobian_powerflow(polar, config)
     ntrials = config[:ntrials_callbacks]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     pf = ExaPF.PowerFlowBalance(polar) ∘ basis
     jac = ExaPF.Jacobian(polar, pf, State())
     # Warm-up
@@ -123,7 +123,7 @@ function benchmark_jacobian_all(polar, config)
     # Init
     stack = ExaPF.NetworkStack(polar)
     ∂stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     # Build expressions tree
     expr = ExaPF.MultiExpressions([
         ExaPF.PowerFlowBalance(polar),
@@ -150,7 +150,7 @@ function benchmark_hessian_lagrangian(polar, config)
     ntrials = config[:ntrials_callbacks]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     # Build expressions tree
     expr = ExaPF.MultiExpressions([
         ExaPF.CostFunction(polar),
@@ -182,7 +182,7 @@ function benchmark_powerflow(polar, config, linear_algo)
     npartitions = config[:npartitions]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     pflow = ExaPF.PowerFlowBalance(polar) ∘ basis
     jx = ExaPF.Jacobian(polar, pflow ∘ basis, State())
     # Build preconditioner
@@ -219,7 +219,7 @@ function benchmark_bicgstab(polar, config, noverlaps, nblocks)
     ntrials = config[:ntrials_iterative]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     pflow = ExaPF.PowerFlowBalance(polar) ∘ basis
     jx = ExaPF.Jacobian(polar, pflow ∘ basis, State())
     # Evaluate Jacobian

@@ -108,7 +108,7 @@ function test_polar_api(polar, backend, M)
     @test length(mapu) == nu == npv + nref + ngen - 1
 
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
     # Test that values are matching
     vbus = PS.voltage(polar.network)
@@ -144,7 +144,7 @@ end
 
 function test_polar_constraints(polar, backend, M)
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
 
     io = devnull
     vpq = ExaPF.VoltageMagnitudeBounds(polar)
@@ -186,7 +186,7 @@ function test_polar_powerflow(polar, backend, M)
     pf_solver = NewtonRaphson(tol=1e-6)
     npartitions = 8
 
-    basis = ExaPF.PolarBasis(polar)
+    basis = ExaPF.Basis(polar)
     pflow = ExaPF.PowerFlowBalance(polar)
     n = length(pflow)
 
@@ -225,8 +225,8 @@ function test_block_expressions(polar, backend, M)
         ExaPF.LineFlows,
         ExaPF.CostFunction,
     ]
-        pf_blk = expr(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
-        pf = expr(polar) ∘ ExaPF.PolarBasis(polar)
+        pf_blk = expr(blk_polar) ∘ ExaPF.Basis(blk_polar)
+        pf = expr(polar) ∘ ExaPF.Basis(polar)
         m = length(pf)
         cons = zeros(m) |> M
         blk_cons = zeros(m * nblocks) |> M
@@ -245,7 +245,7 @@ function test_block_expressions(polar, backend, M)
         ExaPF.VoltageMagnitudeBounds,
         ExaPF.LineFlows,
     ]
-        pf_blk = expr(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
+        pf_blk = expr(blk_polar) ∘ ExaPF.Basis(blk_polar)
         lb, ub = ExaPF.bounds(blk_polar, pf_blk)
         @test length(lb) == length(ub) == length(pf_blk)
     end
@@ -256,7 +256,7 @@ function test_block_expressions(polar, backend, M)
         ExaPF.VoltageMagnitudeBounds(blk_polar),
         ExaPF.LineFlows(blk_polar),
     ]
-    multiblk = ExaPF.MultiExpressions(constraints) ∘ ExaPF.PolarBasis(blk_polar)
+    multiblk = ExaPF.MultiExpressions(constraints) ∘ ExaPF.Basis(blk_polar)
     lb, ub = ExaPF.bounds(blk_polar, multiblk)
     @test length(multiblk) == sum(length.(constraints))
     @test length(lb) == length(ub) == length(multiblk)
@@ -273,7 +273,7 @@ function test_block_powerflow(polar, backend, M)
     perturb = 0.01 .* rand(length(blk_stack.pload)) |> M
     blk_stack.pload .*= perturb
 
-    pf = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
+    pf = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.Basis(blk_polar)
 
     blk_jac = ExaPF.BatchJacobian(blk_polar, pf, State())
     ExaPF.set_params!(blk_jac, blk_stack)
@@ -302,7 +302,7 @@ function test_contingency_powerflow(polar, backend, M)
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
     blk_stack = ExaPF.NetworkStack(blk_polar)
 
-    pf = ExaPF.PowerFlowBalance(blk_polar, contingencies) ∘ ExaPF.PolarBasis(blk_polar)
+    pf = ExaPF.PowerFlowBalance(blk_polar, contingencies) ∘ ExaPF.Basis(blk_polar)
 
     blk_jac = ExaPF.BatchJacobian(blk_polar, pf, State())
     ExaPF.set_params!(blk_jac, blk_stack)

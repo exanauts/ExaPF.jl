@@ -135,7 +135,7 @@ stack = ExaPF.NetworkStack(polar)
 ```
 The function $g$ is implemented using ExaPF's custom modeler:
 ```@repl quickstart
-basis = ExaPF.PolarBasis(polar)
+basis = ExaPF.Basis(polar)
 powerflow = ExaPF.PowerFlowBalance(polar) ∘ basis
 ```
 
@@ -198,7 +198,7 @@ We can load the other structures directly on the GPU with:
 ```@repl quickstart
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
 
-basis_gpu = ExaPF.PolarBasis(polar_gpu)
+basis_gpu = ExaPF.Basis(polar_gpu)
 pflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ basis_gpu
 jx_gpu = ExaPF.Jacobian(polar_gpu, pflow_gpu, mapx)
 

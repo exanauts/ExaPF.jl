@@ -50,7 +50,7 @@ The different parts of the polar formulation are
 implemented in the following `AbstractExpression`:
 
 ```@docs
-PolarBasis
+Basis
 PowerFlowBalance
 VoltageMagnitudeBounds
 PowerGenerationBounds

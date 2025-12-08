@@ -5,12 +5,12 @@ function test_hessprod_with_finitediff(polar, backend, MT; rtol=1e-6, atol=1e-6)
     mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
 
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
 
     # Need to copy structures on the host for FiniteDiff.jl
     polar_cpu = ExaPF.PolarForm(polar, CPU())
     stack_cpu = ExaPF.NetworkStack(polar_cpu)
-    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+    basis_cpu  = ExaPF.Basis(polar_cpu)
 
     # Solve power flow
     ExaPF.run_pf(polar, stack)
@@ -71,12 +71,12 @@ end
 
 function test_full_space_hessian(polar, backend, MT)
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
 
     # Need to copy structures on the host for FiniteDiff.jl
     polar_cpu = ExaPF.PolarForm(polar, CPU())
     stack_cpu = ExaPF.NetworkStack(polar_cpu)
-    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+    basis_cpu  = ExaPF.Basis(polar_cpu)
 
     n = length(stack.input)
     # Hessian / (x, u)
@@ -141,7 +141,7 @@ function test_block_hessian(polar, backend, MT)
         ExaPF.VoltageMagnitudeBounds(polar),
         ExaPF.PowerGenerationBounds(polar),
         ExaPF.LineFlows(polar),
-    ]) ∘ ExaPF.PolarBasis(polar)
+    ]) ∘ ExaPF.Basis(polar)
     m = length(mycons)
     y = ones(m) |> MT
     hess = ExaPF.FullHessian(polar, mycons, mapx)
@@ -157,7 +157,7 @@ function test_block_hessian(polar, backend, MT)
         ExaPF.VoltageMagnitudeBounds(blk_polar),
         ExaPF.PowerGenerationBounds(blk_polar),
         ExaPF.LineFlows(blk_polar),
-    ]) ∘ ExaPF.PolarBasis(blk_polar)
+    ]) ∘ ExaPF.Basis(blk_polar)
     blk_y = repeat(ones(m), nblocks) |> MT
     blk_hess = ExaPF.BatchHessian(blk_polar, blk_cons, ExaPF.State())
     # Eval!

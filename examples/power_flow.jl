@@ -27,7 +27,7 @@ mapx = ExaPF.mapping(polar, State())
 # Power flow solver
 pf_solver = NewtonRaphson(tol=1e-6, verbose=0)
 # Expressions
-basis = ExaPF.PolarBasis(polar)
+basis = ExaPF.Basis(polar)
 pflow = ExaPF.PowerFlowBalance(polar)
 # Init AD
 jx = ExaPF.Jacobian(polar, pflow ∘ basis, mapx)

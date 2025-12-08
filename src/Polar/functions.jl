@@ -1,11 +1,11 @@
 
 #=
-    PolarBasis
+    Basis
 =#
 
 @doc raw"""
-    PolarBasis{VI, MT} <: AbstractExpression
-    PolarBasis(polar::AbstractPolarFormulation)
+    Basis{VI, MT} <: AbstractExpression
+    Basis(polar::AbstractPolarFormulation)
 
 Implement the LKMR nonlinear basis. Takes as
 input the voltage magnitudes `vmag` and the voltage
@@ -29,8 +29,8 @@ julia> polar = ExaPF.load_polar("case9");
 
 julia> stack = ExaPF.NetworkStack(polar);
 
-julia> basis = ExaPF.PolarBasis(polar)
-PolarBasis (AbstractExpression)
+julia> basis = ExaPF.Basis(polar)
+Basis (AbstractExpression)
 
 julia> basis(stack)
 27-element Vector{Float64}:
@@ -57,7 +57,7 @@ julia> basis(stack)
 
 ```
 """
-struct PolarBasis{VI, MT} <: AutoDiff.AbstractExpression
+struct Basis{VI, MT} <: AutoDiff.AbstractExpression
     nbus::Int
     nlines::Int
     f::VI
@@ -67,7 +67,7 @@ struct PolarBasis{VI, MT} <: AutoDiff.AbstractExpression
     backend::KA.Backend
 end
 
-function PolarBasis(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
+function Basis(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
     SMT = default_sparse_matrix(polar.backend)
     k = nblocks(polar)
     nlines = PS.get(polar.network, PS.NumberOfLines())
@@ -83,10 +83,10 @@ function PolarBasis(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI
     Cf = _blockdiag(Cf, k) |> SMT
     Ct = _blockdiag(Ct, k) |> SMT
 
-    return PolarBasis{VI, SMT}(nbus, nlines, f, t, Cf, Ct, polar.backend)
+    return Basis{VI, SMT}(nbus, nlines, f, t, Cf, Ct, polar.backend)
 end
 
-Base.length(func::PolarBasis) = (func.nbus + 2 * func.nlines) * div(size(func.Cf, 1), func.nbus)
+Base.length(func::Basis) = (func.nbus + 2 * func.nlines) * div(size(func.Cf, 1), func.nbus)
 
 # update basis
 @kernel function basis_kernel!(
@@ -118,7 +118,7 @@ Base.length(func::PolarBasis) = (func.nbus + 2 * func.nlines) * div(size(func.Cf
     end
 end
 
-function (func::PolarBasis)(output, stack::AbstractNetworkStack)
+function (func::Basis)(output, stack::AbstractNetworkStack)
     ndrange = (func.nbus + 2 * func.nlines, nblocks(stack))
     basis_kernel!(func.backend)(
         output, stack.vmag, stack.vang,
@@ -165,7 +165,7 @@ end
     end
 end
 
-function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::AbstractNetworkStack, ∂v)
+function adjoint!(func::Basis, ∂stack::AbstractNetworkStack, stack::AbstractNetworkStack, ∂v)
     nl = func.nlines
     nb = func.nbus
     f = func.f
@@ -200,8 +200,8 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
     return
 end
 
-function Base.show(io::IO, func::PolarBasis)
-    print(io, "PolarBasis (AbstractExpression)")
+function Base.show(io::IO, func::Basis)
+    print(io, "Basis (AbstractExpression)")
 end
 
 
@@ -217,7 +217,7 @@ Implement the quadratic cost function for OPF
 ```math
     ∑_{g=1}^{n_g} c_{2,g} p_g^2 + c_{1,g} p_g + c_{0,g}
 ```
-Require composition with [`PolarBasis`](@ref) to evaluate
+Require composition with [`Basis`](@ref) to evaluate
 the cost of the reference generator.
 
 **Dimension:** `1`
@@ -231,7 +231,7 @@ julia> polar = ExaPF.load_polar("case9");
 
 julia> stack = ExaPF.NetworkStack(polar);
 
-julia> cost = ExaPF.CostFunction(polar) ∘ ExaPF.PolarBasis(polar);
+julia> cost = ExaPF.CostFunction(polar) ∘ ExaPF.Basis(polar);
 
 julia> cost(stack)
 1-element Vector{Float64}:
@@ -359,7 +359,7 @@ PV and PQ nodes, and the reactive balance equations at PQ nodes:
 \end{aligned}
 ```
 
-Require composition with [`PolarBasis`](@ref).
+Require composition with [`Basis`](@ref).
 
 **Dimension:** `n_pv + 2 * n_pq`
 
@@ -372,7 +372,7 @@ julia> polar = ExaPF.load_polar("case9");
 
 julia> stack = ExaPF.NetworkStack(polar);
 
-julia> powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar);
+julia> powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.Basis(polar);
 
 julia> round.(powerflow(stack); digits=6)
 14-element Vector{Float64}:
@@ -554,7 +554,7 @@ In the reduced space, that amounts to
 p_{g,ref}^♭ ≤ p_{g,ref} ≤ p_{g,ref}^♯  ;
 C_g q_g^♭ ≤ C_g q_g ≤ C_g q_g^♯  .
 ```
-Require composition with [`PolarBasis`](@ref).
+Require composition with [`Basis`](@ref).
 
 **Dimension:** `n_pv + 2 n_ref`
 
@@ -569,7 +569,7 @@ julia> stack = ExaPF.NetworkStack(polar);
 
 julia> run_pf(polar, stack); # solve powerflow equations
 
-julia> power_generators = ExaPF.PowerGenerationBounds(polar) ∘ ExaPF.PolarBasis(polar);
+julia> power_generators = ExaPF.PowerGenerationBounds(polar) ∘ ExaPF.Basis(polar);
 
 julia> round.(power_generators(stack); digits=6)
 4-element Vector{Float64}:
@@ -656,7 +656,7 @@ end
 
 Implement thermal limit constraints on the lines of the network.
 
-Require composition with [`PolarBasis`](@ref).
+Require composition with [`Basis`](@ref).
 
 **Dimension:** `2 * n_lines`
 
@@ -671,7 +671,7 @@ julia> stack = ExaPF.NetworkStack(polar);
 
 julia> run_pf(polar, stack); # solve powerflow equations
 
-julia> line_flows = ExaPF.LineFlows(polar) ∘ ExaPF.PolarBasis(polar);
+julia> line_flows = ExaPF.LineFlows(polar) ∘ ExaPF.Basis(polar);
 
 julia> round.(line_flows(stack); digits=6)
 18-element Vector{Float64}:
@@ -869,7 +869,7 @@ end
 =#
 
 """
-    ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AbstractExpression
+    ComposedExpressions{Expr1<:Basis, Expr2} <: AbstractExpression
 
 Implement expression composition. Takes as input two expressions
 `expr1` and `expr2` and returns a composed expression `cexpr` such
@@ -878,9 +878,9 @@ that
     cexpr(x) = expr2 ∘ expr1(x)
 
 ### Notes
-Currently, only [`PolarBasis`](@ref) is supported for `expr1`.
+Currently, only [`Basis`](@ref) is supported for `expr1`.
 """
-struct ComposedExpressions{Expr1<:PolarBasis, Expr2} <: AutoDiff.AbstractExpression
+struct ComposedExpressions{Expr1<:Basis, Expr2} <: AutoDiff.AbstractExpression
     inner::Expr1
     outer::Expr2
 end
@@ -900,5 +900,5 @@ end
 
 bounds(polar, func::ComposedExpressions) = bounds(polar, func.outer)
 # Overload ∘ operator
-Base.ComposedFunction(g::AutoDiff.AbstractExpression, f::PolarBasis) = ComposedExpressions(f, g)
+Base.ComposedFunction(g::AutoDiff.AbstractExpression, f::Basis) = ComposedExpressions(f, g)
 

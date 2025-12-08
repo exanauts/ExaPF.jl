@@ -33,7 +33,7 @@ const LS = ExaPF.LinearSolvers
     # Build-up PolarForm object
     polar = ExaPF.PolarForm(pf, CPU())
     stack = ExaPF.NetworkStack(polar)
-    basis = ExaPF.PolarBasis(polar)
+    basis = ExaPF.Basis(polar)
     # Powerflow function
     pflow = ExaPF.PowerFlowBalance(polar) ∘ basis
     # AD for Jacobian
@@ -76,7 +76,7 @@ const LS = ExaPF.LinearSolvers
         polar_gpu = ExaPF.PolarForm(pf, CUDABackend())
         stack_gpu = ExaPF.NetworkStack(polar_gpu)
 
-        basis_gpu = ExaPF.PolarBasis(polar_gpu)
+        basis_gpu = ExaPF.Basis(polar_gpu)
         pflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ basis_gpu
         jx_gpu = ExaPF.Jacobian(polar_gpu, pflow_gpu, State())
 

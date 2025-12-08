@@ -20,7 +20,7 @@ function build_instance(datafile, backend)
     polar = ExaPF.PolarForm(datafile, backend)
     stack = ExaPF.NetworkStack(polar)
     # Instantiate Automatic Differentiation
-    pflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar)
+    pflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.Basis(polar)
     jx = ExaPF.Jacobian(polar, pflow, State())
     return (
         model=polar,
