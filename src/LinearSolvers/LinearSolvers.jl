@@ -81,7 +81,7 @@ function rdiv! end
 _get_type(J) = error("No handling of sparse Jacobian type defined in LinearSolvers")
 _get_type(J::SparseMatrixCSC) = Vector{Float64}
 do_scaling(linear_solver) = false
-scaling!(A,b) = nothing
+scaling!(A, b) = nothing
 
 """
     DirectSolver <: AbstractLinearSolver
@@ -103,33 +103,33 @@ function DirectSolver(J::SparseMatrixCSC)
 end
 
 function update!(ds::DirectSolver, J::AbstractMatrix)
-    klu!(s.factorization, J) # Update factorization inplace
+    klu!(ds.factorization, J) # Update factorization inplace
 end
 
 # Reuse factorization in update
 function ldiv!(ds::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...)
-    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+    LinearAlgebra.ldiv!(y, ds.factorization, x) # Forward-backward solve
     return 0
 end
 
 # Solve system Ax = y
 function ldiv!(ds::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray; options...)
-    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+    LinearAlgebra.ldiv!(y, ds.factorization, x) # Forward-backward solve
     return 0
 end
 
 function ldiv!(ds::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray; options...)
-    LinearAlgebra.ldiv!(s.factorization, y) # Forward-backward solve
+    LinearAlgebra.ldiv!(ds.factorization, y) # Forward-backward solve
     return 0
 end
 
 # Solve system A'x = y
 function rdiv!(ds::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
-    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
+    LinearAlgebra.ldiv!(y, ds.factorization', x) # Forward-backward solve
     return 0
 end
 
-update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC) = KP.update!(solver.precond, J)
+update!(is::AbstractIterativeLinearSolver, J::SparseMatrixCSC) = KP.update!(is.precond, J)
 
 """
     Dqgmres <: AbstractIterativeLinearSolver
