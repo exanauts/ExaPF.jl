@@ -31,7 +31,7 @@ end
 """
     list_solvers(::ROCBackend)
 
-List all linear solvers available solving the power flow on an NVIDIA GPU.
+List all linear solvers available for solving the (batch) power flow on an AMD GPU.
 """
 ExaPF.list_solvers(::ROCBackend) = [LS.Dqgmres, LS.Bicgstab]
 

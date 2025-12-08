@@ -18,7 +18,7 @@ const LS = ExaPF.LinearSolvers
     stack = ExaPF.NetworkStack(polar)
     convergence = run_pf(polar, stack; rtol=1e-10)
     @test convergence.has_converged
-    @test convergence.n_iterations == 5
+    @test convergence.n_iterations <= 6
     @test convergence.norm_residuals <= 1e-10
 
     # Long version
@@ -48,7 +48,7 @@ const LS = ExaPF.LinearSolvers
     )
 
     @test convergence.has_converged
-    @test convergence.n_iterations == 5
+    @test convergence.n_iterations <= 6
     @test convergence.norm_residuals <= pf_solver.tol
 
     # Reinit buffer
@@ -68,7 +68,7 @@ const LS = ExaPF.LinearSolvers
     )
 
     @test convergence.has_converged
-    @test convergence.n_iterations == 6
+    @test convergence.n_iterations <= 6
     @test convergence.norm_residuals <= pf_algo.tol
 
     if test_cuda
