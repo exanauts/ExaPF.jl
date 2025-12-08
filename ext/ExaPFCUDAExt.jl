@@ -19,36 +19,16 @@ const PS = ExaPF.PowerSystem
 const AD = ExaPF.AutoDiff
 const KP = KrylovPreconditioners
 
-function LS.DirectSolver(J::CuSparseMatrixCSR, nbatch::Int=1; options...)
-    @assert nbatch ≥ 1
-    if nbatch == 1
-        cudss_solver = lu(J)
-        CUDA.synchronize()
-        ds = LS.DirectSolver(cudss_solver)
-        return ds
-    else
-        k = length(J.rowPtr) - 1
-        cudss_solver = CudssSolver(J, "G", 'F')
-        cudss_set(solver, "ubatch_size", nbatch)
-        cudss_b_gpu = CudssMatrix(Float64, k; nbatch)
-        cudss_x_gpu = CudssMatrix(Float64, k; nbatch)
-        cudss("analysis", cudss_solver, cudss_x_gpu, cudss_b_gpu)
-        cudss("factorization", cudss_solver, cudss_x_gpu, cudss_b_gpu)
-        CUDA.synchronize()
-        ds = LS.DirectSolver(cudss_solver)
-        return ds
-    end
+function LS.DirectSolver(J::CuSparseMatrixCSR; kwargs...)
+    cudss_solver = lu(J)
+    ds = LS.DirectSolver(cudss_solver)
+    return ds
 end
 
-LS.update!(solver::ExaPF.LS.AbstractIterativeLinearSolver, J::CuSparseMatrixCSR) = KP.update!(solver.precond, J)
-LS.update!(solver::ExaPF.LS.DirectSolver, J::CuSparseMatrixCSR) = lu!(solver.factorization, J); CUDA.synchronize()
+LS.update!(is::ExaPF.LS.AbstractIterativeLinearSolver, J::CuSparseMatrixCSR) = KP.update!(is.precond, J)
+LS.update!(ds::ExaPF.LS.DirectSolver, J::CuSparseMatrixCSR) = lu!(ds.factorization, J)
 LS._get_type(J::CuSparseMatrixCSR) = CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
 LS.default_linear_solver(A::CuSparseMatrixCSR, device::CUDABackend) = ExaPF.LS.DirectSolver(A)
-
-function LS.default_batch_linear_solver(A::CuSparseMatrixCSR, device::CUDABackend)
-    nbatch = length(A.nzVal) ÷ length(A.colVal)
-    ExaPF.LS.DirectSolver(A, nbatch)
-end
 
 ExaPF._iscsr(::CuSparseMatrixCSR) = true
 ExaPF._iscsc(::CuSparseMatrixCSR) = false
@@ -59,7 +39,7 @@ end
 """
     list_solvers(::CUDABackend)
 
-List all linear solvers available solving the power flow on an NVIDIA GPU.
+List all linear solvers available for solving the (batch) power flow on an NVIDIA GPU.
 """
 ExaPF.list_solvers(::CUDABackend) = [LS.DirectSolver, LS.Dqgmres, LS.Bicgstab]
 

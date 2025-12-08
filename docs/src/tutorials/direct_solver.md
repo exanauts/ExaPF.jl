@@ -78,8 +78,7 @@ We observe KLU reduces considerably the time spent in the linear solver.
 
 ## cuDSS (CUDA, default)
 
-[cuDSS](https://developer.nvidia.com/cudss)
-is collection of sparse direct solvers implemented in CUDA.
+[cuDSS](https://developer.nvidia.com/cudss) is collection of direct sparse solvers implemented in CUDA.
 
 ```@example direct_solver
 using CUDSS

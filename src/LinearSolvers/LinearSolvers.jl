@@ -22,8 +22,8 @@ using KrylovPreconditioners
 const KA = KernelAbstractions
 const KP = KrylovPreconditioners
 
-export list_solvers, default_linear_solver, default_batch_linear_solver
-export DirectSolver, Bicgstab
+export list_solvers, default_linear_solver
+export DirectSolver, Bicgstab, Dqgmres
 export do_scaling, scaling!
 
 @enum(
@@ -81,12 +81,13 @@ function rdiv! end
 _get_type(J) = error("No handling of sparse Jacobian type defined in LinearSolvers")
 _get_type(J::SparseMatrixCSC) = Vector{Float64}
 do_scaling(linear_solver) = false
-scaling!(A,b) = nothing
+scaling!(A, b) = nothing
 
 """
     DirectSolver <: AbstractLinearSolver
+    DirectSolver(A; kwargs...)
 
-Solve linear system ``A x = y`` with direct linear algebra.
+Solve linear system ``A x = b`` with a direct sparse linear solver.
 
 * On `CPU`, `DirectSolver` redirects the resolution to KLU if `A` is a `SparseMatrixCSC`.
 * On CUDA GPU, `DirectSolver` redirects the resolution to cuDSS if `A` is a `CuSparseMatrixCSR`.
@@ -95,36 +96,40 @@ struct DirectSolver{Fac<:LinearAlgebra.Factorization} <: AbstractLinearSolver
     factorization::Fac
 end
 
-DirectSolver(J, nbatch::Int=1; options...) = DirectSolver(klu(J))
+function DirectSolver(J::SparseMatrixCSC; kwargs...)
+    klu_solver = klu(J)
+    ds = DirectSolver(klu_solver)
+    return ds
+end
 
-function update!(s::DirectSolver, J::AbstractMatrix)
-    klu!(s.factorization, J) # Update factorization inplace
+function update!(ds::DirectSolver, J::AbstractMatrix)
+    klu!(ds.factorization, J) # Update factorization inplace
 end
 
 # Reuse factorization in update
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...)
-    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+function ldiv!(ds::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...)
+    LinearAlgebra.ldiv!(y, ds.factorization, x) # Forward-backward solve
     return 0
 end
 
 # Solve system Ax = y
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray; options...)
-    LinearAlgebra.ldiv!(y, s.factorization, x) # Forward-backward solve
+function ldiv!(ds::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray; options...)
+    LinearAlgebra.ldiv!(y, ds.factorization, x) # Forward-backward solve
     return 0
 end
 
-function ldiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray; options...)
-    LinearAlgebra.ldiv!(s.factorization, y) # Forward-backward solve
+function ldiv!(ds::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray; options...)
+    LinearAlgebra.ldiv!(ds.factorization, y) # Forward-backward solve
     return 0
 end
 
 # Solve system A'x = y
-function rdiv!(s::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
-    LinearAlgebra.ldiv!(y, s.factorization', x) # Forward-backward solve
+function rdiv!(ds::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray, x::AbstractArray)
+    LinearAlgebra.ldiv!(y, ds.factorization', x) # Forward-backward solve
     return 0
 end
 
-update!(solver::AbstractIterativeLinearSolver, J::SparseMatrixCSC) = KP.update!(solver.precond, J)
+update!(is::AbstractIterativeLinearSolver, J::SparseMatrixCSC) = KP.update!(is.precond, J)
 
 """
     Dqgmres <: AbstractIterativeLinearSolver
@@ -211,7 +216,7 @@ end
 """
     list_solvers(::KA.CPU)
 
-List all (batch) linear solvers available for solving the power flow on the CPU.
+List all linear solvers available for solving the (batch) power flow on the CPU.
 """
 list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 
@@ -221,12 +226,5 @@ list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 Default linear solver on the CPU.
 """
 default_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
-
-"""
-    default_linear_solver(A::SparseMatrixCSC, ::KA.CPU)
-
-Default batch linear solver on the CPU.
-"""
-default_batch_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
 
 end

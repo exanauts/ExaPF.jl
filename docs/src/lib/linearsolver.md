@@ -39,8 +39,3 @@ A default linear solver is provided for each vendor backend.
 ```@docs
 default_linear_solver
 ```
-
-A default batch linear solver is provided for each vendor backend.
-```@docs
-default_batch_linear_solver
-```
