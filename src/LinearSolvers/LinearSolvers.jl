@@ -85,7 +85,7 @@ scaling!(A, b) = nothing
 
 """
     DirectSolver <: AbstractLinearSolver
-    DirectSolver(A)
+    DirectSolver(A; kwargs...)
 
 Solve linear system ``A x = b`` with a direct sparse linear solver.
 
@@ -96,7 +96,7 @@ struct DirectSolver{Fac<:LinearAlgebra.Factorization} <: AbstractLinearSolver
     factorization::Fac
 end
 
-function DirectSolver(J::SparseMatrixCSC)
+function DirectSolver(J::SparseMatrixCSC; kwargs...)
     klu_solver = klu(J)
     ds = DirectSolver(klu_solver)
     return ds

@@ -19,7 +19,7 @@ const PS = ExaPF.PowerSystem
 const AD = ExaPF.AutoDiff
 const KP = KrylovPreconditioners
 
-function LS.DirectSolver(J::CuSparseMatrixCSR)
+function LS.DirectSolver(J::CuSparseMatrixCSR; kwargs...)
     cudss_solver = lu(J)
     ds = LS.DirectSolver(cudss_solver)
     return ds
