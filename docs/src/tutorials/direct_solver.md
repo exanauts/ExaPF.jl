@@ -68,10 +68,9 @@ abstraction.
 ```@example direct_solver
 polar = ExaPF.load_polar("case9241pegase.m")
 stack = ExaPF.NetworkStack(polar)
+pf_solver = NewtonRaphson(tol=1e-10, verbose=2)  # power flow solver
 func = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar) # power flow func
 jx = ExaPF.Jacobian(polar, func, State()) # init AD
-
-pf_solver = NewtonRaphson(tol=1e-10, verbose=2)  # power flow solver
 ExaPF.nlsolve!(pf_solver, jx, stack)
 ```
 
@@ -81,10 +80,14 @@ We observe KLU reduces considerably the time spent in the linear solver.
 
 [cuDSS](https://developer.nvidia.com/cudss) is collection of direct sparse solvers implemented in CUDA.
 
+```@example direct_solver
+using CUDSS
+```
+
 We first have to instantiate everything on the GPU:
 
 ```@example direct_solver
-using CUDA, CUDSS
+using CUDA
 polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDABackend())
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
 func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu)
