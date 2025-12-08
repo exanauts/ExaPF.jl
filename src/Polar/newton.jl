@@ -230,7 +230,7 @@ function run_pf(
     mapx = mapping(polar, State())
 
     basis = PolarBasis(polar)
-    poweflow = PowerFlowBalance(polar) ∘ basis
+    powerflow = PowerFlowBalance(polar) ∘ basis
     jac = Jacobian(polar, powerflow, mapx)
 
     linear_solver = default_linear_solver(jac.J, polar.device)
