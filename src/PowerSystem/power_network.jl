@@ -12,7 +12,7 @@ attribute `bus_to_indexes`.
 
 ## Note
 The object `PowerNetwork` is created in the host memory.
-Use a `AbstractFormulation` object to move data to the target device.
+Use a `AbstractFormulation` object to move data to the target backend.
 
 """
 struct PowerNetwork <: AbstractPowerSystem

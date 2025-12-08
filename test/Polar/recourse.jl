@@ -1,5 +1,5 @@
 
-function test_recourse_powerflow(polar, device, M)
+function test_recourse_powerflow(polar, backend, M)
     k = 2
     polar_ext = ExaPF.PolarFormRecourse(polar, k)
     stack = ExaPF.NetworkStack(polar_ext)
@@ -14,7 +14,7 @@ function test_recourse_powerflow(polar, device, M)
         pf_solver,
         jac_recourse,
         stack;
-        linear_solver=ExaPF.default_linear_solver(jac_recourse.J, device),
+        linear_solver=ExaPF.default_linear_solver(jac_recourse.J, backend),
     )
     @test convergence.has_converged
     @test convergence.norm_residuals < pf_solver.tol
@@ -24,7 +24,7 @@ function test_recourse_powerflow(polar, device, M)
     return
 end
 
-function test_recourse_expression(polar, device, M)
+function test_recourse_expression(polar, backend, M)
     k = 2
     polar_ext = ExaPF.PolarFormRecourse(polar, k)
     @test ExaPF.nblocks(polar_ext) == k
@@ -54,7 +54,7 @@ function test_recourse_expression(polar, device, M)
     return
 end
 
-function test_recourse_jacobian(polar, device, M)
+function test_recourse_jacobian(polar, backend, M)
     k = 2
     polar_ext = ExaPF.PolarFormRecourse(polar, k)
     stack = ExaPF.NetworkStack(polar_ext)
@@ -116,7 +116,7 @@ function test_recourse_jacobian(polar, device, M)
     return
 end
 
-function test_recourse_hessian(polar, device, M)
+function test_recourse_hessian(polar, backend, M)
     k = 1
     polar_ext = ExaPF.PolarFormRecourse(polar, k)
     stack = ExaPF.NetworkStack(polar_ext)
@@ -153,7 +153,7 @@ function test_recourse_hessian(polar, device, M)
     return
 end
 
-function test_recourse_block_hessian(polar, device, M)
+function test_recourse_block_hessian(polar, backend, M)
     k = 2
     polar_ext = ExaPF.PolarFormRecourse(polar, k)
     stack = ExaPF.NetworkStack(polar_ext)

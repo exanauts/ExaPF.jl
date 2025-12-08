@@ -1,19 +1,19 @@
 
 struct PolarFormRecourse{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
-    device::KA.Backend
+    backend::KA.Backend
     k::Int
     ncustoms::Int  # custom variables defined by user
 end
 
-function PolarFormRecourse(pf::PS.PowerNetwork, device::KA.CPU, k::Int)
+function PolarFormRecourse(pf::PS.PowerNetwork, backend::KA.CPU, k::Int)
     ngen = PS.get(pf, PS.NumberOfGenerators())
     ncustoms = (ngen + 1) * k
-    return PolarFormRecourse{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, k, ncustoms)
+    return PolarFormRecourse{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, backend, k, ncustoms)
 end
 # Convenient constructor
-PolarFormRecourse(datafile::String, k::Int, device=CPU()) = PolarFormRecourse(PS.PowerNetwork(datafile), device, k)
-PolarFormRecourse(polar::PolarForm, k::Int) = PolarFormRecourse(polar.network, polar.device, k)
+PolarFormRecourse(datafile::String, k::Int, backend=CPU()) = PolarFormRecourse(PS.PowerNetwork(datafile), backend, k)
+PolarFormRecourse(polar::PolarForm, k::Int) = PolarFormRecourse(polar.network, polar.backend, k)
 
 name(polar::PolarFormRecourse) = "Polar formulation with recourse"
 nblocks(polar::PolarFormRecourse) = polar.k
@@ -38,7 +38,7 @@ function PowerFlowRecourse(
     alpha=nothing,
 ) where {T, VI, VT, MT}
     @assert polar.ncustoms > 0
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     k = nblocks(polar)
 
     pf = polar.network
@@ -126,13 +126,13 @@ function (func::PowerFlowRecourse)(cons::AbstractArray, stack::AbstractNetworkSt
     setpoint = view(stack.vuser, k+1:k+k*ngen)
 
     # Kernel evaluation
-    device = KA.get_backend(stack.pgen)
+    backend = KA.get_backend(stack.pgen)
     ndrange = (ngen, k)
-    smooth_pgen!(device)(
+    smooth_pgen!(backend)(
         stack.pgen, setpoint, Δ, func.alpha, func.pgmin, func.pgmax, func.epsilon, ngen, k,
         ndrange=ndrange,
     )
-    KA.synchronize(device)
+    KA.synchronize(backend)
 
     mul!(cons, func.Cg, stack.pgen, 1.0, 1.0)
     return
@@ -206,7 +206,7 @@ struct ReactivePowerBounds{VT, MT} <: AutoDiff.AbstractExpression
 end
 
 function ReactivePowerBounds(polar::PolarFormRecourse{T, VI, VT, MT}) where {T, VI, VT, MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     pf = polar.network
     nbus = pf.nbus
     M_tot = PS.get_basis_matrix(pf)
@@ -433,7 +433,7 @@ struct QuadraticCost{VT, MT} <: AutoDiff.AbstractExpression
     c1::VT
     c2::VT
     k::Int
-    device::KA.Backend
+    backend::KA.Backend
 end
 
 function QuadraticCost(polar::PolarFormRecourse{T, VI, VT, MT}) where {T, VI, VT, MT}
@@ -441,7 +441,7 @@ function QuadraticCost(polar::PolarFormRecourse{T, VI, VT, MT}) where {T, VI, VT
     c0 = @view coefs[:, 2]
     c1 = @view coefs[:, 3]
     c2 = @view coefs[:, 4]
-    return QuadraticCost{VT, Nothing}(c0, c1, c2, nblocks(polar), polar.device)
+    return QuadraticCost{VT, Nothing}(c0, c1, c2, nblocks(polar), polar.backend)
 end
 
 Base.length(func::QuadraticCost) = func.k
@@ -453,11 +453,11 @@ function (func::QuadraticCost)(output::AbstractArray, stack::AbstractNetworkStac
     setpoint = view(stack.vuser, k+1:k+k*ngen)
     # Compute quadratic costs
     ndrange = (ngen, k)
-    _quadratic_cost_kernel(func.device)(
+    _quadratic_cost_kernel(func.backend)(
         costs, setpoint, func.c0, func.c1, func.c2, ngen;
         ndrange=ndrange,
     )
-    KA.synchronize(func.device)
+    KA.synchronize(func.backend)
     output .= sum(reshape(costs, ngen, nblocks(stack))', dims=2)
     return
 end
@@ -469,11 +469,11 @@ function adjoint!(func::QuadraticCost, ∂stack, stack, ∂v)
     ∂setpoint = view(∂stack.vuser, k+1:k+k*ngen)
 
     ndrange = (ngen, nblocks(stack))
-    _adj_quadratic_cost_kernel(func.device)(
+    _adj_quadratic_cost_kernel(func.backend)(
         ∂setpoint, setpoint, ∂v, func.c0, func.c1, func.c2, ngen;
         ndrange=ndrange,
     )
-    KA.synchronize(func.device)
+    KA.synchronize(func.backend)
     return
 end
 

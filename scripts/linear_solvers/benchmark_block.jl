@@ -31,8 +31,8 @@ function generate_loads(model, stack, n_blocks, magnitude)
     return pload, qload
 end
 
-function build_instance(datafile, n_blocks, device, magnitude)
-    polar = ExaPF.BlockPolarForm(datafile, n_blocks, device)
+function build_instance(datafile, n_blocks, backend, magnitude)
+    polar = ExaPF.BlockPolarForm(datafile, n_blocks, backend)
     stack = ExaPF.NetworkStack(polar)
     pload, qload = generate_loads(polar, stack, n_blocks, magnitude)
     # Load scenarios into stacks

@@ -21,16 +21,16 @@ function generate_random_system(n::Int, m::Int)
     return spA, b, x♯
 end
 
-function test_preconditioners(device, AT, SMT)
+function test_preconditioners(backend, AT, SMT)
     n, m = 100, 100
     A, b, x♯ = generate_random_system(n, m)
-    # Transfer data to device
+    # Transfer data to backend
     A = A |> SMT
     b = b |> AT
     x♯ = x♯ |> AT
     x = similar(b); r = similar(b)
     nblocks = 2
-    precond = BlockJacobiPreconditioner(A, nblocks, device)
+    precond = BlockJacobiPreconditioner(A, nblocks, backend)
     KP.update!(precond, A)
     Iₙ = Matrix{Float64}(I, n, n) |> AT
     Y = zeros(Float64, n, n) |> AT
@@ -43,16 +43,16 @@ function test_preconditioners(device, AT, SMT)
     @test Y ≈ Y2
 end
 
-function test_custom_bicgstab(device, AT, SMT)
+function test_custom_bicgstab(backend, AT, SMT)
     n, m = 100, 100
     A, b, x♯  = generate_random_system(n, m)
-    # Transfer data to device
+    # Transfer data to backend
     A = A |> SMT
     b = b |> AT
     x♯ = x♯ |> AT
     x = similar(b); r = similar(b)
     nblocks = 2
-    precond = BlockJacobiPreconditioner(A, nblocks, device)
+    precond = BlockJacobiPreconditioner(A, nblocks, backend)
     KP.update!(precond, A)
     linear_solver = LS.Bicgstab(A; P=precond)
     n_iters = LS.ldiv!(linear_solver, x, A, b)
@@ -63,10 +63,10 @@ function test_custom_bicgstab(device, AT, SMT)
     @test n_iters <= n
 end
 
-function test_all_linear_solvers(device, AT, SMT)
+function test_all_linear_solvers(backend, AT, SMT)
     n, m = 32, 32
     A, b, x♯  = generate_random_system(n, m)
-    # Transfer data to device
+    # Transfer data to backend
     A = A |> SMT
     b = b |> AT
     x♯ = x♯ |> AT
@@ -74,11 +74,11 @@ function test_all_linear_solvers(device, AT, SMT)
     # Init preconditioner
     nblocks = 2
     for olevel in [0, 1]
-        precond = BlockJacobiPreconditioner(A; nblocks=nblocks, device=device, noverlaps=olevel)
+        precond = BlockJacobiPreconditioner(A; nblocks=nblocks, backend=backend, noverlaps=olevel)
         # Test printing
         println(devnull, precond)
         KP.update!(precond, A)
-        @testset "Linear solver $LinearSolver" for LinearSolver in ExaPF.list_solvers(device)
+        @testset "Linear solver $LinearSolver" for LinearSolver in ExaPF.list_solvers(backend)
             algo = LinearSolver(A; P=precond)
             fill!(x, 0.0)
             n_iters = LS.ldiv!(algo, x, A, b)
@@ -88,14 +88,14 @@ function test_all_linear_solvers(device, AT, SMT)
     end
 end
 
-function runtests(device, AT, SMT)
+function runtests(backend, AT, SMT)
     for name_sym in names(@__MODULE__; all = true)
         name = string(name_sym)
         if !startswith(name, "test_")
             continue
         end
         test_func = getfield(@__MODULE__, name_sym)
-        test_func(device, AT, SMT)
+        test_func(backend, AT, SMT)
     end
 end
 

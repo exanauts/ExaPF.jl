@@ -28,7 +28,7 @@ end
 LS.update!(is::ExaPF.LS.AbstractIterativeLinearSolver, J::CuSparseMatrixCSR) = KP.update!(is.precond, J)
 LS.update!(ds::ExaPF.LS.DirectSolver, J::CuSparseMatrixCSR) = lu!(ds.factorization, J)
 LS._get_type(J::CuSparseMatrixCSR) = CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
-LS.default_linear_solver(A::CuSparseMatrixCSR, device::CUDABackend) = ExaPF.LS.DirectSolver(A)
+LS.default_linear_solver(A::CuSparseMatrixCSR, backend::CUDABackend) = ExaPF.LS.DirectSolver(A)
 
 ExaPF._iscsr(::CuSparseMatrixCSR) = true
 ExaPF._iscsc(::CuSparseMatrixCSR) = false

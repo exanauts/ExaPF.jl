@@ -64,11 +64,11 @@ struct PolarBasis{VI, MT} <: AutoDiff.AbstractExpression
     t::VI
     Cf::MT
     Ct::MT
-    device::KA.Backend
+    backend::KA.Backend
 end
 
 function PolarBasis(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     k = nblocks(polar)
     nlines = PS.get(polar.network, PS.NumberOfLines())
     # Assemble matrix
@@ -83,7 +83,7 @@ function PolarBasis(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI
     Cf = _blockdiag(Cf, k) |> SMT
     Ct = _blockdiag(Ct, k) |> SMT
 
-    return PolarBasis{VI, SMT}(nbus, nlines, f, t, Cf, Ct, polar.device)
+    return PolarBasis{VI, SMT}(nbus, nlines, f, t, Cf, Ct, polar.backend)
 end
 
 Base.length(func::PolarBasis) = (func.nbus + 2 * func.nlines) * div(size(func.Cf, 1), func.nbus)
@@ -120,12 +120,12 @@ end
 
 function (func::PolarBasis)(output, stack::AbstractNetworkStack)
     ndrange = (func.nbus + 2 * func.nlines, nblocks(stack))
-    basis_kernel!(func.device)(
+    basis_kernel!(func.backend)(
         output, stack.vmag, stack.vang,
         func.f, func.t, func.nlines, func.nbus,
         ndrange=ndrange
     )
-    KA.synchronize(func.device)
+    KA.synchronize(func.backend)
     return
 end
 
@@ -178,7 +178,7 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
 
     # Accumulate on edges
     ndrange = (nl+nb, nblocks(stack))
-    adj_basis_kernel!(func.device)(
+    adj_basis_kernel!(func.backend)(
         ∂v,
         ∂stack.vmag,
         ∂stack.intermediate.∂edge_vm_fr,
@@ -188,7 +188,7 @@ function adjoint!(func::PolarBasis, ∂stack::AbstractNetworkStack, stack::Abstr
         stack.vmag, stack.vang, f, t, nl, nb,
         ndrange=ndrange,
     )
-    KA.synchronize(func.device)
+    KA.synchronize(func.backend)
 
     # Accumulate on nodes
     Cf = func.Cf
@@ -247,11 +247,11 @@ struct CostFunction{VT, MT} <: AutoDiff.AbstractExpression
     c0::VT
     c1::VT
     c2::VT
-    device::KA.Backend
+    backend::KA.Backend
 end
 
 function CostFunction(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     k = nblocks(polar)
     nbus = get(polar, PS.NumberOfBuses())
     ngen = get(polar, PS.NumberOfGenerators())
@@ -279,7 +279,7 @@ function CostFunction(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, 
     c1 = @view coefs[:, 3]
     c2 = @view coefs[:, 4]
 
-    return CostFunction{VT, SMT}(ref, ref_gen, M, N, c0, c1, c2, polar.device)
+    return CostFunction{VT, SMT}(ref, ref_gen, M, N, c0, c1, c2, polar.backend)
 end
 
 Base.length(func::CostFunction) = div(size(func.N, 1), length(func.c0))
@@ -303,11 +303,11 @@ function (func::CostFunction)(output::AbstractArray, stack::AbstractNetworkStack
     mul!(stack.pgen, func.M, stack.ψ, 1.0, 1.0)
     # Compute quadratic costs
     ndrange = (ngen, nblocks(stack))
-    _quadratic_cost_kernel(func.device)(
+    _quadratic_cost_kernel(func.backend)(
         costs, stack.pgen, func.c0, func.c1, func.c2, ngen;
         ndrange=ndrange,
     )
-    KA.synchronize(func.device)
+    KA.synchronize(func.backend)
     # Sum costs across all generators
     # sum!(output, reshape(costs, ngen, nblocks(stack))')
     output .= sum(reshape(costs, ngen, nblocks(stack))', dims=2)
@@ -324,11 +324,11 @@ end
 function adjoint!(func::CostFunction, ∂stack, stack, ∂v)
     ngen = length(func.c0)
     ndrange = (ngen, nblocks(stack))
-    _adj_quadratic_cost_kernel(func.device)(
+    _adj_quadratic_cost_kernel(func.backend)(
         ∂stack.pgen, stack.pgen, ∂v, func.c0, func.c1, func.c2, ngen;
         ndrange=ndrange,
     )
-    KA.synchronize(func.device)
+    KA.synchronize(func.backend)
     mul!(∂stack.ψ, func.M', ∂stack.pgen, 1.0, 1.0)
     return
 end
@@ -407,7 +407,7 @@ struct PowerFlowBalance{VT, MT} <: AutoDiff.AbstractExpression
 end
 
 function PowerFlowBalance(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     k = nblocks(polar)
 
     pf = polar.network
@@ -508,7 +508,7 @@ struct VoltageMagnitudeBounds{SMT} <: AutoDiff.AbstractExpression
     Cpq::SMT
 end
 function VoltageMagnitudeBounds(polar::AbstractPolarFormulation)
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     nbus = polar.network.nbus
     pq = polar.network.pq
     C = spdiagm(ones(nbus))
@@ -588,7 +588,7 @@ struct PowerGenerationBounds{VT, MT} <: AutoDiff.AbstractExpression
 end
 
 function PowerGenerationBounds(polar::AbstractPolarFormulation{T, VI, VT, MT}) where {T, VI, VT, MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     pf = polar.network
     nbus = pf.nbus
     M_tot = PS.get_basis_matrix(pf)
@@ -703,11 +703,11 @@ struct LineFlows{VT, MT} <: AutoDiff.AbstractExpression
     Lfq::MT
     Ltp::MT
     Ltq::MT
-    device::KA.Backend
+    backend::KA.Backend
 end
 
 function LineFlows(polar::AbstractPolarFormulation{T,VI,VT,MT}) where {T,VI,VT,MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     nlines = get(polar, PS.NumberOfLines())
     Lfp, Lfq, Ltp, Ltq = PS.get_line_flow_matrices(polar.network)
     return LineFlows{VT,SMT}(
@@ -716,7 +716,7 @@ function LineFlows(polar::AbstractPolarFormulation{T,VI,VT,MT}) where {T,VI,VT,M
         _blockdiag(Lfq, nblocks(polar)),
         _blockdiag(Ltp, nblocks(polar)),
         _blockdiag(Ltq, nblocks(polar)),
-        polar.device,
+        polar.backend,
     )
 end
 
@@ -740,11 +740,11 @@ function (func::LineFlows)(cons::AbstractVector, stack::AbstractNetworkStack)
     mul!(stp, func.Ltp, stack.ψ, 1.0, 0.0)
     mul!(stq, func.Ltq, stack.ψ, 1.0, 0.0)
     ndrange = (func.nlines, nblocks(stack))
-    ev = _line_flow_kernel(func.device)(
+    ev = _line_flow_kernel(func.backend)(
         cons, sfp, sfq, stp, stq, func.nlines;
         ndrange=ndrange,
     )
-    KA.synchronize(func.device)
+    KA.synchronize(func.backend)
     return
 end
 
@@ -768,14 +768,14 @@ function adjoint!(func::LineFlows, ∂stack, stack, ∂v)
     stq = ∂stack.intermediate.stq
 
     ndrange = (func.nlines, nblocks(stack))
-    _adj_line_flow_kernel(func.device)(
+    _adj_line_flow_kernel(func.backend)(
         sfp, sfq, stp, stq,
         stack.intermediate.sfp, stack.intermediate.sfq,
         stack.intermediate.stp, stack.intermediate.stq,
         ∂v, nlines;
         ndrange=ndrange,
     )
-    KA.synchronize(func.device)
+    KA.synchronize(func.backend)
 
     # Accumulate adjoint
     mul!(∂stack.ψ, func.Lfp', sfp, 1.0, 1.0)

@@ -114,7 +114,7 @@ as a model:
 polar = ExaPF.PolarForm(pf, CPU())
 ```
 Note that the constructor [`ExaPF.PolarForm`](@ref) takes as input a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object
-and a `KernelAbstractions.jl` device (here set to `CPU()` by default). We
+and a `KernelAbstractions.jl` backend (here set to `CPU()` by default). We
 will explain in the next section how to load a [`ExaPF.PolarForm`](@ref) object on
 the GPU with the help of a `CUDABackend()`.
 
@@ -193,7 +193,7 @@ polar_gpu = ExaPF.PolarForm(pf, CUDABackend())
 ```
 
 `polar_gpu` will load all the structures it needs on the GPU, to
-avoid unnecessary movements between the host and the device.
+avoid unnecessary movements between the host and the backend.
 We can load the other structures directly on the GPU with:
 ```@repl quickstart
 stack_gpu = ExaPF.NetworkStack(polar_gpu)

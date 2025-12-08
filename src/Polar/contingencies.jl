@@ -16,7 +16,7 @@ function PowerFlowBalance(
     polar::AbstractPolarFormulation{T, VI, VT, MT},
     contingencies::Vector{LineContingency},
 ) where {T, VI, VT, MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     k = nblocks(polar)
 
     # Check we have enough blocks to represent each contingency + base case
@@ -58,7 +58,7 @@ function PowerGenerationBounds(
     polar::AbstractPolarFormulation{T, VI, VT, MT},
     contingencies::Vector{LineContingency},
 ) where {T, VI, VT, MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     k = nblocks(polar)
 
     # Check we have enough blocks to represent each contingency + base case
@@ -93,7 +93,7 @@ function LineFlows(
     polar::AbstractPolarFormulation{T,VI,VT,MT},
     contingencies::Vector{LineContingency},
 ) where {T,VI,VT,MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     nlines = get(polar, PS.NumberOfLines())
     ## Base case
     Lfp, Lfq, Ltp, Ltq = PS.get_line_flow_matrices(polar.network)
@@ -116,7 +116,7 @@ function LineFlows(
         blockdiag(Lfq_...),
         blockdiag(Ltp_...),
         blockdiag(Ltq_...),
-        polar.device,
+        polar.backend,
     )
 end
 
@@ -127,7 +127,7 @@ function PowerFlowRecourse(
     alpha=nothing,
 ) where {T, VI, VT, MT}
     @assert polar.ncustoms > 0
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     k = nblocks(polar)
     @assert k == length(contingencies) + 1
 
@@ -179,7 +179,7 @@ function ReactivePowerBounds(
     polar::PolarFormRecourse{T, VI, VT, MT},
     contingencies::Vector{LineContingency},
 ) where {T, VI, VT, MT}
-    SMT = default_sparse_matrix(polar.device)
+    SMT = default_sparse_matrix(polar.backend)
     k = nblocks(polar)
     @assert k == length(contingencies) + 1
 

@@ -260,7 +260,7 @@ julia> stack = ExaPF.NetworkStack(polar);
 
 !!! note
     All the code presented below is agnostic with regards
-    to the specific device (`CPU`, `CUDABackend`...) we are using.
+    to the specific backend (`CPU`, `CUDABackend`...) we are using.
     By default, ExaPF computes the expressions on the CPU.
     Deporting the computation on a `CUDABackend` simply
     translates to instantiate the [`PolarForm`](@ref) structure

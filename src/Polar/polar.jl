@@ -13,7 +13,7 @@ number(polar::AbstractPolarFormulation, v::AbstractVariable) = length(mapping(po
 Implement the polar formulation associated to the network's equations.
 
 Wrap a [`PS.PowerNetwork`](@ref) network to load the data on
-the target device (`CPU()` and `CUDABackend()` are currently supported).
+the target backend (`CPU()` and `CUDABackend()` are currently supported).
 
 ## Example
 ```jldoctest; setup=:(using ExaPF)
@@ -22,7 +22,7 @@ julia> const PS = ExaPF.PowerSystem;
 julia> network_data = PS.load_case("case9.m");
 
 julia> polar = PolarForm(network_data, ExaPF.CPU())
-Polar formulation (instantiated on device CPU(false))
+Polar formulation (instantiated on backend CPU(false))
 Network characteristics:
     #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
     #generators: 3
@@ -35,16 +35,16 @@ giving a mathematical formulation with:
 """
 struct PolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
-    device::KA.Backend
+    backend::KA.Backend
     ncustoms::Int  # custom variables defined by user
 end
 
-function PolarForm(pf::PS.PowerNetwork, device::KA.CPU, ncustoms::Int=0)
-    return PolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, ncustoms)
+function PolarForm(pf::PS.PowerNetwork, backend::KA.CPU, ncustoms::Int=0)
+    return PolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, backend, ncustoms)
 end
 # Convenient constructor
-PolarForm(datafile::String, device=CPU(); ncustoms=0) = PolarForm(PS.PowerNetwork(datafile), device, ncustoms)
-PolarForm(polar::PolarForm, device=CPU()) = PolarForm(polar.network, device, polar.ncustoms)
+PolarForm(datafile::String, backend=CPU(); ncustoms=0) = PolarForm(PS.PowerNetwork(datafile), backend, ncustoms)
+PolarForm(polar::PolarForm, backend=CPU()) = PolarForm(polar.network, backend, polar.ncustoms)
 
 introduce(polar::PolarForm) = "Polar formulation"
 nblocks(polar::PolarForm) = 1
@@ -59,15 +59,15 @@ to evaluate them in parallel.
 """
 struct BlockPolarForm{T, IT, VT, MT} <: AbstractPolarFormulation{T, IT, VT, MT}
     network::PS.PowerNetwork
-    device::KA.Backend
+    backend::KA.Backend
     k::Int
     ncustoms::Int  # custom variables defined by user
 end
-function BlockPolarForm(pf::PS.PowerNetwork, device, k::Int, ncustoms::Int=0)
-    return BlockPolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, device, k, ncustoms)
+function BlockPolarForm(pf::PS.PowerNetwork, backend, k::Int, ncustoms::Int=0)
+    return BlockPolarForm{Float64, Vector{Int}, Vector{Float64}, Matrix{Float64}}(pf, backend, k, ncustoms)
 end
-BlockPolarForm(datafile::String, k::Int, device=CPU(); ncustoms=0) = BlockPolarForm(PS.PowerNetwork(datafile), device, k, ncustoms)
-BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.device, k, polar.ncustoms)
+BlockPolarForm(datafile::String, k::Int, backend=CPU(); ncustoms=0) = BlockPolarForm(PS.PowerNetwork(datafile), backend, k, ncustoms)
+BlockPolarForm(polar::PolarForm, k::Int) = BlockPolarForm(polar.network, polar.backend, k, polar.ncustoms)
 
 introduce(polar::BlockPolarForm) = "$(polar.k)-BlockPolar formulation"
 nblocks(polar::BlockPolarForm) = polar.k
@@ -84,7 +84,7 @@ function Base.show(io::IO, polar::AbstractPolarFormulation)
     n_states = 2*npq + npv
     n_controls = nref + npv + ngen - 1
     print(io,   introduce(polar))
-    println(io, " (instantiated on device $(polar.device))")
+    println(io, " (instantiated on backend $(polar.backend))")
     println(io, "Network characteristics:")
     @printf(io, "    #buses:      %d  (#slack: %d  #PV: %d  #PQ: %d)\n", nbus, nref, npv, npq)
     println(io, "    #generators: ", ngen)
@@ -97,17 +97,17 @@ end
 # Default ordering in NetworkStack: [vmag, vang, pgen]
 
 """
-    load_polar(case, device=CPU(); dir=PS.EXADATA)
+    load_polar(case, backend=CPU(); dir=PS.EXADATA)
 
 Load a [`PolarForm`](@ref) instance from the specified
-benchmark library `dir` on the target `device` (default is `CPU`).
+benchmark library `dir` on the target `backend` (default is `CPU`).
 ExaPF uses two different benchmark libraries: MATPOWER (`dir=EXADATA`)
 and PGLIB-OPF (`dir=PGLIB`).
 
 ## Examples
 ```jldoctest; setup=:(using ExaPF)
 julia> polar = ExaPF.load_polar("case9")
-Polar formulation (instantiated on device CPU(false))
+Polar formulation (instantiated on backend CPU(false))
 Network characteristics:
     #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
     #generators: 3
@@ -119,8 +119,8 @@ giving a mathematical formulation with:
 ```
 
 """
-function load_polar(case, device=CPU(); ncustoms=0, dir=PS.EXADATA)
-    return PolarForm(PS.load_case(case, dir), device, ncustoms)
+function load_polar(case, backend=CPU(); ncustoms=0, dir=PS.EXADATA)
+    return PolarForm(PS.load_case(case, dir), backend, ncustoms)
 end
 
 """

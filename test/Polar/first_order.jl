@@ -1,4 +1,4 @@
-function test_constraints_jacobian(polar, device, MT)
+function test_constraints_jacobian(polar, backend, MT)
     nx = ExaPF.number(polar, State())
     nu = ExaPF.number(polar, Control())
 
@@ -69,7 +69,7 @@ function test_constraints_jacobian(polar, device, MT)
     end
 end
 
-function test_constraints_adjoint(polar, device, MT)
+function test_constraints_adjoint(polar, backend, MT)
     nx = ExaPF.number(polar, State())
     nu = ExaPF.number(polar, Control())
     mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
@@ -118,7 +118,7 @@ function test_constraints_adjoint(polar, device, MT)
     end
 end
 
-function test_full_space_jacobian(polar, device, MT)
+function test_full_space_jacobian(polar, backend, MT)
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
 
@@ -162,7 +162,7 @@ function test_full_space_jacobian(polar, device, MT)
     @test myisapprox(Jd, J, rtol=1e-5)
 end
 
-function test_reduced_gradient(polar, device, MT)
+function test_reduced_gradient(polar, backend, MT)
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
     ∂stack = ExaPF.NetworkStack(polar)
@@ -188,7 +188,7 @@ function test_reduced_gradient(polar, device, MT)
     # Solve power flow
     solver = NewtonRaphson(tol=1e-12)
     ExaPF.nlsolve!(solver, jx, stack;
-        linear_solver=ExaPF.default_linear_solver(jx.J, device)
+        linear_solver=ExaPF.default_linear_solver(jx.J, backend)
     )
 
     copyto!(stack_cpu.input, stack.input)
@@ -245,7 +245,7 @@ function test_reduced_gradient(polar, device, MT)
     @test isapprox(grad_fd[:], grad_adjoint, rtol=1e-6)
 end
 
-function test_block_jacobian(polar, device, MT)
+function test_block_jacobian(polar, backend, MT)
     nblocks = 3
 
     stack = ExaPF.NetworkStack(polar)

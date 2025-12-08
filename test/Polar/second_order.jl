@@ -1,4 +1,4 @@
-function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
+function test_hessprod_with_finitediff(polar, backend, MT; rtol=1e-6, atol=1e-6)
     nx = ExaPF.number(polar, State())
     nu = ExaPF.number(polar, Control())
 
@@ -62,14 +62,14 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     proj_fd = zeros(nx+nu)
     mul!(proj_fd, H_fd, tgt)
 
-    if startswith(string(device), "ROCBackend")
+    if startswith(string(backend), "ROCBackend")
         @test_broken myisapprox(projp, proj_fd, rtol=rtol)
     else
         @test myisapprox(projp, proj_fd, rtol=rtol)
     end
 end
 
-function test_full_space_hessian(polar, device, MT)
+function test_full_space_hessian(polar, backend, MT)
     stack = ExaPF.NetworkStack(polar)
     basis  = ExaPF.PolarBasis(polar)
 
@@ -121,7 +121,7 @@ function test_full_space_hessian(polar, device, MT)
     Hd = FiniteDiff.finite_difference_jacobian(grad_fd_x, x)
 
     # Test that both Hessian match
-    if startswith(string(device), "ROCBackend")
+    if startswith(string(backend), "ROCBackend")
         @test_broken myisapprox(Hd, H, rtol=1e-5)
     else
         @test myisapprox(Hd, H, rtol=1e-5)
@@ -129,7 +129,7 @@ function test_full_space_hessian(polar, device, MT)
     return
 end
 
-function test_block_hessian(polar, device, MT)
+function test_block_hessian(polar, backend, MT)
     nblocks = 3
     mapx = ExaPF.mapping(polar, State())
 

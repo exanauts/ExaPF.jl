@@ -42,20 +42,20 @@ init_time = time()
     end
     println()
 
-    @testset "Test device specific code on $device" for (device, AT, SMT, arch) in ARCHS
-        @info "Test device $device"
+    @testset "Test backend specific code on $backend" for (backend, AT, SMT, arch) in ARCHS
+        @info "Test backend $backend"
 
         println("Test LinearSolvers submodule ...")
         tic = time()
         @testset "ExaPF.LinearSolvers" begin
-            TestLinearSolvers.runtests(device, AT, SMT)
+            TestLinearSolvers.runtests(backend, AT, SMT)
         end
         println("Took $(round(time() - tic; digits=1)) seconds.")
 
         println("Test PolarForm ...")
         tic = time()
         @testset "ExaPF.PolarForm ($case)" for case in CASES
-            TestPolarFormulation.runtests(case, device, AT, arch)
+            TestPolarFormulation.runtests(case, backend, AT, arch)
         end
         println("Took $(round(time() - tic; digits=1)) seconds.")
     end

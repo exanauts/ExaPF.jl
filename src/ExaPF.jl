@@ -15,7 +15,7 @@ import Base: show, get
 export run_pf
 export State, Control, AllVariables, PolarForm, BlockPolarForm, PolarFormRecourse
 
-# Export KernelAbstractions devices
+# Export KernelAbstractions backends
 export CPU
 
 include("templates.jl")
@@ -34,4 +34,10 @@ const LS = LinearSolvers
 # Polar formulation
 include("Polar/polar.jl")
 
+function run_pf(datafile::String, backend::KA.Backend, )
+    polar = ExaPF.PolarForm(datafile, backend)
+    stack = ExaPF.NetworkStack(polar)
+    conv = ExaPF.run_pf(polar, stack)
+    return conv
+end
 end

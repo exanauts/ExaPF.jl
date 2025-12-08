@@ -10,9 +10,7 @@ DocTestFilters = [r"ExaPF"]
 
 ```@setup batch_pf
 using ExaPF
-using KLU
 using LinearAlgebra
-const LS = ExaPF.LinearSolvers
 const PS = ExaPF.PowerSystem
 polar = ExaPF.load_polar("case9.m")
 ```
@@ -31,7 +29,6 @@ evaluate the power flow model.
 ```@example batch_pf
 using ExaPF
 using LinearAlgebra
-const LS = ExaPF.LinearSolvers
 const PS = ExaPF.PowerSystem
 
 polar = ExaPF.load_polar("case9.m")

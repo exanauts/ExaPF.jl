@@ -32,7 +32,7 @@ struct HessianProd{Model, Func, VT, VD, VI, Buff} <: AutoDiff.AbstractHessianPro
 end
 
 function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
-    (SMT, A) = get_jacobian_types(polar.device)
+    (SMT, A) = get_jacobian_types(polar.backend)
 
     pf = polar.network
     nbus = PS.get(pf, PS.NumberOfBuses())
@@ -42,7 +42,7 @@ function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
     n_cons = length(func)
 
     nmap = length(map)
-    map_device = map |> VI
+    map_backend = map |> VI
 
     t1s{N} = ForwardDiff.Dual{Nothing,Float64, N} where N
     VD = A{t1s{1}}
@@ -57,7 +57,7 @@ function HessianProd(polar::PolarForm{T, VI, VT, MT}, func::AutoDiff.AbstractExp
 
     intermediate = nothing
     return HessianProd(
-        polar, func, map_device, stack, ∂stack, t1sF, adj_t1sF,
+        polar, func, map_backend, stack, ∂stack, t1sF, adj_t1sF,
         intermediate,
     )
 end
@@ -142,7 +142,7 @@ struct FullHessian{Model, Func, Stack, VD, SMT, VI} <: AutoDiff.AbstractFullHess
 end
 
 function FullHessian(polar::AbstractPolarFormulation{T, VI, VT, MT}, func::AutoDiff.AbstractExpression, map::Vector{Int}) where {T, VI, VT, MT}
-    (SMT, A) = get_jacobian_types(polar.device)
+    (SMT, A) = get_jacobian_types(polar.backend)
 
     pf = polar.network
     nbus = PS.get(pf, PS.NumberOfBuses())
@@ -152,7 +152,7 @@ function FullHessian(polar::AbstractPolarFormulation{T, VI, VT, MT}, func::AutoD
     n_cons = length(func)
 
     nmap = length(map)
-    map_device = map |> VI
+    map_backend = map |> VI
 
     H_host, coloring = _get_hessian_colors(polar, func, map)
     ncolors = length(unique(coloring))
@@ -171,7 +171,7 @@ function FullHessian(polar::AbstractPolarFormulation{T, VI, VT, MT}, func::AutoD
     coloring = coloring |> VI
 
     hess = FullHessian(
-        polar, func, map_device, stack, ∂stack, coloring, ncolors, t1sF, adj_t1sF,
+        polar, func, map_backend, stack, ∂stack, coloring, ncolors, t1sF, adj_t1sF,
         H,
     )
 
@@ -236,7 +236,7 @@ function BatchHessian(
     func::AutoDiff.AbstractExpression,
     X::AbstractVariable,
 ) where {T, VI, VT, MT}
-    (SMT, A) = get_jacobian_types(polar.device)
+    (SMT, A) = get_jacobian_types(polar.backend)
     nx = number(polar, State())
     nu = number(polar, Control())
     k = nblocks(polar)
@@ -302,11 +302,11 @@ function BatchHessian(
 
     coloring = repeat(coloring, k) |> VI
 
-    map_device = blk_map |> VI
+    map_backend = blk_map |> VI
     varid = varid |> VI
 
     hess = BatchHessian(
-        polar, func, map_device, stack, ∂stack,
+        polar, func, map_backend, stack, ∂stack,
         coloring, ncolors, t1sF, adj_t1sF, H,
         nx, nu, k, varid,
     )
@@ -403,26 +403,26 @@ function AutoDiff.partials!(hess::BatchHessian)
     N = hess.ncolors
     T = eltype(H)
     duals = hess.∂stack.input
-    device = hess.model.device
+    backend = hess.model.backend
     coloring = hess.coloring
     n = length(duals)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     if _iscsc(H)
         ndrange = (size(H, 2), )
-        _batch_hess_partials_csc_kernel!(device)(
+        _batch_hess_partials_csc_kernel!(backend)(
             H.colptr, H.rowval, H.nzval, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
             ndrange=ndrange,
         )
     elseif _iscsr(H)
         ndrange = (size(H, 1), )
-        _batch_hess_partials_csr_kernel!(device)(
+        _batch_hess_partials_csr_kernel!(backend)(
             H.rowPtr, H.colVal, H.nzVal, duals_, hess.map, coloring, hess.vartype, hess.nblocks, hess.nx, hess.nu;
             ndrange=ndrange,
         )
     else
         error("Missing kernel for type $typeof(J)")
     end
-    KA.synchronize(device)
+    KA.synchronize(backend)
 end
 

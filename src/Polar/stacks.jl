@@ -31,7 +31,7 @@ in the expression tree, such as the LKMR basis `ψ`.
 ### Notes
 
 The NetworkStack can be instantiated on the host or on
-the target device.
+the target backend.
 
 ### Examples
 

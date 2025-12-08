@@ -41,7 +41,7 @@ abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
 """
     list_solvers(::KernelAbstractions.Device)
 
-List linear solvers available on current device (CPU, NVIDIA GPU, AMD GPU).
+List linear solvers available on current backend (CPU, NVIDIA GPU, AMD GPU).
 
 """
 function list_solvers end
@@ -225,6 +225,6 @@ list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 
 Default linear solver on the CPU.
 """
-default_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
+default_linear_solver(A::SparseMatrixCSC, backend::KA.CPU) = DirectSolver(A)
 
 end

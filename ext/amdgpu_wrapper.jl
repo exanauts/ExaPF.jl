@@ -1,13 +1,13 @@
-function ExaPF.PolarForm(pf::PS.PowerNetwork, device::ROCBackend, ncustoms::Int=0)
-    return PolarForm{Float64, ROCVector{Int}, ROCVector{Float64}, ROCMatrix{Float64}}(pf, device, ncustoms)
+function ExaPF.PolarForm(pf::PS.PowerNetwork, backend::ROCBackend, ncustoms::Int=0)
+    return PolarForm{Float64, ROCVector{Int}, ROCVector{Float64}, ROCMatrix{Float64}}(pf, backend, ncustoms)
 end
-function ExaPF.BlockPolarForm(pf::PS.PowerNetwork, device::ROCBackend, k::Int, ncustoms::Int=0)
-    return BlockPolarForm{Float64, ROCVector{Int}, ROCVector{Float64}, ROCMatrix{Float64}}(pf, device, k, ncustoms)
+function ExaPF.BlockPolarForm(pf::PS.PowerNetwork, backend::ROCBackend, k::Int, ncustoms::Int=0)
+    return BlockPolarForm{Float64, ROCVector{Int}, ROCVector{Float64}, ROCMatrix{Float64}}(pf, backend, k, ncustoms)
 end
-function ExaPF.PolarFormRecourse(pf::PS.PowerNetwork, device::ROCBackend, k::Int)
+function ExaPF.PolarFormRecourse(pf::PS.PowerNetwork, backend::ROCBackend, k::Int)
     ngen = PS.get(pf, PS.NumberOfGenerators())
     ncustoms = (ngen + 1) * k
-    return PolarFormRecourse{Float64, ROCVector{Int}, ROCVector{Float64}, ROCMatrix{Float64}}(pf, device, k, ncustoms)
+    return PolarFormRecourse{Float64, ROCVector{Int}, ROCVector{Float64}, ROCMatrix{Float64}}(pf, backend, k, ncustoms)
 end
 
 ExaPF.default_sparse_matrix(::ROCBackend) = ROCSparseMatrixCSR{Float64, Int32}
