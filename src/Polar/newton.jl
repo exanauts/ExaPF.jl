@@ -220,6 +220,8 @@ julia> conv.n_iterations
 4
 ```
 """
+function run_pf end
+
 function run_pf(
     polar::PolarForm, stack::NetworkStack;
     rtol=1e-8, max_iter=20, verbose=0,
@@ -228,11 +230,28 @@ function run_pf(
     mapx = mapping(polar, State())
 
     basis = PolarBasis(polar)
-    func = PowerFlowBalance(polar) ∘ basis
-    jac = Jacobian(polar, func, mapx)
+    poweflow = PowerFlowBalance(polar) ∘ basis
+    jac = Jacobian(polar, powerflow, mapx)
 
     linear_solver = default_linear_solver(jac.J, polar.device)
     conv = nlsolve!(solver, jac, stack; linear_solver=linear_solver)
     return conv
 end
 
+# Michel, is it the right way to define a BatchJacobian?
+# How do we pass ploads and qloads?
+function run_pf(
+    polar::BlockPolarForm, stack::NetworkStack;
+    rtol=1e-8, max_iter=20, verbose=0,
+)
+    solver = NewtonRaphson(tol=rtol, maxiter=max_iter, verbose=verbose)
+    mapx = mapping(polar, State())
+
+    basis = PolarBasis(polar)
+    powerflow = PowerFlowBalance(polar) ∘ basis
+    jac = BatchJacobian(polar, powerflow, mapx)
+
+    linear_solver = default_linear_solver(jac.J, polar.device)
+    conv = nlsolve!(solver, jac, stack; linear_solver=linear_solver)
+    return conv
+end

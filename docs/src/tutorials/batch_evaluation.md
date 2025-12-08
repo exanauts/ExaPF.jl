@@ -115,7 +115,8 @@ We get $$N$$ different results for the power flow balance equations,
 depending on which scenario we are on.
 
 
-## Solve power flow in block on the CPU
+## Solve batch power flow on the CPU
+
 Once the different structures used for block evaluation instantiated,
 one is able to solve the power flow in block on the CPU using
 the same function [`nlsolve!`](@ref). The block Jacobian is evaluated
@@ -150,7 +151,7 @@ at the PQ nodes:
 reshape(blk_stack.vmag, nbus, nscen)
 ```
 
-## Solve power flow in batch on the GPU
+## Solve batch power flow on the GPU
 
 When the [`BlockPolarForm`](@ref) model is instantiated on the GPU,
 the expressions are evaluated in batch.
