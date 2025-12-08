@@ -226,3 +226,5 @@ list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 Default linear solver on the CPU.
 """
 default_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
+
+end
