@@ -39,7 +39,7 @@ function LS.DirectSolver(A::AbstractJacobian, ::CUDABackend, nblocks=1)
                 rowPtr,
                 colVal,
                 J.nzVal,
-                size(J),
+                (n,n),
             )
         )
     else
