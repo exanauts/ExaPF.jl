@@ -38,9 +38,15 @@ mapping
 ## Powerflow solver
 
 ```@docs
+PowerFlowProblem
 run_pf
+solve!
 nlsolve!
 NewtonRaphson
+get_pd
+get_qd
+set_pd!
+set_qd!
 
 ```
 
