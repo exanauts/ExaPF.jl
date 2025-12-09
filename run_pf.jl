@@ -26,8 +26,8 @@ conv = ExaPF.nlsolve!(
 sol_ref = blk_stack.input[blk_jx.map]
 res = run_pf("case9.m", CPU(), :block_polar, 10, ploads, qloads; verbose=2)
 sol_cpu = get_sol(res)
+isapprox(norm(sol_cpu), norm(sol_ref))
 res = run_pf("case9.m", CUDABackend(), :block_polar, 10, ploads, qloads; verbose=2, batch_linear_solver=true)
 sol_gpu = get_sol(res)
 
-isapprox(norm(sol_cpu), norm(sol_ref))
 isapprox(norm(sol_gpu), norm(sol_ref))

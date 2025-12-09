@@ -32,12 +32,12 @@ function LS.DirectSolver(A::AbstractJacobian, ::CUDABackend, nblocks=1)
         rowPtr    = J.rowPtr[1:n+1]
         @allowscalar nnz_start = J.rowPtr[1]
         @allowscalar nnz_end   = J.rowPtr[n+1] - 1    # last non-zero index for first block
-        colval    = J.colVal[nnz_start:nnz_end]
+        colVal    = J.colVal[nnz_start:nnz_end]
 
         lu(
             CuSparseMatrixCSR(
                 rowPtr,
-                colval,
+                colVal,
                 J.nzVal,
                 size(J),
             )
