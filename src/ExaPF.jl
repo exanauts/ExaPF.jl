@@ -12,7 +12,6 @@ const KA = KernelAbstractions
 
 import Base: show, get
 
-export run_pf
 export State, Control, AllVariables, PolarForm, BlockPolarForm, PolarFormRecourse
 
 # Export KernelAbstractions backends
@@ -35,7 +34,7 @@ const AD = AutoDiff
 # Polar formulation
 include("Polar/polar.jl")
 export PowerFlowProblem
-export run_pf
+export run_pf, get_sol, set_pd!, set_qd!, get_pd, get_qd
 
 """
     PowerFlowProblem
@@ -110,7 +109,7 @@ function PowerFlowProblem(
     datafile::String, backend::KA.Backend, formulation::Symbol,
     nscen::Int=1, ploads=nothing, qloads=nothing;
     rtol=1e-8, max_iter=20, verbose=0,
-    linear_solver=nothing
+    linear_solver=nothing, batch_linear_solver=false
 )
     form = ExaPF.load_polar(datafile, backend)
     mapx = mapping(form, State())
@@ -143,7 +142,7 @@ function PowerFlowProblem(
         error("Formulation $formulation not supported")
     end
     if isnothing(linear_solver)
-        linear_solver = default_linear_solver(jac.J, backend)
+        linear_solver = default_linear_solver(jac, backend)
     end
     nlsolver = NewtonRaphson(tol=rtol, maxiter=max_iter, verbose=verbose)
     return PowerFlowProblem(
@@ -249,6 +248,8 @@ set_qd!(prob, qd_new)
 # See also
 [`set_pd!`](@ref), [`get_qd`](@ref)
 """
+
+get_sol(prob::PowerFlowProblem) = prob.stack.input[prob.jac.map]
 function set_qd!(prob::PowerFlowProblem, qd::Vector{Float64})
     @assert length(qd) == PS.get(prob.form, PS.NumberOfBuses()) "Length of qd must be equal to the number of buses"
     copyto!(prob.stack.params, prob.nbus, qd, 0, prob.nbus)
@@ -299,12 +300,16 @@ prob = run_pf("case9.m", CPU(), :block_polar, nscen, ploads, qloads)
 [`PowerFlowProblem`](@ref), [`solve!`](@ref)
 """
 function run_pf(
-    datafile::String, backend::KA.Backend=CPU(), formulation::Symbol=:polar, nscen::Int=1,
-    ploads=nothing, qloads=nothing; rtol=1e-8, max_iter=20, verbose=0
+    datafile::String, backend::KA.Backend=CPU(),
+    formulation::Symbol=:polar, nscen::Int=1,
+    ploads=nothing, qloads=nothing; rtol=1e-8,
+    max_iter=20, verbose=0, batch_linear_solver=false,
 )
     prob = PowerFlowProblem(
-        datafile, backend, formulation, nscen;
-        rtol=rtol, max_iter=max_iter, verbose=verbose
+        datafile, backend, formulation, nscen,
+        ploads, qloads;
+        rtol=rtol, max_iter=max_iter, verbose=verbose,
+        batch_linear_solver=batch_linear_solver
     )
     # prob.conv = nlsolve!(prob.non_linear_solver, prob.jac, prob.stack; linear_solver=prob.linear_solver)
     prob.conv = nlsolve!(prob.non_linear_solver, prob.jac, prob.stack)

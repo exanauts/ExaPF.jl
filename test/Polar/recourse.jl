@@ -14,7 +14,7 @@ function test_recourse_powerflow(polar, backend, M)
         pf_solver,
         jac_recourse,
         stack;
-        linear_solver=ExaPF.default_linear_solver(jac_recourse.J, backend),
+        linear_solver=ExaPF.default_linear_solver(jac_recourse, backend),
     )
     @test convergence.has_converged
     @test convergence.norm_residuals < pf_solver.tol

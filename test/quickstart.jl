@@ -39,7 +39,7 @@ const LS = ExaPF.LinearSolvers
     # AD for Jacobian
     jx = ExaPF.Jacobian(polar, pflow, State())
     # Linear solver
-    linear_solver = LS.DirectSolver(jx.J)
+    linear_solver = LS.DirectSolver(jx, CPU())
     # Powerflow solver
     pf_solver = NewtonRaphson(tol=1e-10)
 
@@ -80,7 +80,7 @@ const LS = ExaPF.LinearSolvers
         pflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ basis_gpu
         jx_gpu = ExaPF.Jacobian(polar_gpu, pflow_gpu, State())
 
-        linear_solver = LS.DirectSolver(jx_gpu.J)
+        linear_solver = LS.DirectSolver(jx_gpu, CUDABackend())
 
         convergence = ExaPF.nlsolve!(
             pf_solver, jx_gpu, stack_gpu; linear_solver=linear_solver,

@@ -12,6 +12,7 @@ using KernelAbstractions
 import Krylov
 
 import ..ExaPF: xnorm
+import ..ExaPF.AutoDiff: AbstractJacobian
 
 import Base.size, Base.sizeof, Base.format_bytes
 
@@ -94,12 +95,6 @@ Solve linear system ``A x = b`` with a direct sparse linear solver.
 """
 struct DirectSolver{Fac<:LinearAlgebra.Factorization} <: AbstractLinearSolver
     factorization::Fac
-end
-
-function DirectSolver(J::SparseMatrixCSC; kwargs...)
-    klu_solver = klu(J)
-    ds = DirectSolver(klu_solver)
-    return ds
 end
 
 function update!(ds::DirectSolver, J::AbstractMatrix)
@@ -221,10 +216,14 @@ List all linear solvers available for solving the (batch) power flow on the CPU.
 list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 
 """
-    default_linear_solver(A::SparseMatrixCSC, ::KA.CPU)
+    default_linear_solver(A::AbstractJacobian, ::KA.CPU)
 
 Default linear solver on the CPU.
 """
-default_linear_solver(A::SparseMatrixCSC, backend::KA.CPU) = DirectSolver(A)
+function default_linear_solver(A::AbstractJacobian, backend::KA.CPU)
+    klu_solver = klu(A.J)
+    ds = DirectSolver(klu_solver)
+    return ds
+end
 
 end
