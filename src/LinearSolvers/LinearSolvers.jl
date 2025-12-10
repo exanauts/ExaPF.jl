@@ -97,6 +97,19 @@ struct DirectSolver{Fac<:LinearAlgebra.Factorization} <: AbstractLinearSolver
     factorization::Fac
 end
 
+# In the future we may have a specialized DirectSolver for BatchJacobian on CPU
+function DirectSolver(J::AbstractJacobian, ::CPU; kwargs...)
+    klu_solver = klu(J.J)
+    ds = DirectSolver(klu_solver)
+    return ds
+end
+
+function DirectSolver(J::SparseMatrixCSC; kwargs...)
+    klu_solver = klu(J)
+    ds = DirectSolver(klu_solver)
+    return ds
+end
+
 function update!(ds::DirectSolver, J::AbstractMatrix)
     klu!(ds.factorization, J) # Update factorization inplace
 end

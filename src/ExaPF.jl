@@ -34,7 +34,8 @@ const AD = AutoDiff
 # Polar formulation
 include("Polar/polar.jl")
 export PowerFlowProblem
-export run_pf, get_sol, set_pd!, set_qd!, get_pd, get_qd
+export run_pf, get_sol, set_pd!, set_qd!, get_pd, get_qd, get_convergence_status
+export get_vmag, get_vang, solve!
 
 """
     PowerFlowProblem
@@ -120,8 +121,8 @@ function PowerFlowProblem(
         powerflow = ExaPF.PowerFlowBalance(form) ∘ ExaPF.Basis(form);
         stack = ExaPF.NetworkStack(form)
         jac = Jacobian(form, powerflow, mapx)
-        ExaPF.set_params!(blk_jac, blk_stack);
-        ExaPF.jacobian!(blk_jac, blk_stack);
+        ExaPF.set_params!(jac, stack);
+        ExaPF.jacobian!(jac, stack);
         stack, jac, powerflow
     elseif formulation == :block_polar
         @assert nscen > 1 "nscen must be greater than 1 for block polar formulation"
@@ -249,11 +250,18 @@ set_qd!(prob, qd_new)
 [`set_pd!`](@ref), [`get_qd`](@ref)
 """
 
+get_vang(prob::PowerFlowProblem) = prob.stack.vang
+get_vmag(prob::PowerFlowProblem) = prob.stack.vmag
+
 get_sol(prob::PowerFlowProblem) = prob.stack.input[prob.jac.map]
 function set_qd!(prob::PowerFlowProblem, qd::Vector{Float64})
     @assert length(qd) == PS.get(prob.form, PS.NumberOfBuses()) "Length of qd must be equal to the number of buses"
     copyto!(prob.stack.params, prob.nbus, qd, 0, prob.nbus)
     return prob
+end
+
+function get_convergence_status(prob::PowerFlowProblem)
+    return prob.conv
 end
 
 """
@@ -344,7 +352,7 @@ solve!(prob)
 # See also
 [`run_pf`](@ref), [`set_pd!`](@ref), [`set_qd!`](@ref)
 """
-solve!(prob::PowerFlowProblem) = nlsolve!(prob.solver, prob.jac, prob.stack; linear_solver=prob.linear_solver)
+solve!(prob::PowerFlowProblem) = nlsolve!(prob.non_linear_solver, prob.jac, prob.stack; linear_solver=prob.linear_solver)
 
 """
     show(io::IO, prob::PowerFlowProblem)
