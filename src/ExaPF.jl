@@ -34,8 +34,8 @@ const AD = AutoDiff
 # Polar formulation
 include("Polar/polar.jl")
 export PowerFlowProblem
-export run_pf, get_sol, set_pd!, set_qd!, get_pd, get_qd, get_convergence_status
-export get_vmag, get_vang, solve!
+export run_pf, get_solution, set_active_load!, set_reactive_load!, get_active_load, get_reactive_load, get_convergence_status
+export get_voltage_magnitude, get_voltage_angle, solve!
 
 """
     PowerFlowProblem
@@ -70,7 +70,7 @@ end
 
 """
     PowerFlowProblem(datafile, backend, formulation, nscen=1, ploads=nothing, qloads=nothing;
-                     rtol=1e-8, max_iter=20, verbose=0, linear_solver=nothing)
+                     rtol=1e-8, max_iter=20, verbose=0, linear_solver=nothing, batch_linear_solver=false)
 
 Construct a `PowerFlowProblem` from a data file.
 
@@ -110,7 +110,7 @@ function PowerFlowProblem(
     datafile::String, backend::KA.Backend, formulation::Symbol,
     nscen::Int=1, ploads=nothing, qloads=nothing;
     rtol=1e-8, max_iter=20, verbose=0,
-    linear_solver=nothing, batch_linear_solver=false
+    linear_solver=nothing,
 )
     form = ExaPF.load_polar(datafile, backend)
     mapx = mapping(form, State())
@@ -156,7 +156,7 @@ function PowerFlowProblem(
 end
 
 """
-    get_pd(prob::PowerFlowProblem)
+    get_active_load(prob::PowerFlowProblem)
 
 Get the active power demand (Pd) values from the power flow problem.
 
@@ -167,12 +167,12 @@ Get the active power demand (Pd) values from the power flow problem.
 - `Vector`: Active power demand values for all buses in the system
 
 # See also
-[`get_qd`](@ref), [`set_pd!`](@ref)
+[`get_reactive_load`](@ref), [`set_active_load!`](@ref)
 """
-get_pd(prob::PowerFlowProblem) = prob.stack.params[1:prob.nbus]
+get_active_load(prob::PowerFlowProblem) = prob.stack.params[1:prob.nbus]
 
 """
-    get_qd(prob::PowerFlowProblem)
+    get_reactive_load(prob::PowerFlowProblem)
 
 Get the reactive power demand (Qd) values from the power flow problem.
 
@@ -183,12 +183,12 @@ Get the reactive power demand (Qd) values from the power flow problem.
 - `Vector`: Reactive power demand values for all buses in the system
 
 # See also
-[`get_pd`](@ref), [`set_qd!`](@ref)
+[`get_active_load`](@ref), [`set_reactive_load!`](@ref)
 """
-get_qd(prob::PowerFlowProblem) = prob.stack.params[prob.nbus+1:2*prob.nbus]
+get_reactive_load(prob::PowerFlowProblem) = prob.stack.params[prob.nbus+1:2*prob.nbus]
 
 """
-    set_pd!(prob::PowerFlowProblem, pd::Vector{Float64})
+    set_active_load!(prob::PowerFlowProblem, pd::Vector{Float64})
 
 Set the active power demand (Pd) values for the power flow problem.
 
@@ -209,20 +209,20 @@ parameters in the network stack.
 ```julia
 prob = PowerFlowProblem("case9.m", CPU(), :polar)
 pd_new = ones(9) * 0.5  # Set all buses to 0.5 p.u.
-set_pd!(prob, pd_new)
+set_active_load!(prob, pd_new)
 ```
 
 # See also
-[`set_qd!`](@ref), [`get_pd`](@ref)
+[`set_reactive_load!`](@ref), [`get_active_load`](@ref)
 """
-function set_pd!(prob::PowerFlowProblem, pd::Vector{Float64})
+function set_active_load!(prob::PowerFlowProblem, pd::Vector{Float64})
     @assert length(pd) == prob.form.nbus "Length of pd must be equal to the number of buses"
     copyto!(prob.stack.params,0, pd, 0, prob.nbus)
     return prob
 end
 
 """
-    set_qd!(prob::PowerFlowProblem, qd::Vector{Float64})
+    set_reactive_load!(prob::PowerFlowProblem, qd::Vector{Float64})
 
 Set the reactive power demand (Qd) values for the power flow problem.
 
@@ -243,18 +243,13 @@ parameters in the network stack.
 ```julia
 prob = PowerFlowProblem("case9.m", CPU(), :polar)
 qd_new = ones(9) * 0.2  # Set all buses to 0.2 p.u.
-set_qd!(prob, qd_new)
+set_reactive_load!(prob, qd_new)
 ```
 
 # See also
-[`set_pd!`](@ref), [`get_qd`](@ref)
+[`set_active_load!`](@ref), [`get_reactive_load`](@ref)
 """
-
-get_vang(prob::PowerFlowProblem) = prob.stack.vang
-get_vmag(prob::PowerFlowProblem) = prob.stack.vmag
-
-get_sol(prob::PowerFlowProblem) = prob.stack.input[prob.jac.map]
-function set_qd!(prob::PowerFlowProblem, qd::Vector{Float64})
+function set_reactive_load!(prob::PowerFlowProblem, qd::Vector{Float64})
     @assert length(qd) == PS.get(prob.form, PS.NumberOfBuses()) "Length of qd must be equal to the number of buses"
     copyto!(prob.stack.params, prob.nbus, qd, 0, prob.nbus)
     return prob
@@ -263,6 +258,58 @@ end
 function get_convergence_status(prob::PowerFlowProblem)
     return prob.conv
 end
+
+"""
+    get_voltage_angle(prob::PowerFlowProblem)
+
+Get the voltage angle values from the power flow problem solution.
+
+# Arguments
+- `prob::PowerFlowProblem`: The power flow problem instance
+
+# Returns
+- `Vector`: Voltage angle values (in radians) for all buses in the system
+
+# See also
+[`get_voltage_magnitude`](@ref), [`get_solution`](@ref)
+"""
+get_voltage_angle(prob::PowerFlowProblem) = prob.stack.vang
+
+"""
+    get_voltage_magnitude(prob::PowerFlowProblem)
+
+Get the voltage magnitude values from the power flow problem solution.
+
+# Arguments
+- `prob::PowerFlowProblem`: The power flow problem instance
+
+# Returns
+- `Vector`: Voltage magnitude values (in per-unit) for all buses in the system
+
+# See also
+[`get_voltage_angle`](@ref), [`get_solution`](@ref)
+"""
+get_voltage_magnitude(prob::PowerFlowProblem) = prob.stack.vmag
+
+"""
+    get_solution(prob::PowerFlowProblem)
+
+Get the complete solution vector from the power flow problem.
+
+This function returns the state variables (voltage angles and magnitudes) that
+were solved by the Newton-Raphson method, in the order specified by the mapping
+indices.
+
+# Arguments
+- `prob::PowerFlowProblem`: The power flow problem instance
+
+# Returns
+- `Vector`: Solution vector containing the state variables
+
+# See also
+[`get_voltage_angle`](@ref), [`get_voltage_magnitude`](@ref), [`solve!`](@ref)
+"""
+get_solution(prob::PowerFlowProblem) = prob.stack.input[prob.jac.map]
 
 """
     run_pf(datafile, backend=CPU(), formulation=:polar, nscen=1, ploads=nothing, qloads=nothing;
@@ -311,15 +358,13 @@ function run_pf(
     datafile::String, backend::KA.Backend=CPU(),
     formulation::Symbol=:polar, nscen::Int=1,
     ploads=nothing, qloads=nothing; rtol=1e-8,
-    max_iter=20, verbose=0, batch_linear_solver=false,
+    max_iter=20, verbose=0,
 )
     prob = PowerFlowProblem(
         datafile, backend, formulation, nscen,
         ploads, qloads;
         rtol=rtol, max_iter=max_iter, verbose=verbose,
-        batch_linear_solver=batch_linear_solver
     )
-    # prob.conv = nlsolve!(prob.non_linear_solver, prob.jac, prob.stack; linear_solver=prob.linear_solver)
     prob.conv = nlsolve!(prob.non_linear_solver, prob.jac, prob.stack)
     return prob
 end
@@ -330,7 +375,7 @@ end
 Re-solve an existing power flow problem.
 
 This function re-runs the non-linear solver on the problem, which is useful after
-modifying problem parameters (e.g., via `set_pd!` or `set_qd!`).
+modifying problem parameters (e.g., via `set_active_load!` or `set_reactive_load!`).
 
 # Arguments
 - `prob::PowerFlowProblem`: The power flow problem to solve
@@ -345,12 +390,12 @@ prob = PowerFlowProblem("case9.m", CPU(), :polar)
 solve!(prob)
 
 # Modify parameters and re-solve
-set_pd!(prob, ones(9) * 0.8)
+set_active_load!(prob, ones(9) * 0.8)
 solve!(prob)
 ```
 
 # See also
-[`run_pf`](@ref), [`set_pd!`](@ref), [`set_qd!`](@ref)
+[`run_pf`](@ref), [`set_active_load!`](@ref), [`set_reactive_load!`](@ref)
 """
 solve!(prob::PowerFlowProblem) = nlsolve!(prob.non_linear_solver, prob.jac, prob.stack; linear_solver=prob.linear_solver)
 

@@ -43,10 +43,13 @@ run_pf
 solve!
 nlsolve!
 NewtonRaphson
-get_pd
-get_qd
-set_pd!
-set_qd!
+get_active_load
+get_reactive_load
+set_active_load!
+set_reactive_load!
+get_voltage_magnitude
+get_voltage_angle
+get_solution
 
 ```
 
