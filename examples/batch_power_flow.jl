@@ -11,14 +11,8 @@ function create_loads(form, nscen::Int)
     stack = ExaPF.NetworkStack(form)
     pload = stack.params[1:nbus]
     qload = stack.params[nbus+1:2*nbus]
-    ploads = zeros(Float64, nbus, nscen)
-    qloads = zeros(Float64, nbus, nscen)
-    for i in 1:nscen
-        ploads[:,i] .= pload
-    end
-    for i in 1:nscen
-        qloads[:,i] .= qload
-    end
+    ploads = repeat(pload, 1, nscen)
+    qloads = repeat(qload, 1, nscen)
     return ploads, qloads
 end
 
@@ -36,16 +30,15 @@ sol = get_solution(res)
 # Compare all scenarios solution norm against single scenario solution norm
 res_single = run_pf(case, backend, :polar; verbose=2)
 sol_single = get_solution(res_single)
-match = zeros(Bool, nscen)
 nbus = size(sol_single, 1)
 
 println("Size of single scenario solution: ", size(sol_single))
 println("Size of batched scenarios solution: ", size(sol))
-for i in 1:nscen
-    match[i] = isapprox(norm(sol[(i-1)*nbus + 1 : i*nbus]), norm(sol_single))
-end
 
-if all(match)
+# Check if all scenarios match the single scenario solution norm
+match = all(i -> isapprox(norm(sol[(i-1)*nbus + 1 : i*nbus]), norm(sol_single)), 1:nscen)
+
+if match
     println("Batched power flow solutions match single scenario solution norm")
 else
     error("Batched power flow solutions do not match single scenario solution norm")
