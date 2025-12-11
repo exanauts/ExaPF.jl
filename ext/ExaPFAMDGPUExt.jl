@@ -18,6 +18,8 @@ const PS = ExaPF.PowerSystem
 const AD = ExaPF.AutoDiff
 const KP = KrylovPreconditioners
 
+import ..ExaPF.AD: AbstractJacobian
+
 LS.DirectSolver(A::AbstractJacobian, ::ROCBackend, nblocks::Int=1) = error("No direct linear solver implemented for AMD GPUs yet.")
 LS.update!(is::ExaPF.LS.AbstractIterativeLinearSolver, J::ROCSparseMatrixCSR) = KP.update!(is.precond, J)
 LS._get_type(J::ROCSparseMatrixCSR) = ROCArray{Float64, 1, AMDGPU.Mem.HIPBuffer}

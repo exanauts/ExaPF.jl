@@ -61,6 +61,14 @@ init_time = time()
     end
     println()
 
+    @testset "Batched PowerFlow" begin
+        @info "Test batched powerflow across all backends ..."
+        tic = time()
+        include("batch_powerflow.jl")
+        println("Took $(round(time() - tic; digits=1)) seconds.")
+    end
+    println()
+
     include("quickstart.jl")
 
     @testset "Benchmark" begin
