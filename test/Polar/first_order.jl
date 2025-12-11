@@ -188,7 +188,7 @@ function test_reduced_gradient(polar, backend, MT)
     # Solve power flow
     solver = NewtonRaphson(tol=1e-12)
     ExaPF.nlsolve!(solver, jx, stack;
-        linear_solver=ExaPF.default_linear_solver(jx, backend)
+        linear_solver=ExaPF.default_linear_solver(jx.J; nblocks=1)
     )
 
     copyto!(stack_cpu.input, stack.input)
@@ -233,7 +233,7 @@ function test_reduced_gradient(polar, backend, MT)
     function reduced_cost(u_)
         stack_cpu.input[mapu] .= u_
         ExaPF.nlsolve!(solver, jx_cpu, stack_cpu;
-            linear_solver=ExaPF.default_linear_solver(jx_cpu, CPU()),
+            linear_solver=ExaPF.default_linear_solver(jx_cpu.J; nblocks=1),
         )
         c_ = zeros(1)
         cost_production_cpu(c_, stack_cpu)
