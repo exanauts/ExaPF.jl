@@ -283,7 +283,7 @@ function test_block_powerflow(polar, backend, M)
         pf_solver,
         blk_jac,
         blk_stack;
-        linear_solver=ExaPF.default_linear_solver(blk_jac, backend),
+        linear_solver=ExaPF.default_linear_solver(blk_jac.J; nblocks=ExaPF.nblocks(blk_polar)),
     )
     @test convergence.has_converged
     @test convergence.norm_residuals < pf_solver.tol
@@ -312,7 +312,7 @@ function test_contingency_powerflow(polar, backend, M)
         pf_solver,
         blk_jac,
         blk_stack;
-        linear_solver=ExaPF.default_linear_solver(blk_jac, backend),
+        linear_solver=ExaPF.default_linear_solver(blk_jac.J; nblocks=ExaPF.nblocks(blk_polar)),
     )
     @test convergence.has_converged
     @test convergence.norm_residuals < pf_solver.tol

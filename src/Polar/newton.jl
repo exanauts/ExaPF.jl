@@ -120,8 +120,8 @@ function nlsolve!(
     algo::NewtonRaphson,
     jac::AutoDiff.AbstractJacobian,
     stack::AbstractNetworkStack{VT};
-    linear_solver=default_linear_solver(jac, jac.model.backend),
-    nl_buffer=NLBuffer{VT}(size(jac.J, 2)),
+    linear_solver=default_linear_solver(jac.J; nblocks=1),
+    nl_buffer=NLBuffer{VT}(size(jac.J, 2))
 ) where {VT}
     iter = 0
     converged = false
@@ -234,7 +234,7 @@ function run_pf(
     jac = Jacobian(polar, powerflow, mapx)
     jacobian!(jac, stack)
 
-    linear_solver = default_linear_solver(jac, polar.backend)
+    linear_solver = default_linear_solver(jac.J; nblocks=1)
     conv = nlsolve!(solver, jac, stack; linear_solver=linear_solver)
     return conv
 end
@@ -253,7 +253,7 @@ function run_pf(
     jac = BatchJacobian(polar, powerflow, mapx)
     jacobian!(jac, stack)
 
-    linear_solver = default_linear_solver(jac, polar.backend)
+    linear_solver = default_linear_solver(jac.J; nblocks=nblocks(polar))
     conv = nlsolve!(solver, jac, stack; linear_solver=linear_solver)
     return conv
 end

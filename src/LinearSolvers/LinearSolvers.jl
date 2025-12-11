@@ -97,13 +97,6 @@ struct DirectSolver{Fac<:LinearAlgebra.Factorization} <: AbstractLinearSolver
     factorization::Fac
 end
 
-# In the future we may have a specialized DirectSolver for BatchJacobian on CPU
-function DirectSolver(J::AbstractJacobian, ::CPU; kwargs...)
-    klu_solver = klu(J.J)
-    ds = DirectSolver(klu_solver)
-    return ds
-end
-
 function DirectSolver(J::SparseMatrixCSC; kwargs...)
     klu_solver = klu(J)
     ds = DirectSolver(klu_solver)
@@ -229,14 +222,13 @@ List all linear solvers available for solving the (batch) power flow on the CPU.
 list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 
 """
-    default_linear_solver(A::AbstractJacobian, ::KA.CPU)
+    default_linear_solver(A::SparseMatrixCSC; nblocks::Int=1)
 
-Default linear solver on the CPU.
+Return the default linear solver for CPU with a sparse matrix.
+Uses DirectSolver (KLU) as the default.
 """
-function default_linear_solver(A::AbstractJacobian, backend::KA.CPU)
-    klu_solver = klu(A.J)
-    ds = DirectSolver(klu_solver)
-    return ds
+function default_linear_solver(A::SparseMatrixCSC; nblocks::Int=1)
+    return DirectSolver(A)
 end
 
 end

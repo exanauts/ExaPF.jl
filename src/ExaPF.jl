@@ -143,7 +143,7 @@ function PowerFlowProblem(
         error("Formulation $formulation not supported")
     end
     if isnothing(linear_solver)
-        linear_solver = default_linear_solver(jac, backend)
+        linear_solver = default_linear_solver(jac.J; nblocks=nscen)
     end
     nlsolver = NewtonRaphson(tol=rtol, maxiter=max_iter, verbose=verbose)
     return PowerFlowProblem(
@@ -365,7 +365,7 @@ function run_pf(
         ploads, qloads;
         rtol=rtol, max_iter=max_iter, verbose=verbose,
     )
-    prob.conv = nlsolve!(prob.non_linear_solver, prob.jac, prob.stack)
+    prob.conv = nlsolve!(prob.non_linear_solver, prob.jac, prob.stack; linear_solver=prob.linear_solver)
     return prob
 end
 
