@@ -23,7 +23,7 @@ const KP = KrylovPreconditioners
 import ..ExaPF.AD: AbstractJacobian
 
 function LS.DirectSolver(A::CuSparseMatrixCSR; kwargs...)
-    cudss_solver = lu(A; kwargs...)
+    cudss_solver = lu(A)
     ds = LS.DirectSolver(cudss_solver)
     return ds
 end
