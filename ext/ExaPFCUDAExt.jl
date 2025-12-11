@@ -22,6 +22,12 @@ const KP = KrylovPreconditioners
 
 import ..ExaPF.AD: AbstractJacobian
 
+function LS.DirectSolver(A::CuSparseMatrixCSR; kwargs...)
+    cudss_solver = lu(A; kwargs...)
+    ds = LS.DirectSolver(cudss_solver)
+    return ds
+end
+
 function LS.DirectSolver(A::AbstractJacobian, ::CUDABackend, nblocks::Int=1)
     J = A.J
     cudss_solver = if nblocks == 1

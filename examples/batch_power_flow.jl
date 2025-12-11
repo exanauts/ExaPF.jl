@@ -24,19 +24,19 @@ case = "case9.m"
 polar = ExaPF.load_polar(case)
 ploads, qloads = create_loads(polar, nscen)
 println("Solve $nscen scenarios for case $case with on $backend)")
-res = run_pf(case, backend, :block_polar, nscen, ploads, qloads; verbose=2)
+res = run_pf(case, backend, :block_polar, nscen, ploads, qloads)
 sol = get_solution(res)
 
 # Compare all scenarios solution norm against single scenario solution norm
-res_single = run_pf(case, backend, :polar; verbose=2)
+res_single = run_pf(case, backend, :polar)
 sol_single = get_solution(res_single)
-nbus = size(sol_single, 1)
+nstates = length(sol_single)  # Number of state variables per scenario
 
 println("Size of single scenario solution: ", size(sol_single))
 println("Size of batched scenarios solution: ", size(sol))
 
 # Check if all scenarios match the single scenario solution norm
-match = all(i -> isapprox(norm(sol[(i-1)*nbus + 1 : i*nbus]), norm(sol_single)), 1:nscen)
+match = all(i -> isapprox(norm(sol[(i-1)*nstates + 1 : i*nstates]), norm(sol_single)), 1:nscen)
 
 if match
     println("Batched power flow solutions match single scenario solution norm")
