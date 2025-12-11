@@ -54,7 +54,7 @@ LS.update!(ds::ExaPF.LS.DirectSolver, J::CuSparseMatrixCSR) = lu!(ds.factorizati
 LS._get_type(J::CuSparseMatrixCSR) = CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
 
 function LS.default_linear_solver(A::AbstractJacobian, backend::CUDABackend, nblocks::Int=1)
-    return DirectLinearSolver(A, backend, nblocks)
+    return LS.DirectSolver(A, backend, nblocks)
 end
 
 ExaPF._iscsr(::CuSparseMatrixCSR) = true
