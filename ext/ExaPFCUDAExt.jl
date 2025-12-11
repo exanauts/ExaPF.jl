@@ -22,7 +22,7 @@ const KP = KrylovPreconditioners
 
 import ..ExaPF.AD: AbstractJacobian
 
-function LS.DirectSolver(A::AbstractJacobian, ::CUDABackend, nblocks=1)
+function LS.DirectSolver(A::AbstractJacobian, ::CUDABackend, nblocks::Int=1)
     J = A.J
     cudss_solver = if nblocks == 1
         lu(J)
@@ -52,8 +52,9 @@ end
 LS.update!(is::ExaPF.LS.AbstractIterativeLinearSolver, J::CuSparseMatrixCSR) = KP.update!(is.precond, J)
 LS.update!(ds::ExaPF.LS.DirectSolver, J::CuSparseMatrixCSR) = lu!(ds.factorization, J)
 LS._get_type(J::CuSparseMatrixCSR) = CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
-function LS.default_linear_solver(A::ExaPF.BatchJacobian, backend::CUDABackend, nblocks=1)
-    return ExaPF.LS.DirectSolver(A, backend, A.nblocks)
+
+function LS.default_linear_solver(A::AbstractJacobian, backend::CUDABackend, nblocks::Int=1)
+    return DirectLinearSolver(A, backend, nblocks)
 end
 
 ExaPF._iscsr(::CuSparseMatrixCSR) = true
