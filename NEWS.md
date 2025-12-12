@@ -1,6 +1,25 @@
 ExaPF release notes
 ===================
 
+Version 0.12 (December 12th, 2025)
+----------------------------------
+- API changes
+  * New `PowerFlowProblem` struct exposed to users
+  * Extend `run_pf` function to run power flow or batch power flow directly from a MATPOWER case file (#310)
+  * Rename `ArrowheadJacobian` to `BatchJacobian` (#298)
+  * Rename `ArrowheadHessian` to `BatchHessian` (#302)
+- New features
+  * Add batch powerflow API (#308)
+  * Add support for uniform batches with CUDSS.jl v0.6.2 (#306)
+  * Initial batch support implementation (#303)
+- Improvements
+  * Use CUDSS.jl by default in the CUDA extension (#294)
+  * Remove CUSOLVERRF and add CUDSS to documentation (#291)
+  * Support Krylov.jl v0.10 (#290)
+  * Julia 1.12 support and maintenance (#295)
+- Bug fixes
+  * Fix AMDGPU.jl extension
+
 Version 0.11 (December 5th, 2023)
 ---------------------------------
 - Remove the block-GMRES implementation
