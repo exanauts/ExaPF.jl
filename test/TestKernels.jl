@@ -13,7 +13,7 @@ const KA = KernelAbstractions
 
 const AD = ExaPF.AutoDiff
 
-function test_utils_kernel(device, AT, SMT)
+function test_utils_kernel(backend, AT, SMT)
     # transfer kernels
     n = 10
     m = 20
@@ -22,21 +22,21 @@ function test_utils_kernel(device, AT, SMT)
     dest = zeros(n)
     src = rand(m)
     ndrange = (n, )
-    ExaPF._transfer_fr_input!(device)(dest, src, mapping; ndrange=ndrange)
-    KA.synchronize(device)
+    ExaPF._transfer_fr_input!(backend)(dest, src, mapping; ndrange=ndrange)
+    KA.synchronize(backend)
     @test dest == src[mapping]
 
     # TO
     src = rand(n)
     dest = zeros(m)
     ndrange = (n, )
-    ExaPF._transfer_to_input!(device)(dest, mapping, src; ndrange=ndrange)
-    KA.synchronize(device)
+    ExaPF._transfer_to_input!(backend)(dest, mapping, src; ndrange=ndrange)
+    KA.synchronize(backend)
     @test src == dest[mapping]
     return
 end
 
-function test_polar_kernel(device, AT, SMT)
+function test_polar_kernel(backend, AT, SMT)
     nb = 10
     nl = 10
     m = nb + 2*nl
@@ -46,8 +46,8 @@ function test_polar_kernel(device, AT, SMT)
     f = rand(1:nb, nl)
     t = rand(1:nb, nl)
     ndrange = (m, 1)
-    ExaPF.basis_kernel!(device)(output, vmag, vang, f, t, nl, nb; ndrange=ndrange)
-    KA.synchronize(device)
+    ExaPF.basis_kernel!(backend)(output, vmag, vang, f, t, nl, nb; ndrange=ndrange)
+    KA.synchronize(backend)
 
     Δθ = vang[f] .- vang[t]
     vl2 = vmag[f] .* vmag[t]
@@ -56,7 +56,7 @@ function test_polar_kernel(device, AT, SMT)
     return
 end
 
-function test_autodiff_kernel(device, AT, SMT)
+function test_autodiff_kernel(backend, AT, SMT)
     n, m = 10, 20
     J = sprandn(n, m, .2)
     problem = SparseMatrixColorings.ColoringProblem{:nonsymmetric, :column}()
@@ -69,8 +69,8 @@ function test_autodiff_kernel(device, AT, SMT)
     x = rand(n)
     duals = zeros(p+1, n)
     ndrange = (n, )
-    AD._set_value_kernel!(device)(duals, x; ndrange=ndrange)
-    KA.synchronize(device)
+    AD._set_value_kernel!(backend)(duals, x; ndrange=ndrange)
+    KA.synchronize(backend)
     @test duals[1, :] == x
 
     # Seed with coloring for Jacobian/Hessian
@@ -78,29 +78,29 @@ function test_autodiff_kernel(device, AT, SMT)
     duals = zeros(p+1, n)
     map = randperm(n)
     ndrange = (n, p)
-    AD._seed_coloring_kernel!(device)(duals, coloring, map; ndrange=ndrange)
-    KA.synchronize(device)
+    AD._seed_coloring_kernel!(backend)(duals, coloring, map; ndrange=ndrange)
+    KA.synchronize(backend)
 
     # Seed for Hessian-vector products
     v = rand(n)
     duals = zeros(2, n)
     ndrange = (n, )
-    AD._seed_kernel!(device)(duals, v, map; ndrange=ndrange)
-    KA.synchronize(device)
+    AD._seed_kernel!(backend)(duals, v, map; ndrange=ndrange)
+    KA.synchronize(backend)
     @test duals[2, map] == v
 
     # Partials extraction
     duals = rand(p+1, m)
     ## CSC
     ndrange = (m, ) # columns oriented
-    AD.partials_kernel_csc!(device)(J.colptr, J.rowval, J.nzval, duals, colors; ndrange=ndrange)
-    KA.synchronize(device)
+    AD.partials_kernel_csc!(backend)(J.colptr, J.rowval, J.nzval, duals, colors; ndrange=ndrange)
+    KA.synchronize(backend)
 
     ## CSR
     Bp, Bj, Bx = ExaPF.convert2csr(J)
     ndrange = (n, ) # rows oriented
-    AD.partials_kernel_csr!(device)(Bp, Bj, Bx, duals, colors; ndrange=ndrange)
-    KA.synchronize(device)
+    AD.partials_kernel_csr!(backend)(Bp, Bj, Bx, duals, colors; ndrange=ndrange)
+    KA.synchronize(backend)
 
     # Convert back to CSC and check results
     Ap = zeros(Int, m+1)
@@ -111,14 +111,14 @@ function test_autodiff_kernel(device, AT, SMT)
     return
 end
 
-function runtests(device, AT, SMT)
+function runtests(backend, AT, SMT)
     for name_sym in names(@__MODULE__; all = true)
         name = string(name_sym)
         if !startswith(name, "test_")
             continue
         end
         test_func = getfield(@__MODULE__, name_sym)
-        test_func(device, AT, SMT)
+        test_func(backend, AT, SMT)
     end
 end
 

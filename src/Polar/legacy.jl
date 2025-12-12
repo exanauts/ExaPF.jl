@@ -146,7 +146,7 @@ function matpower_jacobian(polar::AbstractPolarFormulation, func::ReactivePowerB
     ]::SparseMatrixCSC{Float64, Int}
 end
 
-function matpower_jacobian(polar::AbstractPolarFormulation, func::PolarBasis, V)
+function matpower_jacobian(polar::AbstractPolarFormulation, func::Basis, V)
     pf = polar.network
     nbus = pf.nbus
     ngen = pf.ngen

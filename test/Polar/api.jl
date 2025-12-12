@@ -1,4 +1,4 @@
-function test_polar_stack(polar, device, M)
+function test_polar_stack(polar, backend, M)
     ngen = get(polar, PS.NumberOfGenerators())
     nbus = get(polar, PS.NumberOfBuses())
     nlines = get(polar, PS.NumberOfLines())
@@ -41,7 +41,7 @@ function test_polar_stack(polar, device, M)
     return nothing
 end
 
-function test_block_stack(polar, device, M)
+function test_block_stack(polar, backend, M)
     nblocks = 2
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
     ngen = get(polar, PS.NumberOfGenerators())
@@ -93,7 +93,7 @@ function test_block_stack(polar, device, M)
     return nothing
 end
 
-function test_polar_api(polar, device, M)
+function test_polar_api(polar, backend, M)
     pf = polar.network
     npv, npq, nref = length(pf.pv), length(pf.pq), length(pf.ref)
     ngen = pf.ngen
@@ -108,7 +108,7 @@ function test_polar_api(polar, device, M)
     @test length(mapu) == nu == npv + nref + ngen - 1
 
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
     # Test that values are matching
     vbus = PS.voltage(polar.network)
@@ -142,9 +142,9 @@ function test_polar_api(polar, device, M)
     return nothing
 end
 
-function test_polar_constraints(polar, device, M)
+function test_polar_constraints(polar, backend, M)
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
 
     io = devnull
     vpq = ExaPF.VoltageMagnitudeBounds(polar)
@@ -179,14 +179,14 @@ function test_polar_constraints(polar, device, M)
     return nothing
 end
 
-function test_polar_powerflow(polar, device, M)
-    SMT = ExaPF.default_sparse_matrix(polar.device)
+function test_polar_powerflow(polar, backend, M)
+    SMT = ExaPF.default_sparse_matrix(polar.backend)
     # Init structures
     stack = ExaPF.NetworkStack(polar)
     pf_solver = NewtonRaphson(tol=1e-6)
     npartitions = 8
 
-    basis = ExaPF.PolarBasis(polar)
+    basis = ExaPF.Basis(polar)
     pflow = ExaPF.PowerFlowBalance(polar)
     n = length(pflow)
 
@@ -199,9 +199,9 @@ function test_polar_powerflow(polar, device, M)
     @test n == size(J, 1) == ExaPF.number(polar, State())
 
     # Build preconditioner
-    precond = LS.BlockJacobiPreconditioner(J_host, npartitions, device)
+    precond = LS.BlockJacobiPreconditioner(J_host, npartitions, backend)
 
-    @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(device)
+    @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(backend)
         algo = LinSolver(J; P=precond)
         ExaPF.init!(polar, stack)
         convergence = ExaPF.nlsolve!(
@@ -211,7 +211,7 @@ function test_polar_powerflow(polar, device, M)
     end
 end
 
-function test_block_expressions(polar, device, M)
+function test_block_expressions(polar, backend, M)
     nblocks = 2
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
     stack = ExaPF.NetworkStack(polar)
@@ -225,8 +225,8 @@ function test_block_expressions(polar, device, M)
         ExaPF.LineFlows,
         ExaPF.CostFunction,
     ]
-        pf_blk = expr(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
-        pf = expr(polar) ∘ ExaPF.PolarBasis(polar)
+        pf_blk = expr(blk_polar) ∘ ExaPF.Basis(blk_polar)
+        pf = expr(polar) ∘ ExaPF.Basis(polar)
         m = length(pf)
         cons = zeros(m) |> M
         blk_cons = zeros(m * nblocks) |> M
@@ -245,7 +245,7 @@ function test_block_expressions(polar, device, M)
         ExaPF.VoltageMagnitudeBounds,
         ExaPF.LineFlows,
     ]
-        pf_blk = expr(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
+        pf_blk = expr(blk_polar) ∘ ExaPF.Basis(blk_polar)
         lb, ub = ExaPF.bounds(blk_polar, pf_blk)
         @test length(lb) == length(ub) == length(pf_blk)
     end
@@ -256,14 +256,14 @@ function test_block_expressions(polar, device, M)
         ExaPF.VoltageMagnitudeBounds(blk_polar),
         ExaPF.LineFlows(blk_polar),
     ]
-    multiblk = ExaPF.MultiExpressions(constraints) ∘ ExaPF.PolarBasis(blk_polar)
+    multiblk = ExaPF.MultiExpressions(constraints) ∘ ExaPF.Basis(blk_polar)
     lb, ub = ExaPF.bounds(blk_polar, multiblk)
     @test length(multiblk) == sum(length.(constraints))
     @test length(lb) == length(ub) == length(multiblk)
 end
 
 # NB: currently tested only with direct linear solver
-function test_block_powerflow(polar, device, M)
+function test_block_powerflow(polar, backend, M)
     pf_solver = NewtonRaphson(tol=1e-10)
     nblocks = 10
 
@@ -273,7 +273,7 @@ function test_block_powerflow(polar, device, M)
     perturb = 0.01 .* rand(length(blk_stack.pload)) |> M
     blk_stack.pload .*= perturb
 
-    pf = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
+    pf = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.Basis(blk_polar)
 
     blk_jac = ExaPF.BatchJacobian(blk_polar, pf, State())
     ExaPF.set_params!(blk_jac, blk_stack)
@@ -283,13 +283,13 @@ function test_block_powerflow(polar, device, M)
         pf_solver,
         blk_jac,
         blk_stack;
-        linear_solver=ExaPF.default_linear_solver(blk_jac.J, device),
+        linear_solver=ExaPF.default_linear_solver(blk_jac.J; nblocks=ExaPF.nblocks(blk_polar)),
     )
     @test convergence.has_converged
     @test convergence.norm_residuals < pf_solver.tol
 end
 
-function test_contingency_powerflow(polar, device, M)
+function test_contingency_powerflow(polar, backend, M)
     nbus = get(polar, PS.NumberOfBuses())
     pf_solver = NewtonRaphson(tol=1e-10)
 
@@ -302,7 +302,7 @@ function test_contingency_powerflow(polar, device, M)
     blk_polar = ExaPF.BlockPolarForm(polar, nblocks)
     blk_stack = ExaPF.NetworkStack(blk_polar)
 
-    pf = ExaPF.PowerFlowBalance(blk_polar, contingencies) ∘ ExaPF.PolarBasis(blk_polar)
+    pf = ExaPF.PowerFlowBalance(blk_polar, contingencies) ∘ ExaPF.Basis(blk_polar)
 
     blk_jac = ExaPF.BatchJacobian(blk_polar, pf, State())
     ExaPF.set_params!(blk_jac, blk_stack)
@@ -312,7 +312,7 @@ function test_contingency_powerflow(polar, device, M)
         pf_solver,
         blk_jac,
         blk_stack;
-        linear_solver=ExaPF.default_linear_solver(blk_jac.J, device),
+        linear_solver=ExaPF.default_linear_solver(blk_jac.J; nblocks=ExaPF.nblocks(blk_polar)),
     )
     @test convergence.has_converged
     @test convergence.norm_residuals < pf_solver.tol
@@ -327,7 +327,7 @@ function test_contingency_powerflow(polar, device, M)
         network.lines.Ytf[line] = 0.0im
         network.lines.Ytt[line] = 0.0im
         #
-        post_model = ExaPF.PolarForm(network, device)
+        post_model = ExaPF.PolarForm(network, backend)
 
         stack = ExaPF.NetworkStack(post_model)
         conv = ExaPF.run_pf(post_model, stack)

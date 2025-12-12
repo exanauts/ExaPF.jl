@@ -247,7 +247,7 @@ the optimal power flow problem with the polar formulation:
 
 Each function follows the LTMR2020 model and depends on
 the basis function $$\psi(v, \theta)$$, here implemented in
-the [`PolarBasis`](@ref) function.
+the [`Basis`](@ref) function.
 
 We demonstrate how to use the different functions on the `case9`
 instance. The procedure remains the same for all power network.
@@ -260,7 +260,7 @@ julia> stack = ExaPF.NetworkStack(polar);
 
 !!! note
     All the code presented below is agnostic with regards
-    to the specific device (`CPU`, `CUDABackend`...) we are using.
+    to the specific backend (`CPU`, `CUDABackend`...) we are using.
     By default, ExaPF computes the expressions on the CPU.
     Deporting the computation on a `CUDABackend` simply
     translates to instantiate the [`PolarForm`](@ref) structure
@@ -271,11 +271,11 @@ julia> stack = ExaPF.NetworkStack(polar);
 All functions are following [`AutoDiff.AbstractExpression`](@ref)'s interface.
 The structure of the network is specified by the [`PolarForm`](@ref)
 we pass as an argument in the constructor. For instance,
-we build a new [`PolarBasis`](@ref) expression associated to `case9`
+we build a new [`Basis`](@ref) expression associated to `case9`
 directly as
 ```jldoctests interface
-julia> basis = ExaPF.PolarBasis(polar)
-PolarBasis (AbstractExpression)
+julia> basis = ExaPF.Basis(polar)
+Basis (AbstractExpression)
 
 ```
 Each expression as a given dimension, given by
@@ -331,7 +331,7 @@ which all depends on the basis $$\psi(v, \theta)$$.
 In ExaPF, one has to build manually the vectorized expression tree associated
 to the power flow model. Luckily, evaluating the LTMR2020 simply amounts
 to compose functions together with the polar basis $$\psi(v, \theta)$$.
-ExaPF overloads the function `∘` to compose functions with a [`PolarBasis`](@ref)
+ExaPF overloads the function `∘` to compose functions with a [`Basis`](@ref)
 instance. The power flow balance can be evaluated as
 ```jldoctests interface
 julia> pflow = ExaPF.PowerFlowBalance(polar) ∘ basis;

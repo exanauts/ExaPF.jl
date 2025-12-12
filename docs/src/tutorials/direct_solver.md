@@ -69,7 +69,7 @@ abstraction.
 polar = ExaPF.load_polar("case9241pegase.m")
 stack = ExaPF.NetworkStack(polar)
 pf_solver = NewtonRaphson(tol=1e-10, verbose=2)  # power flow solver
-func = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar) # power flow func
+func = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.Basis(polar) # power flow func
 jx = ExaPF.Jacobian(polar, func, State()) # init AD
 ExaPF.nlsolve!(pf_solver, jx, stack)
 ```
@@ -90,7 +90,7 @@ We first have to instantiate everything on the GPU:
 using CUDA
 polar_gpu = ExaPF.load_polar("case9241pegase.m", CUDABackend())
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
-func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.PolarBasis(polar_gpu)
+func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.Basis(polar_gpu)
 jx_gpu = ExaPF.Jacobian(polar_gpu, func_gpu, State()) # init AD
 ```
 

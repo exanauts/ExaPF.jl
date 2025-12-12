@@ -10,9 +10,7 @@ DocTestFilters = [r"ExaPF"]
 
 ```@setup batch_pf
 using ExaPF
-using KLU
 using LinearAlgebra
-const LS = ExaPF.LinearSolvers
 const PS = ExaPF.PowerSystem
 polar = ExaPF.load_polar("case9.m")
 ```
@@ -31,7 +29,6 @@ evaluate the power flow model.
 ```@example batch_pf
 using ExaPF
 using LinearAlgebra
-const LS = ExaPF.LinearSolvers
 const PS = ExaPF.PowerSystem
 
 polar = ExaPF.load_polar("case9.m")
@@ -101,7 +98,7 @@ As an example, suppose we want to evaluate the power flow
 balances in block form with a [`PowerFlowBalance`](@ref) expression:
 
 ```@example batch_pf
-powerflow = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.PolarBasis(blk_polar);
+powerflow = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.Basis(blk_polar);
 ```
 A block evaluation takes as input the [`NetworkStack`](@ref) `blk_stack` structure:
 
@@ -115,7 +112,8 @@ We get $$N$$ different results for the power flow balance equations,
 depending on which scenario we are on.
 
 
-## Solve power flow in block on the CPU
+## Solve batch power flow on the CPU
+
 Once the different structures used for block evaluation instantiated,
 one is able to solve the power flow in block on the CPU using
 the same function [`nlsolve!`](@ref). The block Jacobian is evaluated
@@ -150,7 +148,7 @@ at the PQ nodes:
 reshape(blk_stack.vmag, nbus, nscen)
 ```
 
-## Solve power flow in batch on the GPU
+## Solve batch power flow on the GPU
 
 When the [`BlockPolarForm`](@ref) model is instantiated on the GPU,
 the expressions are evaluated in batch.
@@ -164,7 +162,7 @@ polar_gpu = ExaPF.load_polar("case9.m", CUDABackend());
 blk_polar_gpu = ExaPF.BlockPolarForm(polar_gpu, nscen); # load model on GPU
 blk_stack_gpu = ExaPF.NetworkStack(blk_polar_gpu);
 ExaPF.set_params!(blk_stack_gpu, ploads, qloads);
-powerflow_gpu = ExaPF.PowerFlowBalance(blk_polar_gpu) ∘ ExaPF.PolarBasis(blk_polar_gpu);
+powerflow_gpu = ExaPF.PowerFlowBalance(blk_polar_gpu) ∘ ExaPF.Basis(blk_polar_gpu);
 blk_jx_gpu = ExaPF.BatchJacobian(blk_polar_gpu, powerflow_gpu, State());
 ExaPF.set_params!(blk_jx_gpu, blk_stack_gpu);
 ExaPF.jacobian!(blk_jx_gpu, blk_stack_gpu);

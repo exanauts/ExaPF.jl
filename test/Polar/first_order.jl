@@ -1,15 +1,15 @@
-function test_constraints_jacobian(polar, device, MT)
+function test_constraints_jacobian(polar, backend, MT)
     nx = ExaPF.number(polar, State())
     nu = ExaPF.number(polar, Control())
 
     stack = ExaPF.NetworkStack(polar)
     ∂stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
 
     # Need to copy structures on the host for FiniteDiff.jl
     polar_cpu = ExaPF.PolarForm(polar, CPU())
     stack_cpu = ExaPF.NetworkStack(polar_cpu)
-    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+    basis_cpu  = ExaPF.Basis(polar_cpu)
 
     mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
 
@@ -21,7 +21,7 @@ function test_constraints_jacobian(polar, device, MT)
 
     # Test Jacobian w.r.t. State
     @testset "Jacobian $(expr)" for expr in [
-        ExaPF.PolarBasis,
+        ExaPF.Basis,
         ExaPF.VoltageMagnitudeBounds,
         ExaPF.PowerFlowBalance,
         ExaPF.PowerGenerationBounds,
@@ -69,25 +69,25 @@ function test_constraints_jacobian(polar, device, MT)
     end
 end
 
-function test_constraints_adjoint(polar, device, MT)
+function test_constraints_adjoint(polar, backend, MT)
     nx = ExaPF.number(polar, State())
     nu = ExaPF.number(polar, Control())
     mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
 
     stack = ExaPF.NetworkStack(polar)
     ∂stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
 
     # Need to copy structures on the host for FiniteDiff.jl
     polar_cpu = ExaPF.PolarForm(polar, CPU())
     stack_cpu = ExaPF.NetworkStack(polar_cpu)
-    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+    basis_cpu  = ExaPF.Basis(polar_cpu)
 
     ExaPF.run_pf(polar, stack)
     ExaPF.run_pf(polar_cpu, stack_cpu)
 
     @testset "Adjoint $(expr)" for expr in [
-        ExaPF.PolarBasis,
+        ExaPF.Basis,
         ExaPF.CostFunction,
         ExaPF.VoltageMagnitudeBounds,
         ExaPF.PowerFlowBalance,
@@ -118,14 +118,14 @@ function test_constraints_adjoint(polar, device, MT)
     end
 end
 
-function test_full_space_jacobian(polar, device, MT)
+function test_full_space_jacobian(polar, backend, MT)
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
 
     # Need to copy structures on the host for FiniteDiff.jl
     polar_cpu = ExaPF.PolarForm(polar, CPU())
     stack_cpu = ExaPF.NetworkStack(polar_cpu)
-    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+    basis_cpu  = ExaPF.Basis(polar_cpu)
 
     n = length(stack.input)
     mymap = collect(1:n)
@@ -162,15 +162,15 @@ function test_full_space_jacobian(polar, device, MT)
     @test myisapprox(Jd, J, rtol=1e-5)
 end
 
-function test_reduced_gradient(polar, device, MT)
+function test_reduced_gradient(polar, backend, MT)
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     ∂stack = ExaPF.NetworkStack(polar)
 
     # Need to copy structures on the host for FiniteDiff.jl
     polar_cpu = ExaPF.PolarForm(polar, CPU())
     stack_cpu = ExaPF.NetworkStack(polar_cpu)
-    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+    basis_cpu  = ExaPF.Basis(polar_cpu)
 
     power_balance = ExaPF.PowerFlowBalance(polar) ∘ basis
     power_balance_cpu = ExaPF.PowerFlowBalance(polar_cpu) ∘ basis_cpu
@@ -188,7 +188,7 @@ function test_reduced_gradient(polar, device, MT)
     # Solve power flow
     solver = NewtonRaphson(tol=1e-12)
     ExaPF.nlsolve!(solver, jx, stack;
-        linear_solver=ExaPF.default_linear_solver(jx.J, device)
+        linear_solver=ExaPF.default_linear_solver(jx.J; nblocks=1)
     )
 
     copyto!(stack_cpu.input, stack.input)
@@ -233,7 +233,7 @@ function test_reduced_gradient(polar, device, MT)
     function reduced_cost(u_)
         stack_cpu.input[mapu] .= u_
         ExaPF.nlsolve!(solver, jx_cpu, stack_cpu;
-            linear_solver=ExaPF.default_linear_solver(jx_cpu.J, CPU()),
+            linear_solver=ExaPF.default_linear_solver(jx_cpu.J; nblocks=1),
         )
         c_ = zeros(1)
         cost_production_cpu(c_, stack_cpu)
@@ -245,7 +245,7 @@ function test_reduced_gradient(polar, device, MT)
     @test isapprox(grad_fd[:], grad_adjoint, rtol=1e-6)
 end
 
-function test_block_jacobian(polar, device, MT)
+function test_block_jacobian(polar, backend, MT)
     nblocks = 3
 
     stack = ExaPF.NetworkStack(polar)
@@ -260,11 +260,11 @@ function test_block_jacobian(polar, device, MT)
         ExaPF.LineFlows,
     ]
         # Single eval
-        pf = expr(polar) ∘ ExaPF.PolarBasis(polar)
+        pf = expr(polar) ∘ ExaPF.Basis(polar)
         jac = ExaPF.Jacobian(polar, pf, State())
         ExaPF.jacobian!(jac, stack)
         # Block eval
-        pf_blk = expr(blk_polar) ∘ ExaPF.PolarBasis(blk_polar)
+        pf_blk = expr(blk_polar) ∘ ExaPF.Basis(blk_polar)
         blk_jac = ExaPF.BatchJacobian(blk_polar, pf_blk, State())
         ExaPF.jacobian!(blk_jac, blk_stack)
         # Test results match
@@ -282,14 +282,14 @@ function test_block_jacobian(polar, device, MT)
         ExaPF.PowerGenerationBounds(blk_polar_cpu),
         ExaPF.VoltageMagnitudeBounds(blk_polar_cpu),
         ExaPF.LineFlows(blk_polar_cpu),
-    ]) ∘ ExaPF.PolarBasis(blk_polar_cpu)
+    ]) ∘ ExaPF.Basis(blk_polar_cpu)
 
     mycons = ExaPF.MultiExpressions([
         ExaPF.PowerFlowBalance(blk_polar),
         ExaPF.PowerGenerationBounds(blk_polar),
         ExaPF.VoltageMagnitudeBounds(blk_polar),
         ExaPF.LineFlows(blk_polar),
-    ]) ∘ ExaPF.PolarBasis(blk_polar)
+    ]) ∘ ExaPF.Basis(blk_polar)
 
     m = length(mycons)
 

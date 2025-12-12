@@ -41,21 +41,58 @@ artifact_toml = joinpath(@__DIR__, "..", "..", "Artifacts.toml")
 exadata_hash = artifact_hash("ExaData", artifact_toml)
 datafile = joinpath(artifact_path(exadata_hash), "ExaData", "case1354.m")
 ```
-The powerflow equations can be solved in three lines of code, as
+
+### Single scenario power flow
+
+The powerflow equations can be solved in a single line of code using the `run_pf` interface:
 ```@repl quickstart
-polar = ExaPF.PolarForm(datafile, CPU())  # Load data
-stack = ExaPF.NetworkStack(polar)         # Load variables
-convergence = run_pf(polar, stack; verbose=1)
+result = run_pf(datafile, CPU(), :polar; verbose=1)
 ```
 
-Implicitly, ExaPF has just proceed to the following operations:
-- instantiate automatically a starting point ``x_0`` from the variables stored in `stack`
-- instantiate the Jacobian of the powerflow equations using AutoDiff.
-- solve the powerflow equations iteratively, using a Newton-Raphson algorithm.
+You can extract the solution from the result:
+```@repl quickstart
+solution = get_solution(result)
+```
+
+Implicitly, ExaPF has just proceeded to the following operations:
+- load the power network data from the file
+- instantiate automatically a starting point ``x_0``
+- instantiate the Jacobian of the powerflow equations using AutoDiff
+- solve the powerflow equations iteratively, using a Newton-Raphson algorithm
+
+### Batched power flow for multiple scenarios
+
+ExaPF also supports solving multiple power flow scenarios simultaneously in a batched fashion.
+This is particularly useful for uncertainty quantification, contingency analysis, or
+any application requiring solutions for many different load scenarios.
+
+First, we need to create load matrices for multiple scenarios:
+```@repl quickstart
+nscen = 10
+polar = ExaPF.load_polar(datafile)
+nbus = PS.get(polar, PS.NumberOfBuses())
+stack = ExaPF.NetworkStack(polar)
+pload = stack.params[1:nbus]
+qload = stack.params[nbus+1:2*nbus]
+ploads = repeat(pload, 1, nscen)  # Matrix of size (nbus, nscen)
+qloads = repeat(qload, 1, nscen)  # Matrix of size (nbus, nscen)
+```
+
+Then solve all scenarios at once:
+```@repl quickstart
+result_batch = run_pf(datafile, CPU(), :block_polar, nscen, ploads, qloads; verbose=1)
+solution_batch = get_solution(result_batch)
+```
+
+The batched solution is a vector containing all scenarios stacked together,
+where each scenario's solution has length `nbus`:
+```@repl quickstart
+size(solution_batch)
+```
 
 This compact syntax allows to solve quickly any powerflow equations
-in a few lines a code. However, in most case, the user may want more
-coarse grained control on the different objects manipulated.
+in a few lines of code. However, in most cases, the user may want more
+coarse-grained control on the different objects manipulated.
 
 ## Detailed version
 
@@ -114,7 +151,7 @@ as a model:
 polar = ExaPF.PolarForm(pf, CPU())
 ```
 Note that the constructor [`ExaPF.PolarForm`](@ref) takes as input a [`ExaPF.PowerSystem.PowerNetwork`](@ref) object
-and a `KernelAbstractions.jl` device (here set to `CPU()` by default). We
+and a `KernelAbstractions.jl` backend (here set to `CPU()` by default). We
 will explain in the next section how to load a [`ExaPF.PolarForm`](@ref) object on
 the GPU with the help of a `CUDABackend()`.
 
@@ -135,7 +172,7 @@ stack = ExaPF.NetworkStack(polar)
 ```
 The function $g$ is implemented using ExaPF's custom modeler:
 ```@repl quickstart
-basis = ExaPF.PolarBasis(polar)
+basis = ExaPF.Basis(polar)
 powerflow = ExaPF.PowerFlowBalance(polar) ∘ basis
 ```
 
@@ -193,12 +230,12 @@ polar_gpu = ExaPF.PolarForm(pf, CUDABackend())
 ```
 
 `polar_gpu` will load all the structures it needs on the GPU, to
-avoid unnecessary movements between the host and the device.
+avoid unnecessary movements between the host and the backend.
 We can load the other structures directly on the GPU with:
 ```@repl quickstart
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
 
-basis_gpu = ExaPF.PolarBasis(polar_gpu)
+basis_gpu = ExaPF.Basis(polar_gpu)
 pflow_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ basis_gpu
 jx_gpu = ExaPF.Jacobian(polar_gpu, pflow_gpu, mapx)
 

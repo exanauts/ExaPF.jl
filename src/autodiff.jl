@@ -136,15 +136,15 @@ function seed!(
 ) where {T}
     dest = H.stack.input
     map = H.map
-    device = H.model.device
+    backend = H.model.backend
     n = length(dest)
     dest_ = reshape(reinterpret(T, dest), 2, n)
     ndrange = length(map)
-    _seed_kernel!(device)(
+    _seed_kernel!(backend)(
         dest_, v, map;
         ndrange=ndrange,
     )
-    KA.synchronize(device)
+    KA.synchronize(backend)
 end
 
 function _seed_coloring!(
@@ -154,15 +154,15 @@ function _seed_coloring!(
 ) where {T, N}
     dest = M.stack.input
     map = M.map
-    device = M.model.device
+    backend = M.model.backend
     n = length(dest)
     dest_ = reshape(reinterpret(T, dest), N+1, n)
     ndrange = (length(map), N)
-    _seed_coloring_kernel!(device)(
+    _seed_coloring_kernel!(backend)(
         dest_, coloring, map;
         ndrange=ndrange,
     )
-    KA.synchronize(device)
+    KA.synchronize(backend)
 end
 
 """
@@ -199,15 +199,15 @@ Extract partials from `ForwardDiff.Dual` numbers with only 1 partial when comput
 
 """
 function getpartials_kernel!(hv::AbstractVector, H::AbstractHessianProd)
-    device = H.model.device
+    backend = H.model.backend
     map = H.map
     adj_t1sx = H.∂stack.input
     kernel! =
-    getpartials_hv_kernel!(device)(
+    getpartials_hv_kernel!(backend)(
         hv, adj_t1sx, map;
         ndrange=length(hv),
     )
-    KA.synchronize(device)
+    KA.synchronize(backend)
 end
 
 # Sparse Jacobian partials
@@ -240,26 +240,26 @@ function partials!(jac::AbstractJacobian)
     N = jac.ncolors
     T = eltype(J)
     duals = jac.t1sF
-    device = jac.model.device
+    backend = jac.model.backend
     coloring = jac.coloring
     n = length(duals)
 
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
-    if isa(device, CPU)
-        partials_kernel_csc!(device)(
+    if isa(backend, CPU)
+        partials_kernel_csc!(backend)(
             J.colptr, J.rowval, J.nzval, duals_, coloring;
             ndrange=size(J,2),
         )
-    elseif isa(device, GPU)
-        partials_kernel_csr!(device)(
+    elseif isa(backend, GPU)
+        partials_kernel_csr!(backend)(
             J.rowPtr, J.colVal, J.nzVal, duals_, coloring;
             ndrange=size(J,1),
         )
     else
-        error("Unknown device $device")
+        error("Unknown backend $backend")
     end
-    KA.synchronize(device)
+    KA.synchronize(backend)
 end
 
 # Sparse Hessian partials
@@ -292,27 +292,27 @@ function partials!(hess::AbstractFullHessian)
     N = hess.ncolors
     T = eltype(H)
     duals = hess.∂stack.input
-    device = hess.model.device
+    backend = hess.model.backend
     coloring = hess.coloring
     map = hess.map
     n = length(duals)
 
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
-    if isa(device, CPU)
-        partials_kernel_cpu!(device)(
+    if isa(backend, CPU)
+        partials_kernel_cpu!(backend)(
             H.colptr, H.rowval, H.nzval, duals_, map, coloring;
             ndrange=size(H,2),
         )
-    elseif isa(device, GPU)
-        partials_kernel_gpu!(device)(
+    elseif isa(backend, GPU)
+        partials_kernel_gpu!(backend)(
             H.rowPtr, H.colVal, H.nzVal, duals_, map, coloring;
             ndrange=size(H,1),
         )
     else
-        error("Unknown device $device")
+        error("Unknown backend $backend")
     end
-    KA.synchronize(device)
+    KA.synchronize(backend)
 end
 
 @kernel function _set_value_kernel!(
@@ -336,15 +336,15 @@ function set_value!(
     primals::AbstractVector{T}
 ) where {T}
     duals = jac.stack.input
-    device = jac.model.device
+    backend = jac.model.backend
     n = length(duals)
     N = jac.ncolors
     duals_ = reshape(reinterpret(T, duals), N+1, n)
-    _set_value_kernel!(device)(
+    _set_value_kernel!(backend)(
         duals_, primals;
         ndrange=n,
     )
-    KA.synchronize(device)
+    KA.synchronize(backend)
 end
 
 end

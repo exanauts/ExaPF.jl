@@ -1,13 +1,13 @@
-function ExaPF.PolarForm(pf::PS.PowerNetwork, device::CUDABackend, ncustoms::Int=0)
-    return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, ncustoms)
+function ExaPF.PolarForm(pf::PS.PowerNetwork, backend::CUDABackend, ncustoms::Int=0)
+    return PolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, backend, ncustoms)
 end
-function ExaPF.BlockPolarForm(pf::PS.PowerNetwork, device::CUDABackend, k::Int, ncustoms::Int=0)
-    return BlockPolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k, ncustoms)
+function ExaPF.BlockPolarForm(pf::PS.PowerNetwork, backend::CUDABackend, k::Int, ncustoms::Int=0)
+    return BlockPolarForm{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, backend, k, ncustoms)
 end
-function ExaPF.PolarFormRecourse(pf::PS.PowerNetwork, device::CUDABackend, k::Int)
+function ExaPF.PolarFormRecourse(pf::PS.PowerNetwork, backend::CUDABackend, k::Int)
     ngen = PS.get(pf, PS.NumberOfGenerators())
     ncustoms = (ngen + 1) * k
-    return PolarFormRecourse{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, device, k, ncustoms)
+    return PolarFormRecourse{Float64, CuVector{Int}, CuVector{Float64}, CuMatrix{Float64}}(pf, backend, k, ncustoms)
 end
 
 ExaPF.default_sparse_matrix(::CUDABackend) = CuSparseMatrixCSR{Float64, Int32}

@@ -38,9 +38,18 @@ mapping
 ## Powerflow solver
 
 ```@docs
+PowerFlowProblem
 run_pf
+solve!
 nlsolve!
 NewtonRaphson
+get_active_load
+get_reactive_load
+set_active_load!
+set_reactive_load!
+get_voltage_magnitude
+get_voltage_angle
+get_solution
 
 ```
 
@@ -50,7 +59,7 @@ The different parts of the polar formulation are
 implemented in the following `AbstractExpression`:
 
 ```@docs
-PolarBasis
+Basis
 PowerFlowBalance
 VoltageMagnitudeBounds
 PowerGenerationBounds

@@ -6,6 +6,7 @@ using CUDA.CUBLAS
 using CUDA.CUSOLVER
 using CUDA.CUSPARSE
 using CUDSS
+using GPUArraysCore
 
 using ForwardDiff
 using LinearAlgebra
@@ -19,8 +20,30 @@ const PS = ExaPF.PowerSystem
 const AD = ExaPF.AutoDiff
 const KP = KrylovPreconditioners
 
-function LS.DirectSolver(J::CuSparseMatrixCSR; kwargs...)
-    cudss_solver = lu(J)
+import ..ExaPF.AD: AbstractJacobian
+
+function LS.DirectSolver(J::CuSparseMatrixCSR; nblocks::Int=1, kwargs...)
+    cudss_solver = if nblocks == 1
+        lu(J)
+    elseif nblocks > 1
+        n, rem = divrem(size(J, 1), nblocks)
+        @assert rem == 0 "Number of rows must be divisible by number of blocks"
+        rowPtr    = J.rowPtr[1:n+1]
+        @allowscalar nnz_start = J.rowPtr[1]
+        @allowscalar nnz_end   = J.rowPtr[n+1] - 1    # last non-zero index for first block
+        colVal    = J.colVal[nnz_start:nnz_end]
+
+        lu(
+            CuSparseMatrixCSR(
+                rowPtr,
+                colVal,
+                J.nzVal,
+                (n,n),
+            )
+        )
+    else
+        error("Number of blocks must be >= 1")
+    end
     ds = LS.DirectSolver(cudss_solver)
     return ds
 end
@@ -28,7 +51,10 @@ end
 LS.update!(is::ExaPF.LS.AbstractIterativeLinearSolver, J::CuSparseMatrixCSR) = KP.update!(is.precond, J)
 LS.update!(ds::ExaPF.LS.DirectSolver, J::CuSparseMatrixCSR) = lu!(ds.factorization, J)
 LS._get_type(J::CuSparseMatrixCSR) = CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}
-LS.default_linear_solver(A::CuSparseMatrixCSR, device::CUDABackend) = ExaPF.LS.DirectSolver(A)
+
+function LS.default_linear_solver(A::CuSparseMatrixCSR; nblocks::Int=1)
+    return LS.DirectSolver(A; nblocks=nblocks)
+end
 
 ExaPF._iscsr(::CuSparseMatrixCSR) = true
 ExaPF._iscsc(::CuSparseMatrixCSR) = false
@@ -44,4 +70,5 @@ List all linear solvers available for solving the (batch) power flow on an NVIDI
 ExaPF.list_solvers(::CUDABackend) = [LS.DirectSolver, LS.Dqgmres, LS.Bicgstab]
 
 include("cuda_wrapper.jl")
+
 end

@@ -16,11 +16,11 @@ const LS = ExaPF.LinearSolvers
 # KLU wrapper
 LinearAlgebra.lu!(K::KLU.KLUFactorization, J) = KLU.klu!(K, J)
 
-function build_instance(datafile, device)
-    polar = ExaPF.PolarForm(datafile, device)
+function build_instance(datafile, backend)
+    polar = ExaPF.PolarForm(datafile, backend)
     stack = ExaPF.NetworkStack(polar)
     # Instantiate Automatic Differentiation
-    pflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar)
+    pflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.Basis(polar)
     jx = ExaPF.Jacobian(polar, pflow, State())
     return (
         model=polar,

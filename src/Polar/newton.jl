@@ -101,7 +101,7 @@ by changing the optional argument `linear_solver`.
 ```jldoctest; setup=:(using ExaPF)
 julia> polar = ExaPF.load_polar("case9");
 
-julia> powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar);
+julia> powerflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.Basis(polar);
 
 julia> jx = ExaPF.Jacobian(polar, powerflow, State());
 
@@ -120,8 +120,8 @@ function nlsolve!(
     algo::NewtonRaphson,
     jac::AutoDiff.AbstractJacobian,
     stack::AbstractNetworkStack{VT};
-    linear_solver=DirectSolver(jac.J),
-    nl_buffer=NLBuffer{VT}(size(jac.J, 2)),
+    linear_solver=default_linear_solver(jac.J; nblocks=1),
+    nl_buffer=NLBuffer{VT}(size(jac.J, 2))
 ) where {VT}
     iter = 0
     converged = false
@@ -220,6 +220,8 @@ julia> conv.n_iterations
 4
 ```
 """
+function run_pf end
+
 function run_pf(
     polar::PolarForm, stack::NetworkStack;
     rtol=1e-8, max_iter=20, verbose=0,
@@ -227,12 +229,31 @@ function run_pf(
     solver = NewtonRaphson(tol=rtol, maxiter=max_iter, verbose=verbose)
     mapx = mapping(polar, State())
 
-    basis = PolarBasis(polar)
-    func = PowerFlowBalance(polar) ∘ basis
-    jac = Jacobian(polar, func, mapx)
+    basis = Basis(polar)
+    powerflow = PowerFlowBalance(polar) ∘ basis
+    jac = Jacobian(polar, powerflow, mapx)
+    jacobian!(jac, stack)
 
-    linear_solver = default_linear_solver(jac.J, polar.device)
+    linear_solver = default_linear_solver(jac.J; nblocks=1)
     conv = nlsolve!(solver, jac, stack; linear_solver=linear_solver)
     return conv
 end
 
+# Michel, is it the right way to define a BatchJacobian?
+# How do we pass ploads and qloads?
+function run_pf(
+    polar::BlockPolarForm, stack::NetworkStack;
+    rtol=1e-8, max_iter=20, verbose=0,
+)
+    solver = NewtonRaphson(tol=rtol, maxiter=max_iter, verbose=verbose)
+    mapx = mapping(polar, State())
+
+    basis = Basis(polar)
+    powerflow = PowerFlowBalance(polar) ∘ basis
+    jac = BatchJacobian(polar, powerflow, mapx)
+    jacobian!(jac, stack)
+
+    linear_solver = default_linear_solver(jac.J; nblocks=nblocks(polar))
+    conv = nlsolve!(solver, jac, stack; linear_solver=linear_solver)
+    return conv
+end

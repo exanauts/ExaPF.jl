@@ -1,16 +1,16 @@
-function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
+function test_hessprod_with_finitediff(polar, backend, MT; rtol=1e-6, atol=1e-6)
     nx = ExaPF.number(polar, State())
     nu = ExaPF.number(polar, Control())
 
     mymap = [ExaPF.mapping(polar, State()); ExaPF.mapping(polar, Control())]
 
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
 
     # Need to copy structures on the host for FiniteDiff.jl
     polar_cpu = ExaPF.PolarForm(polar, CPU())
     stack_cpu = ExaPF.NetworkStack(polar_cpu)
-    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+    basis_cpu  = ExaPF.Basis(polar_cpu)
 
     # Solve power flow
     ExaPF.run_pf(polar, stack)
@@ -62,21 +62,21 @@ function test_hessprod_with_finitediff(polar, device, MT; rtol=1e-6, atol=1e-6)
     proj_fd = zeros(nx+nu)
     mul!(proj_fd, H_fd, tgt)
 
-    if startswith(string(device), "ROCBackend")
+    if startswith(string(backend), "ROCBackend")
         @test_broken myisapprox(projp, proj_fd, rtol=rtol)
     else
         @test myisapprox(projp, proj_fd, rtol=rtol)
     end
 end
 
-function test_full_space_hessian(polar, device, MT)
+function test_full_space_hessian(polar, backend, MT)
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
 
     # Need to copy structures on the host for FiniteDiff.jl
     polar_cpu = ExaPF.PolarForm(polar, CPU())
     stack_cpu = ExaPF.NetworkStack(polar_cpu)
-    basis_cpu  = ExaPF.PolarBasis(polar_cpu)
+    basis_cpu  = ExaPF.Basis(polar_cpu)
 
     n = length(stack.input)
     # Hessian / (x, u)
@@ -121,7 +121,7 @@ function test_full_space_hessian(polar, device, MT)
     Hd = FiniteDiff.finite_difference_jacobian(grad_fd_x, x)
 
     # Test that both Hessian match
-    if startswith(string(device), "ROCBackend")
+    if startswith(string(backend), "ROCBackend")
         @test_broken myisapprox(Hd, H, rtol=1e-5)
     else
         @test myisapprox(Hd, H, rtol=1e-5)
@@ -129,7 +129,7 @@ function test_full_space_hessian(polar, device, MT)
     return
 end
 
-function test_block_hessian(polar, device, MT)
+function test_block_hessian(polar, backend, MT)
     nblocks = 3
     mapx = ExaPF.mapping(polar, State())
 
@@ -141,7 +141,7 @@ function test_block_hessian(polar, device, MT)
         ExaPF.VoltageMagnitudeBounds(polar),
         ExaPF.PowerGenerationBounds(polar),
         ExaPF.LineFlows(polar),
-    ]) ∘ ExaPF.PolarBasis(polar)
+    ]) ∘ ExaPF.Basis(polar)
     m = length(mycons)
     y = ones(m) |> MT
     hess = ExaPF.FullHessian(polar, mycons, mapx)
@@ -157,7 +157,7 @@ function test_block_hessian(polar, device, MT)
         ExaPF.VoltageMagnitudeBounds(blk_polar),
         ExaPF.PowerGenerationBounds(blk_polar),
         ExaPF.LineFlows(blk_polar),
-    ]) ∘ ExaPF.PolarBasis(blk_polar)
+    ]) ∘ ExaPF.Basis(blk_polar)
     blk_y = repeat(ones(m), nblocks) |> MT
     blk_hess = ExaPF.BatchHessian(blk_polar, blk_cons, ExaPF.State())
     # Eval!

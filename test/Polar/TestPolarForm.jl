@@ -38,54 +38,54 @@ function myisapprox(a, b; options...)
     end
 end
 
-function runtests(case, device, AT, arch)
-    polar = ExaPF.load_polar(case, device)
+function runtests(case, backend, AT, arch)
+    polar = ExaPF.load_polar(case, backend)
     # Test printing
     println(devnull, polar)
 
     @testset "PolarForm API" begin
-        test_polar_api(polar, device, AT)
-        test_polar_stack(polar, device, AT)
-        test_polar_constraints(polar, device, AT)
-        test_polar_powerflow(polar, device, AT)
+        test_polar_api(polar, backend, AT)
+        test_polar_stack(polar, backend, AT)
+        test_polar_constraints(polar, backend, AT)
+        test_polar_powerflow(polar, backend, AT)
     end
 
     @testset "PolarForm AutoDiff (first-order)" begin
-        test_constraints_jacobian(polar, device, AT)
-        test_constraints_adjoint(polar, device, AT)
-        test_full_space_jacobian(polar, device, AT)
-        test_reduced_gradient(polar, device, AT)
+        test_constraints_jacobian(polar, backend, AT)
+        test_constraints_adjoint(polar, backend, AT)
+        test_full_space_jacobian(polar, backend, AT)
+        test_reduced_gradient(polar, backend, AT)
     end
 
     @testset "PolarForm AutoDiff (second-order)" begin
-        test_hessprod_with_finitediff(polar, device, AT)
-        test_full_space_hessian(polar, device, AT)
+        test_hessprod_with_finitediff(polar, backend, AT)
+        test_full_space_hessian(polar, backend, AT)
     end
 
     @testset "BlockPolarForm" begin
-        test_block_stack(polar, device, AT)
-        test_block_expressions(polar, device, AT)
-        test_block_powerflow(polar, device, AT)
-        test_block_jacobian(polar, device, AT)
-        test_block_hessian(polar, device, AT)
+        test_block_stack(polar, backend, AT)
+        test_block_expressions(polar, backend, AT)
+        test_block_powerflow(polar, backend, AT)
+        test_block_jacobian(polar, backend, AT)
+        test_block_hessian(polar, backend, AT)
     end
 
     @testset "Contingency" begin
-        test_contingency_powerflow(polar, device, AT)
+        test_contingency_powerflow(polar, backend, AT)
     end
 
     @testset "PolarFormRecourse" begin
-        test_recourse_expression(polar, device, AT)
+        test_recourse_expression(polar, backend, AT)
         # Recourse formulation test breaks on GPU
         if arch == "rocm" || arch == "cuda"
             @test_broken false
         else
-            test_recourse_powerflow(polar, device, AT)
+            test_recourse_powerflow(polar, backend, AT)
         end
-        if isa(device, CPU)
-            test_recourse_jacobian(polar, device, AT)
-            test_recourse_hessian(polar, device, AT)
-            test_recourse_block_hessian(polar, device, AT)
+        if isa(backend, CPU)
+            test_recourse_jacobian(polar, backend, AT)
+            test_recourse_hessian(polar, backend, AT)
+            test_recourse_block_hessian(polar, backend, AT)
         end
     end
 end

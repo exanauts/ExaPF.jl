@@ -46,7 +46,7 @@ function benchmark_expressions(polar, config)
     ntrials = config[:ntrials_callbacks]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     # Build expressions tree
     expr = ExaPF.MultiExpressions([
         ExaPF.PowerFlowBalance(polar),
@@ -74,7 +74,7 @@ function benchmark_adjoint(polar, config)
     # Init
     stack = ExaPF.NetworkStack(polar)
     ∂stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     # Build expressions tree
     expr = ExaPF.MultiExpressions([
         ExaPF.PowerFlowBalance(polar),
@@ -102,7 +102,7 @@ function benchmark_jacobian_powerflow(polar, config)
     ntrials = config[:ntrials_callbacks]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     pf = ExaPF.PowerFlowBalance(polar) ∘ basis
     jac = ExaPF.Jacobian(polar, pf, State())
     # Warm-up
@@ -123,7 +123,7 @@ function benchmark_jacobian_all(polar, config)
     # Init
     stack = ExaPF.NetworkStack(polar)
     ∂stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     # Build expressions tree
     expr = ExaPF.MultiExpressions([
         ExaPF.PowerFlowBalance(polar),
@@ -150,7 +150,7 @@ function benchmark_hessian_lagrangian(polar, config)
     ntrials = config[:ntrials_callbacks]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     # Build expressions tree
     expr = ExaPF.MultiExpressions([
         ExaPF.CostFunction(polar),
@@ -182,13 +182,13 @@ function benchmark_powerflow(polar, config, linear_algo)
     npartitions = config[:npartitions]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     pflow = ExaPF.PowerFlowBalance(polar) ∘ basis
     jx = ExaPF.Jacobian(polar, pflow ∘ basis, State())
     # Build preconditioner
     J = jx.J
     n = size(J, 1)
-    precond = LS.BlockJacobiPreconditioner(J, npartitions, polar.device, noverlaps)
+    precond = LS.BlockJacobiPreconditioner(J, npartitions, polar.backend, noverlaps)
 
     algo = linear_algo(J; P=precond)
     powerflow_solver = NewtonRaphson(tol=1e-8)
@@ -219,7 +219,7 @@ function benchmark_bicgstab(polar, config, noverlaps, nblocks)
     ntrials = config[:ntrials_iterative]::Int
     # Init
     stack = ExaPF.NetworkStack(polar)
-    basis  = ExaPF.PolarBasis(polar)
+    basis  = ExaPF.Basis(polar)
     pflow = ExaPF.PowerFlowBalance(polar) ∘ basis
     jx = ExaPF.Jacobian(polar, pflow ∘ basis, State())
     # Evaluate Jacobian
@@ -228,7 +228,7 @@ function benchmark_bicgstab(polar, config, noverlaps, nblocks)
     J = jx.J
     n = size(J, 1)
     npartitions = max(ceil(Int, n / nblocks), 2)
-    precond = LS.BlockJacobiPreconditioner(J, npartitions, polar.device, noverlaps)
+    precond = LS.BlockJacobiPreconditioner(J, npartitions, polar.backend, noverlaps)
     algo = LS.Bicgstab(J; P=precond)
     # Update preconditioner
     LS.update!(algo, J)
@@ -337,17 +337,17 @@ end
 #
 # Complete license available here: https://github.com/jump-dev/MathOptInterface.jl/blob/master/LICENSE.md
 function benchmark(
-    casename, device;
+    casename, backend;
     exclude=[], config=DEFAULT_CONFIG, outputdir=OUTPUT_DIR,
 )
     if !isdir(outputdir)
         mkdir(outputdir)
     end
-    println("BENCHMARK $casename on $(device)")
-    polar = PolarForm(PS.load_case(casename), device)
-    if isa(device, CPU)
+    println("BENCHMARK $casename on $(backend)")
+    polar = PolarForm(PS.load_case(casename), backend)
+    if isa(backend, CPU)
         ext = ".cpu.csv"
-    elseif isa(device, CUDABackend)
+    elseif isa(backend, CUDABackend)
         ext = ".cuda.csv"
     end
 
@@ -376,12 +376,12 @@ function default_benchmark(config::Dict)
         push!(iterator, ("cuda", CUDABackend()))
     end
 
-    for (kdev, device) in iterator
+    for (kdev, backend) in iterator
         for case in keys(config[kdev])
             conf = copy(DEFAULT_CONFIG)
             conf[:overlaps] = config[kdev][case]["overlaps"]
             exclude = config[kdev][case]["exclude"]
-            benchmark(case, device; config=conf, exclude=exclude)
+            benchmark(case, backend; config=conf, exclude=exclude)
         end
     end
 end

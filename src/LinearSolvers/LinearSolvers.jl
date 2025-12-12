@@ -12,6 +12,7 @@ using KernelAbstractions
 import Krylov
 
 import ..ExaPF: xnorm
+import ..ExaPF.AutoDiff: AbstractJacobian
 
 import Base.size, Base.sizeof, Base.format_bytes
 
@@ -41,7 +42,7 @@ abstract type AbstractIterativeLinearSolver <: AbstractLinearSolver end
 """
     list_solvers(::KernelAbstractions.Device)
 
-List linear solvers available on current device (CPU, NVIDIA GPU, AMD GPU).
+List linear solvers available on current backend (CPU, NVIDIA GPU, AMD GPU).
 
 """
 function list_solvers end
@@ -221,10 +222,13 @@ List all linear solvers available for solving the (batch) power flow on the CPU.
 list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
 
 """
-    default_linear_solver(A::SparseMatrixCSC, ::KA.CPU)
+    default_linear_solver(A::SparseMatrixCSC; nblocks::Int=1)
 
-Default linear solver on the CPU.
+Return the default linear solver for CPU with a sparse matrix.
+Uses DirectSolver (KLU) as the default.
 """
-default_linear_solver(A::SparseMatrixCSC, device::KA.CPU) = DirectSolver(A)
+function default_linear_solver(A::SparseMatrixCSC; nblocks::Int=1)
+    return DirectSolver(A)
+end
 
 end

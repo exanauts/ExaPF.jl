@@ -31,14 +31,14 @@ function generate_loads(model, stack, n_blocks, magnitude)
     return pload, qload
 end
 
-function build_instance(datafile, n_blocks, device, magnitude)
-    polar = ExaPF.BlockPolarForm(datafile, n_blocks, device)
+function build_instance(datafile, n_blocks, backend, magnitude)
+    polar = ExaPF.BlockPolarForm(datafile, n_blocks, backend)
     stack = ExaPF.NetworkStack(polar)
     pload, qload = generate_loads(polar, stack, n_blocks, magnitude)
     # Load scenarios into stacks
     ExaPF.set_params!(stack, pload, qload)
     # Instantiate Automatic Differentiation
-    pflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.PolarBasis(polar)
+    pflow = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.Basis(polar)
     jx = ExaPF.BatchJacobian(polar, pflow, State())
     ExaPF.set_params!(jx, stack)
     ExaPF.jacobian!(jx, stack)

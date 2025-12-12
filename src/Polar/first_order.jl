@@ -81,7 +81,7 @@ function Jacobian(
     func::AutoDiff.AbstractExpression,
     map::Vector{Int},
 ) where {T, VI, VT, MT}
-    (SMT, A) = get_jacobian_types(polar.device)
+    (SMT, A) = get_jacobian_types(polar.backend)
 
     pf = polar.network
     nbus = PS.get(pf, PS.NumberOfBuses())
@@ -90,7 +90,7 @@ function Jacobian(
 
     n_cons = length(func)
 
-    map_device = map |> VI
+    map_backend = map |> VI
 
     J_host, coloring = _get_jacobian_colors(polar, func, map)
     ncolors = length(unique(coloring))
@@ -108,7 +108,7 @@ function Jacobian(
     coloring = coloring |> VI
 
     jac = Jacobian(
-        polar, func, map_device, stack, coloring, ncolors, t1sF, J,
+        polar, func, map_backend, stack, coloring, ncolors, t1sF, J,
     )
 
     # seed
@@ -159,7 +159,7 @@ function BatchJacobian(
     func::AutoDiff.AbstractExpression,
     X::AbstractVariable,
 ) where {T, VI, VT, MT}
-    (SMT, A) = get_jacobian_types(polar.device)
+    (SMT, A) = get_jacobian_types(polar.backend)
 
     k = nblocks(polar)
     nx = number(polar, State())
@@ -239,11 +239,11 @@ function BatchJacobian(
     init!(polar, stack)
     t1sF = zeros(Float64, n_cons) |> VD
 
-    map_device = blk_map |> VI
+    map_backend = blk_map |> VI
     block_id = block_id |> VI
 
     jac = BatchJacobian(
-        polar, func, map_device, stack, coloring, ncolors, t1sF, J, nx, nu, k, block_id,
+        polar, func, map_backend, stack, coloring, ncolors, t1sF, J, nx, nu, k, block_id,
     )
 
     # seed
@@ -285,25 +285,25 @@ function AutoDiff.partials!(jac::BatchJacobian)
     N = jac.ncolors
     T = eltype(J)
     duals = jac.t1sF
-    device = jac.model.device
+    backend = jac.model.backend
     coloring = jac.coloring
     n = length(duals)
     duals_ = reshape(reinterpret(T, duals), N+1, n)
 
     if _iscsc(J)
         ndrange = (size(J, 2), )
-        _batch_partials_csc_kernel!(device)(
+        _batch_partials_csc_kernel!(backend)(
             J.colptr, J.rowval, J.nzval, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
             ndrange=ndrange,
         )
     elseif _iscsr(J)
         ndrange = (size(J, 1), )
-        _batch_partials_csr_kernel!(device)(
+        _batch_partials_csr_kernel!(backend)(
             J.rowPtr, J.colVal, J.nzVal, duals_, coloring, jac.nx, jac.nu, jac.nblocks;
             ndrange=ndrange,
         )
     else
         error("Missing kernel for type $typeof(J)")
     end
-    KA.synchronize(device)
+    KA.synchronize(backend)
 end
