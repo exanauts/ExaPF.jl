@@ -79,3 +79,51 @@ jobs:
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@latest
       - run: julia --project=docs/ docs/make.jl
+
+  build-binary:
+    name: Build binary
+    needs: [test-github-cpuonly]
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@latest
+        with:
+          version: '1'
+
+      - uses: julia-actions/cache@v2
+
+      - name: Install JuliaC
+        run: |
+          julia -e 'using Pkg; Pkg.Registry.update(); Pkg.add("JuliaC")'
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(julia -e 'using TOML; print(TOML.parsefile("Project.toml")["version"])')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build ExaPFApp binary
+        run: |
+          julia -e '
+            using JuliaC
+            JuliaC.main([
+              "--output-exe", "ExaPFBin",
+              "--bundle", "build",
+              "--experimental",
+              "app/ExaPFApp"
+            ])
+          '
+
+      - name: Create tarball
+        run: |
+          tar -czvf ExaPF-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C build .
+
+      - name: Upload binary to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ExaPF-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
