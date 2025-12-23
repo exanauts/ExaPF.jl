@@ -3,7 +3,7 @@
 - Install `juliac` with
 
 ```julia
-] app add juliac
+] app add JuliaC
 ```
 
 - Instantiate the `app/ExaPFApp` environment
