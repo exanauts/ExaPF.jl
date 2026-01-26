@@ -25,7 +25,7 @@ function Base.unsafe_wrap(Atype::Type{CUDA.CuArray{T, 1, CUDA.DeviceMemory}},
     unsafe_wrap(CUDA.CuVector{T}, p, (dim,); own, ctx)
 end
 
-CUSPARSE.CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti < :Integer} = CuSparseMatrixCSR(A)
+CUSPARSE.CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti <: Integer} = CuSparseMatrixCSR(A)
 
 
 # AbstractStack
