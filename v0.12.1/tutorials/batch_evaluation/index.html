@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Power flow: batch evaluation · ExaPF.jl</title><meta name="title" content="Power flow: batch evaluation · ExaPF.jl"/><meta property="og:title" content="Power flow: batch evaluation · ExaPF.jl"/><meta property="twitter:title" content="Power flow: batch evaluation · ExaPF.jl"/><meta name="description" content="Documentation for ExaPF.jl."/><meta property="og:description" content="Documentation for ExaPF.jl."/><meta property="twitter:description" content="Documentation for ExaPF.jl."/><meta property="og:url" content="https://exanauts.github.io/ExaPF.jl/stable/tutorials/batch_evaluation/"/><meta property="twitter:url" content="https://exanauts.github.io/ExaPF.jl/stable/tutorials/batch_evaluation/"/><link rel="canonical" href="https://exanauts.github.io/ExaPF.jl/stable/tutorials/batch_evaluation/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">ExaPF.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../quickstart/">Quick start</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../direct_solver/">Power flow: direct solver</a></li><li class="is-active"><a class="tocitem" href>Power flow: batch evaluation</a><ul class="internal"><li><a class="tocitem" href="#BlockPolarForm"><span>BlockPolarForm</span></a></li><li><a class="tocitem" href="#Evaluate-expressions-in-block"><span>Evaluate expressions in block</span></a></li><li><a class="tocitem" href="#Solve-batch-power-flow-on-the-CPU"><span>Solve batch power flow on the CPU</span></a></li><li><a class="tocitem" href="#Solve-batch-power-flow-on-the-GPU"><span>Solve batch power flow on the GPU</span></a></li></ul></li></ul></li><li><span class="tocitem">Manual</span><ul><li><a class="tocitem" href="../../man/powersystem/">PowerSystem</a></li><li><a class="tocitem" href="../../man/formulations/">Polar formulation</a></li><li><a class="tocitem" href="../../man/autodiff/">AutoDiff</a></li><li><a class="tocitem" href="../../man/linearsolver/">Linear Solvers</a></li><li><a class="tocitem" href="../../man/benchmark/">Benchmark</a></li></ul></li><li><span class="tocitem">Library</span><ul><li><a class="tocitem" href="../../lib/powersystem/">PowerSystem</a></li><li><a class="tocitem" href="../../lib/formulations/">Polar formulation</a></li><li><a class="tocitem" href="../../lib/autodiff/">AutoDiff</a></li><li><a class="tocitem" href="../../lib/linearsolver/">Linear Solvers</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Power flow: batch evaluation</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Power flow: batch evaluation</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/exanauts/ExaPF.jl/blob/main/docs/src/tutorials/batch_evaluation.md#L" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Batch-power-flow"><a class="docs-heading-anchor" href="#Batch-power-flow">Batch power flow</a><a id="Batch-power-flow-1"></a><a class="docs-heading-anchor-permalink" href="#Batch-power-flow" title="Permalink"></a></h1><p>ExaPF provides a way to evaluate the expressions by blocks, opening the way to introduce more parallelism in the code.</p><h2 id="BlockPolarForm"><a class="docs-heading-anchor" href="#BlockPolarForm">BlockPolarForm</a><a id="BlockPolarForm-1"></a><a class="docs-heading-anchor-permalink" href="#BlockPolarForm" title="Permalink"></a></h2><p>We recall that a given <a href="../../lib/formulations/#ExaPF.NetworkStack"><code>NetworkStack</code></a> <code>stack</code> stores the different variables and parameters (power generations, voltages, loads) required to evaluate the power flow model.</p><pre><code class="language-julia hljs">using ExaPF
+using LinearAlgebra
+const PS = ExaPF.PowerSystem
+
+polar = ExaPF.load_polar(&quot;case9.m&quot;)
+stack = ExaPF.NetworkStack(polar);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">21-elements NetworkStack{Vector{Float64}}</code></pre><p>The variables are stored in the field <code>stack.input</code>, the parameters in the field <code>stack.params</code>. The parameters encode the active <code>pd</code> and reactive loads <code>qd</code> at all buses in the network, such that</p><pre><code class="language-julia hljs">nbus = ExaPF.get(polar, PS.NumberOfBuses());
+pd = stack.params[1:nbus]
+qd = stack.params[nbus+1:2*nbus]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">9-element Vector{Float64}:
+ 0.0
+ 0.0
+ 0.0
+ 0.0
+ 0.3
+ 0.0
+ 0.35
+ 0.0
+ 0.5</code></pre><p>By default, a <a href="../../lib/formulations/#ExaPF.NetworkStack"><code>NetworkStack</code></a> stores one set of loads <span>$p_0$</span>.</p><p>Suppose now we want to evaluate the model associated with the polar formulation for <span>$N$</span> different set of parameters (=scenarios) <span>$p_1, \cdots, p_N$</span>. ExaPF allows to streamline the polar formulation with a <a href="#BlockPolarForm"><code>BlockPolarForm</code></a> structure:</p><pre><code class="language-julia hljs">nscen = 10;
+blk_polar = ExaPF.BlockPolarForm(polar, nscen)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">10-BlockPolar formulation (instantiated on backend CPU(false))
+Network characteristics:
+    #buses:      9  (#slack: 1  #PV: 2  #PQ: 6)
+    #generators: 3
+    #lines:      9
+giving a mathematical formulation with:
+    #controls:   5
+    #states  :   14</code></pre><p>Then, ExaPF can also instantiate a <a href="../../lib/formulations/#ExaPF.NetworkStack"><code>NetworkStack</code></a> object, with the memory required to store the variables of the different scenarios:</p><pre><code class="language-julia hljs">blk_stack = ExaPF.NetworkStack(blk_polar)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">210-elements NetworkStack{Vector{Float64}}</code></pre><p>We can pass the scenarios manually using the function <code>set_params!</code>:</p><pre><code class="language-julia hljs">ploads = rand(nbus, nscen);
+qloads = rand(nbus, nscen);
+ExaPF.set_params!(blk_stack, ploads, qloads)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">90-element Vector{Float64}:
+ 0.2811680995315806
+ 0.5249291677450325
+ 0.9318046278554117
+ 0.6668844349020003
+ 0.7806247170910603
+ 0.6882172345705766
+ 0.06400763455031022
+ 0.9413981195365468
+ 0.8258526209495692
+ 0.9701003877024131
+ ⋮
+ 0.3811178897498525
+ 0.8906141664347942
+ 0.897163331300176
+ 0.6757963749606716
+ 0.33727928894340664
+ 0.7727623676575595
+ 0.9382968203565941
+ 0.47677060308463326
+ 0.1838083620978116</code></pre><p>The structure <code>blk_stack</code> stores <span>$N$</span> different realizations for the variables stored in the field <code>input</code> (<code>vmag</code>, <code>vang</code> and <code>pgen</code>). By default, the initial values are set according to the values specified in <code>blk_polar</code> (usually defined when importing the data from the instance file):</p><pre><code class="language-julia hljs">reshape(blk_stack.vmag, nbus, nscen)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">9×10 Matrix{Float64}:
+ 1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0
+ 1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0
+ 1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0
+ 1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0
+ 1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0
+ 1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0
+ 1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0
+ 1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0
+ 1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0</code></pre><p>Only the parameters are varying according to the scenarios we passed as input in the constructor:</p><pre><code class="language-julia hljs">reshape(blk_stack.pload, nbus, nscen)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">9×10 Matrix{Float64}:
+ 0.628451  0.949895  0.299792  0.203871  …  0.0194815  0.889634   0.420218
+ 0.332125  0.628446  0.951403  0.448324     0.306108   0.12974    0.92653
+ 0.838467  0.28645   0.916015  0.93413      0.14532    0.44787    0.983847
+ 0.437337  0.789635  0.807653  0.464974     0.62268    0.192083   0.92603
+ 0.332871  0.350803  0.243175  0.522679     0.838406   0.0597296  0.704849
+ 0.467801  0.954005  0.835304  0.440908  …  0.257525   0.885666   0.171932
+ 0.059212  0.520775  0.524736  0.682989     0.584089   0.328424   0.0287375
+ 0.253297  0.691387  0.1105    0.985961     0.96526    0.190013   0.0458728
+ 0.855936  0.729232  0.967927  0.767833     0.620969   0.0485746  0.692871</code></pre><h2 id="Evaluate-expressions-in-block"><a class="docs-heading-anchor" href="#Evaluate-expressions-in-block">Evaluate expressions in block</a><a id="Evaluate-expressions-in-block-1"></a><a class="docs-heading-anchor-permalink" href="#Evaluate-expressions-in-block" title="Permalink"></a></h2><p>ExaPF takes advantage of the block structure when using a <a href="#BlockPolarForm"><code>BlockPolarForm</code></a>.</p><p>As an example, suppose we want to evaluate the power flow balances in block form with a <a href="../../lib/formulations/#ExaPF.PowerFlowBalance"><code>PowerFlowBalance</code></a> expression:</p><pre><code class="language-julia hljs">powerflow = ExaPF.PowerFlowBalance(blk_polar) ∘ ExaPF.Basis(blk_polar);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">ExaPF.ComposedExpressions{ExaPF.Basis{Vector{Int64}, SparseArrays.SparseMatrixCSC{Float64, Int64}}, ExaPF.PowerFlowBalance{Vector{Float64}, SparseArrays.SparseMatrixCSC{Float64, Int64}}}(Basis (AbstractExpression), PowerFlowBalance (AbstractExpression))</code></pre><p>A block evaluation takes as input the <a href="../../lib/formulations/#ExaPF.NetworkStack"><code>NetworkStack</code></a> <code>blk_stack</code> structure:</p><pre><code class="language-julia hljs">m = div(length(powerflow), nscen);
+blk_output = zeros(m * nscen);
+powerflow(blk_output, blk_stack); # inplace evaluation
+reshape(blk_output, m, nscen)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">14×10 Matrix{Float64}:
+ -1.29788    -1.00155    -0.678597   …  -1.32389    -1.50026    -0.70347
+ -0.0115327  -0.56355     0.0660149     -0.70468    -0.40213     0.133847
+  0.437337    0.789635    0.807653       0.62268     0.192083    0.92603
+  0.332871    0.350803    0.243175       0.838406    0.0597296   0.704849
+  0.467801    0.954005    0.835304       0.257525    0.885666    0.171932
+  0.059212    0.520775    0.524736   …   0.584089    0.328424    0.0287375
+  0.253297    0.691387    0.1105         0.96526     0.190013    0.0458728
+  0.855936    0.729232    0.967927       0.620969    0.0485746   0.692871
+  0.499884    0.65625    -0.105243       0.586638    0.319166    0.508796
+  0.522625    0.661943    0.0694786      0.0388818  -0.182148    0.0792793
+  0.404717    0.396463   -0.248935   …  -0.162362    0.0273682   0.489262
+ -0.114992   -0.0863941  -0.0578308      0.761454    0.196343    0.759297
+  0.713898    0.255242    0.599736       0.284123    0.218872    0.249271
+  0.584853    0.730849    0.421959       0.355998    0.455274   -0.0571916</code></pre><p>We get <span>$N$</span> different results for the power flow balance equations, depending on which scenario we are on.</p><h2 id="Solve-batch-power-flow-on-the-CPU"><a class="docs-heading-anchor" href="#Solve-batch-power-flow-on-the-CPU">Solve batch power flow on the CPU</a><a id="Solve-batch-power-flow-on-the-CPU-1"></a><a class="docs-heading-anchor-permalink" href="#Solve-batch-power-flow-on-the-CPU" title="Permalink"></a></h2><p>Once the different structures used for block evaluation instantiated, one is able to solve the power flow in block on the CPU using the same function <a href="../../lib/formulations/#ExaPF.nlsolve!"><code>nlsolve!</code></a>. The block Jacobian is evaluated with automatic differentiation using a <code>BatchJacobian</code> structure:</p><pre><code class="language-julia hljs">blk_jx = ExaPF.BatchJacobian(blk_polar, powerflow, State());
+blk_jx.J</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">140×140 SparseArrays.SparseMatrixCSC{Float64, Int64} with 820 stored entries:
+⎡⡱⣮⡲⣞⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎤
+⎢⣸⢮⣻⣾⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⡱⣮⡲⣞⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⣸⢮⣻⣾⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡶⣝⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⣜⢯⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡶⣝⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣜⢯⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡶⣝⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣜⢯⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⣺⣜⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣚⢾⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⣺⣜⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣚⢾⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⣺⣜⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣚⢾⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡺⣕⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢞⢮⡿⣯⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡺⣕⎥
+⎣⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢞⢮⡿⣯⎦</code></pre><p>We notice that the <code>BatchJacobian</code> computes the resulting Jacobian as a block diagonal matrix. The <code>BatchJacobian</code> has a slightly different behavior than its classical counterpart <code>AutoDiff.Jacobian</code>, in the sense that one has to pass the parameters manually to initiate internally the dual numbers:</p><pre><code class="language-julia hljs">ExaPF.set_params!(blk_jx, blk_stack);
+ExaPF.jacobian!(blk_jx, blk_stack);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">140×140 SparseArrays.SparseMatrixCSC{Float64, Int64} with 820 stored entries:
+⎡⡱⣮⡲⣞⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎤
+⎢⣸⢮⣻⣾⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⡱⣮⡲⣞⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⣸⢮⣻⣾⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡶⣝⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⣜⢯⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡶⣝⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣜⢯⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡶⣝⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣜⢯⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⣺⣜⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣚⢾⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⣺⣜⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣚⢾⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⣺⣜⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣚⢾⡻⣮⠀⠀⠀⠀⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡺⣕⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢞⢮⡿⣯⠀⠀⠀⠀⎥
+⎢⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡵⣯⡺⣕⎥
+⎣⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢞⢮⡿⣯⎦</code></pre><p>As soon as the <code>blk_jx</code> initialized, we can solve the power flow equations in block as</p><pre><code class="language-julia hljs">conv = ExaPF.nlsolve!(
+    NewtonRaphson(verbose=2),
+    blk_jx,
+    blk_stack;
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Power flow has converged: true
+  * #iterations: 5
+  * Time Jacobian (s) ........: 0.0001
+  * Time linear solver (s) ...: 0.0000
+     * update (s) ............: 0.0000
+     * ldiv (s) ..............: 0.0000
+  * Time total (s) ...........: 0.0002
+</code></pre><p>At the solution, we get different values for the voltage magnitudes at the PQ nodes:</p><pre><code class="language-julia hljs">reshape(blk_stack.vmag, nbus, nscen)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">9×10 Matrix{Float64}:
+ 1.0       1.0       1.0       1.0       …  1.0       1.0       1.0
+ 1.0       1.0       1.0       1.0          1.0       1.0       1.0
+ 1.0       1.0       1.0       1.0          1.0       1.0       1.0
+ 0.918602  0.895861  0.969685  0.906153     0.941136  0.965345  0.952554
+ 0.884775  0.851134  0.961862  0.864285     0.933925  0.98075   0.931867
+ 0.946253  0.936794  0.982936  0.924202  …  0.968025  0.981492  0.942431
+ 0.943529  0.939495  0.965886  0.901349     0.9128    0.96166   0.909783
+ 0.936795  0.941943  0.956876  0.941181     0.94167   0.969323  0.950311
+ 0.873422  0.851578  0.928193  0.877201     0.911507  0.933618  0.946679</code></pre><h2 id="Solve-batch-power-flow-on-the-GPU"><a class="docs-heading-anchor" href="#Solve-batch-power-flow-on-the-GPU">Solve batch power flow on the GPU</a><a id="Solve-batch-power-flow-on-the-GPU-1"></a><a class="docs-heading-anchor-permalink" href="#Solve-batch-power-flow-on-the-GPU" title="Permalink"></a></h2><p>When the <a href="#BlockPolarForm"><code>BlockPolarForm</code></a> model is instantiated on the GPU, the expressions are evaluated in batch. The syntax to solve the power flow equations is exactly the same as on the CPU, using <code>cuDSS</code> to solve the different linear systems:</p><pre><code class="language-julia hljs">using CUDA
+using CUDSS
+
+polar_gpu = ExaPF.load_polar(&quot;case9.m&quot;, CUDABackend());
+blk_polar_gpu = ExaPF.BlockPolarForm(polar_gpu, nscen); # load model on GPU
+blk_stack_gpu = ExaPF.NetworkStack(blk_polar_gpu);
+ExaPF.set_params!(blk_stack_gpu, ploads, qloads);
+powerflow_gpu = ExaPF.PowerFlowBalance(blk_polar_gpu) ∘ ExaPF.Basis(blk_polar_gpu);
+blk_jx_gpu = ExaPF.BatchJacobian(blk_polar_gpu, powerflow_gpu, State());
+ExaPF.set_params!(blk_jx_gpu, blk_stack_gpu);
+ExaPF.jacobian!(blk_jx_gpu, blk_stack_gpu);
+conv = ExaPF.nlsolve!(
+    NewtonRaphson(verbose=2),
+    blk_jx_gpu,
+    blk_stack_gpu
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Power flow has converged: true
+  * #iterations: 5
+  * Time Jacobian (s) ........: 0.0120
+  * Time linear solver (s) ...: 0.0301
+     * update (s) ............: 0.0244
+     * ldiv (s) ..............: 0.0057
+  * Time total (s) ...........: 0.8682
+</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../direct_solver/">« Power flow: direct solver</a><a class="docs-footer-nextpage" href="../../man/powersystem/">PowerSystem »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Monday 26 January 2026 14:32">Monday 26 January 2026</span>. Using Julia version 1.10.10.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
