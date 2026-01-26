@@ -6,11 +6,11 @@ func = ExaPF.PowerFlowBalance(polar) ∘ ExaPF.Basis(polar) # power flow func
 jx = ExaPF.Jacobian(polar, func, State()) # init AD
 ExaPF.nlsolve!(pf_solver, jx, stack)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Power flow has converged: true
   * #iterations: 7
-  * Time Jacobian (s) ........: 0.5754
+  * Time Jacobian (s) ........: 0.5741
   * Time linear solver (s) ...: 0.0185
      * update (s) ............: 0.0160
-     * ldiv (s) ..............: 0.0024
-  * Time total (s) ...........: 0.5974
+     * ldiv (s) ..............: 0.0025
+  * Time total (s) ...........: 0.5961
 </code></pre><p>We observe KLU reduces considerably the time spent in the linear solver.</p><h2 id="cuDSS-(CUDA,-default)"><a class="docs-heading-anchor" href="#cuDSS-(CUDA,-default)">cuDSS (CUDA, default)</a><a id="cuDSS-(CUDA,-default)-1"></a><a class="docs-heading-anchor-permalink" href="#cuDSS-(CUDA,-default)" title="Permalink"></a></h2><p><a href="https://developer.nvidia.com/cudss">cuDSS</a> is collection of direct sparse solvers implemented in CUDA.</p><pre><code class="language-julia hljs">using CUDSS</code></pre><p>We first have to instantiate everything on the GPU:</p><pre><code class="language-julia hljs">using CUDA
 polar_gpu = ExaPF.load_polar(&quot;case9241pegase.m&quot;, CUDABackend())
 stack_gpu = ExaPF.NetworkStack(polar_gpu)
@@ -18,9 +18,9 @@ func_gpu = ExaPF.PowerFlowBalance(polar_gpu) ∘ ExaPF.Basis(polar_gpu)
 jx_gpu = ExaPF.Jacobian(polar_gpu, func_gpu, State()) # init AD</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">A AutoDiff Jacobian for ExaPF.ComposedExpressions{ExaPF.Basis{CuArray{Int64, 1}, CUDA.CUSPARSE.CuSparseMatrixCSR{Float64, Int32}}, ExaPF.PowerFlowBalance{CuArray{Float64, 1}, CUDA.CUSPARSE.CuSparseMatrixCSR{Float64, Int32}}}(Basis (AbstractExpression), PowerFlowBalance (AbstractExpression))
 Number of Jacobian colors: 85</code></pre><p>Then, we are able to solve the power flow <em>entirely on the GPU</em>, simply as</p><pre><code class="language-julia hljs">ExaPF.nlsolve!(pf_solver, jx_gpu, stack_gpu)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Power flow has converged: true
   * #iterations: 7
-  * Time Jacobian (s) ........: 1.2484
-  * Time linear solver (s) ...: 0.0088
-     * update (s) ............: 0.0049
-     * ldiv (s) ..............: 0.0039
-  * Time total (s) ...........: 1.2596
-</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../quickstart/">« Quick start</a><a class="docs-footer-nextpage" href="../batch_evaluation/">Power flow: batch evaluation »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Monday 26 January 2026 13:43">Monday 26 January 2026</span>. Using Julia version 1.10.10.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+  * Time Jacobian (s) ........: 1.1494
+  * Time linear solver (s) ...: 0.0076
+     * update (s) ............: 0.0046
+     * ldiv (s) ..............: 0.0030
+  * Time total (s) ...........: 1.1584
+</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../quickstart/">« Quick start</a><a class="docs-footer-nextpage" href="../batch_evaluation/">Power flow: batch evaluation »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Monday 26 January 2026 14:02">Monday 26 January 2026</span>. Using Julia version 1.10.10.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
