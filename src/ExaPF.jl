@@ -735,10 +735,11 @@ function run_pf_batched_with_qlim(
     set_params!(blk_stack, ploads, qloads)
 
     # Set the solutions from individual scenarios
+    # Use copyto! to handle CPU-to-GPU transfers properly
     for s in 1:nscen
         offset = (s - 1) * nbus
-        blk_stack.vmag[offset+1:offset+nbus] .= all_vmag[:, s]
-        blk_stack.vang[offset+1:offset+nbus] .= all_vang[:, s]
+        copyto!(view(blk_stack.vmag, offset+1:offset+nbus), all_vmag[:, s])
+        copyto!(view(blk_stack.vang, offset+1:offset+nbus), all_vang[:, s])
     end
 
     # Create Jacobian and other structures (for API consistency)
