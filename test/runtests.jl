@@ -69,6 +69,14 @@ init_time = time()
     end
     println()
 
+    @testset "Q Limit Enforcement" begin
+        @info "Test Q limit enforcement ..."
+        tic = time()
+        include("Polar/qlimits.jl")
+        println("Took $(round(time() - tic; digits=1)) seconds.")
+    end
+    println()
+
     include("quickstart.jl")
 
     @testset "Benchmark" begin
