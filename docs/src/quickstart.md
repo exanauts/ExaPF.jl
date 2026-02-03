@@ -141,6 +141,35 @@ result = run_pf(datafile;
 )
 ```
 
+### Batched power flow with Q limit enforcement
+
+Q limit enforcement is also supported for batched power flow scenarios.
+When using the `:block_polar` formulation with `enforce_q_limits=true`,
+each scenario is solved independently with its own Q limit enforcement.
+This is because different scenarios with different loads may have different
+buses hitting their Q limits.
+
+```@repl quickstart
+nscen_qlim = 5
+ploads_qlim = repeat(pload, 1, nscen_qlim)
+qloads_qlim = repeat(qload, 1, nscen_qlim)
+result_batch_qlim = run_pf(datafile, CPU(), :block_polar, nscen_qlim, ploads_qlim, qloads_qlim;
+                           enforce_q_limits=true, verbose=0)
+ExaPF.is_qlimit_converged(result_batch_qlim)
+```
+
+For detailed per-scenario results, you can use the lower-level API directly:
+```julia
+# Get per-scenario Q limit results
+prob, batched_result = ExaPF.run_pf_batched_with_qlim(
+    datafile, CPU(), nscen, ploads, qloads
+)
+
+# Access individual scenario results
+batched_result.converged         # Vector of per-scenario convergence status
+batched_result.results[1]        # QLimitEnforcementResult for scenario 1
+```
+
 ## Detailed version
 
 In what follows, we detail step by step the detailed procedure to solve

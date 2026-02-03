@@ -70,6 +70,7 @@ BatchedQLimitResult
 ### Q Limit Functions
 ```@docs
 run_pf_with_qlim
+run_pf_batched_with_qlim
 compute_generator_reactive_power
 compute_bus_reactive_power
 check_q_violations

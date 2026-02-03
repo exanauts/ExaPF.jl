@@ -42,7 +42,7 @@ export QLimitStatus, QLimitEnforcementResult, BatchedQLimitResult
 export compute_generator_reactive_power, compute_bus_reactive_power, check_q_violations
 export get_reactive_power_limits, get_generator_reactive_power, get_qlimit_result
 export get_violated_generators, is_qlimit_converged, get_bus_reactive_power, get_generators_at_limit
-export run_pf_with_qlim
+export run_pf_with_qlim, run_pf_batched_with_qlim
 
 """
     PowerFlowProblem
@@ -387,8 +387,13 @@ function run_pf(
                 rtol=rtol, max_iter=max_iter, verbose=verbose,
                 max_outer_iter=max_outer_iter, q_tol=q_tol
             )
-        else
-            @warn "Q limit enforcement for :block_polar formulation not yet implemented. Running standard power flow."
+        elseif formulation == :block_polar
+            prob, _ = run_pf_batched_with_qlim(
+                datafile, backend, nscen, ploads, qloads;
+                rtol=rtol, max_iter=max_iter, verbose=verbose,
+                max_outer_iter=max_outer_iter, q_tol=q_tol
+            )
+            return prob
         end
     end
 
@@ -625,6 +630,273 @@ function _create_qlim_problem(
     # PowerFlowProblem struct includes qlim_result field
     return PowerFlowProblem(
         polar, stack, powerflow, linear_solver, solver, mapx, jac, conv, backend, qlim_result
+    )
+end
+
+"""
+    run_pf_batched_with_qlim(datafile, backend, nscen, ploads, qloads;
+                             rtol=1e-8, max_iter=20, max_outer_iter=10, verbose=0, q_tol=1e-6)
+
+Run batched power flow with reactive power limit enforcement for multiple scenarios.
+
+Each scenario is solved independently with its own Q limit enforcement, since different
+scenarios may have different buses hitting Q limits due to different load conditions.
+
+# Arguments
+- `datafile::String`: Path to network data file
+- `backend::KA.Backend`: Computation backend
+- `nscen::Int`: Number of scenarios
+- `ploads`: Active power loads matrix (nbus × nscen)
+- `qloads`: Reactive power loads matrix (nbus × nscen)
+
+# Keyword Arguments
+- `rtol=1e-8`: Newton-Raphson convergence tolerance
+- `max_iter=20`: Maximum Newton-Raphson iterations per solve
+- `max_outer_iter=10`: Maximum Q limit enforcement iterations per scenario
+- `verbose=0`: Verbosity level
+- `q_tol=1e-6`: Tolerance for Q limit violation detection
+
+# Returns
+- `PowerFlowProblem`: Problem containing batched results with Q limit information
+"""
+function run_pf_batched_with_qlim(
+    datafile::String,
+    backend::KA.Backend,
+    nscen::Int,
+    ploads,
+    qloads;
+    rtol::Float64=1e-8,
+    max_iter::Int=20,
+    max_outer_iter::Int=10,
+    verbose::Int=0,
+    q_tol::Float64=1e-6
+)
+    network = PS.PowerNetwork(datafile)
+    nbus = network.nbus
+    ngen = network.ngen
+
+    @assert nscen > 1 "nscen must be greater than 1 for batched power flow"
+
+    # Validate load matrices
+    if isnothing(ploads) || isnothing(qloads)
+        error("ploads and qloads must be provided for batched Q-limited power flow")
+    end
+    @assert size(ploads, 1) == nbus "ploads must have $nbus rows (one per bus)"
+    @assert size(qloads, 1) == nbus "qloads must have $nbus rows (one per bus)"
+    @assert size(ploads, 2) == nscen "ploads must have $nscen columns (one per scenario)"
+    @assert size(qloads, 2) == nscen "qloads must have $nscen columns (one per scenario)"
+
+    # Storage for results
+    scenario_results = Vector{QLimitEnforcementResult}(undef, nscen)
+    scenario_converged = Vector{Bool}(undef, nscen)
+
+    # Storage for solution values
+    all_vmag = zeros(nbus, nscen)
+    all_vang = zeros(nbus, nscen)
+
+    verbose >= 1 && println("Running $nscen scenarios with Q limit enforcement...")
+
+    # Solve each scenario independently
+    for s in 1:nscen
+        verbose >= 2 && println("  Scenario $s/$nscen")
+
+        # Extract loads for this scenario
+        pload_s = ploads[:, s]
+        qload_s = qloads[:, s]
+
+        # Run Q-limited power flow for this scenario
+        prob_s = _run_single_scenario_with_qlim(
+            network, backend, pload_s, qload_s;
+            rtol=rtol, max_iter=max_iter, max_outer_iter=max_outer_iter,
+            verbose=max(0, verbose - 1), q_tol=q_tol
+        )
+
+        # Store results
+        scenario_results[s] = prob_s.qlim_result
+        scenario_converged[s] = is_qlimit_converged(prob_s) && prob_s.conv.has_converged
+
+        # Store solution
+        all_vmag[:, s] = Array(prob_s.stack.vmag)
+        all_vang[:, s] = Array(prob_s.stack.vang)
+    end
+
+    n_converged = sum(scenario_converged)
+    verbose >= 1 && println("Batched Q-limit enforcement complete: $n_converged/$nscen scenarios converged")
+
+    # Create a BatchedQLimitResult
+    batched_qlim = BatchedQLimitResult(scenario_converged, scenario_results)
+
+    # Create a block polar formulation for the final result (without re-solving)
+    form = ExaPF.load_polar(datafile, backend)
+    blk_form = BlockPolarForm(form, nscen)
+    blk_stack = NetworkStack(blk_form)
+
+    # Set the loads
+    set_params!(blk_stack, ploads, qloads)
+
+    # Set the solutions from individual scenarios
+    for s in 1:nscen
+        offset = (s - 1) * nbus
+        blk_stack.vmag[offset+1:offset+nbus] .= all_vmag[:, s]
+        blk_stack.vang[offset+1:offset+nbus] .= all_vang[:, s]
+    end
+
+    # Create Jacobian and other structures (for API consistency)
+    blk_powerflow = PowerFlowBalance(blk_form) ∘ Basis(blk_form)
+    blk_jac = BatchJacobian(blk_form, blk_powerflow, State())
+    set_params!(blk_jac, blk_stack)
+    jacobian!(blk_jac, blk_stack)  # Compute Jacobian values
+
+    mapx = mapping(form, State())
+    linear_solver = default_linear_solver(blk_jac.J; nblocks=nscen)
+    nlsolver = NewtonRaphson(tol=rtol, maxiter=max_iter, verbose=verbose)
+
+    # Create overall convergence status
+    overall_converged = all(scenario_converged)
+    total_iterations = sum(r.n_total_pf_iterations for r in scenario_results)
+    conv = ConvergenceStatus(overall_converged, total_iterations, 0.0, 0, 0.0, 0.0, 0.0, 0.0)
+
+    # Create a combined QLimitEnforcementResult for the problem
+    # (aggregating all scenarios)
+    all_violations = QLimitStatus[]
+    all_final_q = Float64[]
+    total_outer_iters = 0
+    for (s, r) in enumerate(scenario_results)
+        append!(all_violations, r.violated_generators)
+        append!(all_final_q, r.final_q_values)
+        total_outer_iters = max(total_outer_iters, r.n_outer_iterations)
+    end
+
+    combined_qlim = QLimitEnforcementResult(
+        overall_converged,
+        total_outer_iters,
+        total_iterations,
+        all_violations,
+        all_final_q
+    )
+
+    # Return PowerFlowProblem with batched Q limit result
+    prob = PowerFlowProblem(
+        blk_form, blk_stack, blk_powerflow, linear_solver, nlsolver,
+        mapx, blk_jac, conv, backend, combined_qlim
+    )
+
+    return prob, batched_qlim
+end
+
+"""
+Helper function to run a single scenario with Q limit enforcement and custom loads.
+"""
+function _run_single_scenario_with_qlim(
+    original_network::PS.PowerNetwork,
+    backend::KA.Backend,
+    pload::Vector{Float64},
+    qload::Vector{Float64};
+    rtol::Float64=1e-8,
+    max_iter::Int=20,
+    max_outer_iter::Int=10,
+    verbose::Int=0,
+    q_tol::Float64=1e-6
+)
+    current_network = original_network
+
+    # Track modifications
+    pv_to_pq = Int[]
+    q_fixed = Dict{Int, Float64}()
+    all_violations = QLimitStatus[]
+    total_iterations = 0
+    current_bustype = copy(original_network.bustype)
+
+    for outer_iter in 1:max_outer_iter
+        # Create formulation and solve
+        polar = PolarForm(current_network, backend)
+        stack = NetworkStack(polar)
+
+        # Set custom loads for this scenario
+        copyto!(stack.pload, pload)
+        copyto!(stack.qload, qload)
+
+        powerflow = PowerFlowBalance(polar) ∘ Basis(polar)
+        mapx = mapping(polar, State())
+        jac = Jacobian(polar, powerflow, mapx)
+        set_params!(jac, stack)
+
+        solver = NewtonRaphson(; maxiter=max_iter, tol=rtol, verbose=verbose)
+        conv = nlsolve!(solver, jac, stack)
+        total_iterations += conv.n_iterations
+
+        if !conv.has_converged
+            verbose >= 1 && println("Power flow did not converge at outer iteration $outer_iter")
+            qgen = compute_generator_reactive_power(polar, stack)
+            return _create_qlim_problem(
+                current_network, backend, polar, stack, jac, solver, conv,
+                QLimitEnforcementResult(false, outer_iter, total_iterations, all_violations, qgen),
+                rtol, max_iter, verbose
+            )
+        end
+
+        # Check for Q limit violations
+        violations = check_q_violations(polar, stack, current_bustype; tol=q_tol)
+
+        if isempty(violations)
+            # No violations - converged successfully
+            verbose >= 1 && println("Q-limit enforcement converged after $outer_iter iteration(s)")
+            qgen = compute_generator_reactive_power(polar, stack)
+            return _create_qlim_problem(
+                current_network, backend, polar, stack, jac, solver, conv,
+                QLimitEnforcementResult(true, outer_iter, total_iterations, all_violations, qgen),
+                rtol, max_iter, verbose
+            )
+        end
+
+        verbose >= 1 && println("Q-limit iteration $outer_iter: $(length(violations)) violation(s)")
+
+        # Process violations
+        for v in violations
+            push!(all_violations, v)
+            bus = v.bus_idx
+
+            # Skip reference bus
+            if current_bustype[bus] == PS.REF_BUS_TYPE
+                @warn "Generator $(v.gen_idx) at reference bus $bus hit Q limit - cannot convert"
+                continue
+            end
+
+            if !(bus in pv_to_pq)
+                push!(pv_to_pq, bus)
+                current_bustype[bus] = PS.PQ_BUS_TYPE
+            end
+
+            # Aggregate Q for buses with multiple generators
+            q_at_bus = get(q_fixed, bus, 0.0)
+            q_fixed[bus] = q_at_bus + v.q_limit
+        end
+
+        # Rebuild network with modified bus types
+        current_network = modify_bus_types(original_network, pv_to_pq, q_fixed)
+    end
+
+    # Max iterations reached without full convergence
+    verbose >= 1 && println("Q-limit enforcement reached max iterations ($max_outer_iter)")
+    polar = PolarForm(current_network, backend)
+    stack = NetworkStack(polar)
+
+    # Set custom loads
+    copyto!(stack.pload, pload)
+    copyto!(stack.qload, qload)
+
+    powerflow = PowerFlowBalance(polar) ∘ Basis(polar)
+    mapx = mapping(polar, State())
+    jac = Jacobian(polar, powerflow, mapx)
+    set_params!(jac, stack)
+    solver = NewtonRaphson(; maxiter=max_iter, tol=rtol, verbose=verbose)
+    conv = nlsolve!(solver, jac, stack)
+
+    qgen = compute_generator_reactive_power(polar, stack)
+    return _create_qlim_problem(
+        current_network, backend, polar, stack, jac, solver, conv,
+        QLimitEnforcementResult(false, max_outer_iter, total_iterations, all_violations, qgen),
+        rtol, max_iter, verbose
     )
 end
 
