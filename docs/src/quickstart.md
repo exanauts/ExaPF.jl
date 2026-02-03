@@ -94,6 +94,82 @@ This compact syntax allows to solve quickly any powerflow equations
 in a few lines of code. However, in most cases, the user may want more
 coarse-grained control on the different objects manipulated.
 
+### Power flow with reactive power limit enforcement
+
+In real power systems, generators have reactive power (Q) limits. When running
+a standard power flow, these limits may be violated. ExaPF implements Q limit
+enforcement using an iterative approach similar to PandaPower:
+
+1. Run standard power flow (no limits)
+2. Check for Q limit violations at PV buses
+3. Convert violated PV buses to PQ buses (fix Q at the limit)
+4. Re-run power flow with modified bus types
+5. Repeat until no violations or max iterations reached
+
+To enable Q limit enforcement, simply use the `enforce_q_limits` parameter:
+```@repl quickstart
+result_qlim = run_pf(datafile; enforce_q_limits=true, verbose=1)
+```
+
+You can access the Q limit enforcement results:
+```@repl quickstart
+# Check if Q-limited power flow converged
+ExaPF.is_qlimit_converged(result_qlim)
+
+# Get the Q limit enforcement result
+qlim_result = ExaPF.get_qlimit_result(result_qlim)
+
+# Get generators that violated their limits (if any)
+violated = ExaPF.get_violated_generators(result_qlim)
+
+# Get final reactive power output for all generators
+qgen = ExaPF.get_generator_reactive_power(result_qlim)
+
+# Get reactive power limits
+q_min, q_max = ExaPF.get_reactive_power_limits(result_qlim)
+
+# Check which generators are at their limits
+at_qmin, at_qmax = ExaPF.get_generators_at_limit(result_qlim)
+```
+
+The Q limit enforcement can also be configured with additional parameters:
+```julia
+result = run_pf(datafile;
+    enforce_q_limits=true,
+    max_outer_iter=15,      # Maximum Q limit enforcement iterations
+    q_tol=1e-5              # Tolerance for Q limit violation detection
+)
+```
+
+### Batched power flow with Q limit enforcement
+
+Q limit enforcement is also supported for batched power flow scenarios.
+When using the `:block_polar` formulation with `enforce_q_limits=true`,
+each scenario is solved independently with its own Q limit enforcement.
+This is because different scenarios with different loads may have different
+buses hitting their Q limits.
+
+```@repl quickstart
+nscen_qlim = 5
+ploads_qlim = repeat(pload, 1, nscen_qlim)
+qloads_qlim = repeat(qload, 1, nscen_qlim)
+result_batch_qlim = run_pf(datafile, CPU(), :block_polar, nscen_qlim, ploads_qlim, qloads_qlim;
+                           enforce_q_limits=true, verbose=0)
+ExaPF.is_qlimit_converged(result_batch_qlim)
+```
+
+For detailed per-scenario results, you can use the lower-level API directly:
+```julia
+# Get per-scenario Q limit results
+prob, batched_result = ExaPF.run_pf_batched_with_qlim(
+    datafile, CPU(), nscen, ploads, qloads
+)
+
+# Access individual scenario results
+batched_result.converged         # Vector of per-scenario convergence status
+batched_result.results[1]        # QLimitEnforcementResult for scenario 1
+```
+
 ## Detailed version
 
 In what follows, we detail step by step the detailed procedure to solve
