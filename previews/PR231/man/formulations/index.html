@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Polar formulation · ExaPF.jl</title><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.039/juliamono-regular.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><script src="../../../copy.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">ExaPF.jl</a></span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../quickstart/">Quick start</a></li><li><span class="tocitem">Manual</span><ul><li class="is-active"><a class="tocitem" href>Polar formulation</a><ul class="internal"><li><a class="tocitem" href="#Power-flow-model"><span>Power flow model</span></a></li><li><a class="tocitem" href="#Implementation"><span>Implementation</span></a></li></ul></li><li><a class="tocitem" href="../powersystem/">PowerSystem</a></li><li><a class="tocitem" href="../autodiff/">AutoDiff</a></li><li><a class="tocitem" href="../linearsolver/">Linear Solvers</a></li><li><a class="tocitem" href="../benchmark/">Benchmark</a></li></ul></li><li><span class="tocitem">Library</span><ul><li><a class="tocitem" href="../../lib/formulations/">Polar formulation</a></li><li><a class="tocitem" href="../../lib/powersystem/">PowerSystem</a></li><li><a class="tocitem" href="../../lib/autodiff/">AutoDiff</a></li><li><a class="tocitem" href="../../lib/linearsolver/">Linear Solvers</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Manual</a></li><li class="is-active"><a href>Polar formulation</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Polar formulation</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/exanauts/ExaPF.jl/blob/master/docs/src/man/formulations.md#" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Formulations"><a class="docs-heading-anchor" href="#Formulations">Formulations</a><a id="Formulations-1"></a><a class="docs-heading-anchor-permalink" href="#Formulations" title="Permalink"></a></h1><p>ExaPF&#39;s formalism is based on a vectorized formulation of the power flow problem, as introduced in <a href="https://arxiv.org/abs/1906.09483">Lee, Turitsyn, Molzahn, Roald (2020)</a>. Throughout this page, we will refer to this formulation as <strong>LTMR2020</strong>. It is equivalent to the classical polar formulation of the OPF.</p><p>In what follows, we denote by <span>$v \in \mathbb{R}^{n_b}$</span> the voltage magnitudes, <span>$\theta \in \mathbb{R}^{n_b}$</span> the voltage angles and <span>$p_g, q_g \in \mathbb{R}^{n_g}$</span> the active and reactive power generations. The active and reactive loads are denoted respectively by <span>$p_d, q_d \in \mathbb{R}^{n_b}$</span>.</p><h2 id="Power-flow-model"><a class="docs-heading-anchor" href="#Power-flow-model">Power flow model</a><a id="Power-flow-model-1"></a><a class="docs-heading-anchor-permalink" href="#Power-flow-model" title="Permalink"></a></h2><p>The idea is to factorize all nonlinearities inside a basis function depending both on the voltage magnitudes <span>$v$</span> and voltage angles <span>$\theta$</span>, such that <span>$\psi: \mathbb{R}^{n_b} \times \mathbb{R}^{n_b} \to \mathbb{R}^{2n_\ell + n_b}$</span>. If we introduce the intermediate expressions</p><p class="math-container">\[    \psi_\ell^C(v, \theta) = v^f  v^t  \cos(\theta_f - \theta_t) \quad \forall \ell = 1, \cdots, n_\ell \\
+    \psi_\ell^S(v, \theta) = v^f  v^t  \sin(\theta_f - \theta_t) \quad \forall \ell = 1, \cdots, n_\ell \\
+    \psi_k(v, \theta) = v_k^2 \quad \forall k = 1, \cdots, n_b\]</p><p>the basis <span>$\psi$</span> is defined as</p><p class="math-container">\[    \psi(v, \theta) = [\psi_\ell^C(v, \theta)^\top ~ \psi_\ell^S(v, \theta)^\top ~ \psi_k(v, \theta)^\top ] \, .\]</p><p>The basis <span>$\psi$</span> encodes all the nonlinearities in the problem. For instance, the power flow equations rewrite directly as</p><p class="math-container">\[    \begin{bmatrix}
+    C_g p_g - p_d \\
+    C_g q_g - q_d
+    \end{bmatrix}
+    +
+    \underbrace{
+    \begin{bmatrix}
+    - \hat{G}^c &amp; - \hat{B}^s &amp; -G^d \\
+     \hat{B}^c &amp; - \hat{G}^s &amp; B^d
+    \end{bmatrix}
+    }_{M}
+    \psi(v, \theta)
+    = 0\]</p><p>with <span>$C_g \in \mathbb{R}^{n_b \times n_g}$</span> the bus-generators incidence matrix, and the matrices <span>$B, G$</span> defined from the admittance matrix <span>$Y_b$</span> of the network.</p><p>Similarly, the line flows rewrite</p><p class="math-container">\[    \begin{bmatrix}
+    s_p^f \\ s_q^f
+    \end{bmatrix}
+    =
+    \overbrace{
+    \begin{bmatrix}
+    G_{ft} &amp; B_{ft} &amp; G_{ff} C_f^\top \\
+    -B_{ft} &amp; G_{ft} &amp; -B_{ff} C_f^\top
+    \end{bmatrix}
+    }^{L_{line}^f}
+    \psi(v, \theta) \\
+    \begin{bmatrix}
+    s_p^t \\ s_q^t
+    \end{bmatrix}
+    =
+    \underbrace{
+    \begin{bmatrix}
+    G_{tf} &amp; B_{tf} &amp; G_{tt} C_t^\top \\
+    -B_{tf} &amp; G_{tf} &amp; -B_{tt} C_t^\top
+    \end{bmatrix}
+    }_{L_{line}^t}
+    \psi(v, \theta)\]</p><p>with <span>$C_f \in \mathbb{R}^{n_b \times n_\ell}$</span> the bus-from incidence matrix and <span>$C_t \in \mathbb{R}^{n_b \times n_\ell}$</span> the bus-to incidence matrix. Then, the line flows constraints write directly with the quadratic expressions:</p><p class="math-container">\[    (s_p^f)^2 + (s_q^f)^2 \leq (s^{max})^2 \quad \, ,
+    (s_p^t)^2 + (s_q^t)^2 \leq (s^{max})^2 \quad \, .\]</p><h3 id="Why-is-this-model-advantageous?"><a class="docs-heading-anchor" href="#Why-is-this-model-advantageous?">Why is this model advantageous?</a><a id="Why-is-this-model-advantageous?-1"></a><a class="docs-heading-anchor-permalink" href="#Why-is-this-model-advantageous?" title="Permalink"></a></h3><p>Implementing the model <strong>LTMR2020</strong> is not difficult once the basis function <span>$\psi$</span> has been defined. Indeed, if we select a subset of the power flow equations (as usual, associated to the active injections at PV nodes, and active and reactive injections at PQ nodes), we get</p><p class="math-container">\[    C_{eq} p_g + M_{eq} \psi + \tau = 0\]</p><p>with <span>$C_{eq}$</span> defined from the bus-generator incidence matrix <span>$C_g$</span>, <span>$M_{eq}$</span> a subset of the matrix <span>$M$</span>, <span>$\tau$</span> a constant depending on the loads in the problem. Note that <span>$C_{eq}$</span> and <span>$M_{eq}$</span> are sparse matrices, so the expression can be implemented efficiently with sparse linear algebra operations (2 SpMV operations, 2 vector additions). The same holds true for the line flow constraints, evaluated with 2 SpMV operations:</p><p class="math-container">\[    s^f = L_{line}^f \psi \, , \quad
+    s^t = L_{line}^t \psi \, .\]</p><p>In ExaPF, all nonlinear expressions are written as linear operations depending on the nonlinear basis <span>$\psi$</span>. By doing so, all the unstructured sparsity of the power flow problem is directly handled inside the sparse linear algebra library (<code>cusparse</code> on CUDA GPU, <code>SuiteSparse</code> on the CPU).</p><p>In what follows, we detail the implementation of the <strong>LTMR2020</strong> model in ExaPF.</p><h2 id="Implementation"><a class="docs-heading-anchor" href="#Implementation">Implementation</a><a id="Implementation-1"></a><a class="docs-heading-anchor-permalink" href="#Implementation" title="Permalink"></a></h2><p>We have implemented the LTMR2020 model in ExaPF, both on the CPU and on CUDA GPU. All the operations have been rewritten in a vectorized fashion. Every model depends on <em>inputs</em> we propagate forward with <em>functions</em>. In ExaPF, the inputs will be specified in a <code>NetworkStack &lt;: AbstractStack</code>. The functions will be implemented as <code>AbstractExpressions</code>.</p><h3 id="Specifying-inputs-in-NetworkStack"><a class="docs-heading-anchor" href="#Specifying-inputs-in-NetworkStack">Specifying inputs in <code>NetworkStack</code></a><a id="Specifying-inputs-in-NetworkStack-1"></a><a class="docs-heading-anchor-permalink" href="#Specifying-inputs-in-NetworkStack" title="Permalink"></a></h3><p>Our three inputs are <span>$(v, \theta, p_g) \in \mathbb{R}^{2n_b + n_g}$</span> (voltage magnitude, voltage angle, power generations). The basis <span>$\psi$</span> is considered as an intermediate expression.</p><p>We store all inputs in a <code>NetworkStack</code> structure:</p><pre><code class="language-julia hljs">struct NetworkStack{VT} &lt;: AbstractStack
+    input::VT
+    vmag::VT # voltage magnitudes (view)
+    vang::VT # voltage angles (view)
+    pgen::VT # active power generations (view)
+    ψ::VT    # nonlinear basis ψ(vmag, vang)
+end</code></pre><p>All the inputs are specified in the vector <code>input</code>. The three vectors <code>vmag</code>, <code>vang</code> and <code>pgen</code> are views porting on <code>input</code>, and are defined mostly for convenience. By convention the vector <code>input</code> is ordered as <code>[vmag; vang; pgen]</code>:</p><pre><code class="language-julia hljs"># Define dimension of the problem
+julia&gt; nbus, ngen, nlines = 3, 2, 4
+# Instantiate stack
+julia&gt; stack = ExaPF.NetworkStack(nbus, ngen, nlines, Vector{Float64});
+
+# Look at values in input
+julia&gt; stack.input&#39;
+1×8 adjoint(::Vector{Float64}) with eltype Float64:
+ 0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0
+
+# Modify values in views
+julia&gt; stack.vmag .= 1
+julia&gt; stack.vang .= 2
+julia&gt; stack.pgen .= 3
+# Look again at the values in input:
+julia&gt; stack.input&#39;
+1×8 adjoint(::Vector{Float64}) with eltype Float64:
+ 1.0  1.0  1.0  2.0  2.0  2.0  3.0  3.0</code></pre><p>The basis vector <code>ψ</code> is an intermediate expression, whose values depend on the inputs.</p><h3 id="Defining-a-state-and-a-control"><a class="docs-heading-anchor" href="#Defining-a-state-and-a-control">Defining a state and a control</a><a id="Defining-a-state-and-a-control-1"></a><a class="docs-heading-anchor-permalink" href="#Defining-a-state-and-a-control" title="Permalink"></a></h3><p>In the reduced space method, we have to split the variables in a <em>state</em> <span>$x$</span> and a <em>control</em> <span>$u$</span>. By default, we define</p><p class="math-container">\[    x = (\theta_{pv}, \theta_{pq}, v_{pq}) \, , \quad
+    x = (v_{ref}, v_{pv}, p_{g,genpv}) \,.\]</p><p>and the control, and was not flexible. In the new implementation, we define the state and the control as two <em>mappings</em> porting on the vector <code>stack.input</code> (which itself stores all the inputs in the problem):</p><pre><code class="language-julia hljs"># Define dimension of the problem
+julia&gt; nbus, ngen, nlines = 4, 3, 4
+# Instantiate stack
+julia&gt; stack = ExaPF.NetworkStack(nbus, ngen, nlines, Vector{Float64});
+# Define pv, pq, genpv
+julia&gt; ref, pv, pq, genpv = [1], [2], [3, 4], [2, 3]
+# Define state as a mapping on stack.input
+# Remember that ordering of input is [vmag, vang, pgen]!
+julia&gt; mapx = [nbus .+ pv; nbus .+ pq; pq]
+julia&gt; mapu = [ref; pv; genpv]
+# Load values for state and control
+julia&gt; x = @view stack.input[mapx]
+julia&gt; u = @view stack.input[mapu]</code></pre><p>By doing so, the values of the state and the control are directly stored inside the <code>NetworkStack</code> structure, avoiding to duplicate values in the memory.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../quickstart/">« Quick start</a><a class="docs-footer-nextpage" href="../powersystem/">PowerSystem »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.12 on <span class="colophon-date" title="Monday 21 February 2022 20:50">Monday 21 February 2022</span>. Using Julia version 1.6.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
