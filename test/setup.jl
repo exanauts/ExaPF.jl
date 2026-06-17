@@ -9,7 +9,7 @@ is_package_installed(name::String) = !isnothing(Base.find_package(name))
 const CUDA_AVAILABLE = is_package_installed("CUDA")
 if CUDA_AVAILABLE
     @eval using CUDA
-    @eval using CUDA.CUSPARSE
+    @eval using CUDA.cuSPARSE
     CUDA.allowscalar(false)
     CUDA.versioninfo()
 end

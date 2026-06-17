@@ -11,7 +11,7 @@ function ExaPF.PolarFormRecourse(pf::PS.PowerNetwork, backend::CUDABackend, k::I
 end
 
 ExaPF.default_sparse_matrix(::CUDABackend) = CuSparseMatrixCSR{Float64, Int32}
-ExaPF.xnorm(x::CUDA.CuVector) = CUBLAS.nrm2(x)
+ExaPF.xnorm(x::CUDA.CuVector) = cuBLAS.nrm2(x)
 
 function ExaPF.get_jacobian_types(::CUDABackend)
     SMT = CuSparseMatrixCSR{Float64, Int32}
@@ -25,7 +25,7 @@ function Base.unsafe_wrap(Atype::Type{CUDA.CuArray{T, 1, CUDA.DeviceMemory}},
     unsafe_wrap(CUDA.CuVector{T}, p, (dim,); own, ctx)
 end
 
-CUSPARSE.CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti <: Integer} = CuSparseMatrixCSR(A)
+cuSPARSE.CuSparseMatrixCSR{Tv, Int32}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti <: Integer} = CuSparseMatrixCSR(A)
 
 
 # AbstractStack
@@ -58,35 +58,35 @@ function ExaPF.ForwardDiff.npartials(vec::CuArray{ForwardDiff.Dual{T, V, N}}) wh
 end
 
 function _transpose_descriptor(x::DenseCuMatrix)
-    desc_ref = Ref{CUSPARSE.cusparseDnMatDescr_t}()
+    desc_ref = Ref{cuSPARSE.cusparseDnMatDescr_t}()
     n, m = size(x)
-    CUSPARSE.cusparseCreateDnMat(desc_ref, n, m, m, x, eltype(x), CUSPARSE.CUSPARSE_ORDER_ROW)
+    cuSPARSE.cusparseCreateDnMat(desc_ref, n, m, m, x, eltype(x), cuSPARSE.CUSPARSE_ORDER_ROW)
     return desc_ref[]
 end
 
 function _mm_transposed!(
-    transa::CUSPARSE.SparseChar, transb::CUSPARSE.SparseChar,
+    transa::cuSPARSE.SparseChar, transb::cuSPARSE.SparseChar,
     alpha::Number, A::CuSparseMatrixCSR{T},
     B::DenseCuMatrix{T}, beta::Number, C::DenseCuMatrix{T},
-    index::CUSPARSE.SparseChar, algo=CUSPARSE.CUSPARSE_SPMM_ALG_DEFAULT,
+    index::cuSPARSE.SparseChar, algo=cuSPARSE.CUSPARSE_SPMM_ALG_DEFAULT,
 ) where {T}
     m,k = size(A)
     n = size(C)[2]
 
-    descA = CUSPARSE.CuSparseMatrixDescriptor(A, index)
+    descA = cuSPARSE.CuSparseMatrixDescriptor(A, index)
     descB = _transpose_descriptor(B)
     descC = _transpose_descriptor(C)
 
     function bufferSize()
         out = Ref{Csize_t}()
-        CUSPARSE.cusparseSpMM_bufferSize(
-            CUSPARSE.handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
+        cuSPARSE.cusparseSpMM_bufferSize(
+            cuSPARSE.handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
             descC, T, algo, out)
         return out[]
     end
-    CUSPARSE.with_workspace(bufferSize) do buffer
-        CUSPARSE.cusparseSpMM(
-            CUSPARSE.handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
+    cuSPARSE.with_workspace(bufferSize) do buffer
+        cuSPARSE.cusparseSpMM(
+            cuSPARSE.handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
             descC, T, algo, buffer)
     end
 
@@ -95,7 +95,7 @@ end
 
 function LinearAlgebra.mul!(
     Y::CuVector{T},
-    A::CUSPARSE.CuSparseMatrixCSR,
+    A::cuSPARSE.CuSparseMatrixCSR,
     X::CuVector{T},
     alpha::Number, beta::Number,
 ) where {T <: ForwardDiff.Dual}
@@ -115,7 +115,7 @@ end
 
 function LinearAlgebra.mul!(
     Y::CuVector{T},
-    A::CUSPARSE.CuSparseMatrixCSR,
+    A::cuSPARSE.CuSparseMatrixCSR,
     X::AbstractVector{Float64},
     alpha::Number, beta::Number,
 ) where {T <: ForwardDiff.Dual}
