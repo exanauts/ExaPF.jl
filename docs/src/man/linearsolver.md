@@ -45,6 +45,6 @@ Subsequently, each diagonal block is treated as dense and inverted to form the b
 Compared to incomplete Cholesky and incomplete LU this preconditioner is easily portable to the GPU if the number of blocks is high enough. `ExaPF.jl` uses the batch BLAS / LAPACK calls from `cuBLAS / cuSOLVER` or `rocBLAS / rocSOLVER` to invert the single blocks.
 
 ```julia
-CUDA.@sync pivot, info = CUDA.CUBLAS.getrf_batched!(blocks, true)
-CUDA.@sync pivot, info, p.cuJs = CUDA.CUBLAS.getri_batched(blocks, pivot)
+CUDA.@sync pivot, info = CUDA.cuBLAS.getrf_batched!(blocks, true)
+CUDA.@sync pivot, info, p.cuJs = CUDA.cuBLAS.getri_batched(blocks, pivot)
 ```
