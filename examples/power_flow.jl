@@ -3,6 +3,8 @@ using SparseArrays
 
 using KernelAbstractions
 
+using Krylov
+using KrylovPreconditioners
 using ExaPF
 const LS = ExaPF.LinearSolvers
 
@@ -43,7 +45,7 @@ noverlap = 0
 V = ExaPF.voltage(stack)
 J = ExaPF.matpower_jacobian(polar, pflow, V)
 J = J[:, mapx]
-precond = LS.BlockJacobiPreconditioner(J, npartitions, localbackend, noverlap)
+precond = BlockJacobiPreconditioner(J, npartitions, localbackend, noverlap)
 
 #=
     Instantiate iterative linear solver

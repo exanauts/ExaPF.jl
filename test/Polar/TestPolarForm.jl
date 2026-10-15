@@ -8,6 +8,8 @@ using LinearAlgebra
 using Random
 using SparseArrays
 
+using Krylov
+using KrylovPreconditioners
 using ExaPF
 import ExaPF: PowerSystem, AutoDiff, LinearSolvers
 

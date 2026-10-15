@@ -11,13 +11,11 @@ using ForwardDiff
 using LinearAlgebra
 using KernelAbstractions
 using SparseArrays
-using KrylovPreconditioners
 
 const KA = KernelAbstractions
 const LS = ExaPF.LinearSolvers
 const PS = ExaPF.PowerSystem
 const AD = ExaPF.AutoDiff
-const KP = KrylovPreconditioners
 
 import ..ExaPF.AD: AbstractJacobian
 
@@ -47,7 +45,6 @@ function LS.DirectSolver(J::CuSparseMatrixCSR; nblocks::Int=1, kwargs...)
     return ds
 end
 
-LS.update!(is::ExaPF.LS.AbstractIterativeLinearSolver, J::CuSparseMatrixCSR) = KP.update!(is.precond, J)
 LS.update!(ds::ExaPF.LS.DirectSolver, J::CuSparseMatrixCSR) = lu!(ds.factorization, J)
 LS._get_type(J::CuSparseMatrixCSR) = CuArray{Float64, 1, CUDA.DeviceMemory}
 
@@ -57,16 +54,15 @@ end
 
 ExaPF._iscsr(::CuSparseMatrixCSR) = true
 ExaPF._iscsc(::CuSparseMatrixCSR) = false
-function LS.scaling!(::LS.Bicgstab, A::CuSparseMatrixCSR, b)
-    KP.scaling_csr!(A,b)
-end
 
 """
     list_solvers(::CUDABackend)
 
 List all linear solvers available for solving the (batch) power flow on an NVIDIA GPU.
 """
-ExaPF.list_solvers(::CUDABackend) = [LS.DirectSolver, LS.Dqgmres, LS.Bicgstab]
+function ExaPF.list_solvers(::CUDABackend)
+    return LS._has_krylov() ? [LS.DirectSolver, LS.Dqgmres, LS.Bicgstab] : [LS.DirectSolver]
+end
 
 include("cuda_wrapper.jl")
 
