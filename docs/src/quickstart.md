@@ -260,9 +260,12 @@ a wrapper for different iterative algorithms (GMRES, BICGSTAB).
 
 The performance of iterative solvers is usually improved if we use
 a preconditioner.
+The iterative solvers are provided by a package extension, which is
+activated by loading `Krylov.jl` and `KrylovPreconditioners.jl`.
 `ExaPF.jl` implements an overlapping Schwarz preconditioner, tailored
 for GPU usage. To build an instance with 8 blocks, just write
 ```@repl quickstart
+import Krylov
 import KrylovPreconditioners as KP
 
 npartitions = 8;

@@ -199,7 +199,7 @@ function test_polar_powerflow(polar, backend, M)
     @test n == size(J, 1) == ExaPF.number(polar, State())
 
     # Build preconditioner
-    precond = LS.BlockJacobiPreconditioner(J_host, npartitions, backend)
+    precond = BlockJacobiPreconditioner(J_host, npartitions, backend)
 
     @testset "Powerflow solver $(LinSolver)" for LinSolver in ExaPF.list_solvers(backend)
         algo = LinSolver(J; P=precond)
