@@ -1,5 +1,6 @@
 using Test
 using KernelAbstractions
+using Krylov
 using KrylovPreconditioners
 
 using ExaPF
