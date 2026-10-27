@@ -1,7 +1,7 @@
 name = "ExaPF"
 uuid = "0cf0e50c-a82e-488f-ac7e-41ffdff1b8aa"
-version = "0.13.0"
 authors = ["Adrian Maldonado <maldonadod@anl.gov>", "Michel Schanen <mschanen@anl.gov>", "François Pacaud <fpacaud@anl.gov>", "Alexis Montoison <amontoison@anl.gov>"]
+version = "0.14.0"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -9,8 +9,6 @@ ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
 KLU = "ef3ab10e-7fda-4108-b977-705223b18434"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
-Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
-KrylovPreconditioners = "45d422c2-293f-44ce-8315-2cb988662dec"
 LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
@@ -22,23 +20,26 @@ AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CUDSS = "45b445bb-4962-46a0-9369-b4df9d0f772e"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
+Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
+KrylovPreconditioners = "45d422c2-293f-44ce-8315-2cb988662dec"
 
 [extensions]
-ExaPFAMDGPUExt = "AMDGPU"
+ExaPFAMDGPUExt = ["AMDGPU", "Krylov", "KrylovPreconditioners"]
 ExaPFCUDAExt = ["CUDA", "CUDSS"]
+ExaPFKrylovExt = ["Krylov", "KrylovPreconditioners"]
 
 [compat]
-AMDGPU = "2.0"
+AMDGPU = "2.10"
 Adapt = "4.3"
-CUDA = "6.2"
-CUDSS = "0.8"
+CUDA = "6.5"
+CUDSS = "1"
 ForwardDiff = "1.0"
-GPUArrays = "11.3.1"
+GPUArrays = "12"
 GPUArraysCore = "0.2.0"
 KLU = "0.6"
-KernelAbstractions = "0.9"
+KernelAbstractions = "0.10"
 Krylov = "0.10"
-KrylovPreconditioners = "0.3.6"
+KrylovPreconditioners = "0.4"
 LazyArtifacts = "1.10"
 LinearAlgebra = "1.10"
 Printf = "1.10"

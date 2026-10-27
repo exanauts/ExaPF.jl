@@ -6,6 +6,7 @@ using KernelAbstractions
 
 # Algorithms
 using Krylov
+using KrylovPreconditioners
 using ExaPF
 
 const LS = ExaPF.LinearSolvers
@@ -188,7 +189,7 @@ function benchmark_powerflow(polar, config, linear_algo)
     # Build preconditioner
     J = jx.J
     n = size(J, 1)
-    precond = LS.BlockJacobiPreconditioner(J, npartitions, polar.backend, noverlaps)
+    precond = BlockJacobiPreconditioner(J, npartitions, polar.backend, noverlaps)
 
     algo = linear_algo(J; P=precond)
     powerflow_solver = NewtonRaphson(tol=1e-8)
@@ -228,7 +229,7 @@ function benchmark_bicgstab(polar, config, noverlaps, nblocks)
     J = jx.J
     n = size(J, 1)
     npartitions = max(ceil(Int, n / nblocks), 2)
-    precond = LS.BlockJacobiPreconditioner(J, npartitions, polar.backend, noverlaps)
+    precond = BlockJacobiPreconditioner(J, npartitions, polar.backend, noverlaps)
     algo = LS.Bicgstab(J; P=precond)
     # Update preconditioner
     LS.update!(algo, J)

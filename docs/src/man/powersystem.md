@@ -57,7 +57,7 @@ datafile = "case9.m"
 ExaPF.PowerSystem.load_case(datafile)
 ```
 
-```jldoctests
+```jldoctest powersystem
 julia> datafile = "case9.m";
 
 julia> ps = PS.load_case(datafile)
@@ -69,7 +69,7 @@ PowerNetwork object with:
 
 Then, using multiple dispatch, we have defined a set of abstract data types and getter functions which allow us to retrieve information from the PowerNetwork object
 
-```jldoctests
+```jldoctest powersystem
 julia> PS.get(ps, PS.NumberOfPQBuses())
 6
 

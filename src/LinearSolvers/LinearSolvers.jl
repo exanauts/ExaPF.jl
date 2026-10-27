@@ -9,7 +9,6 @@ using SparseArrays
 import Base: show
 
 using KernelAbstractions
-import Krylov
 
 import ..ExaPF: xnorm
 import ..ExaPF.AutoDiff: AbstractJacobian
@@ -17,11 +16,8 @@ import ..ExaPF.AutoDiff: AbstractJacobian
 import Base.size, Base.sizeof, Base.format_bytes
 
 using KLU
-import Krylov
-using KrylovPreconditioners
 
 const KA = KernelAbstractions
-const KP = KrylovPreconditioners
 
 export list_solvers, default_linear_solver
 export DirectSolver, Bicgstab, Dqgmres
@@ -130,49 +126,38 @@ function rdiv!(ds::DirectSolver{<:LinearAlgebra.Factorization}, y::AbstractArray
     return 0
 end
 
-update!(is::AbstractIterativeLinearSolver, J::SparseMatrixCSC) = KP.update!(is.precond, J)
+# The iterative solvers wrap Krylov.jl and KrylovPreconditioners.jl, which are
+# weak dependencies: their constructors and methods live in ext/ExaPFKrylovExt.jl.
+_has_krylov() = !isnothing(Base.get_extension(parentmodule(@__MODULE__), :ExaPFKrylovExt))
 
 """
     Dqgmres <: AbstractIterativeLinearSolver
-    Dqgmres(precond; verbose=false, memory=4)
+    Dqgmres(J; P=BlockJacobiPreconditioner(J), memory=4, verbose=false)
 
 Wrap `Krylov.jl`'s DQGMRES algorithm to solve iteratively the linear system
 ``A x = y``.
+
+Requires `Krylov.jl` and `KrylovPreconditioners.jl` to be loaded.
 """
-struct Dqgmres <: AbstractIterativeLinearSolver
-    inner::Krylov.DqgmresWorkspace
-    precond::AbstractKrylovPreconditioner
+struct Dqgmres{W, Pr} <: AbstractIterativeLinearSolver
+    inner::W
+    precond::Pr
     memory::Int
     verbose::Bool
 end
 
-function Dqgmres(J::AbstractSparseMatrix;
-    P=BlockJacobiPreconditioner(J), memory=4, verbose=false
-)
-    n, m = size(J)
-    S = _get_type(J)
-    workspace = Krylov.DqgmresWorkspace(n, m, S; memory)
-    return Dqgmres(workspace, P, memory, verbose)
-end
-
-function ldiv!(solver::Dqgmres,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector; options...
-)
-    Krylov.dqgmres!(solver.inner, J, x; N=solver.precond)
-    copyto!(y, solver.inner.x)
-    return Krylov.iteration_count(solver.inner)
-end
-
 """
     Bicgstab <: AbstractIterativeLinearSolver
-    Bicgstab(precond; verbose=0, rtol=1e-10, atol=1e-10)
+    Bicgstab(J; P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10, ldiv=false, scaling=false, maxiter=size(J, 1))
 
 Wrap `Krylov.jl`'s BICGSTAB algorithm to solve iteratively the linear system
 ``A x = y``.
+
+Requires `Krylov.jl` and `KrylovPreconditioners.jl` to be loaded.
 """
-struct Bicgstab <: AbstractIterativeLinearSolver
-    inner::Krylov.BicgstabWorkspace
-    precond::AbstractKrylovPreconditioner
+struct Bicgstab{W, Pr} <: AbstractIterativeLinearSolver
+    inner::W
+    precond::Pr
     verbose::Int
     atol::Float64
     rtol::Float64
@@ -181,45 +166,13 @@ struct Bicgstab <: AbstractIterativeLinearSolver
     maxiter::Int64
 end
 do_scaling(linear_solver::Bicgstab) = linear_solver.scaling
-function Bicgstab(J::AbstractSparseMatrix;
-    P=BlockJacobiPreconditioner(J), verbose=0, rtol=1e-10, atol=1e-10, ldiv=false, scaling=false, maxiter=size(J,1)
-)
-    n, m = size(J)
-    S = _get_type(J)
-    workspace = Krylov.BicgstabWorkspace(n, m, S)
-    return Bicgstab(workspace, P, verbose, atol, rtol, ldiv, scaling, maxiter)
-end
-
-function ldiv!(solver::Bicgstab,
-    y::AbstractVector, J::AbstractMatrix, x::AbstractVector;
-    max_atol = solver.atol, max_rtol = solver.rtol, options...
-)
-
-    atol = max_atol < solver.atol ? solver.atol : max_atol
-    rtol = max_rtol < solver.rtol ? solver.rtol : max_rtol
-    Krylov.bicgstab!(
-        solver.inner, J, x;
-        N=solver.precond,
-        atol=atol,
-        rtol=rtol,
-        verbose=solver.verbose,
-        history=true,
-        ldiv=solver.ldiv,
-        itmax=solver.maxiter,
-    )
-    if solver.inner.stats.status == "breakdown αₖ == 0"
-        @warn("BICGSTAB failed to converge. Final status is $(solver.inner.stats.status)")
-    end
-    copyto!(y, solver.inner.x)
-    return Krylov.iteration_count(solver.inner)
-end
 
 """
     list_solvers(::KA.CPU)
 
 List all linear solvers available for solving the (batch) power flow on the CPU.
 """
-list_solvers(::KA.CPU) = [DirectSolver, Dqgmres, Bicgstab]
+list_solvers(::KA.CPU) = _has_krylov() ? [DirectSolver, Dqgmres, Bicgstab] : [DirectSolver]
 
 """
     default_linear_solver(A::SparseMatrixCSC; nblocks::Int=1)
@@ -229,6 +182,16 @@ Uses DirectSolver (KLU) as the default.
 """
 function default_linear_solver(A::SparseMatrixCSC; nblocks::Int=1)
     return DirectSolver(A)
+end
+
+function __init__()
+    Base.Experimental.register_error_hint(MethodError) do io, exc, argtypes, kwargs
+        f = exc.f === Core.kwcall ? exc.args[2] : exc.f
+        if (f === Bicgstab || f === Dqgmres) && !_has_krylov()
+            print(io, "\n$(f) requires Krylov.jl and KrylovPreconditioners.jl. ",
+                  "Load them with `using Krylov, KrylovPreconditioners`.")
+        end
+    end
 end
 
 end

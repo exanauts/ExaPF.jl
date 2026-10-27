@@ -1,6 +1,36 @@
 ExaPF release notes
 ===================
 
+Version 0.14 (October 27th, 2026)
+---------------------------------
+- Breaking changes
+  * `Krylov.jl` and `KrylovPreconditioners.jl` are now weak dependencies.
+    The iterative solvers `Bicgstab` and `Dqgmres` are still exported from
+    `ExaPF.LinearSolvers`, but require `using Krylov, KrylovPreconditioners`
+    to activate the new `ExaPFKrylovExt` extension. A `MethodError` hint
+    points users to the missing packages.
+  * The AMDGPU extension now requires `Krylov.jl` and `KrylovPreconditioners.jl`,
+    as the default linear solver on AMD GPUs is `Bicgstab`.
+  * `list_solvers` only reports the iterative solvers when the extension is loaded.
+  * Drop support for Julia 1.11 in CI (Julia LTS and latest stable are tested).
+- Improvements
+  * Support KernelAbstractions.jl v0.10 and GPUArrays.jl v12
+  * Support CUDA.jl v6.5, CUDSS.jl v1.0 and AMDGPU.jl v2.10
+  * Support KrylovPreconditioners.jl v0.4
+  * Update tests, benchmarks, examples and documentation for the new extension
+
+Version 0.13 (June 17th, 2026)
+------------------------------
+- Improvements
+  * Support CUDA.jl v6.2 and CUDSS.jl v0.8 (#317)
+  * Update the CUDA extension to the new `cuBLAS` / `cuSPARSE` module names
+    and `CUDA.DeviceMemory` (#317)
+
+Version 0.12.1 (January 26th, 2026)
+-----------------------------------
+- Bug fixes
+  * Fix the `CuSparseMatrixCSR` constructor from `SparseMatrixCSC` in the CUDA extension (#312)
+
 Version 0.12 (December 12th, 2025)
 ----------------------------------
 - API changes

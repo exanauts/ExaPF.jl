@@ -22,6 +22,7 @@ Our package supports the following linear solvers:
 * [KLU](https://github.com/DrTimothyAldenDavis/SuiteSparse) (CPU),
 * [`cuDSS`](https://developer.nvidia.com/cudss) (NVIDIA GPU),
 * [`Krylov.jl`](https://github.com/JuliaSmoothOptimizers/Krylov.jl) with `dqgmres` and `bicgstab` (CPU, NVIDIA GPU, AMD GPU),
+  available after loading `Krylov.jl` and `KrylovPreconditioners.jl` (`using Krylov, KrylovPreconditioners`),
 * Any custom linear solver provided by the user.
 
 ## Preconditioning
