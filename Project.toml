@@ -29,10 +29,10 @@ ExaPFCUDAExt = ["CUDA", "CUDSS"]
 ExaPFKrylovExt = ["Krylov", "KrylovPreconditioners"]
 
 [compat]
-AMDGPU = "2.0"
+AMDGPU = "2.10"
 Adapt = "4.3"
-CUDA = "6.2"
-CUDSS = "0.8"
+CUDA = "6.5"
+CUDSS = "1"
 ForwardDiff = "1.0"
 GPUArrays = "12"
 GPUArraysCore = "0.2.0"
