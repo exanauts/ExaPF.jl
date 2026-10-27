@@ -150,7 +150,7 @@ All the inputs are specified in the vector `input`. The three vectors
 `vmag`, `vang` and `pgen` are views porting on `input`, and are defined
 mostly for convenience. By convention the vector `input` is ordered
 as `[vmag; vang; pgen]`:
-```jldoctests
+```jldoctest
 # Define dimension of the problem
 julia> nbus, ngen, nlines = 3, 2, 4;
 
@@ -202,7 +202,7 @@ and the control, and was not flexible. In the new implementation,
 we define the state and the control as two *mappings* porting
 on the vector `stack.input` (which itself stores all the inputs in
 the problem):
-```jldoctests
+```jldoctest
 julia> nbus, ngen, nlines = 4, 3, 4;
 
 julia> stack = ExaPF.NetworkStack(nbus, ngen, nlines, 0, Vector{Float64}, Vector{Float64});
@@ -251,7 +251,7 @@ the [`Basis`](@ref) function.
 
 We demonstrate how to use the different functions on the `case9`
 instance. The procedure remains the same for all power network.
-```jldoctests interface
+```jldoctest interface
 julia> polar = ExaPF.load_polar("case9.m");
 
 julia> stack = ExaPF.NetworkStack(polar);
@@ -273,13 +273,13 @@ The structure of the network is specified by the [`PolarForm`](@ref)
 we pass as an argument in the constructor. For instance,
 we build a new [`Basis`](@ref) expression associated to `case9`
 directly as
-```jldoctests interface
+```jldoctest interface
 julia> basis = ExaPF.Basis(polar)
 Basis (AbstractExpression)
 
 ```
 Each expression as a given dimension, given by
-```jldoctests interface
+```jldoctest interface
 julia> length(basis)
 27
 
@@ -287,7 +287,7 @@ julia> length(basis)
 In ExaPF, the inputs and the parameters are stored
 inside a [`NetworkStack`](@ref) structure. Evaluating the basis $$\psi$$
 naturally translates to
-```jldoctests interface
+```jldoctest interface
 julia> basis(stack)
 27-element Vector{Float64}:
  1.0
@@ -314,7 +314,7 @@ julia> basis(stack)
 This function call allocates a vector `psi` with 27 elements and evaluates
 the basis associated to the LTMR2020 model. To avoid unnecessary allocation,
 one can preallocate the vector `psi`:
-```jldoctests interface
+```jldoctest interface
 julia> psi = zeros(length(basis)) ;
 
 julia> basis(psi, stack);
@@ -333,7 +333,7 @@ to the power flow model. Luckily, evaluating the LTMR2020 simply amounts
 to compose functions together with the polar basis $$\psi(v, \theta)$$.
 ExaPF overloads the function `∘` to compose functions with a [`Basis`](@ref)
 instance. The power flow balance can be evaluated as
-```jldoctests interface
+```jldoctest interface
 julia> pflow = ExaPF.PowerFlowBalance(polar) ∘ basis;
 
 ```
@@ -341,7 +341,7 @@ which returns a [`ComposedExpressions`](@ref) structure.
 
 The function `pflow` follows the same API, as any regular
 [`AutoDiff.AbstractExpression`](@ref).
-```jldoctests interface
+```jldoctest interface
 julia> n_balance = length(pflow)
 14
 
@@ -371,7 +371,7 @@ final result.
 The procedure remains the same if one wants to evaluate the
 [`LineFlows`](@ref) or the [`PowerGenerationBounds`](@ref).
 For instance, evaluating the line flows amounts to
-```jldoctests interface
+```jldoctest interface
 julia> line_flows = ExaPF.LineFlows(polar) ∘ basis;
 
 julia> line_flows(stack)
