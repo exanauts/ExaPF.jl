@@ -20,6 +20,7 @@ include("setup.jl")
 @isdefined(TestKernels)          || include("TestKernels.jl")
 @isdefined(TestLinearSolvers)    || include("TestLinearSolvers.jl")
 @isdefined(TestPolarFormulation) || include("Polar/TestPolarForm.jl")
+@isdefined(TestQLimits)          || include("TestQLimits.jl")
 @isdefined(ExaBenchmark)         || include(joinpath(BENCHMARK_DIR, "benchmarks.jl"))
 
 init_time = time()
@@ -65,6 +66,14 @@ init_time = time()
         @info "Test batched powerflow across all backends ..."
         tic = time()
         include("batch_powerflow.jl")
+        println("Took $(round(time() - tic; digits=1)) seconds.")
+    end
+    println()
+
+    @testset "Q Limit Enforcement on $backend" for (backend, AT, SMT, arch) in ARCHS
+        @info "Test Q limit enforcement on $arch..."
+        tic = time()
+        TestQLimits.runtests(backend, AT, SMT)
         println("Took $(round(time() - tic; digits=1)) seconds.")
     end
     println()
